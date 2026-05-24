@@ -200,6 +200,8 @@ const BASE_SLOTS = ["08:00", "12:00", "16:00"];
 function ft(n:number) { return n.toLocaleString("hu-HU") + " Ft"; }
 function pad(n:number) { return String(n).padStart(2,"0"); }
 function iso(d:Date) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function todayIso() { return iso(new Date()); }
+function offsetIso(days:number) { const d = new Date(); d.setDate(d.getDate()+days); return iso(d); }
 function weekStart(d:Date) { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay()+6)%7)); return x; }
 function calLabel(mode:CalendarMode, d:Date) {
   if (mode==="month") return `${d.getFullYear()}. ${pad(d.getMonth()+1)}`;
@@ -368,11 +370,11 @@ export default function Home() {
   const [view,setView] = useState<View>("dashboard");
   const [taskFilter,setTaskFilter] = useState<"today" | "tomorrow" | "closing" | "stock" | "callback">("today");
   const [mode,setMode] = useState<CalendarMode>("week");
-  const [calDate,setCalDate] = useState(new Date(2026,4,12));
+  const [calDate,setCalDate] = useState(() => new Date());
   const [customers,setCustomers] = useState<Customer[]>([]);
   const [selected,setSelected] = useState<Customer>(EMPTY_CUSTOMER);
   const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(EMPTY_CUSTOMER.quoteItems);
-  const [scheduleDate,setScheduleDate] = useState("2026-05-13");
+  const [scheduleDate,setScheduleDate] = useState(() => todayIso());
   const [scheduleTime,setScheduleTime] = useState("08:00");
   const [materials,setMaterials] = useState(DEFAULT_MATERIALS);
   const [materialOverrides,setMaterialOverrides] = useState<Record<string,string>>({});
@@ -402,6 +404,13 @@ export default function Home() {
     nkvh: false,
     docsSent: false,
   });
+
+  useEffect(() => {
+    if (view === "dashboard" || view === "schedule") {
+      setMode("week");
+      setCalDate(new Date());
+    }
+  }, [view]);
 
   const q = qty(quoteItems);
   const t = total(quoteItems);
@@ -462,7 +471,7 @@ export default function Home() {
   function openCustomer(c:Customer, v:View) {
     setSelected(c);
     setQuoteItems(c.quoteItems);
-    setScheduleDate(c.date || "2026-05-13");
+    setScheduleDate(c.date || todayIso());
     setScheduleTime(c.time?.split(" ")[0] || "08:00");
     setWorkReport(emptyWorkReport(c));
     setEditCustomer(false);
@@ -667,7 +676,7 @@ export default function Home() {
 
     setSelected(fresh);
     setQuoteItems(fresh.quoteItems);
-    setScheduleDate("2026-05-13");
+    setScheduleDate(todayIso());
     setScheduleTime("08:00");
     setView("lead");
   }
@@ -1116,8 +1125,10 @@ export default function Home() {
       callback: "Visszahívandó leadek",
     };
 
-    const todayList = activeCustomers.filter(c => c.date === "2026-05-12");
-    const tomorrowList = activeCustomers.filter(c => c.date === "2026-05-13");
+    const today = todayIso();
+    const tomorrow = offsetIso(1);
+    const todayList = activeCustomers.filter(c => c.date === today);
+    const tomorrowList = activeCustomers.filter(c => c.date === tomorrow);
     const closingList = activeCustomers.filter(c => c.status === "Szerelés kész – admin folyamatban");
     const callbackList = activeCustomers.filter(c => !c.date && c.status === "Visszahívandó");
     const stockList = PRODUCTS.filter((p:any) => reservedForProduct(p.id) > stockOf(p.id));
@@ -1907,7 +1918,7 @@ export default function Home() {
               </div>
             </Card></Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v51 · egyszerű munkalap aláírás</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v52 · aktuális heti naptár</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
@@ -2273,8 +2284,10 @@ function Stats({
   reservedForProduct: (productId: string) => number;
   onSelect?: (filter: "today" | "tomorrow" | "closing" | "stock" | "callback") => void;
 }) {
-  const todayJobs = customers.filter(c => c.date === "2026-05-12").length;
-  const tomorrowJobs = customers.filter(c => c.date === "2026-05-13").length;
+  const today = todayIso();
+  const tomorrow = offsetIso(1);
+  const todayJobs = customers.filter(c => c.date === today).length;
+  const tomorrowJobs = customers.filter(c => c.date === tomorrow).length;
   const closingJobs = customers.filter(c => c.status === "Szerelés kész – admin folyamatban").length;
   const callbackLeads = customers.filter(c => !c.date && c.status === "Visszahívandó").length;
 
