@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
 
     const itemLines = items.length
-      ? items.map((item) => `<li>${Number(item.quantity || 1)} db ${safeText(item.name)}</li>`).join("")
+      ? items.map((item) => `<li><strong>${Number(item.quantity || 1)} db ${safeText(item.name)}</strong> <span style="color:#64748b">– szereléssel együtt</span></li>`).join("")
       : "<li>Klímatelepítés / felmérés</li>";
 
     const resendResponse = await fetch("https://api.resend.com/emails", {
@@ -57,15 +57,28 @@ export async function POST(request: Request) {
         reply_to: replyTo,
         subject: "Időpont visszaigazolás – KLIMAlin",
         html: `
-          <p>Kedves ${safeText(customer.name) || "Ügyfelünk"}!</p>
-          <p>Ezúton visszaigazolom a klímás időpontot.</p>
-          <p><strong>Időpont:</strong> ${formatDate(customer.date)} · ${safeText(customer.time) || "egyeztetés szerint"}</p>
-          <p><strong>Cím:</strong> ${safeText(customer.address) || `${safeText(customer.city)}`}</p>
-          <p><strong>Érintett készülék / munka:</strong></p>
-          <ul>${itemLines}</ul>
-          <p>Kérlek, az időpont előtt gondoskodj róla, hogy a szerelési terület hozzáférhető legyen.</p>
-          <p>Ha bármi változna, erre az emailre válaszolva vagy telefonon tudsz jelezni.</p>
-          <p>Üdvözlettel:<br/>Adorján Alin<br/>KLIMAlin<br/>06 30 700 4908</p>
+          <div style="font-family:Arial,sans-serif;background:#f8fafc;padding:24px;color:#0f172a">
+            <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;overflow:hidden">
+              <div style="padding:24px 28px;background:#050816;color:white">
+                <div style="font-size:13px;color:#67e8f9;margin-bottom:6px">KLIMAlin időpont visszaigazolás</div>
+                <h1 style="margin:0;font-size:24px">Sikeres időpont-egyeztetés</h1>
+              </div>
+              <div style="padding:26px 28px">
+                <p>Tisztelt ${safeText(customer.name) || "Ügyfelünk"}!</p>
+                <p>Ezúton visszaigazoljuk a klímás időpontot.</p>
+                <div style="background:#f1f5f9;border-radius:14px;padding:16px;margin:18px 0">
+                  <p style="margin:0 0 8px 0"><strong>Időpont:</strong> ${formatDate(customer.date)} · ${safeText(customer.time) || "egyeztetés szerint"}</p>
+                  <p style="margin:0"><strong>Cím:</strong> ${safeText(customer.address) || safeText(customer.city) || "egyeztetés szerint"}</p>
+                </div>
+                <p><strong>Érintett készülék / munka:</strong></p>
+                <ul>${itemLines}</ul>
+                <p>A klíma ára / ajánlata szereléssel együtt értendő, az előzetesen egyeztetett feltételek szerint.</p>
+                <p>Kérjük, az időpont előtt gondoskodjon róla, hogy a szerelési terület hozzáférhető legyen.</p>
+                <p>Amennyiben bármi változna, erre az emailre válaszolva vagy telefonon tudja jelezni.</p>
+                <p>Üdvözlettel:<br/><strong>Adorján Alin · KLIMAlin</strong><br/>06 30 700 4908<br/>klimalin.hu</p>
+              </div>
+            </div>
+          </div>
         `,
       }),
     });
