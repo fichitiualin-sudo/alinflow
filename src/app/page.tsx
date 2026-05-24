@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
-type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "warehouse" | "tasks" | "archive";
+type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "workReport" | "warehouse" | "tasks" | "archive";
 type CalendarMode = "week" | "month";
 type QuoteItem = { productId: string; quantity: number; customPrice?: number; customName?: string; isManual?: boolean };
 type InventoryItem = {
@@ -29,6 +29,17 @@ type Customer = {
   productId?: string;
   isFresh?: boolean;
   stockDeducted?: boolean;
+};
+
+type WorkReport = {
+  id?: string;
+  customerId?: string;
+  workDescription: string;
+  notes: string;
+  signatureDataUrl: string;
+  signerName: string;
+  signedAt?: string;
+  emailSentAt?: string;
 };
 
 const STATUS_OPTIONS = [
@@ -261,6 +272,27 @@ function climateSummary(items?: QuoteItem[]) {
   return activeItems.map((item) => `${item.quantity} db ${itemName(item)}`).join(" + ");
 }
 
+function defaultWorkDescription() {
+  return "Klímaberendezés telepítése, szükséges szerelési anyagok beépítése, nyomáspróba, vákuumozás, beüzemelés, működési próba és felhasználói betanítás.";
+}
+
+function emptyWorkReport(customer?: Customer): WorkReport {
+  return {
+    customerId: customer?.id,
+    workDescription: defaultWorkDescription(),
+    notes: "",
+    signatureDataUrl: "",
+    signerName: customer?.name || "",
+  };
+}
+
+function formatSignedAt(value?: string) {
+  if (!value) return "nincs aláírva";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
 function quoteItemFromRow(row: any): QuoteItem {
   const productById = PRODUCTS.find((product) => product.id === row.description);
   const productByName = PRODUCTS.find((product) => product.name === row.product_name);
@@ -357,6 +389,9 @@ export default function Home() {
   const [quoteEmailBusy,setQuoteEmailBusy] = useState(false);
   const [appointmentEmailBusy,setAppointmentEmailBusy] = useState(false);
   const [sendAppointmentNotice,setSendAppointmentNotice] = useState(true);
+  const [workReport,setWorkReport] = useState<WorkReport>(emptyWorkReport());
+  const [workReportBusy,setWorkReportBusy] = useState(false);
+  const [workReportEmailBusy,setWorkReportEmailBusy] = useState(false);
   const [editCustomer,setEditCustomer] = useState(false);
   const [workChecklist,setWorkChecklist] = useState<Record<string, boolean>>({
     worksheet: false,
@@ -429,6 +464,7 @@ export default function Home() {
     setQuoteItems(c.quoteItems);
     setScheduleDate(c.date || "2026-05-13");
     setScheduleTime(c.time?.split(" ")[0] || "08:00");
+    setWorkReport(emptyWorkReport(c));
     setEditCustomer(false);
     setView(v);
   }
@@ -1456,6 +1492,164 @@ export default function Home() {
     }
   }
 
+
+  function workReportPayload(report: WorkReport = workReport, customer: Customer = selected) {
+    const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
+    return {
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        city: customer.city,
+        phone: customer.phone,
+        email: customer.email,
+        address: customer.address,
+        need: customer.need,
+        date: customer.date,
+        time: customer.time,
+      },
+      items: items.map((item) => ({
+        name: itemName(item),
+        quantity: item.quantity,
+        unitPrice: itemUnitPrice(item),
+        totalPrice: itemTotal(item),
+      })),
+      report: {
+        workDescription: report.workDescription,
+        notes: report.notes,
+        signatureDataUrl: report.signatureDataUrl,
+        signerName: report.signerName || customer.name,
+        signedAt: report.signedAt,
+      },
+    };
+  }
+
+  async function loadWorkReportFor(customer: Customer) {
+    setWorkReport(emptyWorkReport(customer));
+    if (!customer.id) return;
+
+    const { data, error } = await supabase
+      .from("work_reports")
+      .select("*")
+      .eq("customer_id", customer.id)
+      .maybeSingle();
+
+    if (error) {
+      setMessage("A munkalap tábla még nincs kész vagy nem tölthető be. Futtasd a munkalap SQL-t a Supabase-ben.");
+      return;
+    }
+
+    if (data) {
+      setWorkReport({
+        id: data.id,
+        customerId: data.customer_id,
+        workDescription: data.work_description || defaultWorkDescription(),
+        notes: data.notes || "",
+        signatureDataUrl: data.signature_data_url || "",
+        signerName: data.signer_name || customer.name || "",
+        signedAt: data.signed_at || undefined,
+        emailSentAt: data.email_sent_at || undefined,
+      });
+    }
+  }
+
+  function openWorkReport() {
+    const customerForReport = { ...selected, quoteItems };
+    setSelected(customerForReport);
+    void loadWorkReportFor(customerForReport);
+    setView("workReport");
+  }
+
+  function updateWorkReportField(field: keyof WorkReport, value: string) {
+    setWorkReport((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function saveWorkReport(sendEmail = false) {
+    if (!selected.id) {
+      setMessage("Előbb mentsd az ügyfelet, utána készíthető munkalap.");
+      return;
+    }
+
+    if (sendEmail && !selected.email?.trim()) {
+      setMessage("Munkalap emailhez előbb add meg az ügyfél email címét.");
+      return;
+    }
+
+    if (sendEmail && !workReport.signatureDataUrl) {
+      setMessage("Küldés előtt szükséges az egyszerű ügyfél aláírás.");
+      return;
+    }
+
+    const signedAt = workReport.signatureDataUrl ? (workReport.signedAt || new Date().toISOString()) : null;
+    const reportToSave: WorkReport = {
+      ...workReport,
+      signerName: workReport.signerName || selected.name,
+      signedAt: signedAt || undefined,
+    };
+
+    setWorkReportBusy(true);
+    setMessage(sendEmail ? "Munkalap mentése és email küldése folyamatban..." : "Munkalap mentése folyamatban...");
+
+    try {
+      const basePayload = {
+        customer_id: selected.id,
+        work_date: selected.date || scheduleDate || null,
+        work_time: selected.time || shownTime || null,
+        customer_name: selected.name || null,
+        customer_email: selected.email || null,
+        customer_phone: selected.phone || null,
+        customer_address: selected.address || selected.city || null,
+        climate_summary: climateSummary(quoteItems),
+        work_description: reportToSave.workDescription || defaultWorkDescription(),
+        notes: reportToSave.notes || null,
+        signature_data_url: reportToSave.signatureDataUrl || null,
+        signer_name: reportToSave.signerName || selected.name || null,
+        signed_at: signedAt,
+        created_by: user?.id || null,
+      };
+
+      const { data, error } = await supabase
+        .from("work_reports")
+        .upsert(basePayload, { onConflict: "customer_id" })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      let emailSentAt = data?.email_sent_at || undefined;
+      if (sendEmail) {
+        setWorkReportEmailBusy(true);
+        const response = await fetch("/api/send-work-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(workReportPayload(reportToSave, { ...selected, quoteItems })),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result?.error || "Nem sikerült elküldeni a munkalap emailt.");
+
+        emailSentAt = new Date().toISOString();
+        await supabase.from("work_reports").update({ email_sent_at: emailSentAt }).eq("id", data.id);
+      }
+
+      setWorkChecklist((prev) => ({ ...prev, worksheet: true, signature: Boolean(reportToSave.signatureDataUrl) || prev.signature }));
+      setWorkReport({
+        id: data.id,
+        customerId: data.customer_id,
+        workDescription: data.work_description || reportToSave.workDescription,
+        notes: data.notes || "",
+        signatureDataUrl: data.signature_data_url || reportToSave.signatureDataUrl,
+        signerName: data.signer_name || reportToSave.signerName,
+        signedAt: data.signed_at || reportToSave.signedAt,
+        emailSentAt,
+      });
+      setMessage(sendEmail ? "Munkalap mentve és emailben elküldve ✅" : "Munkalap mentve ✅");
+    } catch (error: any) {
+      setMessage(`Munkalap hiba: ${error.message}`);
+    } finally {
+      setWorkReportBusy(false);
+      setWorkReportEmailBusy(false);
+    }
+  }
+
   if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><div><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/>{selected.address || selected.city ? <a href={mapsHref(selected)} target="_blank" rel="noreferrer" className="mt-3 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">Útvonal tervezése Google Térképpel</a> : null}</div></div></Card><Card title="Telefonos jegyzet"><p className="mb-3 text-sm leading-relaxed text-slate-400">Ide írd a hívás közbeni megjegyzést. A Mentés gomb után Supabase-be kerül, ezért telefonon és gépen is megmarad.</p><textarea className="input min-h-32" value={selected.notes || ""} onChange={e=>updateSelectedField("notes", e.target.value)} placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
               <p className="mb-4 text-sm text-slate-400">Először mentsd az ügyfelet, majd készíts ajánlatot. Időpontot az ajánlat után adunk.</p>
               <div className="grid grid-cols-1 gap-3">
@@ -1620,6 +1814,8 @@ export default function Home() {
     return <Shell><Back onClick={()=>setView("quote")}/><Hero title="Időpont választása" sub={`${selected.name} · ${selected.city}`} action="Időpont mentése" onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák"><p className="mb-4 text-sm leading-relaxed text-slate-400">Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. Telefonról is ugyanígy működik.</p>{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200"><input type="checkbox" checked={sendAppointmentNotice} onChange={e=>setSendAppointmentNotice(e.target.checked)} className="mt-1 h-5 w-5 accent-cyan-300"/><span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span></label><Btn color="green" onClick={saveSchedule}>{appointmentEmailBusy ? "Mentés és email küldés..." : "Időpont mentése"}</Btn></Card></Side></Layout></Shell>;
   }
 
+  if (view==="workReport") return <Shell><Back onClick={()=>setView("work")}/><Hero title="Klímás munkalap" sub={`${selected.name} · ${selected.city} · ${selected.date || scheduleDate}`} action={workReportBusy ? "Mentés..." : "Munkalap mentése"} onAction={()=>saveWorkReport(false)}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Munkalap adatai"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><Field label="Ügyfél" value={selected.name || "nincs megadva"}/><Field label="Telepítési cím" value={selected.address || selected.city || "nincs megadva"}/><Field label="Időpont" value={`${selected.date || scheduleDate} · ${selected.time || shownTime}`}/><Field label="Klíma" value={climateSummary(quoteItems)}/></div><label className="mt-5 block rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">Elvégzett munka leírása</span><textarea className="mt-2 min-h-32 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={workReport.workDescription} onChange={(event)=>updateWorkReportField("workDescription", event.target.value)} /></label><label className="mt-4 block rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">Munkalap megjegyzés</span><textarea className="mt-2 min-h-28 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={workReport.notes} onChange={(event)=>updateWorkReportField("notes", event.target.value)} placeholder="Például: ügyfél tájékoztatva, rendben átadva, egyedi megjegyzés..." /></label></Card><Card title="Egyszerű ügyfél aláírás"><p className="mb-4 text-sm leading-relaxed text-slate-400">Telefonon az ügyfél egyszerűen ujjal aláírhatja. Nem minősített elektronikus aláírás, hanem munkalap-átvételi visszaigazolás.</p><EditField label="Aláíró neve" value={workReport.signerName || selected.name || ""} onChange={(value)=>updateWorkReportField("signerName", value)} /><SignaturePad value={workReport.signatureDataUrl} onChange={(value)=>setWorkReport((prev)=>({ ...prev, signatureDataUrl: value, signedAt: value ? new Date().toISOString() : undefined }))}/>{workReport.signedAt ? <p className="mt-3 text-sm font-bold text-emerald-200">Aláírva: {formatSignedAt(workReport.signedAt)}</p> : <p className="mt-3 text-sm font-bold text-amber-200">Még nincs aláírás.</p>}</Card></Main><Side><Gradient title="Munkalap státusz" value={workReport.signatureDataUrl ? "Aláírva" : "Aláírásra vár"}/><Card title="Műveletek"><div className="grid grid-cols-1 gap-3"><StepButton color="green" onClick={()=>saveWorkReport(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton><StepButton color="blue" onClick={()=>saveWorkReport(true)}>{workReportEmailBusy ? "Email küldése..." : "Mentés és email küldése"}</StepButton></div><p className="mt-4 text-sm leading-relaxed text-slate-400">Az email telefonról és laptopról is ugyanazzal a Resend küldéssel megy ki. PDF nincs, így az ékezetek rendben maradnak.</p></Card><Card title="Email állapot"><InfoRow label="Ügyfél email" value={selected.email || "nincs megadva"}/><InfoRow label="Elküldve" value={workReport.emailSentAt ? formatSignedAt(workReport.emailSentAt) : "még nem"}/></Card></Side></Layout></Shell>;
+
   if (view==="work") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={`${selected.name} — Munkaoldal`} sub={`${selected.city} · ${selected.date || scheduleDate} · ${selected.time || shownTime}`} action="Teljes lezárás ellenőrzése" onAction={closeWork}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Ügyféladatok"><div className="mb-4 flex flex-wrap gap-3">{editCustomer ? <Btn color="green" onClick={saveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={()=>setEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}{editCustomer ? <button onClick={()=>setEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}</div><CustomerGrid c={selected} editable={editCustomer} onChange={updateSelectedField}/></Card><Card title="Időponthoz tartozó klímák">
               <div className="space-y-3">
                 {quoteItems.map((it,i)=>
@@ -1700,6 +1896,7 @@ export default function Home() {
             </Card>
             <Card title="Lezárási műveletek">
               <div className="space-y-3">
+                <StepButton color="cyan" onClick={openWorkReport}>Munkalap és egyszerű aláírás</StepButton>
                 <StepButton color="blue" onClick={()=>sendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
                 <StepButton color="green" onClick={markInstallationDone}>Szerelés kész – admin folyamatban</StepButton>
                 <StepButton color="blue" onClick={closeWork}>Teljes lezárás</StepButton>
@@ -1710,7 +1907,7 @@ export default function Home() {
               </div>
             </Card></Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v50 · mobil naptár javítás</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v51 · egyszerű munkalap aláírás</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
@@ -1918,7 +2115,103 @@ function EditField({label,value,onChange}:{label:string;value:string;onChange:(v
   );
 }
 
+function SignaturePad({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
+  function prepareCanvas(redrawValue = value) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.floor(rect.width * ratio));
+    const height = Math.max(1, Math.floor(rect.height * ratio));
+    canvas.width = width;
+    canvas.height = height;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.scale(ratio, ratio);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, rect.width, rect.height);
+    context.strokeStyle = "#020617";
+    context.lineWidth = 3;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+
+    if (redrawValue) {
+      const image = new Image();
+      image.onload = () => {
+        context.drawImage(image, 0, 0, rect.width, rect.height);
+      };
+      image.src = redrawValue;
+    }
+  }
+
+  useEffect(() => {
+    prepareCanvas(value);
+    const onResize = () => prepareCanvas(value);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [value]);
+
+  function pointFromEvent(event: any) {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  function drawLine(from: { x: number; y: number }, to: { x: number; y: number }) {
+    const context = canvasRef.current?.getContext("2d");
+    if (!context) return;
+    context.beginPath();
+    context.moveTo(from.x, from.y);
+    context.lineTo(to.x, to.y);
+    context.stroke();
+  }
+
+  function finishSignature() {
+    drawingRef.current = false;
+    lastPointRef.current = null;
+    const canvas = canvasRef.current;
+    if (canvas) onChange(canvas.toDataURL("image/png"));
+  }
+
+  function clearSignature() {
+    prepareCanvas("");
+    onChange("");
+  }
+
+  return (
+    <div className="mt-4 rounded-[1.5rem] border border-white/10 bg-white p-3">
+      <canvas
+        ref={canvasRef}
+        className="h-56 w-full rounded-2xl bg-white"
+        style={{ touchAction: "none" }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          drawingRef.current = true;
+          const point = pointFromEvent(event);
+          lastPointRef.current = point;
+          if (point) drawLine(point, { x: point.x + 0.1, y: point.y + 0.1 });
+        }}
+        onPointerMove={(event) => {
+          if (!drawingRef.current) return;
+          const point = pointFromEvent(event);
+          const last = lastPointRef.current;
+          if (point && last) drawLine(last, point);
+          lastPointRef.current = point;
+        }}
+        onPointerUp={finishSignature}
+        onPointerCancel={finishSignature}
+        onPointerLeave={() => { if (drawingRef.current) finishSignature(); }}
+      />
+      <button onClick={clearSignature} className="mt-3 w-full rounded-2xl bg-slate-900 px-5 py-4 font-black text-white">Aláírás törlése</button>
+    </div>
+  );
+}
 
 
 function Gradient({title,value}:{title:string;value:string;tone?:string}) {
