@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { User } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
 type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "warehouse" | "tasks";
 type CalendarMode = "week" | "month";
@@ -218,14 +220,98 @@ function telHref(phone: string) {
   return `tel:${cleaned}`;
 }
 
+const EMPTY_CUSTOMER: Customer = {
+  id: "",
+  name: "",
+  city: "",
+  phone: "",
+  email: "",
+  address: "",
+  source: "Kézi rögzítés",
+  status: "Visszahívandó",
+  need: "",
+  quoteItems: [{ productId: PRODUCTS[0].id, quantity: 1 }],
+};
+
+function quoteItemFromRow(row: any): QuoteItem {
+  const productById = PRODUCTS.find((product) => product.id === row.description);
+  const productByName = PRODUCTS.find((product) => product.name === row.product_name);
+  const matchedProduct = productById || productByName;
+
+  return {
+    productId: matchedProduct?.id || PRODUCTS[0].id,
+    quantity: Number(row.quantity || 1),
+    customPrice: Number(row.unit_price || matchedProduct?.price || 0),
+    customName: matchedProduct ? undefined : row.product_name,
+    isManual: !matchedProduct,
+  };
+}
+
+function quoteItemToRow(item: QuoteItem, quoteId: string) {
+  return {
+    quote_id: quoteId,
+    product_name: itemName(item),
+    description: item.productId,
+    quantity: item.quantity,
+    unit_price: itemUnitPrice(item),
+    total_price: itemTotal(item),
+  };
+}
+
+function LoginScreen({
+  email,
+  password,
+  message,
+  loading,
+  onEmail,
+  onPassword,
+  onSubmit,
+}: {
+  email: string;
+  password: string;
+  message: string;
+  loading: boolean;
+  onEmail: (value: string) => void;
+  onPassword: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <main className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100">
+      <div className="mx-auto flex min-h-[80vh] max-w-md items-center">
+        <div className="w-full rounded-[2rem] border border-white/10 bg-slate-900/90 p-6 shadow-2xl">
+          <div className="mb-6 text-center">
+            <p className="mb-3 inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm font-black text-cyan-200">AlinFlow admin</p>
+            <h1 className="text-4xl font-black">Bejelentkezés</h1>
+            <p className="mt-2 text-sm text-slate-400">Csak bejelentkezés után látható az ügyfél- és munkaadatbázis.</p>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-black text-slate-300">Email</label>
+              <input className="input" value={email} onChange={(event) => onEmail(event.target.value)} placeholder="email@pelda.hu" />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-black text-slate-300">Jelszó</label>
+              <input className="input" type="password" value={password} onChange={(event) => onPassword(event.target.value)} placeholder="••••••••" onKeyDown={(event) => { if (event.key === "Enter") onSubmit(); }} />
+            </div>
+            {message ? <div className="rounded-2xl border border-red-300/30 bg-red-400/10 p-4 text-sm font-bold text-red-100">{message}</div> : null}
+            <button onClick={onSubmit} disabled={loading} className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 shadow-xl transition hover:scale-[1.01] disabled:cursor-wait disabled:opacity-60">
+              {loading ? "Beléptetés..." : "Belépés"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 export default function Home() {
   const [view,setView] = useState<View>("dashboard");
   const [taskFilter,setTaskFilter] = useState<"today" | "tomorrow" | "closing" | "stock" | "callback">("today");
   const [mode,setMode] = useState<CalendarMode>("week");
   const [calDate,setCalDate] = useState(new Date(2026,4,12));
-  const [customers,setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
-  const [selected,setSelected] = useState<Customer>(INITIAL_CUSTOMERS[0]);
-  const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(INITIAL_CUSTOMERS[0].quoteItems);
+  const [customers,setCustomers] = useState<Customer[]>([]);
+  const [selected,setSelected] = useState<Customer>(EMPTY_CUSTOMER);
+  const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(EMPTY_CUSTOMER.quoteItems);
   const [scheduleDate,setScheduleDate] = useState("2026-05-13");
   const [scheduleTime,setScheduleTime] = useState("08:00");
   const [materials,setMaterials] = useState(DEFAULT_MATERIALS);
@@ -233,6 +319,13 @@ export default function Home() {
   const [inventory,setInventory] = useState<InventoryItem[]>(DEFAULT_INVENTORY);
   const [materialInventory,setMaterialInventory] = useState(MATERIAL_STOCK);
   const [message,setMessage] = useState("");
+  const [user,setUser] = useState<User | null>(null);
+  const [authLoading,setAuthLoading] = useState(true);
+  const [dataLoading,setDataLoading] = useState(false);
+  const [loginEmail,setLoginEmail] = useState("");
+  const [loginPassword,setLoginPassword] = useState("");
+  const [loginBusy,setLoginBusy] = useState(false);
+  const [loginMessage,setLoginMessage] = useState("");
   const [editCustomer,setEditCustomer] = useState(false);
   const [workChecklist,setWorkChecklist] = useState<Record<string, boolean>>({
     worksheet: false,
@@ -254,6 +347,36 @@ export default function Home() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [view]);
+
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      const currentUser = data.session?.user ?? null;
+      setUser(currentUser);
+      setAuthLoading(false);
+      if (currentUser) void loadCustomersFromDb();
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      setAuthLoading(false);
+      if (currentUser) void loadCustomersFromDb();
+      else {
+        setCustomers([]);
+        setSelected(EMPTY_CUSTOMER);
+        setQuoteItems(EMPTY_CUSTOMER.quoteItems);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   const checklistItems = [
     { key: "worksheet", label: "Munkalap kitöltve" },
@@ -282,9 +405,184 @@ export default function Home() {
     setView("tasks");
   }
 
+
+  async function handleLogin() {
+    setLoginBusy(true);
+    setLoginMessage("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: loginEmail.trim(),
+      password: loginPassword,
+    });
+
+    setLoginBusy(false);
+    if (error) {
+      setLoginMessage("Nem sikerült belépni. Ellenőrizd az emailt és a jelszót.");
+    }
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setView("dashboard");
+  }
+
+  async function loadCustomersFromDb() {
+    setDataLoading(true);
+    setMessage("");
+
+    const { data: customerRows, error: customerError } = await supabase
+      .from("customers")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (customerError) {
+      setMessage(`Nem sikerült betölteni az ügyfeleket: ${customerError.message}`);
+      setDataLoading(false);
+      return;
+    }
+
+    const { data: quoteRows } = await supabase
+      .from("quotes")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    const { data: itemRows } = await supabase
+      .from("quote_items")
+      .select("*");
+
+    const { data: jobRows } = await supabase
+      .from("jobs")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    const quotesByCustomer = new Map<string, any>();
+    (quoteRows || []).forEach((quote: any) => {
+      if (!quotesByCustomer.has(quote.customer_id)) quotesByCustomer.set(quote.customer_id, quote);
+    });
+
+    const itemsByQuote = new Map<string, any[]>();
+    (itemRows || []).forEach((item: any) => {
+      const current = itemsByQuote.get(item.quote_id) || [];
+      current.push(item);
+      itemsByQuote.set(item.quote_id, current);
+    });
+
+    const jobsByCustomer = new Map<string, any>();
+    (jobRows || []).forEach((job: any) => {
+      if (!jobsByCustomer.has(job.customer_id)) jobsByCustomer.set(job.customer_id, job);
+    });
+
+    const loadedCustomers: Customer[] = (customerRows || []).map((row: any) => {
+      const quote = quotesByCustomer.get(row.id);
+      const job = jobsByCustomer.get(row.id);
+      const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
+
+      return {
+        id: row.id,
+        name: row.name || "",
+        city: row.city || "",
+        phone: row.phone || "",
+        email: row.email || "",
+        address: row.address || job?.address || "",
+        source: row.source || "Kézi rögzítés",
+        status: row.status || job?.status || "Visszahívandó",
+        need: row.need || "",
+        date: job?.scheduled_date || undefined,
+        time: job?.scheduled_time || undefined,
+        quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : [{ productId: PRODUCTS[0].id, quantity: 1 }],
+        productId: quoteItemsFromDb[0]?.productId,
+      };
+    });
+
+    setCustomers(loadedCustomers);
+    setSelected(loadedCustomers[0] || EMPTY_CUSTOMER);
+    setQuoteItems((loadedCustomers[0] || EMPTY_CUSTOMER).quoteItems);
+    setDataLoading(false);
+  }
+
+  async function persistCustomerToDb(customer: Customer) {
+    if (!user || !customer.id || !customer.name.trim()) return;
+
+    const { error: customerError } = await supabase.from("customers").upsert({
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone || null,
+      email: customer.email || null,
+      city: customer.city || null,
+      address: customer.address || null,
+      source: customer.source || "Kézi rögzítés",
+      status: customer.status || "Visszahívandó",
+      need: customer.need || null,
+      notes: null,
+      created_by: user.id,
+    });
+
+    if (customerError) throw customerError;
+
+    const { data: existingQuotes } = await supabase
+      .from("quotes")
+      .select("id")
+      .eq("customer_id", customer.id)
+      .limit(1);
+
+    let quoteId = existingQuotes?.[0]?.id as string | undefined;
+    const quotePayload = {
+      customer_id: customer.id,
+      status: customer.status || "Ajánlat készül",
+      total_amount: total(customer.quoteItems || []),
+      notes: null,
+      created_by: user.id,
+    };
+
+    if (quoteId) {
+      const { error } = await supabase.from("quotes").update(quotePayload).eq("id", quoteId);
+      if (error) throw error;
+    } else {
+      const { data, error } = await supabase.from("quotes").insert(quotePayload).select("id").single();
+      if (error) throw error;
+      quoteId = data.id;
+    }
+
+    if (quoteId) {
+      await supabase.from("quote_items").delete().eq("quote_id", quoteId);
+      if (customer.quoteItems?.length) {
+        const { error } = await supabase.from("quote_items").insert(customer.quoteItems.map((item) => quoteItemToRow(item, quoteId as string)));
+        if (error) throw error;
+      }
+    }
+
+    if (customer.date) {
+      const { data: existingJobs } = await supabase
+        .from("jobs")
+        .select("id")
+        .eq("customer_id", customer.id)
+        .limit(1);
+
+      const jobPayload = {
+        customer_id: customer.id,
+        quote_id: quoteId || null,
+        title: customer.name,
+        scheduled_date: customer.date,
+        scheduled_time: customer.time || "08:00",
+        status: customer.status || "Időpont foglalva",
+        address: customer.address || null,
+        notes: customer.need || null,
+        created_by: user.id,
+      };
+
+      const jobId = existingJobs?.[0]?.id as string | undefined;
+      const { error } = jobId
+        ? await supabase.from("jobs").update(jobPayload).eq("id", jobId)
+        : await supabase.from("jobs").insert(jobPayload);
+      if (error) throw error;
+    } else if (customer.status === "Lemondva") {
+      await supabase.from("jobs").delete().eq("customer_id", customer.id);
+    }
+  }
+
   function startNewCustomer() {
     const fresh: Customer = {
-      id: `new-${Date.now()}`,
+      id: crypto.randomUUID(),
       name: "",
       city: "",
       phone: "",
@@ -307,10 +605,15 @@ export default function Home() {
     setSelected((prev) => ({ ...prev, [field]: value }));
   }
 
-  function saveCustomerData() {
-    setCustomers((prev) => prev.map((customer) => customer.id === selected.id ? selected : customer));
-    setEditCustomer(false);
-    setMessage("Ügyféladatok mentve ✅");
+  async function saveCustomerData() {
+    try {
+      await persistCustomerToDb(selected);
+      setCustomers((prev) => prev.map((customer) => customer.id === selected.id ? selected : customer));
+      setEditCustomer(false);
+      setMessage("Ügyféladatok mentve ✅");
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
 
   function updateCustomerStatus(value: string) {
@@ -321,7 +624,7 @@ export default function Home() {
     setWorkChecklist((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
-  function saveCustomer(nextView: View = "quote") {
+  async function saveCustomer(nextView: View = "quote") {
     const autoStatus =
       nextView === "quote"
         ? "Ajánlat készül"
@@ -345,11 +648,16 @@ export default function Home() {
       return [customerToSave, ...prev];
     });
 
-    setMessage("Ügyfél mentve ✅");
-    setView(nextView);
+    try {
+      await persistCustomerToDb(customerToSave);
+      setMessage("Ügyfél mentve ✅");
+      setView(nextView);
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
 
-  function saveCustomerOnly() {
+  async function saveCustomerOnly() {
     const customerToSave: Customer = {
       ...selected,
       source: selected.source || "Kézi rögzítés",
@@ -366,8 +674,13 @@ export default function Home() {
       return [customerToSave, ...prev];
     });
 
-    setMessage("Ügyféladatok mentve ✅");
-    setView("dashboard");
+    try {
+      await persistCustomerToDb(customerToSave);
+      setMessage("Ügyféladatok mentve ✅");
+      setView("dashboard");
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
   function step(d:number) {
     const n = new Date(calDate);
@@ -380,15 +693,20 @@ export default function Home() {
     setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {...it, [key]: value} : it));
   }
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
-  function saveSchedule() {
+  async function saveSchedule() {
     const updated:Customer = {...selected, date:scheduleDate, time:shownTime, status:"Időpont foglalva", quoteItems, productId:quoteItems[0].productId, isFresh:true};
-    setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
-    setSelected(updated);
-    setMessage("Időpont mentve a naptárba ✅");
-    setView("dashboard");
+    try {
+      await persistCustomerToDb(updated);
+      setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
+      setSelected(updated);
+      setMessage("Időpont mentve a naptárba ✅");
+      setView("dashboard");
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
 
-  function saveWorkChanges() {
+  async function saveWorkChanges() {
     const newQty = qty(quoteItems);
     const updatedTime = newQty >= 2 ? "08:00 + 12:00" : (selected.time || scheduleTime || "08:00");
     const updated: Customer = {
@@ -400,10 +718,15 @@ export default function Home() {
       isFresh: true,
     };
 
-    setSelected(updated);
-    setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
-    setMessage("Időpont klímái módosítva ✅");
-    setView("dashboard");
+    try {
+      await persistCustomerToDb(updated);
+      setSelected(updated);
+      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+      setMessage("Időpont klímái módosítva ✅");
+      setView("dashboard");
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
 
   function perClimateMaterialAmount(materialName: string) {
@@ -453,7 +776,7 @@ export default function Home() {
     }));
   }
 
-  function markInstallationDone() {
+  async function markInstallationDone() {
     const error = stockErrorMessage();
     if (error) {
       setMessage(error);
@@ -471,13 +794,18 @@ export default function Home() {
       stockDeducted: true,
     };
 
-    setSelected(updated);
-    setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
-    setMessage("Szerelés kész ✅ Készlet levonva, admin még folyamatban.");
-    setView("work");
+    try {
+      await persistCustomerToDb(updated);
+      setSelected(updated);
+      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+      setMessage("Szerelés kész ✅ Készlet levonva, admin még folyamatban.");
+      setView("work");
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
 
-  function closeWork() {
+  async function closeWork() {
     const error = stockErrorMessage();
     if (error) {
       setMessage(error);
@@ -500,13 +828,18 @@ export default function Home() {
       stockDeducted: true,
     };
 
-    setSelected(updated);
-    setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
-    setMessage("Munka teljesen lezárva ✅ Készlet levonva, admin ellenőrzés kész.");
-    setView("dashboard");
+    try {
+      await persistCustomerToDb(updated);
+      setSelected(updated);
+      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+      setMessage("Munka teljesen lezárva ✅ Készlet levonva, admin ellenőrzés kész.");
+      setView("dashboard");
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
 
-  function cancelAppointment() {
+  async function cancelAppointment() {
     const updated: Customer = {
       ...selected,
       date: undefined,
@@ -515,10 +848,15 @@ export default function Home() {
       isFresh: false,
     };
 
-    setSelected(updated);
-    setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
-    setMessage("Időpont törölve / lemondva ✅ A foglalás felszabadult.");
-    setView("dashboard");
+    try {
+      await persistCustomerToDb(updated);
+      setSelected(updated);
+      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+      setMessage("Időpont törölve / lemondva ✅ A foglalás felszabadult.");
+      setView("dashboard");
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
   function addExtraMaterial() { setMaterials(prev=>[...prev, { name:"Egyéb anyag", qty:"1", unit:"db", isExtra:true }]); }
   function updateMaterial(i:number, key:"name"|"qty"|"unit", value:string) {
@@ -647,6 +985,19 @@ export default function Home() {
     return toNumber(finalMaterialQty(material));
   }
 
+
+
+  if (authLoading) {
+    return <main className="min-h-screen bg-slate-950 p-8 text-slate-100"><div className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-slate-900/80 p-6 font-black">AlinFlow betöltése...</div></main>;
+  }
+
+  if (!user) {
+    return <LoginScreen email={loginEmail} password={loginPassword} message={loginMessage} loading={loginBusy} onEmail={setLoginEmail} onPassword={setLoginPassword} onSubmit={handleLogin} />;
+  }
+
+  if (dataLoading) {
+    return <main className="min-h-screen bg-slate-950 p-8 text-slate-100"><div className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-slate-900/80 p-6 font-black">Adatok betöltése Supabase-ből...</div></main>;
+  }
 
   if (view==="tasks") {
     const taskTitleMap: Record<string, string> = {
@@ -1152,7 +1503,7 @@ export default function Home() {
               </div>
             </Card></Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v44 · Vercel type fix</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1><p className="mt-2 max-w-2xl text-slate-300">Meta lead → ajánlat → időpont → szerelés → számla → NKVH → raktárlezárás egy helyen.</p></div><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={customers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={customers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{customers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v44 · Vercel type fix</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1><p className="mt-2 max-w-2xl text-slate-300">Meta lead → ajánlat → időpont → szerelés → számla → NKVH → raktárlezárás egy helyen.</p></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={customers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={customers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{customers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);

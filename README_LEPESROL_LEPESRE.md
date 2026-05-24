@@ -53,3 +53,16 @@ Ha ez fut a gépeden, utána jön:
 - Vercel feltöltés
 - Supabase projekt
 - első valódi ügyfél mentése adatbázisba
+
+
+## AlinFlow Supabase admin verzió
+
+- / oldalon bejelentkezés szükséges Supabase Auth-tal.
+- Ügyfelek mentése: customers tábla.
+- Ajánlatok mentése: quotes + quote_items táblák.
+- Időpontok/munkák mentése: jobs tábla.
+- Vercelben szükséges env változók:
+  - NEXT_PUBLIC_SUPABASE_URL
+  - NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+Feltöltés után a Vercel automatikusan új deployt indít.
