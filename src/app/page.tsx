@@ -341,6 +341,9 @@ export default function Home() {
   const [loginPassword,setLoginPassword] = useState("");
   const [loginBusy,setLoginBusy] = useState(false);
   const [loginMessage,setLoginMessage] = useState("");
+  const [quoteEmailBusy,setQuoteEmailBusy] = useState(false);
+  const [appointmentEmailBusy,setAppointmentEmailBusy] = useState(false);
+  const [sendAppointmentNotice,setSendAppointmentNotice] = useState(true);
   const [editCustomer,setEditCustomer] = useState(false);
   const [workChecklist,setWorkChecklist] = useState<Record<string, boolean>>({
     worksheet: false,
@@ -716,7 +719,14 @@ export default function Home() {
       await persistCustomerToDb(updated);
       setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
       setSelected(updated);
-      setMessage("Időpont mentve a naptárba ✅");
+
+      if (sendAppointmentNotice) {
+        const sent = await sendAppointmentEmailFor(updated);
+        setMessage(sent ? "Időpont mentve és tájékoztató email elküldve ✅" : "Időpont mentve, de az email küldése nem sikerült.");
+      } else {
+        setMessage("Időpont mentve a naptárba ✅ Email nem ment ki.");
+      }
+
       setView("dashboard");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
@@ -1321,30 +1331,102 @@ export default function Home() {
   }
 
 
-  function quoteEmailText() {
-    const itemsText = quoteItems.map((item) => {
-      const p = prod(item.productId);
-      return `${item.quantity} db ${itemName(item)} – ${ft(itemTotal(item))}`;
-    }).join("%0D%0A");
+  function quotePayload(customer: Customer = selected, items: QuoteItem[] = quoteItems) {
+    const quoteTotal = total(items);
+    const quoteCount = qty(items);
+    const installerAmount = Math.min(60000 * quoteCount, quoteTotal);
+    const materialAmount = Math.max(0, quoteTotal - installerAmount);
 
-    return `Kedves ${selected.name || "Ügyfelünk"}!%0D%0A%0D%0AA telefonos egyeztetés alapján az alábbi klímás ajánlatot küldöm:%0D%0A%0D%0A${itemsText}%0D%0A%0D%0ABruttó végösszeg: ${ft(t)}%0D%0A%0D%0AAz ár alapszereléssel együtt értendő. Az alapszerelés tartalmazza többek között a max. 3 m szigetelt rézcső-párt, faláttörést, konzolt, kábelcsatornát, vákuumozást, beüzemelést és felhasználói betanítást. Az ajánlat 7 napig érvényes.%0D%0A%0D%0AÜdvözlettel:%0D%0AAdorján Alin%0DKLIMAlin`;
-  }
-
-  function quoteMailto() {
-    const subject = encodeURIComponent("Klíma ajánlat – KLIMAlin");
-    return `mailto:${selected.email || ""}?subject=${subject}&body=${quoteEmailText()}`;
-  }
-
-  function markQuoteSent() {
-    const updated: Customer = {
-      ...selected,
-      status: "Ajánlat elküldve",
-      quoteItems,
+    return {
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        city: customer.city,
+        phone: customer.phone,
+        email: customer.email,
+        address: customer.address,
+        need: customer.need,
+        date: customer.date,
+        time: customer.time,
+      },
+      items: items.map((item) => ({
+        name: itemName(item),
+        quantity: item.quantity,
+        unitPrice: itemUnitPrice(item),
+        totalPrice: itemTotal(item),
+      })),
+      totalAmount: quoteTotal,
+      installerAmount,
+      materialAmount,
     };
+  }
 
-    setSelected(updated);
-    setCustomers((prev) => prev.map((customer) => customer.id === updated.id ? updated : customer));
-    setMessage("Ajánlat elküldve státuszra állítva ✅");
+  async function sendQuoteEmail() {
+    if (!selected.email?.trim()) {
+      setMessage("Az ajánlat elküldéséhez előbb add meg az ügyfél email címét.");
+      return;
+    }
+
+    setQuoteEmailBusy(true);
+    setMessage("Ajánlat email küldése folyamatban...");
+
+    try {
+      const response = await fetch("/api/send-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(quotePayload()),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Nem sikerült elküldeni az ajánlat emailt.");
+      }
+
+      const updated: Customer = {
+        ...selected,
+        status: "Ajánlat elküldve",
+        quoteItems,
+      };
+
+      await persistCustomerToDb(updated);
+      setSelected(updated);
+      setCustomers((prev) => prev.map((customer) => customer.id === updated.id ? updated : customer));
+      setMessage("Ajánlat elküldve PDF csatolmánnyal ✅");
+    } catch (error: any) {
+      setMessage(`Email küldési hiba: ${error.message}`);
+    } finally {
+      setQuoteEmailBusy(false);
+    }
+  }
+
+  async function sendAppointmentEmailFor(customer: Customer) {
+    if (!customer.email?.trim()) {
+      setMessage("Az időpont emailhez előbb add meg az ügyfél email címét.");
+      return false;
+    }
+
+    setAppointmentEmailBusy(true);
+
+    try {
+      const response = await fetch("/api/send-appointment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(quotePayload(customer, customer.quoteItems || quoteItems)),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Nem sikerült elküldeni az időpont emailt.");
+      }
+
+      setMessage("Időpont tájékoztató email elküldve ✅");
+      return true;
+    } catch (error: any) {
+      setMessage(`Időpont email küldési hiba: ${error.message}`);
+      return false;
+    } finally {
+      setAppointmentEmailBusy(false);
+    }
   }
 
   if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/></div></Card><Card title="Telefonos jegyzet"><textarea className="input min-h-32" defaultValue=""/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
@@ -1382,7 +1464,7 @@ export default function Home() {
                 <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button>
                 <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={addManualQuoteItem}>+ Egyedi tétel</button>
               </div>
-            </Card><Card title="Ár és belső bontás">{quoteItems.map((it,i)=><InfoRow key={i} label={`${it.quantity} db · ${itemName(it)}`} value={ft(itemTotal(it))} />)}<div className="mt-3 flex justify-between rounded-3xl bg-cyan-300 p-5 text-xl text-slate-950"><b>Ügyfél által fizetendő</b><b>{ft(t)}</b></div><div className="mt-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5"><InfoRow label="Adorján Alin E.V. — telepítési munkadíj" value={ft(installer)}/><InfoRow label="AMOVA 4U Kft. — klíma + szerelési anyagok" value={ft(materialPrice)}/></div></Card></Main><Side><Gradient title="Ajánlat státusz" value="Küldésre kész"/><Card title="Gyors műveletek"><a href={quoteMailto()} onClick={markQuoteSent} className="block rounded-3xl bg-gradient-to-br from-blue-400 to-indigo-500 px-5 py-4 text-center font-black text-white shadow-xl">Ajánlat küldése emailben</a><Btn color="cyan" onClick={()=>{updateCustomerStatus("Ajánlat elküldve"); setView("schedule")}}>Időpont keresése</Btn></Card></Side></Layout></Shell>;
+            </Card><Card title="Ár és belső bontás">{quoteItems.map((it,i)=><InfoRow key={i} label={`${it.quantity} db · ${itemName(it)}`} value={ft(itemTotal(it))} />)}<div className="mt-3 flex justify-between rounded-3xl bg-cyan-300 p-5 text-xl text-slate-950"><b>Ügyfél által fizetendő</b><b>{ft(t)}</b></div><div className="mt-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5"><InfoRow label="Adorján Alin E.V. — telepítési munkadíj" value={ft(installer)}/><InfoRow label="AMOVA 4U Kft. — klíma + szerelési anyagok" value={ft(materialPrice)}/></div></Card></Main><Side><Gradient title="Ajánlat státusz" value="Küldésre kész"/><Card title="Gyors műveletek"><button onClick={sendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-3xl bg-gradient-to-br from-blue-400 to-indigo-500 px-5 py-4 text-center font-black text-white shadow-xl disabled:cursor-wait disabled:opacity-60">{quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése PDF csatolmánnyal"}</button><Btn color="cyan" onClick={()=>{updateCustomerStatus("Ajánlat elküldve"); setView("schedule")}}>Időpont keresése</Btn></Card></Side></Layout></Shell>;
 
 
   if (view==="quotePreview") {
@@ -1491,7 +1573,7 @@ export default function Home() {
             <div className="no-print"><Card title="Ajánlat műveletek">
               <div className="space-y-3">
                 <Btn color="blue" onClick={()=>window.print()}>Nyomtatás / mentés PDF-be</Btn>
-                <a href={quoteMailto()} onClick={markQuoteSent} className="block rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950">Ajánlat küldése emailben</a>
+                <button onClick={sendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">{quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése PDF csatolmánnyal"}</button>
                 <Btn color="cyan" onClick={()=>setView("schedule")}>Időpont keresése</Btn>
               </div>
             </Card></div>
@@ -1504,7 +1586,7 @@ export default function Home() {
   if (view==="schedule") {
     const booked = customers.filter(c=>c.date===scheduleDate).flatMap(c=>occupiedSlots(c));
     const free = BASE_SLOTS.filter(s=>!booked.includes(s));
-    return <Shell><Back onClick={()=>setView("quote")}/><Hero title="Időpont választása" sub={`${selected.name} · ${selected.city}`} action="Időpont mentése" onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák">{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteItem(i,"productId",v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><Btn color="green" onClick={saveSchedule}>Időpont mentése</Btn></Card></Side></Layout></Shell>;
+    return <Shell><Back onClick={()=>setView("quote")}/><Hero title="Időpont választása" sub={`${selected.name} · ${selected.city}`} action="Időpont mentése" onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák">{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteItem(i,"productId",v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200"><input type="checkbox" checked={sendAppointmentNotice} onChange={e=>setSendAppointmentNotice(e.target.checked)} className="mt-1 h-5 w-5 accent-cyan-300"/><span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span></label><Btn color="green" onClick={saveSchedule}>{appointmentEmailBusy ? "Mentés és email küldés..." : "Időpont mentése"}</Btn></Card></Side></Layout></Shell>;
   }
 
   if (view==="work") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={`${selected.name} — Munkaoldal`} sub={`${selected.city} · ${selected.date || scheduleDate} · ${selected.time || shownTime}`} action="Teljes lezárás ellenőrzése" onAction={closeWork}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Ügyféladatok"><div className="mb-4 flex flex-wrap gap-3">{editCustomer ? <Btn color="green" onClick={saveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={()=>setEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}{editCustomer ? <button onClick={()=>setEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}</div><CustomerGrid c={selected} editable={editCustomer} onChange={updateSelectedField}/></Card><Card title="Időponthoz tartozó klímák">
@@ -1586,6 +1668,7 @@ export default function Home() {
             <Card title="Lezárási műveletek">
               <p className="mb-4 text-sm text-slate-400">Először jelöld készre a szerelést, majd az admin dokumentumok után jöhet a teljes lezárás.</p>
               <div className="space-y-3">
+                <StepButton color="blue" onClick={()=>sendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
                 <StepButton color="green" onClick={markInstallationDone}>Szerelés kész – admin folyamatban</StepButton>
                 <StepButton color="blue" onClick={closeWork}>Teljes lezárás</StepButton>
                 <button onClick={cancelAppointment} className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-red-500 to-rose-500 px-5 py-4 text-left font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
@@ -1595,7 +1678,7 @@ export default function Home() {
               </div>
             </Card></Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v45</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v46 · email</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
