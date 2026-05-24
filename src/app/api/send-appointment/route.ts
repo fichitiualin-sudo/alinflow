@@ -29,6 +29,11 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, "&#039;");
 }
 
+
+function uniqueEmailRef(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function formatDate(value?: string) {
   if (!value) return "egyeztetett időpont";
   const date = new Date(`${value}T00:00:00`);
@@ -147,6 +152,9 @@ export async function POST(request: Request) {
         to: [to],
         reply_to: replyTo,
         subject: "Időpont visszaigazolás – KLIMAlin",
+        headers: {
+          "X-Entity-Ref-ID": uniqueEmailRef("klimalin-appointment"),
+        },
         html: appointmentEmailHtml(customer, items),
       }),
     });

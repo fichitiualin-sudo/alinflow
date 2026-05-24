@@ -66,6 +66,11 @@ function signatureBase64(dataUrl?: string) {
   return match?.[2] || "";
 }
 
+
+function uniqueEmailRef(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function itemsHtml(items: QuoteItem[]) {
   if (!items.length) {
     return `<div style="padding:14px 0;border-bottom:1px solid #e5e7eb"><strong>Klímatelepítés</strong><br><span style="color:#64748b">Szereléssel együtt, egyeztetés szerint.</span></div>`;
@@ -93,7 +98,8 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
   const notes = escapeHtml(report.notes || "").replace(/\n/g, "<br>");
   const signer = escapeHtml(report.signerName || customer.name || "");
   const signedAt = escapeHtml(formatDateTime(report.signedAt));
-  const signature = safeText(report.signatureDataUrl);
+  const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
+  const signatureCid = "ugyfel-alairas";
 
   return `<!doctype html>
 <html lang="hu">
@@ -165,7 +171,7 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
 
           <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:18px;padding:18px 20px;margin-bottom:22px">
             <div style="font-size:14px;color:#64748b;margin-bottom:8px">Ügyfél egyszerű aláírása</div>
-            ${signature ? `<img src="${escapeAttribute(signature)}" alt="Ügyfél aláírása" style="display:block;width:100%;max-width:420px;height:auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;margin-bottom:10px" />` : `<div style="padding:18px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;color:#64748b">Nincs rögzített aláírás.</div>`}
+            ${hasSignature ? `<img src="cid:${signatureCid}" alt="Ügyfél aláírása" style="display:block;width:100%;max-width:420px;height:auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;margin-bottom:10px" />` : `<div style="padding:18px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;color:#64748b">Nincs rögzített aláírás.</div>`}
             <div style="font-size:14px;line-height:1.6;color:#334155"><strong>Aláíró:</strong> ${signer || "nincs megadva"}<br><strong>Aláírás ideje:</strong> ${signedAt}</div>
           </div>
 
@@ -194,7 +200,9 @@ export async function POST(request: Request) {
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
 
     const sigBase64 = signatureBase64(report.signatureDataUrl);
-    const attachments = sigBase64 ? [{ filename: "ugyfel-alairas.png", content: sigBase64, content_type: "image/png" }] : undefined;
+    const attachments = sigBase64
+      ? [{ filename: "ugyfel-alairas.png", content: sigBase64, content_type: "image/png", content_id: "ugyfel-alairas" }]
+      : undefined;
 
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -207,6 +215,9 @@ export async function POST(request: Request) {
         to: [to],
         reply_to: replyTo,
         subject: "Klímaszerelési munkalap – KLIMAlin",
+        headers: {
+          "X-Entity-Ref-ID": uniqueEmailRef("klimalin-work-report"),
+        },
         html: workReportEmailHtml(customer, items, report),
         attachments,
       }),

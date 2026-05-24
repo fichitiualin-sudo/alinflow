@@ -33,6 +33,11 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, "&#039;");
 }
 
+
+function uniqueEmailRef(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function customerLine(value?: string) {
   const text = escapeHtml(value);
   return text ? `<div style="margin:3px 0;line-height:1.45">${text}</div>` : "";
@@ -192,6 +197,9 @@ export async function POST(request: Request) {
         to: [to],
         reply_to: replyTo,
         subject: "Klíma ajánlat – KLIMAlin",
+        headers: {
+          "X-Entity-Ref-ID": uniqueEmailRef("klimalin-quote"),
+        },
         html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount),
       }),
     });
