@@ -20,6 +20,15 @@ function safeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva") {
+  const city = safeText(cityValue);
+  const address = safeText(addressValue);
+  if (city && address) {
+    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
+  }
+  return address || city || fallback;
+}
+
 function escapeHtml(value: unknown) {
   return safeText(value)
     .replace(/&/g, "&amp;")
@@ -55,7 +64,7 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const date = escapeHtml(formatDate(customer.date));
   const time = escapeHtml(customer.time || "egyeztetés szerint");
-  const address = escapeHtml(customer.address || customer.city || "egyeztetés szerint");
+  const address = escapeHtml(fullAddress(customer.city, customer.address, "egyeztetés szerint"));
   const phone = escapeHtml(customer.phone || "");
 
   return `<!doctype html>

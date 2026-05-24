@@ -173,8 +173,6 @@ const DEFAULT_MATERIALS = [
   { name:"3×1,5 gumikábel", qty:"5", unit:"m", isExtra:false },
   { name:"5×1,5 gumikábel", qty:"2,5", unit:"m", isExtra:false },
   { name:"160-as csavar", qty:"4", unit:"db", isExtra:false },
-  { name:"6-os / 8-as / 10-es csavar", qty:"faltól függően", unit:"db", isExtra:false },
-  { name:"Kondenzvízcső", qty:"szükség szerint", unit:"m", isExtra:false },
 ];
 const MATERIAL_STOCK = [
   { name: "Alukasírozott rézcső", stock: 41, unit: "m", lowAt: 15 },
@@ -184,8 +182,6 @@ const MATERIAL_STOCK = [
   { name: "3×1,5 gumikábel", stock: 52, unit: "m", lowAt: 20 },
   { name: "5×1,5 gumikábel", stock: 28, unit: "m", lowAt: 10 },
   { name: "160-as csavar", stock: 64, unit: "db", lowAt: 20 },
-  { name: "6/8/10-es csavar", stock: 80, unit: "db", lowAt: 25 },
-  { name: "Kondenzvízcső", stock: 35, unit: "m", lowAt: 15 },
 ];
 
 
@@ -202,6 +198,14 @@ function pad(n:number) { return String(n).padStart(2,"0"); }
 function iso(d:Date) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 function todayIso() { return iso(new Date()); }
 function offsetIso(days:number) { const d = new Date(); d.setDate(d.getDate()+days); return iso(d); }
+function fullCustomerAddress(customer: Pick<Customer, "city" | "address">) {
+  const city = (customer.city || "").trim();
+  const address = (customer.address || "").trim();
+  if (city && address) {
+    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
+  }
+  return address || city || "nincs megadva";
+}
 function weekStart(d:Date) { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay()+6)%7)); return x; }
 function calLabel(mode:CalendarMode, d:Date) {
   if (mode==="month") return `${d.getFullYear()}. ${pad(d.getMonth()+1)}`;
@@ -239,8 +243,17 @@ function telHref(phone: string) {
 }
 
 function mapsHref(customer: Customer) {
-  const destination = [customer.address, customer.city].filter(Boolean).join(", ");
+  const destination = displayAddress(customer) || customer.name || "";
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+}
+
+function displayAddress(customer: Pick<Customer, "city" | "address">) {
+  const city = (customer.city || "").trim();
+  const address = (customer.address || "").trim();
+  if (city && address) {
+    return address.toLocaleLowerCase("hu-HU").includes(city.toLocaleLowerCase("hu-HU")) ? address : `${city}, ${address}`;
+  }
+  return address || city || "";
 }
 
 const EMPTY_CUSTOMER: Customer = {
@@ -837,8 +850,6 @@ export default function Home() {
       "3×1,5 gumikábel": 5,
       "5×1,5 gumikábel": 2.5,
       "160-as csavar": 4,
-      "6/8/10-es csavar": 4,
-      "Kondenzvízcső": 3,
     };
     return perClimate[materialName] ?? 0;
   }
@@ -1023,8 +1034,6 @@ export default function Home() {
       "3×1,5 gumikábel": 5,
       "5×1,5 gumikábel": 2.5,
       "160-as csavar": 4,
-      "6/8/10-es csavar": 4,
-      "Kondenzvízcső": 3,
     };
     return perClimate[materialName] ?? 0;
   }
@@ -1732,7 +1741,7 @@ export default function Home() {
                     <p className="text-sm text-slate-500">Ügyfél</p>
                     <p className="mt-1 text-xl font-black">{selected.name || "Nincs név"}</p>
                     <p className="mt-1">{selected.city}</p>
-                    <p>{selected.address}</p>
+                    <p>{displayAddress(selected)}</p>
                     <p>{selected.email}</p>
                     <p>{selected.phone}</p>
                   </div>
@@ -1825,7 +1834,7 @@ export default function Home() {
     return <Shell><Back onClick={()=>setView("quote")}/><Hero title="Időpont választása" sub={`${selected.name} · ${selected.city}`} action="Időpont mentése" onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák"><p className="mb-4 text-sm leading-relaxed text-slate-400">Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. Telefonról is ugyanígy működik.</p>{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200"><input type="checkbox" checked={sendAppointmentNotice} onChange={e=>setSendAppointmentNotice(e.target.checked)} className="mt-1 h-5 w-5 accent-cyan-300"/><span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span></label><Btn color="green" onClick={saveSchedule}>{appointmentEmailBusy ? "Mentés és email küldés..." : "Időpont mentése"}</Btn></Card></Side></Layout></Shell>;
   }
 
-  if (view==="workReport") return <Shell><Back onClick={()=>setView("work")}/><Hero title="Klímás munkalap" sub={`${selected.name} · ${selected.city} · ${selected.date || scheduleDate}`} action={workReportBusy ? "Mentés..." : "Munkalap mentése"} onAction={()=>saveWorkReport(false)}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Munkalap adatai"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><Field label="Ügyfél" value={selected.name || "nincs megadva"}/><Field label="Telepítési cím" value={selected.address || selected.city || "nincs megadva"}/><Field label="Időpont" value={`${selected.date || scheduleDate} · ${selected.time || shownTime}`}/><Field label="Klíma" value={climateSummary(quoteItems)}/></div><label className="mt-5 block rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">Elvégzett munka leírása</span><textarea className="mt-2 min-h-32 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={workReport.workDescription} onChange={(event)=>updateWorkReportField("workDescription", event.target.value)} /></label><label className="mt-4 block rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">Munkalap megjegyzés</span><textarea className="mt-2 min-h-28 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={workReport.notes} onChange={(event)=>updateWorkReportField("notes", event.target.value)} placeholder="Például: ügyfél tájékoztatva, rendben átadva, egyedi megjegyzés..." /></label></Card><Card title="Egyszerű ügyfél aláírás"><p className="mb-4 text-sm leading-relaxed text-slate-400">Telefonon az ügyfél egyszerűen ujjal aláírhatja. Nem minősített elektronikus aláírás, hanem munkalap-átvételi visszaigazolás.</p><EditField label="Aláíró neve" value={workReport.signerName || selected.name || ""} onChange={(value)=>updateWorkReportField("signerName", value)} /><SignaturePad value={workReport.signatureDataUrl} onChange={(value)=>setWorkReport((prev)=>({ ...prev, signatureDataUrl: value, signedAt: value ? new Date().toISOString() : undefined }))}/>{workReport.signedAt ? <p className="mt-3 text-sm font-bold text-emerald-200">Aláírva: {formatSignedAt(workReport.signedAt)}</p> : <p className="mt-3 text-sm font-bold text-amber-200">Még nincs aláírás.</p>}</Card></Main><Side><Gradient title="Munkalap státusz" value={workReport.signatureDataUrl ? "Aláírva" : "Aláírásra vár"}/><Card title="Műveletek"><div className="grid grid-cols-1 gap-3"><StepButton color="green" onClick={()=>saveWorkReport(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton><StepButton color="blue" onClick={()=>saveWorkReport(true)}>{workReportEmailBusy ? "Email küldése..." : "Mentés és email küldése"}</StepButton></div><p className="mt-4 text-sm leading-relaxed text-slate-400">Az email telefonról és laptopról is ugyanazzal a Resend küldéssel megy ki. PDF nincs, így az ékezetek rendben maradnak.</p></Card><Card title="Email állapot"><InfoRow label="Ügyfél email" value={selected.email || "nincs megadva"}/><InfoRow label="Elküldve" value={workReport.emailSentAt ? formatSignedAt(workReport.emailSentAt) : "még nem"}/></Card></Side></Layout></Shell>;
+  if (view==="workReport") return <Shell><Back onClick={()=>setView("work")}/><Hero title="Klímás munkalap" sub={`${selected.name} · ${selected.city} · ${selected.date || scheduleDate}`} action={workReportBusy ? "Mentés..." : "Munkalap mentése"} onAction={()=>saveWorkReport(false)}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Munkalap adatai"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><Field label="Ügyfél" value={selected.name || "nincs megadva"}/><Field label="Telepítési cím" value={fullCustomerAddress(selected)}/><Field label="Időpont" value={`${selected.date || scheduleDate} · ${selected.time || shownTime}`}/><Field label="Klíma" value={climateSummary(quoteItems)}/></div><label className="mt-5 block rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">Elvégzett munka leírása</span><textarea className="mt-2 min-h-32 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={workReport.workDescription} onChange={(event)=>updateWorkReportField("workDescription", event.target.value)} /></label><label className="mt-4 block rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">Munkalap megjegyzés</span><textarea className="mt-2 min-h-28 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={workReport.notes} onChange={(event)=>updateWorkReportField("notes", event.target.value)} placeholder="Például: ügyfél tájékoztatva, rendben átadva, egyedi megjegyzés..." /></label></Card><Card title="Egyszerű ügyfél aláírás"><EditField label="Aláíró neve" value={workReport.signerName || selected.name || ""} onChange={(value)=>updateWorkReportField("signerName", value)} /><SignaturePad value={workReport.signatureDataUrl} onChange={(value)=>setWorkReport((prev)=>({ ...prev, signatureDataUrl: value, signedAt: value ? new Date().toISOString() : undefined }))}/>{workReport.signedAt ? <p className="mt-3 text-sm font-bold text-emerald-200">Aláírva: {formatSignedAt(workReport.signedAt)}</p> : <p className="mt-3 text-sm font-bold text-amber-200">Még nincs aláírás.</p>}</Card></Main><Side><Gradient title="Munkalap státusz" value={workReport.signatureDataUrl ? "Aláírva" : "Aláírásra vár"}/><Card title="Műveletek"><div className="grid grid-cols-1 gap-3"><StepButton color="green" onClick={()=>saveWorkReport(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton><StepButton color="blue" onClick={()=>saveWorkReport(true)}>{workReportEmailBusy ? "Email küldése..." : "Mentés és email küldése"}</StepButton></div><p className="mt-4 text-sm leading-relaxed text-slate-400">Az email telefonról és laptopról is ugyanazzal a Resend küldéssel megy ki. PDF nincs, így az ékezetek rendben maradnak.</p></Card><Card title="Email állapot"><InfoRow label="Ügyfél email" value={selected.email || "nincs megadva"}/><InfoRow label="Elküldve" value={workReport.emailSentAt ? formatSignedAt(workReport.emailSentAt) : "még nem"}/></Card></Side></Layout></Shell>;
 
   if (view==="work") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={`${selected.name} — Munkaoldal`} sub={`${selected.city} · ${selected.date || scheduleDate} · ${selected.time || shownTime}`} action="Teljes lezárás ellenőrzése" onAction={closeWork}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Ügyféladatok"><div className="mb-4 flex flex-wrap gap-3">{editCustomer ? <Btn color="green" onClick={saveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={()=>setEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}{editCustomer ? <button onClick={()=>setEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}</div><CustomerGrid c={selected} editable={editCustomer} onChange={updateSelectedField}/></Card><Card title="Időponthoz tartozó klímák">
               <div className="space-y-3">
@@ -2106,7 +2115,7 @@ function CustomerGrid({
       <Field label="Település" value={c.city} />
       <div className="rounded-2xl bg-slate-900/80 p-4">
         <p className="text-sm text-slate-400">Cím</p>
-        <p className="mt-1 text-lg font-black">{c.address || "nincs megadva"}</p>
+        <p className="mt-1 text-lg font-black">{displayAddress(c) || "nincs megadva"}</p>
         {c.address || c.city ? <a href={mapsHref(c)} target="_blank" rel="noreferrer" className="mt-3 block rounded-xl bg-cyan-300 px-4 py-3 text-center font-black text-slate-950">Útvonal tervezése</a> : null}
       </div>
       <div className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">

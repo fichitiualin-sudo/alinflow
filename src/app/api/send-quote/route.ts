@@ -24,6 +24,15 @@ function safeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva") {
+  const city = safeText(cityValue);
+  const address = safeText(addressValue);
+  if (city && address) {
+    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
+  }
+  return address || city || fallback;
+}
+
 function escapeHtml(value: unknown) {
   return safeText(value)
     .replace(/&/g, "&amp;")
@@ -66,8 +75,7 @@ function itemRows(items: QuoteItem[], totalAmount: number) {
 
 function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number) {
   const customerName = escapeHtml(customer.name || "Ügyfelünk");
-  const city = customerLine(customer.city);
-  const address = customerLine(customer.address);
+  const address = customerLine(fullAddress(customer.city, customer.address, "nincs megadva"));
   const email = customerLine(customer.email);
   const phone = customerLine(customer.phone);
 
@@ -108,7 +116,7 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
           <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin:0 0 18px 0">
             <div style="font-size:14px;color:#64748b;margin-bottom:7px">Ügyfél</div>
             <div style="font-size:21px;font-weight:900;color:#020617;margin-bottom:8px">${customerName}</div>
-            <div style="font-size:15px;color:#020617">${city}${address}${email}${phone}</div>
+            <div style="font-size:15px;color:#020617">${address}${email}${phone}</div>
           </div>
 
           <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin:0 0 20px 0">

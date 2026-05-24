@@ -29,6 +29,15 @@ function safeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva") {
+  const city = safeText(cityValue);
+  const address = safeText(addressValue);
+  if (city && address) {
+    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
+  }
+  return address || city || fallback;
+}
+
 function escapeHtml(value: unknown) {
   return safeText(value)
     .replace(/&/g, "&amp;")
@@ -90,7 +99,7 @@ function itemsHtml(items: QuoteItem[]) {
 
 function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: WorkReport) {
   const name = escapeHtml(customer.name || "Ügyfelünk");
-  const address = escapeHtml(customer.address || customer.city || "nincs megadva");
+  const address = escapeHtml(fullAddress(customer.city, customer.address, "nincs megadva"));
   const phone = escapeHtml(customer.phone || "");
   const date = escapeHtml(formatDate(customer.date));
   const time = escapeHtml(customer.time || "egyeztetés szerint");
