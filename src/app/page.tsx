@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
-type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "warehouse" | "tasks";
+type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "warehouse" | "tasks" | "archive";
 type CalendarMode = "week" | "month";
 type QuoteItem = { productId: string; quantity: number; customPrice?: number; customName?: string; isManual?: boolean };
 type InventoryItem = {
@@ -32,16 +32,14 @@ type Customer = {
 
 const STATUS_OPTIONS = [
   "Visszahívandó",
-  "Beszélve",
-  "Ajánlat készül",
   "Ajánlat elküldve",
-  "Időpont egyeztetés",
   "Időpont foglalva",
-  "Szerelés folyamatban",
   "Szerelés kész – admin folyamatban",
   "Lezárva",
   "Lemondva",
 ];
+
+const ARCHIVED_STATUSES = ["Lezárva", "Lemondva"];
 
 const PRODUCTS = [
   {
@@ -151,7 +149,7 @@ const PRODUCTS = [
 const INITIAL_CUSTOMERS: Customer[] = [
   { id:"c1", name:"Kovács Réka", city:"Hévízgyörk", phone:"+36 30 123 4567", email:"reka@email.hu", address:"2192 Hévízgyörk, Minta utca 12.", source:"Facebook hirdetés", status:"Időpont foglalva", need:"Hűtés · 35 m² nappali", date:"2026-05-12", time:"08:00", quoteItems:[{ productId: PRODUCTS[6]?.id || PRODUCTS[0].id, quantity:1 }] },
   { id:"c2", name:"Kovács Béla", city:"Gödöllő", phone:"+36 30 111 1111", email:"bela@email.hu", address:"2100 Gödöllő, Fő utca 4.", source:"Telefon", status:"Időpont foglalva", need:"Hűtés + fűtés · 42 m² nappali", date:"2026-05-11", time:"08:00", quoteItems:[{ productId: PRODUCTS[12]?.id || PRODUCTS[0].id, quantity:1 }] },
-  { id:"c3", name:"Nagy István", city:"Hatvan", phone:"+36 30 222 2222", email:"istvan@email.hu", address:"3000 Hatvan, Kossuth tér 2.", source:"Weboldal", status:"Felmérés", need:"Felmérés · 2 helyiség", date:"2026-05-11", time:"12:00", quoteItems:[{ productId: PRODUCTS[1]?.id || PRODUCTS[0].id, quantity:1 }] },
+  { id:"c3", name:"Nagy István", city:"Hatvan", phone:"+36 30 222 2222", email:"istvan@email.hu", address:"3000 Hatvan, Kossuth tér 2.", source:"Weboldal", status:"Visszahívandó", need:"Felmérés · 2 helyiség", date:"2026-05-11", time:"12:00", quoteItems:[{ productId: PRODUCTS[1]?.id || PRODUCTS[0].id, quantity:1 }] },
   { id:"l1", name:"Balogh Réka", city:"Hévízgyörk", phone:"+36 30 222 3344", email:"balogh.reka@email.hu", address:"2192 Hévízgyörk, Dózsa György út 5.", source:"Facebook hirdetés", status:"Visszahívandó", need:"Hűtés · 35 m² nappali", quoteItems:[{ productId: PRODUCTS[6]?.id || PRODUCTS[0].id, quantity:1 }] },
   { id:"l2", name:"Molnár Gábor", city:"Kartal", phone:"+36 30 666 6666", email:"gabor@email.hu", address:"2173 Kartal, Béke utca 9.", source:"Facebook hirdetés", status:"Ajánlat elküldve", need:"Hűtés + fűtés · 40 m² nappali", quoteItems:[{ productId: PRODUCTS[12]?.id || PRODUCTS[0].id, quantity:1 }] },
 ];
@@ -232,6 +230,23 @@ const EMPTY_CUSTOMER: Customer = {
   need: "",
   quoteItems: [{ productId: PRODUCTS[0].id, quantity: 1 }],
 };
+
+function normalizeStatus(status?: string) {
+  if (status && STATUS_OPTIONS.includes(status)) return status;
+  if (status === "Ajánlat készül" || status === "Időpont egyeztetés" || status === "Beszélve") return "Ajánlat elküldve";
+  if (status === "Szerelés folyamatban") return "Időpont foglalva";
+  return "Visszahívandó";
+}
+
+function isArchivedCustomer(customer: Customer) {
+  return ARCHIVED_STATUSES.includes(customer.status);
+}
+
+function climateSummary(items?: QuoteItem[]) {
+  const activeItems = items?.filter((item) => item.quantity > 0) || [];
+  if (!activeItems.length) return "Nincs klíma megadva";
+  return activeItems.map((item) => `${item.quantity} db ${itemName(item)}`).join(" + ");
+}
 
 function quoteItemFromRow(row: any): QuoteItem {
   const productById = PRODUCTS.find((product) => product.id === row.description);
@@ -343,6 +358,8 @@ export default function Home() {
   const materialPrice = Math.max(0, t-installer);
   const isMultiDayJob = q >= 2;
   const shownTime = isMultiDayJob ? "08:00 + 12:00" : scheduleTime;
+  const activeCustomers = customers.filter((customer) => !isArchivedCustomer(customer));
+  const archivedCustomers = customers.filter(isArchivedCustomer);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -485,7 +502,7 @@ export default function Home() {
         email: row.email || "",
         address: row.address || job?.address || "",
         source: row.source || "Kézi rögzítés",
-        status: row.status || job?.status || "Visszahívandó",
+        status: normalizeStatus(row.status || job?.status || "Visszahívandó"),
         need: row.need || "",
         date: job?.scheduled_date || undefined,
         time: job?.scheduled_time || undefined,
@@ -528,7 +545,7 @@ export default function Home() {
     let quoteId = existingQuotes?.[0]?.id as string | undefined;
     const quotePayload = {
       customer_id: customer.id,
-      status: customer.status || "Ajánlat készül",
+      status: normalizeStatus(customer.status || "Ajánlat elküldve"),
       total_amount: total(customer.quoteItems || []),
       notes: null,
       created_by: user.id,
@@ -564,7 +581,7 @@ export default function Home() {
         title: customer.name,
         scheduled_date: customer.date,
         scheduled_time: customer.time || "08:00",
-        status: customer.status || "Időpont foglalva",
+        status: normalizeStatus(customer.status || "Időpont foglalva"),
         address: customer.address || null,
         notes: customer.need || null,
         created_by: user.id,
@@ -617,7 +634,7 @@ export default function Home() {
   }
 
   function updateCustomerStatus(value: string) {
-    setSelected((prev) => ({ ...prev, status: value }));
+    setSelected((prev) => ({ ...prev, status: normalizeStatus(value) }));
   }
 
   function toggleChecklist(key: string) {
@@ -627,10 +644,10 @@ export default function Home() {
   async function saveCustomer(nextView: View = "quote") {
     const autoStatus =
       nextView === "quote"
-        ? "Ajánlat készül"
+        ? "Ajánlat elküldve"
         : nextView === "schedule"
-        ? "Időpont egyeztetés"
-        : selected.status || "Visszahívandó";
+        ? "Ajánlat elküldve"
+        : normalizeStatus(selected.status || "Visszahívandó");
 
     const customerToSave: Customer = {
       ...selected,
@@ -661,7 +678,7 @@ export default function Home() {
     const customerToSave: Customer = {
       ...selected,
       source: selected.source || "Kézi rögzítés",
-      status: selected.status || "Visszahívandó",
+      status: normalizeStatus(selected.status || "Visszahívandó"),
       quoteItems: quoteItems.length ? quoteItems : [{ productId: PRODUCTS[0].id, quantity: 1 }],
     };
 
@@ -858,6 +875,24 @@ export default function Home() {
       setMessage(`Mentési hiba: ${error.message}`);
     }
   }
+  async function restoreArchivedCustomer(customer: Customer) {
+    const restored: Customer = {
+      ...customer,
+      status: customer.date ? "Időpont foglalva" : "Visszahívandó",
+      isFresh: true,
+    };
+
+    try {
+      await persistCustomerToDb(restored);
+      setCustomers((prev) => prev.map((item) => item.id === restored.id ? restored : item));
+      setSelected(restored);
+      setMessage(`${restored.name || "Ügyfél"} visszaállítva ✅`);
+      setView(restored.date ? "work" : "lead");
+    } catch (error: any) {
+      setMessage(`Visszaállítási hiba: ${error.message}`);
+    }
+  }
+
   function addExtraMaterial() { setMaterials(prev=>[...prev, { name:"Egyéb anyag", qty:"1", unit:"db", isExtra:true }]); }
   function updateMaterial(i:number, key:"name"|"qty"|"unit", value:string) {
     setMaterials(prev=>prev.map((m,idx)=>idx===i ? {...m, [key]:value} : m));
@@ -1008,10 +1043,10 @@ export default function Home() {
       callback: "Visszahívandó leadek",
     };
 
-    const todayList = customers.filter(c => c.date === "2026-05-12" && c.status !== "Lezárva" && c.status !== "Lemondva");
-    const tomorrowList = customers.filter(c => c.date === "2026-05-13" && c.status !== "Lezárva" && c.status !== "Lemondva");
-    const closingList = customers.filter(c => c.date && c.status !== "Lezárva" && c.status !== "Lemondva");
-    const callbackList = customers.filter(c => !c.date && c.status === "Visszahívandó");
+    const todayList = activeCustomers.filter(c => c.date === "2026-05-12");
+    const tomorrowList = activeCustomers.filter(c => c.date === "2026-05-13");
+    const closingList = activeCustomers.filter(c => c.status === "Szerelés kész – admin folyamatban");
+    const callbackList = activeCustomers.filter(c => !c.date && c.status === "Visszahívandó");
     const stockList = PRODUCTS.filter((p:any) => reservedForProduct(p.id) > stockOf(p.id));
 
     const activeList =
@@ -1054,7 +1089,7 @@ export default function Home() {
                         <div>
                           <p className="text-lg font-black">{c.name}</p>
                           <p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p>
-                          <p className="mt-1 text-xs text-slate-500">{c.date ? `${c.date} · ${c.time}` : "nincs időpont"}</p>
+                          <p className="mt-1 text-xs text-slate-500">{c.date ? `${c.date} · ${c.time}` : "nincs időpont"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p>
                         </div>
                         <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span>
                       </div>
@@ -1080,13 +1115,73 @@ export default function Home() {
     );
   }
 
+  if (view === "archive") {
+    return (
+      <Shell>
+        <Back onClick={() => setView("dashboard")} />
+        <Hero
+          title="Lezárt / lemondott ügyfelek"
+          sub="Külön lista azoknak, akik már lezárva vagy lemondva státuszban vannak."
+          action="Vissza a főoldalra"
+          onAction={() => setView("dashboard")}
+        />
+        <Layout>
+          <Main>
+            <Card title="Archív ügyfelek">
+              <div className="space-y-3">
+                {archivedCustomers.length === 0 ? (
+                  <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Még nincs lezárt vagy lemondott ügyfél.</div>
+                ) : null}
+                {archivedCustomers.map((customer) => (
+                  <div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="text-lg font-black">{customer.name || "Névtelen ügyfél"}</p>
+                        <p className="text-sm text-slate-400">{customer.city || "nincs település"} · {customer.phone || "nincs telefonszám"}</p>
+                        <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
+                        <p className="mt-1 text-xs text-slate-500">{customer.date ? `${customer.date} · ${customer.time || "nincs idő"}` : "nincs időpont"}</p>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <span className={`rounded-2xl px-4 py-3 text-sm font-black ${customer.status === "Lezárva" ? "bg-emerald-400/20 text-emerald-200" : "bg-red-500/20 text-red-200"}`}>
+                          {customer.status}
+                        </span>
+                        <button
+                          onClick={() => openCustomer(customer, customer.date ? "work" : "lead")}
+                          className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-cyan-100"
+                        >
+                          Megnyitás
+                        </button>
+                        <button
+                          onClick={() => restoreArchivedCustomer(customer)}
+                          className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950"
+                        >
+                          Visszaállítás
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </Main>
+          <Side>
+            <Gradient title="Archív" value={`${archivedCustomers.length} ügyfél`} />
+            <Card title="Visszaállítás">
+              <p className="text-sm leading-relaxed text-slate-400">A visszaállítás gombbal az ügyfél újra aktív lesz. Időpontos ügyfélnél „Időpont foglalva”, időpont nélkülinél „Visszahívandó” státuszra kerül.</p>
+            </Card>
+          </Side>
+        </Layout>
+      </Shell>
+    );
+  }
+
   if (view === "warehouse") {
     return (
       <Shell>
         <Back onClick={() => setView("dashboard")} />
         <Hero
           title="Raktárkészlet"
-          sub="Raktáron / lefoglalva / szabad készlet. Időpont rögzítéskor foglal, lezáráskor később von le."
+          sub="Készletkezelés és bevételezés."
           action="Készlet kezelése"
         />
 
@@ -1147,9 +1242,6 @@ export default function Home() {
             </Card>
 
             <Card title="Szerelési anyagok">
-              <p className="mb-4 text-sm text-slate-400">
-                Ugyanaz a logika, mint a klímáknál: raktáron / lefoglalva / szabad. Időpontnál foglal, telepítés lezárásakor később von le.
-              </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {materialInventory.map((item: any) => {
                   const reserved = materialReserved(item.name);
@@ -1258,7 +1350,7 @@ export default function Home() {
   if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/></div></Card><Card title="Telefonos jegyzet"><textarea className="input min-h-32" defaultValue=""/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
               <p className="mb-4 text-sm text-slate-400">Először mentsd az ügyfelet, majd készíts ajánlatot. Időpontot az ajánlat után adunk.</p>
               <div className="grid grid-cols-1 gap-3">
-                <StepButton color="green" href={telHref(selected.phone)} onClick={()=>updateCustomerStatus("Beszélve")}>Hívás</StepButton>
+                <StepButton color="green" href={telHref(selected.phone)}>Hívás</StepButton>
                 <StepButton color="amber" onClick={saveCustomerOnly}>Mentés</StepButton>
                 <StepButton color="blue" onClick={()=>saveCustomer("quote")}>Mentés és ajánlat</StepButton>
               </div>
@@ -1290,7 +1382,7 @@ export default function Home() {
                 <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button>
                 <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={addManualQuoteItem}>+ Egyedi tétel</button>
               </div>
-            </Card><Card title="Ár és belső bontás">{quoteItems.map((it,i)=><InfoRow key={i} label={`${it.quantity} db · ${itemName(it)}`} value={ft(itemTotal(it))} />)}<div className="mt-3 flex justify-between rounded-3xl bg-cyan-300 p-5 text-xl text-slate-950"><b>Ügyfél által fizetendő</b><b>{ft(t)}</b></div><div className="mt-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5"><InfoRow label="Adorján Alin E.V. — telepítési munkadíj" value={ft(installer)}/><InfoRow label="AMOVA 4U Kft. — klíma + szerelési anyagok" value={ft(materialPrice)}/></div></Card></Main><Side><Gradient title="Ajánlat státusz" value="Küldésre kész"/><Card title="Gyors műveletek"><a href={quoteMailto()} onClick={markQuoteSent} className="block rounded-3xl bg-gradient-to-br from-blue-400 to-indigo-500 px-5 py-4 text-center font-black text-white shadow-xl">Ajánlat küldése emailben</a><Btn color="cyan" onClick={()=>{updateCustomerStatus("Időpont egyeztetés"); setView("schedule")}}>Időpont keresése</Btn></Card></Side></Layout></Shell>;
+            </Card><Card title="Ár és belső bontás">{quoteItems.map((it,i)=><InfoRow key={i} label={`${it.quantity} db · ${itemName(it)}`} value={ft(itemTotal(it))} />)}<div className="mt-3 flex justify-between rounded-3xl bg-cyan-300 p-5 text-xl text-slate-950"><b>Ügyfél által fizetendő</b><b>{ft(t)}</b></div><div className="mt-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5"><InfoRow label="Adorján Alin E.V. — telepítési munkadíj" value={ft(installer)}/><InfoRow label="AMOVA 4U Kft. — klíma + szerelési anyagok" value={ft(materialPrice)}/></div></Card></Main><Side><Gradient title="Ajánlat státusz" value="Küldésre kész"/><Card title="Gyors műveletek"><a href={quoteMailto()} onClick={markQuoteSent} className="block rounded-3xl bg-gradient-to-br from-blue-400 to-indigo-500 px-5 py-4 text-center font-black text-white shadow-xl">Ajánlat küldése emailben</a><Btn color="cyan" onClick={()=>{updateCustomerStatus("Ajánlat elküldve"); setView("schedule")}}>Időpont keresése</Btn></Card></Side></Layout></Shell>;
 
 
   if (view==="quotePreview") {
@@ -1412,7 +1504,7 @@ export default function Home() {
   if (view==="schedule") {
     const booked = customers.filter(c=>c.date===scheduleDate).flatMap(c=>occupiedSlots(c));
     const free = BASE_SLOTS.filter(s=>!booked.includes(s));
-    return <Shell><Back onClick={()=>setView("quote")}/><Hero title="Időpont választása" sub={`${selected.name} · ${selected.city}`} action="Időpont mentése" onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={customers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák">{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteItem(i,"productId",v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><Btn color="green" onClick={saveSchedule}>Időpont mentése</Btn></Card></Side></Layout></Shell>;
+    return <Shell><Back onClick={()=>setView("quote")}/><Hero title="Időpont választása" sub={`${selected.name} · ${selected.city}`} action="Időpont mentése" onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák">{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteItem(i,"productId",v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><Btn color="green" onClick={saveSchedule}>Időpont mentése</Btn></Card></Side></Layout></Shell>;
   }
 
   if (view==="work") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={`${selected.name} — Munkaoldal`} sub={`${selected.city} · ${selected.date || scheduleDate} · ${selected.time || shownTime}`} action="Teljes lezárás ellenőrzése" onAction={closeWork}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Ügyféladatok"><div className="mb-4 flex flex-wrap gap-3">{editCustomer ? <Btn color="green" onClick={saveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={()=>setEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}{editCustomer ? <button onClick={()=>setEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}</div><CustomerGrid c={selected} editable={editCustomer} onChange={updateSelectedField}/></Card><Card title="Időponthoz tartozó klímák">
@@ -1503,7 +1595,7 @@ export default function Home() {
               </div>
             </Card></Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v44 · Vercel type fix</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1><p className="mt-2 max-w-2xl text-slate-300">Meta lead → ajánlat → időpont → szerelés → számla → NKVH → raktárlezárás egy helyen.</p></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={customers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={customers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{customers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v45</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
@@ -1536,7 +1628,7 @@ function Calendar({ mode, date, customers, onMode, onStep, onOpen, selectable, s
     const first=new Date(date.getFullYear(),date.getMonth(),1); const offset=(first.getDay()+6)%7; const last=new Date(date.getFullYear(),date.getMonth()+1,0); const total=Math.ceil((offset+last.getDate())/7)*7;
     return Array.from({length:total},(_,i)=>{ const d=new Date(date.getFullYear(),date.getMonth(),i-offset+1); return {d,current:d.getMonth()===date.getMonth()}; });
   }, [mode,date,start]);
-  return <Card title={selectable ? "Válassz napot a naptárból" : mode==="week" ? "Heti naptár" : "Havi naptár"}><div className="mb-5 flex flex-col gap-4"><div className="flex justify-end gap-2"><button onClick={()=>onMode("week")} className={mode==="week"?"tab-active":"tab"}>Heti</button><button onClick={()=>onMode("month")} className={mode==="month"?"tab-active":"tab"}>Havi</button></div><div className="grid grid-cols-[44px_1fr_44px] items-center gap-3"><button onClick={()=>onStep(-1)} className="arrow">‹</button><div className="rounded-2xl bg-cyan-300 px-5 py-3 text-center font-black text-slate-950">{calLabel(mode,date)}</div><button onClick={()=>onStep(1)} className="arrow">›</button></div></div><div className="mb-2 grid grid-cols-7 gap-2 text-center text-xs font-black text-slate-400"><div>H</div><div>K</div><div>Sze</div><div>Cs</div><div>P</div><div>Szo</div><div>V</div></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-7">{days.map(({d,current})=>{ const dayIso=iso(d); const jobs=customers.filter(c=>c.date===dayIso); const isSel=selectable&&selectedDate===dayIso; return <div key={dayIso} onClick={()=>selectable&&onSelect?.(dayIso)} className={`min-h-[125px] rounded-3xl border p-3 ${isSel?"border-emerald-300 bg-emerald-400/20":current?"border-white/10 bg-slate-900/80":"border-white/5 bg-slate-950/40 opacity-40"} ${selectable?"cursor-pointer hover:ring-2 hover:ring-emerald-300/50":""}`}><div className="mb-2 flex items-center justify-between"><b>{d.getDate()}</b>{jobs.length===0&&current?<span className="rounded-full bg-cyan-300/10 px-2 py-1 text-[10px] text-cyan-200">üres</span>:null}</div><div className="space-y-2">{jobs.map(j=><button key={j.id} onClick={e=>{e.stopPropagation();onOpen(j)}} className={`w-full rounded-2xl p-2 text-left hover:ring-2 hover:ring-cyan-300/50 ${j.isFresh?"bg-emerald-400/30 border border-emerald-300/40":"bg-white/10"}`}><p className="text-xs font-black">{j.time}</p><p className="mt-1 truncate text-xs font-semibold">{j.name}</p><p className="truncate text-[11px] opacity-70">{j.city}</p></button>)}</div></div>})}</div></Card>
+  return <Card title={selectable ? "Válassz napot a naptárból" : mode==="week" ? "Heti naptár" : "Havi naptár"}><div className="mb-5 flex flex-col gap-4"><div className="flex justify-end gap-2"><button onClick={()=>onMode("week")} className={mode==="week"?"tab-active":"tab"}>Heti</button><button onClick={()=>onMode("month")} className={mode==="month"?"tab-active":"tab"}>Havi</button></div><div className="grid grid-cols-[44px_1fr_44px] items-center gap-3"><button onClick={()=>onStep(-1)} className="arrow">‹</button><div className="rounded-2xl bg-cyan-300 px-5 py-3 text-center font-black text-slate-950">{calLabel(mode,date)}</div><button onClick={()=>onStep(1)} className="arrow">›</button></div></div><div className="mb-2 grid grid-cols-7 gap-2 text-center text-[11px] font-black text-slate-400"><div>Hétfő</div><div>Kedd</div><div>Szerda</div><div>Csütörtök</div><div>Péntek</div><div>Szombat</div><div>Vasárnap</div></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-7">{days.map(({d,current})=>{ const dayIso=iso(d); const jobs=customers.filter(c=>c.date===dayIso); const isSel=selectable&&selectedDate===dayIso; return <div key={dayIso} onClick={()=>selectable&&onSelect?.(dayIso)} className={`min-h-[125px] rounded-3xl border p-3 ${isSel?"border-emerald-300 bg-emerald-400/20":current?"border-white/10 bg-slate-900/80":"border-white/5 bg-slate-950/40 opacity-40"} ${selectable?"cursor-pointer hover:ring-2 hover:ring-emerald-300/50":""}`}><div className="mb-2 flex items-center justify-between"><b>{d.getDate()}</b>{jobs.length===0&&current?<span className="rounded-full bg-cyan-300/10 px-2 py-1 text-[10px] text-cyan-200">üres</span>:null}</div><div className="space-y-2">{jobs.map(j=><button key={j.id} onClick={e=>{e.stopPropagation();onOpen(j)}} className={`w-full rounded-2xl p-2 text-left hover:ring-2 hover:ring-cyan-300/50 ${j.isFresh?"bg-emerald-400/30 border border-emerald-300/40":"bg-white/10"}`}><p className="text-xs font-black">{j.time}</p><p className="mt-1 truncate text-xs font-semibold">{j.name}</p><p className="truncate text-[11px] text-cyan-100/80">{climateSummary(j.quoteItems)}</p><p className="truncate text-[11px] opacity-70">{j.city}</p></button>)}</div></div>})}</div></Card>
 }
 
 function Shell({children}:{children:React.ReactNode}){return <main className="min-h-screen bg-[#08111F] p-4 text-white md:p-8"><div className="mx-auto max-w-7xl space-y-8">{children}</div></main>}
@@ -1694,9 +1786,9 @@ function Stats({
   reservedForProduct: (productId: string) => number;
   onSelect?: (filter: "today" | "tomorrow" | "closing" | "stock" | "callback") => void;
 }) {
-  const todayJobs = customers.filter(c => c.date === "2026-05-12" && c.status !== "Lezárva" && c.status !== "Lemondva").length;
-  const tomorrowJobs = customers.filter(c => c.date === "2026-05-13" && c.status !== "Lezárva" && c.status !== "Lemondva").length;
-  const closingJobs = customers.filter(c => c.date && c.status !== "Lezárva" && c.status !== "Lemondva").length;
+  const todayJobs = customers.filter(c => c.date === "2026-05-12").length;
+  const tomorrowJobs = customers.filter(c => c.date === "2026-05-13").length;
+  const closingJobs = customers.filter(c => c.status === "Szerelés kész – admin folyamatban").length;
   const callbackLeads = customers.filter(c => !c.date && c.status === "Visszahívandó").length;
 
   const climateShortages = PRODUCTS.filter((p: any) => {
