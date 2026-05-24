@@ -22,6 +22,7 @@ type Customer = {
   source: string;
   status: string;
   need: string;
+  notes?: string;
   date?: string;
   time?: string;
   quoteItems: QuoteItem[];
@@ -205,6 +206,12 @@ function itemUnitPrice(item: QuoteItem) {
 function itemTotal(item: QuoteItem) {
   return itemUnitPrice(item) * item.quantity;
 }
+function itemPriceLine(item: QuoteItem) {
+  return item.isManual ? "Egyedi tétel" : `${ft(itemUnitPrice(item))} / db (telepítéssel együtt)`;
+}
+function hasCustomProductPrice(item: QuoteItem) {
+  return !item.isManual && itemUnitPrice(item) !== prod(item.productId).price;
+}
 function total(items:QuoteItem[]) { return items.reduce((s,i)=>s+itemTotal(i),0); }
 function occupiedSlots(customer:Customer) {
   if (!customer.time) return [];
@@ -228,6 +235,7 @@ const EMPTY_CUSTOMER: Customer = {
   source: "Kézi rögzítés",
   status: "Visszahívandó",
   need: "",
+  notes: "",
   quoteItems: [{ productId: PRODUCTS[0].id, quantity: 1 }],
 };
 
@@ -507,6 +515,7 @@ export default function Home() {
         source: row.source || "Kézi rögzítés",
         status: normalizeStatus(row.status || job?.status || "Visszahívandó"),
         need: row.need || "",
+        notes: row.notes || "",
         date: job?.scheduled_date || undefined,
         time: job?.scheduled_time || undefined,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : [{ productId: PRODUCTS[0].id, quantity: 1 }],
@@ -533,7 +542,7 @@ export default function Home() {
       source: customer.source || "Kézi rögzítés",
       status: customer.status || "Visszahívandó",
       need: customer.need || null,
-      notes: null,
+      notes: customer.notes || null,
       created_by: user.id,
     });
 
@@ -586,7 +595,7 @@ export default function Home() {
         scheduled_time: customer.time || "08:00",
         status: normalizeStatus(customer.status || "Időpont foglalva"),
         address: customer.address || null,
-        notes: customer.need || null,
+        notes: customer.notes || customer.need || null,
         created_by: user.id,
       };
 
@@ -611,6 +620,7 @@ export default function Home() {
       source: "Kézi rögzítés",
       status: "Visszahívandó",
       need: "",
+      notes: "",
       quoteItems: [{ productId: PRODUCTS[0].id, quantity: 1 }],
     };
 
@@ -711,6 +721,18 @@ export default function Home() {
   function addManualQuoteItem() { setQuoteItems(prev=>[...prev, { productId: PRODUCTS[0].id, customName: "Egyedi tétel", customPrice: 0, quantity: 1, isManual: true }]); }
   function updateQuoteItem(i:number, key:keyof QuoteItem, value:string|number|boolean) {
     setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {...it, [key]: value} : it));
+  }
+  function updateQuoteProduct(i:number, productId:string) {
+    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {
+      ...it,
+      productId,
+      isManual: false,
+      customName: undefined,
+      customPrice: prod(productId).price,
+    } : it));
+  }
+  function syncQuoteItemPrice(i:number) {
+    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: prod(it.productId).price } : it));
   }
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
@@ -1429,7 +1451,7 @@ export default function Home() {
     }
   }
 
-  if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/></div></Card><Card title="Telefonos jegyzet"><textarea className="input min-h-32" defaultValue=""/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
+  if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/></div></Card><Card title="Telefonos jegyzet"><p className="mb-3 text-sm leading-relaxed text-slate-400">Ide írd a hívás közbeni megjegyzést. A Mentés gomb után Supabase-be kerül, ezért telefonon és gépen is megmarad.</p><textarea className="input min-h-32" value={selected.notes || ""} onChange={e=>updateSelectedField("notes", e.target.value)} placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
               <p className="mb-4 text-sm text-slate-400">Először mentsd az ügyfelet, majd készíts ajánlatot. Időpontot az ajánlat után adunk.</p>
               <div className="grid grid-cols-1 gap-3">
                 <StepButton color="green" href={telHref(selected.phone)}>Hívás</StepButton>
@@ -1447,16 +1469,21 @@ export default function Home() {
                       {it.isManual ? (
                         <input className="input" value={it.customName || ""} onChange={e=>updateQuoteItem(i,"customName",e.target.value)} placeholder="Tétel megnevezése" />
                       ) : (
-                        <ProductSelect value={it.productId} onChange={v=>updateQuoteItem(i,"productId",v)}/>
+                        <ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/>
                       )}
                       <input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/>
                       <input className="input" type="number" min={0} value={itemUnitPrice(it)} onChange={e=>updateQuoteItem(i,"customPrice",Math.max(0,Number(e.target.value||0)))}/>
                       <button className="rounded-xl bg-white/10 font-black" onClick={()=>removeQuoteItem(i)}>×</button>
                     </div>
-                    <div className="mt-3 flex justify-between rounded-2xl bg-white/5 p-3 text-sm">
-                      <span>{it.isManual ? "Egyedi tétel" : prod(it.productId).priceText}</span>
+                    <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
+                      <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
                       <b>{ft(itemTotal(it))}</b>
                     </div>
+                    {hasCustomProductPrice(it) ? (
+                      <button type="button" onClick={()=>syncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100">
+                        Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
+                      </button>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -1508,12 +1535,11 @@ export default function Home() {
 
                 <div className="mt-6 space-y-3">
                   {quoteItems.map((item, index) => {
-                    const p = prod(item.productId);
                     return (
                       <div key={index} className="quote-item flex flex-col gap-2 rounded-2xl border border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
                         <div>
                           <p className="font-black">{item.quantity} db · {itemName(item)}</p>
-                          <p className="text-sm text-slate-500">{item.isManual ? "Egyedi tétel" : p.priceText}</p>
+                          <p className="text-sm text-slate-500">{itemPriceLine(item)}</p>
                         </div>
                         <b>{ft(itemTotal(item))}</b>
                       </div>
@@ -1586,7 +1612,7 @@ export default function Home() {
   if (view==="schedule") {
     const booked = customers.filter(c=>c.date===scheduleDate).flatMap(c=>occupiedSlots(c));
     const free = BASE_SLOTS.filter(s=>!booked.includes(s));
-    return <Shell><Back onClick={()=>setView("quote")}/><Hero title="Időpont választása" sub={`${selected.name} · ${selected.city}`} action="Időpont mentése" onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák"><p className="mb-4 text-sm leading-relaxed text-slate-400">Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. Telefonról is ugyanígy működik.</p>{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteItem(i,"productId",v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200"><input type="checkbox" checked={sendAppointmentNotice} onChange={e=>setSendAppointmentNotice(e.target.checked)} className="mt-1 h-5 w-5 accent-cyan-300"/><span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span></label><Btn color="green" onClick={saveSchedule}>{appointmentEmailBusy ? "Mentés és email küldés..." : "Időpont mentése"}</Btn></Card></Side></Layout></Shell>;
+    return <Shell><Back onClick={()=>setView("quote")}/><Hero title="Időpont választása" sub={`${selected.name} · ${selected.city}`} action="Időpont mentése" onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák"><p className="mb-4 text-sm leading-relaxed text-slate-400">Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. Telefonról is ugyanígy működik.</p>{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200"><input type="checkbox" checked={sendAppointmentNotice} onChange={e=>setSendAppointmentNotice(e.target.checked)} className="mt-1 h-5 w-5 accent-cyan-300"/><span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span></label><Btn color="green" onClick={saveSchedule}>{appointmentEmailBusy ? "Mentés és email küldés..." : "Időpont mentése"}</Btn></Card></Side></Layout></Shell>;
   }
 
   if (view==="work") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={`${selected.name} — Munkaoldal`} sub={`${selected.city} · ${selected.date || scheduleDate} · ${selected.time || shownTime}`} action="Teljes lezárás ellenőrzése" onAction={closeWork}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Ügyféladatok"><div className="mb-4 flex flex-wrap gap-3">{editCustomer ? <Btn color="green" onClick={saveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={()=>setEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}{editCustomer ? <button onClick={()=>setEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}</div><CustomerGrid c={selected} editable={editCustomer} onChange={updateSelectedField}/></Card><Card title="Időponthoz tartozó klímák">
@@ -1595,14 +1621,19 @@ export default function Home() {
                 {quoteItems.map((it,i)=>
                   <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                     <div className="grid grid-cols-1 md:grid-cols-[1fr_110px_44px] gap-3">
-                      <ProductSelect value={it.productId} onChange={v=>updateQuoteItem(i,"productId",v)} />
+                      <ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)} />
                       <input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))} />
                       <button className="rounded-xl bg-white/10 font-black" onClick={()=>removeQuoteItem(i)}>×</button>
                     </div>
-                    <div className="mt-3 flex justify-between rounded-2xl bg-white/5 p-3 text-sm">
-                      <span>{it.isManual ? "Egyedi tétel" : prod(it.productId).priceText}</span>
+                    <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
+                      <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
                       <b>{ft(itemTotal(it))}</b>
                     </div>
+                    {hasCustomProductPrice(it) ? (
+                      <button type="button" onClick={()=>syncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100">
+                        Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
+                      </button>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -1777,6 +1808,15 @@ function CustomerGrid({
         <EditField label="Email" value={c.email || ""} onChange={(value) => onChange?.("email", value)} />
         <EditField label="Település" value={c.city} onChange={(value) => onChange?.("city", value)} />
         <EditField label="Cím" value={c.address} onChange={(value) => onChange?.("address", value)} />
+        <label className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">
+          <span className="text-sm text-slate-400">Telefonos jegyzet</span>
+          <textarea
+            className="mt-2 min-h-28 w-full bg-transparent text-base font-bold leading-relaxed outline-none"
+            value={c.notes || ""}
+            onChange={(event) => onChange?.("notes", event.target.value)}
+            placeholder="Hívás közbeni megjegyzés..."
+          />
+        </label>
       </div>
     );
   }
@@ -1794,6 +1834,10 @@ function CustomerGrid({
       <Field label="Email" value={c.email || "nincs megadva"} />
       <Field label="Település" value={c.city} />
       <Field label="Cím" value={c.address} />
+      <div className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">
+        <p className="text-sm text-slate-400">Telefonos jegyzet</p>
+        <p className="mt-2 whitespace-pre-wrap text-base font-bold leading-relaxed text-slate-100">{c.notes || "nincs megjegyzés"}</p>
+      </div>
     </div>
   );
 }
@@ -1824,7 +1868,7 @@ function ProductSelect({value,onChange}:{value:string;onChange:(v:string)=>void}
     <select value={value} onChange={e=>onChange(e.target.value)} className="input">
       {PRODUCTS.map((p:any)=>
         <option key={p.id} value={p.id}>
-          {p.name} — {p.priceText}
+          {p.name}
         </option>
       )}
     </select>
