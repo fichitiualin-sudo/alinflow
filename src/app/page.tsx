@@ -225,6 +225,11 @@ function telHref(phone: string) {
   return `tel:${cleaned}`;
 }
 
+function mapsHref(customer: Customer) {
+  const destination = [customer.address, customer.city].filter(Boolean).join(", ");
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+}
+
 const EMPTY_CUSTOMER: Customer = {
   id: "",
   name: "",
@@ -1451,7 +1456,7 @@ export default function Home() {
     }
   }
 
-  if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/></div></Card><Card title="Telefonos jegyzet"><p className="mb-3 text-sm leading-relaxed text-slate-400">Ide írd a hívás közbeni megjegyzést. A Mentés gomb után Supabase-be kerül, ezért telefonon és gépen is megmarad.</p><textarea className="input min-h-32" value={selected.notes || ""} onChange={e=>updateSelectedField("notes", e.target.value)} placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
+  if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><div><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/>{selected.address || selected.city ? <a href={mapsHref(selected)} target="_blank" rel="noreferrer" className="mt-3 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">Útvonal tervezése Google Térképpel</a> : null}</div></div></Card><Card title="Telefonos jegyzet"><p className="mb-3 text-sm leading-relaxed text-slate-400">Ide írd a hívás közbeni megjegyzést. A Mentés gomb után Supabase-be kerül, ezért telefonon és gépen is megmarad.</p><textarea className="input min-h-32" value={selected.notes || ""} onChange={e=>updateSelectedField("notes", e.target.value)} placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
               <p className="mb-4 text-sm text-slate-400">Először mentsd az ügyfelet, majd készíts ajánlatot. Időpontot az ajánlat után adunk.</p>
               <div className="grid grid-cols-1 gap-3">
                 <StepButton color="green" href={telHref(selected.phone)}>Hívás</StepButton>
@@ -1616,7 +1621,6 @@ export default function Home() {
   }
 
   if (view==="work") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={`${selected.name} — Munkaoldal`} sub={`${selected.city} · ${selected.date || scheduleDate} · ${selected.time || shownTime}`} action="Teljes lezárás ellenőrzése" onAction={closeWork}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Ügyféladatok"><div className="mb-4 flex flex-wrap gap-3">{editCustomer ? <Btn color="green" onClick={saveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={()=>setEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}{editCustomer ? <button onClick={()=>setEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}</div><CustomerGrid c={selected} editable={editCustomer} onChange={updateSelectedField}/></Card><Card title="Időponthoz tartozó klímák">
-              <p className="mb-4 text-sm text-slate-400">Itt utólag is módosítható a kiválasztott klíma és a darabszám. Ha 2 vagy több klíma kerül az időpontra, automatikusan 08:00 + 12:00 idősávra áll.</p>
               <div className="space-y-3">
                 {quoteItems.map((it,i)=>
                   <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
@@ -1646,13 +1650,11 @@ export default function Home() {
                 <InfoRow label="Klímák száma" value={`${qty(quoteItems)} db`} />
                 <InfoRow label="Idősáv logika" value={qty(quoteItems) >= 2 ? "08:00 + 12:00" : (selected.time || scheduleTime || "08:00")} />
               </div>
-            </Card><Card title="Felhasznált anyagok"><div className="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"><p className="text-sm text-slate-400">A fix anyagok mennyisége automatikusan indul a klímák darabszáma alapján, de lezárás előtt módosítható. A módosított mennyiség azonnal lefoglaltnak számít a raktárban és a készlethiány figyelmeztetésben is.</p><button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addExtraMaterial}>+ Egyéb anyag</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{materials.map((m,i)=><div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+            </Card><Card title="Felhasznált anyagok"><div className="mb-4 flex justify-end"><button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addExtraMaterial}>+ Egyéb anyag</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{materials.map((m,i)=><div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       {m.isExtra ? <input className="input" value={m.name} onChange={e=>updateMaterial(i,"name",e.target.value)}/> : <p className="font-black">{m.name}</p>}
-                      <p className="mt-1 text-xs text-slate-400">
-                        {m.isExtra ? "Egyéb anyag" : `Automatikus alap ${climateCountForMaterials()} klímára · módosítható`}
-                      </p>
+                      {m.isExtra ? <p className="mt-1 text-xs text-slate-400">Egyéb anyag</p> : null}
                     </div>
                     {!m.isExtra ? <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-xs font-black text-cyan-200">x{climateCountForMaterials()}</span> : null}
                   </div>
@@ -1697,7 +1699,6 @@ export default function Home() {
               </div>
             </Card>
             <Card title="Lezárási műveletek">
-              <p className="mb-4 text-sm text-slate-400">Először jelöld készre a szerelést, majd az admin dokumentumok után jöhet a teljes lezárás.</p>
               <div className="space-y-3">
                 <StepButton color="blue" onClick={()=>sendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
                 <StepButton color="green" onClick={markInstallationDone}>Szerelés kész – admin folyamatban</StepButton>
@@ -1709,7 +1710,7 @@ export default function Home() {
               </div>
             </Card></Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v48 · mobil email küldés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v49 · térkép gomb</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
@@ -1833,7 +1834,11 @@ function CustomerGrid({
       </div>
       <Field label="Email" value={c.email || "nincs megadva"} />
       <Field label="Település" value={c.city} />
-      <Field label="Cím" value={c.address} />
+      <div className="rounded-2xl bg-slate-900/80 p-4">
+        <p className="text-sm text-slate-400">Cím</p>
+        <p className="mt-1 text-lg font-black">{c.address || "nincs megadva"}</p>
+        {c.address || c.city ? <a href={mapsHref(c)} target="_blank" rel="noreferrer" className="mt-3 block rounded-xl bg-cyan-300 px-4 py-3 text-center font-black text-slate-950">Útvonal tervezése</a> : null}
+      </div>
       <div className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">
         <p className="text-sm text-slate-400">Telefonos jegyzet</p>
         <p className="mt-2 whitespace-pre-wrap text-base font-bold leading-relaxed text-slate-100">{c.notes || "nincs megjegyzés"}</p>
