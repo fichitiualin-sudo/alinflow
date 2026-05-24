@@ -16,8 +16,6 @@ type QuoteItem = {
   totalPrice?: number;
 };
 
-type PdfOp = string;
-
 function ft(value: number) {
   return `${Number(value || 0).toLocaleString("hu-HU")} Ft`;
 }
@@ -26,244 +24,143 @@ function safeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
-function ascii(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[őŐ]/g, (m) => (m === "Ő" ? "O" : "o"))
-    .replace(/[űŰ]/g, (m) => (m === "Ű" ? "U" : "u"))
-    .replace(/[–—]/g, "-")
-    .replace(/[•]/g, "-")
-    .replace(/[·]/g, "-");
+function escapeHtml(value: unknown) {
+  return safeText(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-function pdfEscape(value: string) {
-  return ascii(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+function customerLine(value?: string) {
+  const text = escapeHtml(value);
+  return text ? `<div style="margin:3px 0;line-height:1.45">${text}</div>` : "";
 }
 
-function money(value: number) {
-  return ascii(ft(value));
-}
+function itemRows(items: QuoteItem[], totalAmount: number) {
+  const fallback = items.length
+    ? items
+    : [{ name: "Klímaberendezés", quantity: 1, totalPrice: totalAmount }];
 
-function wrapText(value: string, maxChars: number) {
-  const words = ascii(value).split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    const next = line ? `${line} ${word}` : word;
-    if (next.length > maxChars && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = next;
-    }
-  }
-  if (line) lines.push(line);
-  return lines.length ? lines : [""];
-}
-
-function rgb(hex: string) {
-  const clean = hex.replace("#", "");
-  const r = parseInt(clean.slice(0, 2), 16) / 255;
-  const g = parseInt(clean.slice(2, 4), 16) / 255;
-  const b = parseInt(clean.slice(4, 6), 16) / 255;
-  return `${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)}`;
-}
-
-function rect(x: number, y: number, w: number, h: number, fill: string, stroke?: string) {
-  const ops = [`${rgb(fill)} rg`];
-  if (stroke) ops.push(`${rgb(stroke)} RG`);
-  ops.push(`${x} ${y} ${w} ${h} re ${stroke ? "B" : "f"}`);
-  return ops.join("\n");
-}
-
-function text(value: string, x: number, y: number, size = 11, font = "F1", fill = "#111827") {
-  return [
-    `${rgb(fill)} rg`,
-    "BT",
-    `/${font} ${size} Tf`,
-    `${x} ${y} Td`,
-    `(${pdfEscape(value)}) Tj`,
-    "ET",
-  ].join("\n");
-}
-
-function paragraph(lines: string[], x: number, startY: number, options?: { size?: number; font?: string; fill?: string; leading?: number; bullet?: boolean }) {
-  const size = options?.size ?? 10;
-  const font = options?.font ?? "F1";
-  const fill = options?.fill ?? "#111827";
-  const leading = options?.leading ?? 16;
-  const ops: string[] = [];
-  let y = startY;
-  for (const raw of lines) {
-    if (options?.bullet) {
-      ops.push(text("•", x, y, size, "F2", fill));
-      ops.push(text(raw, x + 16, y, size, font, fill));
-    } else {
-      ops.push(text(raw, x, y, size, font, fill));
-    }
-    y -= leading;
-  }
-  return { ops: ops.join("\n"), nextY: y };
-}
-
-function pdfDocument(pageStreams: string[]) {
-  const objects: string[] = [];
-  const add = (body: string) => {
-    objects.push(body);
-    return objects.length;
-  };
-
-  const fontRegular = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-  const fontBold = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-  const pageIds: number[] = [];
-
-  for (const stream of pageStreams) {
-    const contentId = add(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`);
-    const pageId = add(`<< /Type /Page /Parent PAGES_ID 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontRegular} 0 R /F2 ${fontBold} 0 R >> >> /Contents ${contentId} 0 R >>`);
-    pageIds.push(pageId);
-  }
-
-  const pagesId = add(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`);
-  const catalogId = add(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
-
-  for (let i = 0; i < objects.length; i++) objects[i] = objects[i].replaceAll("PAGES_ID", String(pagesId));
-
-  let pdf = "%PDF-1.4\n";
-  const offsets: number[] = [0];
-  objects.forEach((body, index) => {
-    offsets.push(Buffer.byteLength(pdf));
-    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
-  });
-
-  const xrefOffset = Buffer.byteLength(pdf);
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i <= objects.length; i++) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  return Buffer.from(pdf, "utf8");
-}
-
-function createQuotePdf(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number) {
-  const ops1: PdfOp[] = [];
-  const ops2: PdfOp[] = [];
-  const left = 55;
-  const right = 540;
-  const width = right - left;
-
-  // Page 1 background + header
-  ops1.push(rect(0, 0, 595, 842, "#ffffff"));
-  ops1.push(text("KLIMA", 70, 735, 18, "F2", "#0f7490"));
-  ops1.push(text("KLIMAlin arajanlat", 185, 735, 22, "F2", "#050816"));
-  ops1.push(text("Klimaberendezes alapszerelessel egyutt", 185, 712, 11, "F1", "#64748b"));
-  ops1.push(text("Ajanlat ervenyessege: 7 nap", left, 675, 11, "F1", "#64748b"));
-  ops1.push(text("Kapcsolat: 06 30 700 4908", left, 655, 11, "F1", "#64748b"));
-  ops1.push(text("klimalin.hu", left, 635, 11, "F1", "#64748b"));
-  ops1.push("0.90 0.93 0.97 RG\n55 606 485 0.8 re S");
-
-  // Customer card
-  ops1.push(rect(left, 500, width, 92, "#f1f5f9"));
-  ops1.push(text("Ugyfel", left + 12, 567, 10, "F1", "#64748b"));
-  ops1.push(text(safeText(customer.name) || "-", left + 12, 546, 16, "F2", "#050816"));
-  ops1.push(text(safeText(customer.city) || "-", left + 12, 526, 11, "F1", "#050816"));
-  ops1.push(text(safeText(customer.address) || "-", left + 12, 508, 11, "F1", "#050816"));
-  ops1.push(text(safeText(customer.email) || "-", left + 250, 526, 11, "F1", "#050816"));
-  ops1.push(text(safeText(customer.phone) || "-", left + 250, 508, 11, "F1", "#050816"));
-
-  // Summary card
-  ops1.push(rect(left, 422, width, 58, "#f1f5f9"));
-  ops1.push(text("Ajanlat osszesito", left + 12, 458, 10, "F1", "#64748b"));
-  ops1.push(text(money(totalAmount), left + 12, 436, 18, "F2", "#050816"));
-  ops1.push(text("Brutto vegosszeg alapszerelessel", left + 12, 420, 10, "F1", "#64748b"));
-
-  // Items
-  let itemY = 380;
-  for (const item of items.length ? items : [{ name: "Klimaberendezes", quantity: 1, totalPrice: totalAmount }]) {
-    const qty = Number(item.quantity || 1);
-    const name = safeText(item.name) || "Klimaberendezes";
-    const price = Number(item.totalPrice || 0);
-    ops1.push(rect(left, itemY - 58, width, 58, "#ffffff", "#e5e7eb"));
-    const title = `${qty} db - ${name}`;
-    ops1.push(text(title, left + 12, itemY - 22, 13, "F2", "#050816"));
-    ops1.push(text(`${money(price)} (telepitessel egyutt)`, left + 12, itemY - 40, 10, "F1", "#64748b"));
-    ops1.push(text(money(price), right - 125, itemY - 40, 12, "F2", "#050816"));
-    itemY -= 72;
-    if (itemY < 150) break;
-  }
-
-  ops1.push(rect(left, 78, width, 48, "#050816"));
-  ops1.push(text("Fizetendo brutto vegosszeg", left + 16, 96, 16, "F2", "#ffffff"));
-  ops1.push(text(money(totalAmount), right - 120, 96, 15, "F2", "#ffffff"));
-
-  // Page 2
-  ops2.push(rect(0, 0, 595, 842, "#ffffff"));
-  ops2.push(rect(left, 555, width, 230, "#f1f5f9"));
-  ops2.push(text("Alapszereles tartalma", left + 14, 752, 15, "F2", "#050816"));
-  const baseLines = [
-    "max. 3 m szigetelt rezcso-par / klima",
-    "1 db falattores, tomites es esztetikus lezaras",
-    "kondenzviz elvezetes gravitaciosan, megfelelo lejtes szerint, adottsag szerint",
-    "kulteri fali konzol vastag rezgescsillapitokkal, max. 4 m szerelesi magassagig",
-    "kabelcsatorna es rogzitok a szukseges mertekben",
-    "betap kabel max. 5 m-ig",
-    "nyomasproba, vakuumozas, beuzemeles es mukodesi teszt",
-    "felhasznaloi betanitas es rendrakas",
-  ];
-  const basePara = paragraph(baseLines, left + 18, 725, { size: 10.5, bullet: true, leading: 21 });
-  ops2.push(basePara.ops);
-
-  ops2.push(rect(left, 318, width, 205, "#f1f5f9"));
-  ops2.push(text("Minosegi kivitelezes", left + 14, 490, 15, "F2", "#050816"));
-  const quality = [
-    "Alukasirozott, hoszigetelt rezcso-par.",
-    "Idojarasallo gumikabel a teljes nyomvonalon.",
-    "Stabil konzol es vastag rezgescsillapitok a kulteri egysegnel.",
-    "Szakszeru falattores, tomites es esztetikus lezaras.",
-    "Nyomasproba es vakuumozas, majd beuzemeles es mukodesi teszt.",
-    "Betanitas, szurotisztitas ismertetese es rendrakas a vegen.",
-  ];
-  const qPara = paragraph(quality, left + 18, 463, { size: 10.5, bullet: true, leading: 22 });
-  ops2.push(qPara.ops);
-
-  ops2.push(rect(left, 205, width, 78, "#fff8dc"));
-  ops2.push(text("Belso szamlazasi bontas", left + 14, 255, 11.5, "F2", "#334155"));
-  ops2.push(text(`Adorjan Alin E.V. - klimatelesitesi munkadij: ${money(installerAmount)}`, left + 14, 235, 10.5, "F1", "#334155"));
-  ops2.push(text(`AMOVA 4U Kft. - klimaberendezes + szerelesi anyagok: ${money(materialAmount)}`, left + 14, 218, 10.5, "F1", "#334155"));
-  ops2.push(text("Ez a bontas az ugyfel altal fizetendo vegosszeget nem modositja.", left + 14, 198, 10, "F1", "#64748b"));
-
-  ops2.push(text("Udvozlettel,", left, 150, 11, "F1", "#64748b"));
-  ops2.push(text("Adorjan Alin - KLIMAlin", left, 132, 12, "F2", "#050816"));
-  ops2.push(text("klimalin.hu - legkondikalkulator.hu - 06 30 700 4908", left, 115, 10.5, "F1", "#64748b"));
-
-  return pdfDocument([ops1.join("\n"), ops2.join("\n")]);
-}
-
-function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number) {
-  const htmlItems = items
-    .map((item) => `<li><strong>${Number(item.quantity || 1)} db ${safeText(item.name)}</strong> – ${ft(Number(item.totalPrice || 0))} <span style="color:#64748b">(telepítéssel együtt)</span></li>`)
-    .join("");
-
-  return `
-    <div style="font-family:Arial,sans-serif;background:#f8fafc;padding:24px;color:#0f172a">
-      <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;overflow:hidden">
-        <div style="padding:24px 28px;background:#050816;color:white">
-          <div style="font-size:13px;color:#67e8f9;margin-bottom:6px">KLIMAlin ajánlat</div>
-          <h1 style="margin:0;font-size:24px">Klímaajánlat alapszereléssel együtt</h1>
+  return fallback
+    .map((item) => {
+      const qty = Number(item.quantity || 1);
+      const name = escapeHtml(item.name || "Klímaberendezés");
+      const price = Number(item.totalPrice || item.unitPrice || 0);
+      return `
+        <div style="border:1px solid #e5e7eb;border-radius:18px;padding:16px 18px;margin:12px 0;background:#ffffff">
+          <div style="font-size:17px;line-height:1.35;font-weight:800;color:#020617">${qty} db · ${name}</div>
+          <div style="margin-top:5px;font-size:14px;color:#64748b">${ft(price)} <span style="white-space:nowrap">(szereléssel együtt)</span></div>
+          <div style="margin-top:12px;font-size:18px;font-weight:900;color:#020617">${ft(price)}</div>
         </div>
-        <div style="padding:26px 28px">
-          <p>Tisztelt ${safeText(customer.name) || "Ügyfelünk"}!</p>
-          <p>A telefonos / online egyeztetés alapján mellékletben küldjük a klímás ajánlatot PDF formátumban.</p>
-          <div style="background:#f1f5f9;border-radius:14px;padding:16px;margin:18px 0">
-            <p style="margin:0 0 8px 0;color:#64748b">Ajánlatban szereplő tételek</p>
-            <ul style="margin:0;padding-left:20px">${htmlItems}</ul>
+      `;
+    })
+    .join("");
+}
+
+function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number) {
+  const customerName = escapeHtml(customer.name || "Ügyfelünk");
+  const city = customerLine(customer.city);
+  const address = customerLine(customer.address);
+  const email = customerLine(customer.email);
+  const phone = customerLine(customer.phone);
+
+  return `<!doctype html>
+<html lang="hu">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      @media only screen and (max-width: 600px) {
+        .outer { padding: 12px !important; }
+        .card { border-radius: 18px !important; }
+        .section { padding: 18px !important; }
+        .title { font-size: 26px !important; line-height: 1.1 !important; }
+        .total-row { display: block !important; }
+        .total-row span { display: block !important; margin-top: 8px !important; text-align: left !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;background:#f6f7fb;padding:0;font-family:Arial,Helvetica,sans-serif;color:#020617">
+    <div class="outer" style="background:#f6f7fb;padding:28px 14px">
+      <div class="card" style="max-width:720px;width:100%;margin:0 auto;background:#ffffff;border-radius:28px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 18px 45px rgba(15,23,42,.10)">
+        <div class="section" style="padding:30px 32px 22px 32px;background:#ffffff;border-bottom:1px solid #e5e7eb">
+          <div style="font-size:14px;font-weight:800;color:#0891b2;margin-bottom:8px">KLIMAlin</div>
+          <h1 class="title" style="margin:0;font-size:32px;line-height:1.15;color:#020617;font-weight:900">KLIMAlin árajánlat</h1>
+          <p style="margin:10px 0 0 0;color:#64748b;font-size:15px;line-height:1.5">Klímaberendezés alapszereléssel együtt</p>
+          <div style="margin-top:24px;color:#64748b;font-size:15px;line-height:1.55">
+            <div><strong>Ajánlat érvényessége:</strong> 7 nap</div>
+            <div><strong>Kapcsolat:</strong> 06 30 700 4908</div>
+            <div>klimalin.hu</div>
           </div>
-          <p style="font-size:18px"><strong>Bruttó végösszeg alapszereléssel együtt: ${ft(totalAmount)}</strong></p>
-          <p>Az ár alapszereléssel együtt értendő. Az ajánlat 7 napig érvényes.</p>
-          <p style="color:#64748b">Amennyiben megfelel Önnek az ajánlat, válasz emailben vagy telefonon tudunk időpontot egyeztetni.</p>
-          <p>Üdvözlettel:<br/><strong>Adorján Alin · KLIMAlin</strong><br/>06 30 700 4908<br/>klimalin.hu</p>
+        </div>
+
+        <div class="section" style="padding:26px 32px">
+          <p style="margin:0 0 18px 0;font-size:16px;line-height:1.6">Tisztelt ${customerName}!</p>
+          <p style="margin:0 0 24px 0;font-size:16px;line-height:1.6;color:#334155">A telefonos / online egyeztetés alapján az alábbi klímás ajánlatot küldjük. Az árak bruttó összegek, és alapszereléssel együtt értendők.</p>
+
+          <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin:0 0 18px 0">
+            <div style="font-size:14px;color:#64748b;margin-bottom:7px">Ügyfél</div>
+            <div style="font-size:21px;font-weight:900;color:#020617;margin-bottom:8px">${customerName}</div>
+            <div style="font-size:15px;color:#020617">${city}${address}${email}${phone}</div>
+          </div>
+
+          <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin:0 0 20px 0">
+            <div style="font-size:14px;color:#64748b;margin-bottom:7px">Ajánlat összesítő</div>
+            <div style="font-size:26px;font-weight:900;color:#020617">${ft(totalAmount)}</div>
+            <div style="font-size:14px;color:#64748b;margin-top:4px">Bruttó végösszeg alapszereléssel</div>
+          </div>
+
+          ${itemRows(items, totalAmount)}
+
+          <div class="total-row" style="margin:22px 0 8px 0;background:#050816;border-radius:18px;padding:18px 20px;color:#ffffff;font-size:19px;font-weight:900;display:flex;justify-content:space-between;gap:16px">
+            <div>Fizetendő bruttó végösszeg</div>
+            <span style="text-align:right;white-space:nowrap">${ft(totalAmount)}</span>
+          </div>
+        </div>
+
+        <div class="section" style="padding:0 32px 28px 32px">
+          <div style="background:#f1f5f9;border-radius:20px;padding:20px;margin-bottom:18px">
+            <h2 style="margin:0 0 14px 0;font-size:20px;line-height:1.25;color:#020617">Alapszerelés tartalma</h2>
+            <ul style="margin:0;padding-left:20px;color:#111827;font-size:15px;line-height:1.75">
+              <li>max. 3 m szigetelt rézcső-pár / klíma</li>
+              <li>1 db faláttörés, tömítés és esztétikus lezárás</li>
+              <li>kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint</li>
+              <li>kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással</li>
+              <li>kábelcsatorna és rögzítők a szükséges mértékben</li>
+              <li>betáp kábel max. 5 m-ig</li>
+              <li>nyomáspróba + vákuumozás + beüzemelés, működési teszt</li>
+              <li>felhasználói betanítás, rendrakás</li>
+            </ul>
+          </div>
+
+          <div style="background:#f1f5f9;border-radius:20px;padding:20px;margin-bottom:18px">
+            <h2 style="margin:0 0 14px 0;font-size:20px;line-height:1.25;color:#020617">Minőségi kivitelezés</h2>
+            <ul style="margin:0;padding-left:20px;color:#111827;font-size:15px;line-height:1.75">
+              <li>Alukasírozott, hőszigetelt rézcső-pár.</li>
+              <li>Időjárásálló gumikábel a teljes nyomvonalon.</li>
+              <li>Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.</li>
+              <li>Szakszerű faláttörés, tömítés és esztétikus lezárás.</li>
+              <li>Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.</li>
+              <li>Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.</li>
+            </ul>
+          </div>
+
+          <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:22px;color:#334155;font-size:15px;line-height:1.55">
+            <div style="font-weight:900;margin-bottom:8px">Belső számlázási bontás</div>
+            <div>Adorján Alin E.V. – klímatelepítési munkadíj: ${ft(installerAmount)}</div>
+            <div>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: ${ft(materialAmount)}</div>
+            <div style="margin-top:8px;color:#64748b">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</div>
+          </div>
+
+          <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">Amennyiben megfelel Önnek az ajánlat, válasz emailben vagy telefonon tudunk időpontot egyeztetni.</p>
+          <p style="margin:18px 0 0 0;font-size:15px;line-height:1.6;color:#334155">Üdvözlettel,<br><strong style="color:#020617">Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
         </div>
       </div>
     </div>
-  `;
+  </body>
+</html>`;
 }
 
 export async function POST(request: Request) {
@@ -284,8 +181,6 @@ export async function POST(request: Request) {
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
 
-    const pdf = createQuotePdf(customer, items, totalAmount, installerAmount, materialAmount);
-
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -297,13 +192,7 @@ export async function POST(request: Request) {
         to: [to],
         reply_to: replyTo,
         subject: "Klíma ajánlat – KLIMAlin",
-        html: quoteEmailHtml(customer, items, totalAmount),
-        attachments: [
-          {
-            filename: `klimalin-ajanlat-${ascii(safeText(customer.name) || "ugyfel").replace(/[^a-zA-Z0-9_-]+/g, "-").toLowerCase()}.pdf`,
-            content: pdf.toString("base64"),
-          },
-        ],
+        html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount),
       }),
     });
 
