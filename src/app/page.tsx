@@ -649,35 +649,9 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-
-    const shouldRefresh = () => {
-      if (editCustomer) return false;
-      if (["lead", "quote", "quotePreview", "schedule", "workReport"].includes(view)) return false;
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return false;
-      return true;
-    };
-
-    const refresh = () => {
-      if (!shouldRefresh()) return;
-      void loadCustomersFromDb();
-    };
-
-    const onVisibility = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") refresh();
-    };
-
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", onVisibility);
-    const intervalId = window.setInterval(refresh, 45000);
-
-    return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(intervalId);
-    };
-  }, [user, view, editCustomer]);
+  // Nincs automatikus időzített frissítés.
+  // Az adatok mentéskor, küldéskor vagy kézi frissítéskor frissülnek,
+  // hogy telefonon és asztali gépen ne ugorjon el váratlanul az aktuális nézet.
 
   const checklistItems: { key: keyof WorkChecklistState; label: string }[] = [
     { key: "nkvh", label: "NKVH adatok rögzítése" },
@@ -1932,13 +1906,21 @@ export default function Home() {
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
 
     const hasSignature = Boolean(report?.signatureDataUrl || saved.signature);
-    const workReportReady = Boolean(report?.id || report?.signatureDataUrl || statusMeansDone(workDoc?.status));
-    const purchaseReady = Boolean(purchaseDoc || hasSignature || report?.emailSentAt || saved.purchaseDeclaration);
+    const purchaseDocStatus = purchaseDoc ? purchaseDoc.status : undefined;
+    const purchaseDocReady = Boolean(purchaseDoc || statusMeansDone(purchaseDocStatus));
+    const purchaseDocSent = Boolean(statusMeansSent(purchaseDocStatus));
+    const workReportReady = Boolean(
+      report?.id ||
+      report?.signatureDataUrl ||
+      statusMeansDone(workDoc?.status) ||
+      purchaseDocReady
+    );
+    const purchaseReady = Boolean(purchaseDocReady || hasSignature || report?.emailSentAt || saved.purchaseDeclaration);
     const documentsSent = Boolean(
       saved.docsSent ||
       report?.emailSentAt ||
       statusMeansSent(workDoc?.status) ||
-      statusMeansSent(purchaseDoc?.status)
+      purchaseDocSent
     );
 
     return {
@@ -2000,9 +1982,13 @@ export default function Home() {
 
   function workReportDocumentStatus(customer: Customer) {
     const report = savedReportFor(customer);
-    if (report?.emailSentAt) return "Elküldve";
-    if (report?.signatureDataUrl) return "Aláírva, mentve";
-    if (report?.id) return "Mentve";
+    const workDoc = docFor(customer, "work_report");
+    const purchaseDoc = docFor(customer, "purchase_declaration");
+
+    if (workDoc?.status) return workDoc.status;
+    if (report?.emailSentAt || statusMeansSent(purchaseDoc?.status)) return "Elküldve";
+    if (report?.signatureDataUrl || statusMeansDone(purchaseDoc?.status)) return "Aláírva, mentve";
+    if (report?.id || purchaseDoc) return "Mentve";
     return "Nincs kész";
   }
 
@@ -2196,8 +2182,18 @@ export default function Home() {
 
   function documentIsReady(customer: Customer, row: { action: string; title: string; status: string }) {
     const report = savedReportFor(customer);
-    if (row.action === "Munkalap") return Boolean(report?.id || report?.signatureDataUrl || report?.emailSentAt);
-    if (row.action === "Nyilatkozat") return Boolean(report?.signatureDataUrl || report?.emailSentAt || docFor(customer, "purchase_declaration"));
+    const workDoc = docFor(customer, "work_report");
+    const purchaseDoc = docFor(customer, "purchase_declaration");
+    if (row.action === "Munkalap") {
+      return Boolean(
+        report?.id ||
+        report?.signatureDataUrl ||
+        report?.emailSentAt ||
+        workDoc ||
+        purchaseDoc
+      );
+    }
+    if (row.action === "Nyilatkozat") return Boolean(report?.signatureDataUrl || report?.emailSentAt || purchaseDoc);
     if (row.action === "Ajánlat") return row.status.includes("Elküld") || customer.status === "Ajánlat elküldve";
     if (row.action === "Időpont") return Boolean(customer.date || row.status.includes("Elküld"));
     if (row.action === "Számla") return row.status.includes("Kész") || row.status.includes("Kiállít");
@@ -2899,7 +2895,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v63 · dokumentum- és lezárási szinkron</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v64 · kézi frissítés és dokumentum státusz fix</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => { void loadCustomersFromDb(); setView("documents"); }}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><button onClick={() => void loadCustomersFromDb()} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Frissítés</button><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
