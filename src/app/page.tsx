@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
-type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "workReport" | "warehouse" | "tasks" | "archive";
+type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "workReport" | "warehouse" | "tasks" | "archive" | "documents";
 type CalendarMode = "week" | "month";
 type QuoteItem = { productId: string; quantity: number; customPrice?: number; customName?: string; isManual?: boolean };
 type InventoryItem = {
@@ -40,6 +40,17 @@ type WorkReport = {
   signerName: string;
   signedAt?: string;
   emailSentAt?: string;
+};
+
+type DocumentRecord = {
+  id?: string;
+  customerId: string;
+  type: string;
+  title: string;
+  status: string;
+  sentAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 const STATUS_OPTIONS = [
@@ -458,6 +469,8 @@ export default function Home() {
   const [appointmentEmailBusy,setAppointmentEmailBusy] = useState(false);
   const [sendAppointmentNotice,setSendAppointmentNotice] = useState(true);
   const [workReport,setWorkReport] = useState<WorkReport>(emptyWorkReport());
+  const [workReportsByCustomer,setWorkReportsByCustomer] = useState<Record<string, WorkReport>>({});
+  const [documentsByCustomer,setDocumentsByCustomer] = useState<Record<string, DocumentRecord[]>>({});
   const [workReportBusy,setWorkReportBusy] = useState(false);
   const [workReportEmailBusy,setWorkReportEmailBusy] = useState(false);
   const [editCustomer,setEditCustomer] = useState(false);
@@ -512,6 +525,8 @@ export default function Home() {
         setCustomers([]);
         setSelected(EMPTY_CUSTOMER);
         setQuoteItems(EMPTY_CUSTOMER.quoteItems);
+        setWorkReportsByCustomer({});
+        setDocumentsByCustomer({});
       }
     });
 
@@ -599,6 +614,16 @@ export default function Home() {
       .select("*")
       .order("created_at", { ascending: false });
 
+    const { data: workReportRows } = await supabase
+      .from("work_reports")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    const { data: documentRows } = await supabase
+      .from("documents")
+      .select("*")
+      .order("created_at", { ascending: false });
+
     const quotesByCustomer = new Map<string, any>();
     (quoteRows || []).forEach((quote: any) => {
       if (!quotesByCustomer.has(quote.customer_id)) quotesByCustomer.set(quote.customer_id, quote);
@@ -614,6 +639,20 @@ export default function Home() {
     const jobsByCustomer = new Map<string, any>();
     (jobRows || []).forEach((job: any) => {
       if (!jobsByCustomer.has(job.customer_id)) jobsByCustomer.set(job.customer_id, job);
+    });
+
+    const workReportsMap: Record<string, WorkReport> = {};
+    (workReportRows || []).forEach((row: any) => {
+      if (!row.customer_id) return;
+      workReportsMap[row.customer_id] = workReportFromRow(row);
+    });
+
+    const documentsMap: Record<string, DocumentRecord[]> = {};
+    (documentRows || []).forEach((row: any) => {
+      if (!row.customer_id) return;
+      const current = documentsMap[row.customer_id] || [];
+      current.push(documentFromRow(row));
+      documentsMap[row.customer_id] = current;
     });
 
     const loadedCustomers: Customer[] = (customerRows || []).map((row: any) => {
@@ -640,6 +679,8 @@ export default function Home() {
     });
 
     setCustomers(loadedCustomers);
+    setWorkReportsByCustomer(workReportsMap);
+    setDocumentsByCustomer(documentsMap);
     setSelected(loadedCustomers[0] || EMPTY_CUSTOMER);
     setQuoteItems((loadedCustomers[0] || EMPTY_CUSTOMER).quoteItems);
     setDataLoading(false);
@@ -1526,6 +1567,7 @@ export default function Home() {
       };
 
       await persistCustomerToDb(updated);
+      await logDocument(updated, "quote_email", "Ajánlat email", "Elküldve");
       setSelected(updated);
       setCustomers((prev) => prev.map((customer) => customer.id === updated.id ? updated : customer));
       setMessage("Ajánlat elküldve emailben ✅");
@@ -1556,6 +1598,7 @@ export default function Home() {
         throw new Error(result?.error || "Nem sikerült elküldeni az időpont emailt.");
       }
 
+      await logDocument(customer, "appointment_email", "Időpont-visszaigazolás", "Elküldve");
       setMessage("Időpont tájékoztató email elküldve ✅");
       return true;
     } catch (error: any) {
@@ -1597,6 +1640,108 @@ export default function Home() {
     };
   }
 
+  function workReportFromRow(row: any): WorkReport {
+    return {
+      id: row.id,
+      customerId: row.customer_id,
+      workDescription: row.work_description || defaultWorkDescription(),
+      notes: row.notes || "",
+      signatureDataUrl: row.signature_data_url || "",
+      signerName: row.signer_name || row.customer_name || "",
+      signedAt: row.signed_at || undefined,
+      emailSentAt: row.email_sent_at || undefined,
+    };
+  }
+
+  function documentFromRow(row: any): DocumentRecord {
+    return {
+      id: row.id,
+      customerId: row.customer_id,
+      type: row.document_type || row.type || "document",
+      title: row.title || "Dokumentum",
+      status: row.status || "Mentve",
+      sentAt: row.sent_at || undefined,
+      createdAt: row.created_at || undefined,
+      updatedAt: row.updated_at || undefined,
+    };
+  }
+
+  function savedReportFor(customer: Customer = selected) {
+    if (!customer.id) return undefined;
+    if (workReport.customerId === customer.id || workReport.id) return workReport.customerId === customer.id ? workReport : workReportsByCustomer[customer.id];
+    return workReportsByCustomer[customer.id];
+  }
+
+  function docsFor(customer: Customer) {
+    return customer.id ? (documentsByCustomer[customer.id] || []) : [];
+  }
+
+  function docFor(customer: Customer, type: string) {
+    return docsFor(customer).find((doc) => doc.type === type);
+  }
+
+  function docStatus(customer: Customer, type: string, fallback = "Nincs kész") {
+    const doc = docFor(customer, type);
+    return doc?.status || fallback;
+  }
+
+  async function logDocument(customer: Customer, type: string, title: string, status = "Elküldve") {
+    if (!customer.id || !user) return;
+
+    const payload = {
+      customer_id: customer.id,
+      document_type: type,
+      title,
+      status,
+      sent_at: status.toLowerCase().includes("elküld") ? new Date().toISOString() : null,
+      created_by: user.id,
+    };
+
+    const { data, error } = await supabase
+      .from("documents")
+      .upsert(payload, { onConflict: "customer_id,document_type" })
+      .select("*")
+      .single();
+
+    if (error) return;
+
+    const saved = documentFromRow(data);
+    setDocumentsByCustomer((prev) => {
+      const current = prev[customer.id] || [];
+      const withoutCurrent = current.filter((doc) => doc.type !== saved.type);
+      return { ...prev, [customer.id]: [saved, ...withoutCurrent] };
+    });
+  }
+
+  function workReportDocumentStatus(customer: Customer) {
+    const report = savedReportFor(customer);
+    if (report?.emailSentAt) return "Elküldve";
+    if (report?.signatureDataUrl) return "Aláírva, mentve";
+    if (report?.id) return "Mentve";
+    return "Nincs kész";
+  }
+
+  function purchaseDeclarationStatus(customer: Customer) {
+    const report = savedReportFor(customer);
+    if (docFor(customer, "purchase_declaration")?.status) return docFor(customer, "purchase_declaration")!.status;
+    if (report?.emailSentAt) return "Elküldve";
+    if (report?.signatureDataUrl) return "Elkészült";
+    return "Aláírásra vár";
+  }
+
+  function documentRowsFor(customer: Customer) {
+    return [
+      { title: "Ajánlat email", status: docStatus(customer, "quote_email", customer.status === "Ajánlat elküldve" ? "Elküldve" : "Nincs elküldve"), action: "Ajánlat" },
+      { title: "Időpont-visszaigazolás", status: docStatus(customer, "appointment_email", customer.date ? "Időpont rögzítve" : "Nincs időpont"), action: "Időpont" },
+      { title: "Klímaszerelési munkalap", status: workReportDocumentStatus(customer), action: "Munkalap" },
+      { title: "Vásárlási nyilatkozat", status: purchaseDeclarationStatus(customer), action: "Nyilatkozat" },
+      { title: "Adorján Alin E.V. számla", status: workChecklist.alinInvoice && customer.id === selected.id ? "Kész" : "Számlázz.hu később", action: "Számla" },
+      { title: "AMOVA 4U Kft. számla", status: workChecklist.amovaInvoice && customer.id === selected.id ? "Kész" : "Számlázz.hu később", action: "Számla" },
+    ];
+  }
+
+
+
   async function loadWorkReportFor(customer: Customer) {
     setWorkReport(emptyWorkReport(customer));
     if (!customer.id) return;
@@ -1613,16 +1758,9 @@ export default function Home() {
     }
 
     if (data) {
-      setWorkReport({
-        id: data.id,
-        customerId: data.customer_id,
-        workDescription: data.work_description || defaultWorkDescription(),
-        notes: data.notes || "",
-        signatureDataUrl: data.signature_data_url || "",
-        signerName: data.signer_name || customer.name || "",
-        signedAt: data.signed_at || undefined,
-        emailSentAt: data.email_sent_at || undefined,
-      });
+      const loadedReport = workReportFromRow(data);
+      setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
+      setWorkReportsByCustomer((prev) => ({ ...prev, [customer.id]: loadedReport }));
     }
   }
 
@@ -1711,7 +1849,13 @@ export default function Home() {
         signature: Boolean(reportToSave.signatureDataUrl) || prev.signature,
         docsSent: sendEmail ? true : prev.docsSent,
       }));
-      setWorkReport({
+
+      await logDocument(selected, "work_report", "Klímaszerelési munkalap", sendEmail ? "Elküldve" : "Mentve");
+      if (reportToSave.signatureDataUrl || sendEmail) {
+        await logDocument(selected, "purchase_declaration", "Vásárlási nyilatkozat", sendEmail ? "Elküldve" : "Elkészült");
+      }
+
+      const savedReportForState: WorkReport = {
         id: data.id,
         customerId: data.customer_id,
         workDescription: data.work_description || reportToSave.workDescription,
@@ -1720,8 +1864,11 @@ export default function Home() {
         signerName: data.signer_name || reportToSave.signerName,
         signedAt: data.signed_at || reportToSave.signedAt,
         emailSentAt,
-      });
+      };
+      setWorkReportsByCustomer((prev) => ({ ...prev, [selected.id]: savedReportForState }));
+      setWorkReport(savedReportForState);
       setMessage(sendEmail ? "Munkalap mentve és emailben elküldve ✅" : "Munkalap mentve ✅");
+      setView("work");
     } catch (error: any) {
       setMessage(`Munkalap hiba: ${error.message}`);
     } finally {
@@ -1729,6 +1876,8 @@ export default function Home() {
       setWorkReportEmailBusy(false);
     }
   }
+
+  if (view==="documents") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title="Dokumentumtár" sub="Munkalapok, vásárlási nyilatkozatok, email státuszok és a későbbi számlák egy helyen." action="Frissítés" onAction={loadCustomersFromDb}/><Layout><Main><Card title="Dokumentumok ügyfelenként"><div className="space-y-4">{customers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p></div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p><p className="mt-1 text-xs text-slate-400">{row.action === "Számla" ? "Számlázz.hu integráció után automatikus lesz." : "Az ügyfél adatlapjáról kezelhető."}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${row.status.includes("Elküld") || row.status.includes("Kész") || row.status.includes("Aláírva") || row.status.includes("Elkészült") ? "bg-emerald-400/20 text-emerald-200" : row.status.includes("később") ? "bg-slate-500/20 text-slate-300" : "bg-amber-400/20 text-amber-200"}`}>{row.status}</span></div></div>)}</div></div>)}</div></Card></Main><Side><Gradient title="Dokumentum állapot" value={`${customers.length} ügyfél`}/><Card title="Mit ment a rendszer?"><div className="space-y-3 text-sm leading-relaxed text-slate-300"><p><b className="text-white">Munkalap:</b> Supabase-be mentve, aláírással együtt.</p><p><b className="text-white">Vásárlási nyilatkozat:</b> a munkalap adataiból és az aláírásból újragenerálható, emailben külön blokként megy ki.</p><p><b className="text-white">Email státuszok:</b> a dokumentumtárban naplózva, ha lefuttattad az új SQL-t.</p><p><b className="text-white">Számlák:</b> a Számlázz.hu integráció után kerülnek ide.</p></div></Card></Side></Layout></Shell>;
 
   if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><div><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/>{selected.address || selected.city ? <a href={mapsHref(selected)} target="_blank" rel="noreferrer" className="mt-3 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">Útvonal tervezése Google Térképpel</a> : null}</div></div></Card><Card title="Telefonos jegyzet"><textarea className="input min-h-32" value={selected.notes || ""} onChange={e=>updateSelectedField("notes", e.target.value)} placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
               <div className="grid grid-cols-1 gap-3">
@@ -1957,7 +2106,7 @@ export default function Home() {
                   </div>
 
                   {m.isExtra ? <div className="mt-3"><input className="input" value={m.unit} onChange={e=>updateMaterial(i,"unit",e.target.value)} placeholder="egység"/></div> : null}
-                </div>)}</div></Card></Main><Side><Gradient title="Munka státusz" value={selected.status || "Folyamatban"}/><Card title="Lezárási műveletek">
+                </div>)}</div></Card></Main><Side><Gradient title="Munka státusz" value={selected.status || "Folyamatban"}/><Card title="Dokumentumok"><div className="space-y-3">{documentRowsFor(selected).map((row)=><div key={row.title} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p><p className="mt-1 text-xs text-slate-400">{row.action === "Számla" ? "Számlázz.hu integráció után." : "Menthető, küldhető, visszanézhető."}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${row.status.includes("Elküld") || row.status.includes("Kész") || row.status.includes("Aláírva") || row.status.includes("Elkészült") ? "bg-emerald-400/20 text-emerald-200" : row.status.includes("később") ? "bg-slate-500/20 text-slate-300" : "bg-amber-400/20 text-amber-200"}`}>{row.status}</span></div>{row.action === "Ajánlat" ? <button onClick={sendQuoteEmail} disabled={quoteEmailBusy} className="mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100 disabled:opacity-60">{quoteEmailBusy ? "Küldés..." : "Ajánlat küldése"}</button> : null}{row.action === "Időpont" ? <button onClick={()=>sendAppointmentEmailFor(selected)} disabled={appointmentEmailBusy} className="mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100 disabled:opacity-60">{appointmentEmailBusy ? "Küldés..." : "Időpont email"}</button> : null}{row.action === "Munkalap" || row.action === "Nyilatkozat" ? <button onClick={openWorkReport} className="mt-3 w-full rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100">Munkalap megnyitása</button> : null}</div>)}</div></Card><Card title="Lezárási műveletek">
               <div className="space-y-3">
                 <StepButton color="cyan" onClick={openWorkReport}>Munkalap és egyszerű aláírás</StepButton>
                 
@@ -1988,7 +2137,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v56 · munkalap, időpont és lezárás javítás</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v56 · munkalap, időpont és lezárás javítás</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{activeCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
