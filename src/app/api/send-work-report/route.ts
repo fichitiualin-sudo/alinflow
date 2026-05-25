@@ -105,14 +105,13 @@ function declarationItemsRows(items: QuoteItem[]) {
   }).join("");
 }
 
-function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report: WorkReport, copyLabel: "I." = "I.") {
+function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report: WorkReport) {
   const customerName = customer.name || report.signerName || "";
   const customerAddress = fullAddress(customer.city, customer.address, "");
   const kelt = formatKelt(report.signedAt);
   const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
 
   return `<div style="margin-top:28px;background:#ffffff;border:1px solid #d1d5db;border-radius:18px;padding:24px 20px;font-family:'Times New Roman',Times,serif;color:#111827">
-    <div style="text-align:right;color:#9ca3af;font-size:18px;margin-bottom:4px">${copyLabel} példány</div>
     <h2 style="margin:0;text-align:center;font-size:22px;line-height:1.05;font-weight:900;letter-spacing:.02em">VÁSÁRLÁSI<br>NYILATKOZAT</h2>
     <p style="margin:6px 0 18px 0;text-align:center;font-size:13px;line-height:1.35;font-weight:700">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br>28. § (5) bekezdése alapján</p>
 
@@ -149,7 +148,7 @@ function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report:
     </table>
     <p style="margin:0 0 14px 0;font-size:13px;line-height:1.35">*Több berendezés típus vásárlása esetén a táblázat sorainak száma bővíthető egyéni szerkesztéssel</p>
 
-    <p style="margin:0 0 14px 0;font-size:14px;line-height:1.4;text-align:justify">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos jótállás telepítési tanúsítvány<sup>${copyLabel === "I." ? "1" : "2"}</sup> birtokában érvényesíthető.</p>
+    <p style="margin:0 0 14px 0;font-size:14px;line-height:1.4;text-align:justify">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos jótállás telepítési tanúsítvány<sup>1</sup> birtokában érvényesíthető.</p>
     <p style="margin:0 0 18px 0;font-size:14px;line-height:1.4;text-align:justify;font-weight:700">Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</p>
 
     <div style="display:flex;gap:18px;align-items:flex-end;justify-content:space-between;margin-top:16px">
@@ -160,7 +159,7 @@ function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report:
       </div>
     </div>
 
-    <div style="border-top:1px solid #111;margin-top:20px;padding-top:6px;font-size:11px;line-height:1.3"><sup>${copyLabel === "I." ? "1" : "2"}</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</div>
+    <div style="border-top:1px solid #111;margin-top:20px;padding-top:6px;font-size:11px;line-height:1.3"><sup>1</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</div>
   </div>`;
 }
 
@@ -272,10 +271,8 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
             <div style="font-size:14px;line-height:1.6;color:#334155"><strong>Aláíró:</strong> ${signer || "nincs megadva"}<br><strong>Aláírás ideje:</strong> ${signedAt}</div>
           </div>
 
-          <div style="margin-top:26px;margin-bottom:18px">
-            <div style="font-size:14px;font-weight:900;color:#0f172a;margin-bottom:10px">Vásárlási nyilatkozat</div>
-            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#334155">A munkalaphoz külön blokkban csatoljuk a 458/2024. (XII. 30.) Korm. rendelet 28. § (5) bekezdése szerinti vásárlási nyilatkozatot. A nyilatkozaton az ügyfél egyszerű aláírása a Telepíttető aláírási helyén szerepel.</p>
-            ${purchaseDeclarationHtml(customer, items, report, "I.")}
+          <div style="margin-top:34px;margin-bottom:18px;padding-top:10px;page-break-before:always;break-before:page">
+            ${purchaseDeclarationHtml(customer, items, report)}
           </div>
 
           <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">Üdvözlettel,<br><strong style="color:#020617">Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
