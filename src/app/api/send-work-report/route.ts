@@ -111,7 +111,7 @@ function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report:
   const kelt = formatKelt(report.signedAt);
   const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
 
-  return `<div class="purchase-page" style="margin-top:18px;background:#ffffff;border:1px solid #d1d5db;border-radius:14px;padding:16px 16px 12px 16px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid">
+  return `<div class="purchase-page" style="max-width:720px;width:100%;margin:18px auto 0 auto;background:#ffffff;border:1px solid #d1d5db;border-radius:14px;padding:16px 16px 12px 16px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid">
     <h2 style="margin:0;text-align:center;font-size:18px;line-height:1.02;font-weight:900;letter-spacing:.02em">VÁSÁRLÁSI<br>NYILATKOZAT</h2>
     <p style="margin:4px 0 10px 0;text-align:center;font-size:10.5px;line-height:1.2;font-weight:700">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br>28. § (5) bekezdése alapján</p>
 
@@ -186,16 +186,28 @@ function itemsHtml(items: QuoteItem[]) {
 
 function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: WorkReport) {
   const name = escapeHtml(customer.name || "Ügyfelünk");
+  const rawName = customer.name || report.signerName || "";
   const address = escapeHtml(fullAddress(customer.city, customer.address, "nincs megadva"));
   const phone = escapeHtml(customer.phone || "");
+  const email = escapeHtml(customer.email || "");
   const date = escapeHtml(formatDate(customer.date));
   const time = escapeHtml(customer.time || "egyeztetés szerint");
-  const workDescription = escapeHtml(report.workDescription || "Klímaberendezés telepítése, beüzemelése és átadása.").replace(/\n/g, "<br>");
+  const workDescription = escapeHtml(report.workDescription || "Klímaberendezés telepítése, beüzemelése és átadása. Vákuumozás, működési próba és felhasználói betanítás elvégezve.").replace(/\n/g, "<br>");
   const notes = escapeHtml(report.notes || "").replace(/\n/g, "<br>");
   const signer = escapeHtml(report.signerName || customer.name || "");
   const signedAt = escapeHtml(formatDateTime(report.signedAt));
   const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
   const signatureCid = "ugyfel-alairas";
+  const rows = items.length ? items : [{ name: "Klímaberendezés", quantity: 1 }];
+  const deviceRows = rows.map((item) => {
+    const quantity = Number(item.quantity || 1);
+    const itemName = escapeHtml(item.name || "Klímaberendezés");
+    return `<tr>
+      <td style="border:1px solid #111;padding:5px 7px;font-size:11.5px;line-height:1.22">${itemName}</td>
+      <td style="border:1px solid #111;padding:5px 7px;text-align:center;font-size:11.5px;font-weight:700;width:90px">${quantity}</td>
+      <td style="border:1px solid #111;padding:5px 7px;font-size:11.5px;line-height:1.22;width:145px">szereléssel együtt</td>
+    </tr>`;
+  }).join("");
 
   return `<!doctype html>
 <html lang="hu">
@@ -204,87 +216,82 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       @media only screen and (max-width: 600px) {
-        .outer { padding: 12px !important; }
-        .card { border-radius: 18px !important; }
-        .section { padding: 18px !important; }
-        .title { font-size: 25px !important; line-height: 1.15 !important; }
-        .info-grid { display: block !important; }
-        .info-cell { margin-bottom: 12px !important; }
+        .outer { padding: 10px !important; }
+        .document { padding: 12px !important; border-radius: 12px !important; }
+        .doc-title { font-size: 18px !important; }
+        .sign-row { display: block !important; }
+        .sign-box { width: 100% !important; margin-top: 12px !important; }
       }
       @media print {
-        .purchase-page { page-break-before: always !important; break-before: page !important; page-break-inside: avoid !important; break-inside: avoid !important; margin: 0 !important; padding: 8mm 8mm 6mm 8mm !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
-        .purchase-page * { box-sizing: border-box !important; }
+        body { background: #ffffff !important; }
+        .outer { background: #ffffff !important; padding: 0 !important; }
+        .document { margin: 0 auto !important; padding: 8mm 8mm 6mm 8mm !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; max-width: none !important; width: auto !important; }
+        .work-page { page-break-after: always !important; break-after: page !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+        .purchase-page { page-break-before: auto !important; break-before: auto !important; page-break-inside: avoid !important; break-inside: avoid !important; margin: 0 auto !important; padding: 8mm 8mm 6mm 8mm !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; max-width: none !important; width: auto !important; }
+        .document *, .purchase-page * { box-sizing: border-box !important; }
       }
     </style>
   </head>
-  <body style="margin:0;background:#f6f7fb;padding:0;font-family:Arial,Helvetica,sans-serif;color:#020617">
-    <div class="outer" style="background:#f6f7fb;padding:28px 14px">
-      <div class="card" style="max-width:720px;width:100%;margin:0 auto;background:#ffffff;border-radius:28px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 18px 45px rgba(15,23,42,.10)">
-        <div class="section" style="padding:30px 32px 22px 32px;background:#050816;color:#ffffff">
-          <div style="font-size:14px;font-weight:800;color:#67e8f9;margin-bottom:8px">KLIMAlin munkalap</div>
-          <h1 class="title" style="margin:0;font-size:30px;line-height:1.15;font-weight:900">Klímaszerelési munkalap</h1>
-          <p style="margin:12px 0 0 0;color:#cbd5e1;font-size:15px;line-height:1.55">A munkalap az elvégzett klímás munka visszaigazolása.</p>
+  <body style="margin:0;background:#f6f7fb;padding:0;color:#111827">
+    <div class="outer" style="background:#f6f7fb;padding:24px 12px">
+      <div class="document work-page" style="max-width:720px;width:100%;margin:0 auto 18px auto;background:#ffffff;border:1px solid #d1d5db;border-radius:14px;padding:16px 16px 12px 16px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-inside:avoid;break-inside:avoid">
+        <h1 class="doc-title" style="margin:0;text-align:center;font-size:20px;line-height:1.05;font-weight:900;letter-spacing:.02em">KLÍMASZERELÉSI<br>MUNKALAP</h1>
+        <p style="margin:5px 0 10px 0;text-align:center;font-size:10.8px;line-height:1.2;font-weight:700">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p>
+
+        <p style="margin:0 0 5px 0;font-size:12.5px;font-weight:900">Ügyfél adatai:</p>
+        <div style="margin-left:14px;margin-bottom:8px;font-size:12px;line-height:1.45">
+          neve: ${dottedValue(rawName)}<br>
+          címe: ${dottedValue(fullAddress(customer.city, customer.address, ""))}<br>
+          telefonszáma: ${dottedValue(customer.phone || "")}<br>
+          email címe: ${dottedValue(customer.email || "")}
         </div>
 
-        <div class="section" style="padding:26px 32px">
-          <p style="margin:0 0 18px 0;font-size:16px;line-height:1.6">Tisztelt ${name}!</p>
-          <p style="margin:0 0 20px 0;font-size:16px;line-height:1.6;color:#334155">Ezúton küldjük a rögzített klímaszerelési munkalapot. A dokumentum tartalmazza az elvégzett munkát, a szereléssel együtt értendő készüléket és az egyszerű ügyfél-aláírást.</p>
+        <p style="margin:0 0 5px 0;font-size:12.5px;font-weight:900">Szerelés adatai:</p>
+        <div style="margin-left:14px;margin-bottom:8px;font-size:12px;line-height:1.45">
+          szerelés dátuma: ${dottedValue(date)}<br>
+          idősáv: ${dottedValue(time)}<br>
+          helyszín: ${dottedValue(fullAddress(customer.city, customer.address, ""))}
+        </div>
 
-          <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin-bottom:18px">
-            <div class="info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-              <div class="info-cell">
-                <div style="font-size:13px;color:#64748b;margin-bottom:5px">Ügyfél</div>
-                <div style="font-size:17px;font-weight:900;color:#020617;line-height:1.35">${name}</div>
-                ${phone ? `<div style="margin-top:4px;font-size:15px;color:#334155">${phone}</div>` : ""}
-              </div>
-              <div class="info-cell">
-                <div style="font-size:13px;color:#64748b;margin-bottom:5px">Helyszín</div>
-                <div style="font-size:17px;font-weight:900;color:#020617;line-height:1.35">${address}</div>
-              </div>
-            </div>
+        <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin:6px 0 9px 0">
+          <thead>
+            <tr>
+              <th style="border:1px solid #111;padding:6px 8px;text-align:center;font-size:11.5px;font-weight:900">Készülék megnevezése</th>
+              <th style="border:1px solid #111;padding:6px 8px;text-align:center;font-size:11.5px;font-weight:900;width:90px">Darab</th>
+              <th style="border:1px solid #111;padding:6px 8px;text-align:center;font-size:11.5px;font-weight:900;width:145px">Megjegyzés</th>
+            </tr>
+          </thead>
+          <tbody>${deviceRows}</tbody>
+        </table>
+
+        <p style="margin:0 0 5px 0;font-size:12.5px;font-weight:900">Elvégzett munka:</p>
+        <div style="border:1px solid #111;padding:7px 8px;margin-bottom:8px;font-size:11.5px;line-height:1.25;min-height:52px;text-align:justify">${workDescription}</div>
+
+        ${notes ? `<p style="margin:0 0 5px 0;font-size:12.5px;font-weight:900">Megjegyzés:</p><div style="border:1px solid #111;padding:7px 8px;margin-bottom:8px;font-size:11.5px;line-height:1.25;min-height:34px;text-align:justify">${notes}</div>` : ""}
+
+        <p style="margin:0 0 7px 0;font-size:11.2px;line-height:1.25;text-align:justify">Az ügyfél a munkalap aláírásával igazolja, hogy a fenti munkát átvette, a készülék működését bemutatták, és az alapvető használati tudnivalókról tájékoztatást kapott.</p>
+
+        <div class="sign-row" style="display:flex;gap:12px;align-items:flex-end;justify-content:space-between;margin-top:8px">
+          <div style="font-size:12px;line-height:1.45">
+            Kelt: ${dottedValue(formatKelt(report.signedAt))}<br>
+            Aláíró neve: ${dottedValue(signer)}
           </div>
-
-          <div style="background:#f8fafc;border-radius:20px;padding:18px 20px;margin-bottom:18px">
-            <div class="info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-              <div class="info-cell">
-                <div style="font-size:13px;color:#64748b;margin-bottom:5px">Szerelés dátuma</div>
-                <div style="font-size:17px;font-weight:900;color:#020617;line-height:1.35">${date}</div>
-              </div>
-              <div class="info-cell">
-                <div style="font-size:13px;color:#64748b;margin-bottom:5px">Idősáv</div>
-                <div style="font-size:17px;font-weight:900;color:#020617;line-height:1.35">${time}</div>
-              </div>
-            </div>
+          <div class="sign-box" style="width:230px;text-align:center">
+            ${hasSignature ? `<img src="cid:${signatureCid}" alt="Ügyfél aláírása" style="display:block;width:100%;max-width:180px;height:auto;margin:0 auto 2px auto;background:#ffffff" />` : `<div style="height:34px">&nbsp;</div>`}
+            <div style="border-top:1px solid #111;padding-top:2px;font-style:italic;font-size:12px">Ügyfél aláírása</div>
           </div>
+        </div>
 
-          <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;padding:18px 20px;margin-bottom:18px">
-            <div style="font-size:14px;color:#64748b;margin-bottom:8px">Készülék / munka</div>
-            ${itemsHtml(items)}
-          </div>
-
-          <div style="background:#eef2ff;border-radius:18px;padding:18px 20px;margin-bottom:18px">
-            <div style="font-size:14px;color:#64748b;margin-bottom:8px">Elvégzett munka</div>
-            <div style="font-size:15px;line-height:1.65;color:#111827">${workDescription}</div>
-          </div>
-
-          ${notes ? `<div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:18px"><div style="font-size:14px;color:#64748b;margin-bottom:8px">Megjegyzés</div><div style="font-size:15px;line-height:1.65;color:#111827">${notes}</div></div>` : ""}
-
-          <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:18px;padding:18px 20px;margin-bottom:22px">
-            <div style="font-size:14px;color:#64748b;margin-bottom:8px">Ügyfél egyszerű aláírása</div>
-            ${hasSignature ? `<img src="cid:${signatureCid}" alt="Ügyfél aláírása" style="display:block;width:100%;max-width:420px;height:auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;margin-bottom:10px" />` : `<div style="padding:18px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;color:#64748b">Nincs rögzített aláírás.</div>`}
-            <div style="font-size:14px;line-height:1.6;color:#334155"><strong>Aláíró:</strong> ${signer || "nincs megadva"}<br><strong>Aláírás ideje:</strong> ${signedAt}</div>
-          </div>
-
-          ${purchaseDeclarationHtml(customer, items, report)}
-
-          <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">Üdvözlettel,<br><strong style="color:#020617">Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+        <div style="border-top:1px solid #111;margin-top:10px;padding-top:5px;font-size:10.5px;line-height:1.2">
+          Üdvözlettel,<br><strong>Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908
         </div>
       </div>
+
+      ${purchaseDeclarationHtml(customer, items, report)}
     </div>
   </body>
 </html>`;
 }
-
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.RESEND_API_KEY;
