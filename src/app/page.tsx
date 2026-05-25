@@ -9,7 +9,7 @@ const RETURN_CONTEXT_KEY = "alinflow:returnContext";
 const RESTORABLE_VIEWS: View[] = ["lead", "quote", "quotePreview", "schedule", "work", "workReport", "documentPreview"];
 
 type CalendarMode = "week" | "month";
-type DocumentPreviewType = "work_report" | "purchase_declaration";
+type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation";
 type QuoteItem = { productId: string; quantity: number; customPrice?: number; customName?: string; isManual?: boolean };
 type InventoryItem = {
   productId: string;
@@ -383,6 +383,10 @@ function climateSummary(items?: QuoteItem[]) {
 
 function defaultWorkDescription() {
   return "Klímaberendezés telepítése, szükséges szerelési anyagok beépítése, nyomáspróba, vákuumozás, beüzemelés, működési próba és felhasználói betanítás.";
+}
+
+function workAcceptanceText() {
+  return "Az ügyfél a munkalap aláírásával igazolja, hogy a fenti munkát átvette, a készülék működését bemutatták, és az alapvető használati tudnivalókról tájékoztatást kapott.";
 }
 
 function emptyWorkReport(customer?: Customer): WorkReport {
@@ -2021,16 +2025,14 @@ export default function Home() {
     if (row.action === "Munkalap") return Boolean(report?.id || report?.signatureDataUrl || report?.emailSentAt);
     if (row.action === "Nyilatkozat") return Boolean(report?.signatureDataUrl || report?.emailSentAt || docFor(customer, "purchase_declaration"));
     if (row.action === "Ajánlat") return row.status.includes("Elküld") || customer.status === "Ajánlat elküldve";
-    if (row.action === "Időpont") return row.status.includes("Elküld");
+    if (row.action === "Időpont") return Boolean(customer.date || row.status.includes("Elküld"));
     if (row.action === "Számla") return row.status.includes("Kész") || row.status.includes("Kiállít");
     return false;
   }
 
   function DocumentLibraryActions({ customer, row }: { customer: Customer; row: { action: string; title: string; status: string } }) {
     const ready = documentIsReady(customer, row);
-    if (!ready) {
-      return <p className="mt-3 rounded-2xl bg-slate-950/50 px-4 py-3 text-xs font-bold text-slate-400">Nincs elkészült dokumentum, ezért innen nincs művelet.</p>;
-    }
+    if (!ready) return null;
 
     if (row.action === "Munkalap") {
       return <button onClick={()=>openDocumentPreview(customer,"work_report")} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
@@ -2041,8 +2043,11 @@ export default function Home() {
     if (row.action === "Ajánlat") {
       return <button onClick={()=>openCustomer(customer,"quotePreview")} className="mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100">Ajánlat megtekintése</button>;
     }
+    if (row.action === "Időpont") {
+      return <button onClick={()=>openDocumentPreview(customer,"appointment_confirmation")} className="mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Időpont megtekintése</button>;
+    }
 
-    return <p className="mt-3 rounded-2xl bg-slate-950/50 px-4 py-3 text-xs font-bold text-slate-400">A dokumentum elkészült, de ehhez még nincs külön előnézeti nézet.</p>;
+    return null;
   }
 
   function DocumentActions({ customer, row }: { customer: Customer; row: { action: string; title: string; status: string } }) {
@@ -2056,7 +2061,7 @@ export default function Home() {
       return <button onClick={()=>openCustomer(customer,"quotePreview")} className="mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100">Ajánlat megtekintése</button>;
     }
     if (row.action === "Időpont") {
-      return <button onClick={()=>openCustomer(customer,"work")} className="mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Időpont megnyitása</button>;
+      return <button onClick={()=>openDocumentPreview(customer,"appointment_confirmation")} className="mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Időpont megtekintése</button>;
     }
     return null;
   }
@@ -2105,9 +2110,7 @@ export default function Home() {
               ))}
               {filteredCustomers.length > results.length ? <p className="text-xs text-slate-500">Csak az első {results.length} találat látszik. Pontosíts a keresésen.</p> : null}
             </div>
-          ) : (
-            <p className="rounded-2xl bg-white/5 p-4 text-sm leading-relaxed text-slate-400">Írj be nevet, telefonszámot, települést, címet vagy klímatípust, és azonnal meg tudod nyitni az ügyfelet.</p>
-          )}
+          ) : null}
         </div>
       </Card>
     );
@@ -2116,7 +2119,7 @@ export default function Home() {
 
   function WorkReportDocument({ customer, report }: { customer: Customer; report: WorkReport }) {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
-    return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-5 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none"><div className="text-center"><h2 className="text-2xl font-black tracking-tight">KLÍMASZERELÉSI<br/>MUNKALAP</h2><p className="mt-2 text-sm font-bold">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p></div><div className="mt-6 space-y-4 text-sm leading-relaxed"><section><h3 className="mb-2 font-black">Ügyfél adatai</h3><div className="ml-3 space-y-1"><p>neve: {dottedLine(customer.name)}</p><p>címe: {dottedLine(fullCustomerAddress(customer))}</p><p>telefonszáma: {dottedLine(customer.phone)}</p><p>email címe: {dottedLine(customer.email)}</p></div></section><section><h3 className="mb-2 font-black">Szerelés adatai</h3><div className="ml-3 space-y-1"><p>szerelés dátuma: {dottedLine(formatDocumentDate(customer.date))}</p><p>idősáv: {dottedLine(customer.time || "egyeztetés szerint")}</p><p>helyszín: {dottedLine(fullCustomerAddress(customer))}</p></div></section><section><table className="w-full border-collapse text-xs"><thead><tr><th className="border border-slate-900 p-2 text-center">Készülék megnevezése</th><th className="border border-slate-900 p-2 text-center">Darab</th><th className="border border-slate-900 p-2 text-center">Megjegyzés</th></tr></thead><tbody>{items.map((item, index)=><tr key={`${item.productId}-${index}`}><td className="border border-slate-900 p-2">{itemName(item)}</td><td className="border border-slate-900 p-2 text-center font-bold">{item.quantity}</td><td className="border border-slate-900 p-2">szereléssel együtt</td></tr>)}</tbody></table></section><section><h3 className="mb-2 font-black">Elvégzett munka</h3><p className="whitespace-pre-wrap rounded-xl border border-slate-300 p-3">{report.workDescription || defaultWorkDescription()}</p></section>{report.notes ? <section><h3 className="mb-2 font-black">Megjegyzés</h3><p className="whitespace-pre-wrap rounded-xl border border-slate-300 p-3">{report.notes}</p></section> : null}<section className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p>Kelt: {dottedLine(formatDocumentDate(customer.date) || new Date().toLocaleDateString("hu-HU"))}</p></div><div className="w-full max-w-[260px] text-center">{report.signatureDataUrl ? <img src={report.signatureDataUrl} alt="Ügyfél aláírása" className="mx-auto mb-1 max-h-24 max-w-full object-contain"/> : <div className="mb-1 h-20 rounded-xl border border-dashed border-slate-400"/>}<div className="border-t border-slate-900 pt-1 italic">Ügyfél aláírása</div>{report.signedAt ? <p className="mt-1 text-xs">Aláírva: {formatSignedAt(report.signedAt)}</p> : null}</div></section></div></article>;
+    return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-5 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none"><div className="text-center"><h2 className="text-2xl font-black tracking-tight">KLÍMASZERELÉSI<br/>MUNKALAP</h2><p className="mt-2 text-sm font-bold">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p></div><div className="mt-6 space-y-4 text-sm leading-relaxed"><section><h3 className="mb-2 font-black">Ügyfél adatai</h3><div className="ml-3 space-y-1"><p>neve: {dottedLine(customer.name)}</p><p>címe: {dottedLine(fullCustomerAddress(customer))}</p><p>telefonszáma: {dottedLine(customer.phone)}</p><p>email címe: {dottedLine(customer.email)}</p></div></section><section><h3 className="mb-2 font-black">Szerelés adatai</h3><div className="ml-3 space-y-1"><p>szerelés dátuma: {dottedLine(formatDocumentDate(customer.date))}</p><p>idősáv: {dottedLine(customer.time || "egyeztetés szerint")}</p><p>helyszín: {dottedLine(fullCustomerAddress(customer))}</p></div></section><section><table className="w-full border-collapse text-xs"><thead><tr><th className="border border-slate-900 p-2 text-center">Készülék megnevezése</th><th className="border border-slate-900 p-2 text-center">Darab</th><th className="border border-slate-900 p-2 text-center">Megjegyzés</th></tr></thead><tbody>{items.map((item, index)=><tr key={`${item.productId}-${index}`}><td className="border border-slate-900 p-2">{itemName(item)}</td><td className="border border-slate-900 p-2 text-center font-bold">{item.quantity}</td><td className="border border-slate-900 p-2">szereléssel együtt</td></tr>)}</tbody></table></section><section><h3 className="mb-2 font-black">Elvégzett munka</h3><p className="whitespace-pre-wrap rounded-xl border border-slate-300 p-3">{report.workDescription || defaultWorkDescription()}</p></section><section><h3 className="mb-2 font-black">Átadás-átvételi nyilatkozat</h3><p className="rounded-xl border border-slate-300 p-3 text-justify text-sm leading-relaxed">{workAcceptanceText()}</p></section>{report.notes ? <section><h3 className="mb-2 font-black">Megjegyzés</h3><p className="whitespace-pre-wrap rounded-xl border border-slate-300 p-3">{report.notes}</p></section> : null}<section className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p>Kelt: {dottedLine(formatDocumentDate(customer.date) || new Date().toLocaleDateString("hu-HU"))}</p></div><div className="w-full max-w-[260px] text-center">{report.signatureDataUrl ? <img src={report.signatureDataUrl} alt="Ügyfél aláírása" className="mx-auto mb-1 max-h-24 max-w-full object-contain"/> : <div className="mb-1 h-20 rounded-xl border border-dashed border-slate-400"/>}<div className="border-t border-slate-900 pt-1 italic">Ügyfél aláírása</div>{report.signedAt ? <p className="mt-1 text-xs">Aláírva: {formatSignedAt(report.signedAt)}</p> : null}</div></section></div></article>;
   }
 
   function PurchaseDeclarationDocument({ customer, report }: { customer: Customer; report: WorkReport }) {
@@ -2124,10 +2127,66 @@ export default function Home() {
     return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-5 font-serif text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none"><div className="text-center"><h2 className="text-2xl font-black leading-none tracking-tight">VÁSÁRLÁSI<br/>NYILATKOZAT</h2><p className="mt-2 text-xs font-bold leading-snug">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br/>28. § (5) bekezdése alapján</p></div><div className="mt-5 space-y-4 text-sm leading-relaxed"><section><h3 className="font-black">Az értékesítő vállalkozás adatai:</h3><div className="ml-3 mt-1 space-y-1"><p>neve: {dottedLine("AMOVA 4U Kft.")}</p><p>adószáma: {dottedLine("29253630-2-13")}</p><p>a képviseletében eljáró természetes személy neve: {dottedLine("Adorján Mirjam")}</p></div></section><section><h3 className="font-black">A telepíttető adatai:</h3><div className="ml-3 mt-1 space-y-1"><p className="font-bold">A.) Vállalkozás, intézmény, egyéb adószámmal rendelkező szervezet</p><p>neve: {dottedLine("")}</p><p>adószáma: {dottedLine("")}</p><p>a képviseletében eljáró természetes személy neve: {dottedLine("")}</p><p className="mt-2 font-bold">B.) Természetes személy</p><p>neve: {dottedLine(customer.name || report.signerName)}</p><p>lakcíme: {dottedLine(fullCustomerAddress(customer))}</p></div></section><p className="text-justify text-xs leading-relaxed">Telepíttető – megfelelve az Európai Parlament és a Tanács 2024/573 Rendeletében, valamint a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. §-ban foglaltaknak – jelen nyilatkozat aláírásával kötelezettséget vállal arra, hogy az alábbi telepítési tanúsítvány-köteles berendezés(ek) telepítését és beüzemelését az arra képesítéssel rendelkező vállalkozás képesített alkalmazottjával fogja elvégeztetni.</p><table className="w-full border-collapse text-xs"><thead><tr><th className="border border-slate-900 p-2 text-center">Termék megnevezése</th><th className="border border-slate-900 p-2 text-center">Megvásárolt termékek darabszáma</th></tr></thead><tbody>{items.map((item, index)=><tr key={`${item.productId}-${index}`}><td className="border border-slate-900 p-2">{itemName(item)}</td><td className="border border-slate-900 p-2 text-center font-bold">{item.quantity}</td></tr>)}</tbody></table><p className="text-xs">*Több berendezés típus vásárlása esetén a táblázat sorainak száma bővíthető egyéni szerkesztéssel</p><p className="text-justify text-xs leading-relaxed">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos jótállás telepítési tanúsítvány<sup>1</sup> birtokában érvényesíthető.</p><p className="text-justify text-xs font-bold leading-relaxed">Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</p><section className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p>Kelt: {dottedLine(new Date().toLocaleDateString("hu-HU"))}</p></div><div className="w-full max-w-[260px] text-center">{report.signatureDataUrl ? <img src={report.signatureDataUrl} alt="Telepíttető aláírása" className="mx-auto mb-1 max-h-24 max-w-full object-contain"/> : <div className="mb-1 h-20 rounded-xl border border-dashed border-slate-400"/>}<div className="border-t border-slate-900 pt-1 italic">Telepíttető</div></div></section><div className="border-t border-slate-900 pt-2 text-[11px] leading-tight"><sup>1</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</div></div></article>;
   }
 
+  function AppointmentConfirmationDocument({ customer }: { customer: Customer }) {
+    const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
+    return (
+      <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-5 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+        <div className="border-b border-slate-200 pb-5">
+          <h2 className="text-2xl font-black tracking-tight">Időpont-visszaigazolás</h2>
+          <p className="mt-2 text-sm text-slate-600">Klímaszerelési időpont és telepítési adatok</p>
+        </div>
+        <div className="mt-6 space-y-5 text-sm leading-relaxed">
+          <section className="rounded-2xl bg-slate-100 p-4">
+            <p className="font-black">Tisztelt {customer.name || "Ügyfelünk"}!</p>
+            <p className="mt-3">Ezúton visszaigazoljuk a klímaszerelés egyeztetett időpontját.</p>
+          </section>
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Időpont</p>
+              <p className="mt-1 text-lg font-black">{formatDocumentDate(customer.date)}</p>
+              <p className="mt-1 font-bold">{customer.time || "egyeztetés szerint"}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Helyszín</p>
+              <p className="mt-1 font-black">{fullCustomerAddress(customer)}</p>
+            </div>
+          </section>
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <p className="mb-3 font-black">Klímaberendezés</p>
+            <div className="space-y-2">
+              {items.map((item, index) => (
+                <div key={`${item.productId}-${index}`} className="flex flex-col gap-1 rounded-xl bg-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="font-bold">{item.quantity} db · {itemName(item)}</span>
+                  <span className="text-sm text-slate-600">szereléssel együtt</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <p className="mb-2 font-black">Ügyféladatok</p>
+            <p>Név: <strong>{customer.name || "nincs megadva"}</strong></p>
+            <p>Telefon: <strong>{customer.phone || "nincs megadva"}</strong></p>
+            <p>Email: <strong>{customer.email || "nincs megadva"}</strong></p>
+          </section>
+          <section className="rounded-2xl bg-slate-950 p-4 text-white">
+            <p className="font-black">Kérjük, hogy a szerelési helyszín legyen megközelíthető, és a beltéri/kültéri egység tervezett helye legyen hozzáférhető.</p>
+            <p className="mt-3 text-sm text-slate-300">Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze felénk telefonon.</p>
+          </section>
+          <section className="border-t border-slate-200 pt-4 text-sm text-slate-600">
+            <p>Üdvözlettel,</p>
+            <p className="font-black text-slate-950">Adorján Alin · KLIMAlin</p>
+            <p>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+          </section>
+        </div>
+      </article>
+    );
+  }
+
   if (view==="documentPreview") {
     const report = documentReportFor(selected);
-    const title = documentPreviewType === "purchase_declaration" ? "Vásárlási nyilatkozat" : "Klímaszerelési munkalap";
-    return <Shell><Back onClick={()=>setView(documentBackView)}/><div className="print:hidden"><Hero title={title} sub={`${selected.name || "Ügyfél"} · ${fullCustomerAddress(selected)}`} action="Nyomtatás" onAction={()=>window.print()}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report}/> : <WorkReportDocument customer={selected} report={report}/>}</div></Shell>;
+    const isAppointmentPreview = documentPreviewType === "appointment_confirmation";
+    const title = documentPreviewType === "purchase_declaration" ? "Vásárlási nyilatkozat" : isAppointmentPreview ? "Időpont-visszaigazolás" : "Klímaszerelési munkalap";
+    return <Shell><Back onClick={()=>setView(documentBackView)}/><div className="print:hidden"><Hero title={title} sub={`${selected.name || "Ügyfél"} · ${fullCustomerAddress(selected)}`} action="Nyomtatás" onAction={()=>window.print()}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected}/> : <WorkReportDocument customer={selected} report={report}/>}</div></Shell>;
   }
 
   if (view==="documents") {
@@ -2135,7 +2194,7 @@ export default function Home() {
     return (
       <Shell>
         <Back onClick={()=>setView("dashboard")}/>
-        <Hero title="Dokumentumtár" sub="Itt csak az elkészült dokumentumokat lehet megtekinteni, nyomtatni vagy menteni." action="Frissítés" onAction={loadCustomersFromDb}/>
+        <Hero title="Dokumentumtár" sub="" action="Frissítés" onAction={loadCustomersFromDb}/>
         <Layout>
           <Main>
             <Card title="Dokumentumok ügyfelenként">
@@ -2149,11 +2208,11 @@ export default function Home() {
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
                 {documentCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs találat.</div> : null}
-                {documentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p></div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p><p className="mt-1 text-xs text-slate-400">{documentIsReady(customer, row) ? "Elkészült dokumentum: megtekinthető, nyomtatható vagy menthető." : "Még nincs elkészült dokumentum."}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${row.status.includes("Elküld") || row.status.includes("Kész") || row.status.includes("Aláírva") || row.status.includes("Elkészült") ? "bg-emerald-400/20 text-emerald-200" : row.status.includes("később") ? "bg-slate-500/20 text-slate-300" : "bg-amber-400/20 text-amber-200"}`}>{row.status}</span></div><DocumentLibraryActions customer={customer} row={row}/></div>)}</div></div>)}
+                {documentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p></div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${row.status.includes("Elküld") || row.status.includes("Kész") || row.status.includes("Aláírva") || row.status.includes("Elkészült") ? "bg-emerald-400/20 text-emerald-200" : row.status.includes("később") ? "bg-slate-500/20 text-slate-300" : "bg-amber-400/20 text-amber-200"}`}>{row.status}</span></div><DocumentLibraryActions customer={customer} row={row}/></div>)}</div></div>)}
               </div>
             </Card>
           </Main>
-          <Side><Gradient title="Dokumentum állapot" value={`${documentCustomers.length} ügyfél`}/><CustomerSearchPanel title="Gyors kereső"/><Card title="Dokumentumtár szabály"><div className="space-y-3 text-sm leading-relaxed text-slate-300"><p>Innen csak az elkészült dokumentumokat lehet megtekinteni, nyomtatni vagy a nyomtatási ablakból menteni.</p><p>Ha egy dokumentum még nem készült el, akkor a dokumentumtárban nincs külön művelet hozzá.</p></div></Card></Side>
+          <Side><Gradient title="Dokumentum állapot" value={`${documentCustomers.length} ügyfél`}/><CustomerSearchPanel title="Gyors kereső"/></Side>
         </Layout>
       </Shell>
     );
@@ -2537,7 +2596,7 @@ function Layout({children}:{children:React.ReactNode}){return <section className
 function Main({children}:{children:React.ReactNode}){return <div className="space-y-6 xl:col-span-2">{children}</div>}
 function Side({children}:{children:React.ReactNode}){return <aside className="space-y-6">{children}</aside>}
 function Card({title,children}:{title:string;children:React.ReactNode}){return <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl"><h2 className="mb-5 text-2xl font-black">{title}</h2>{children}</section>}
-function Hero({title,sub,action,onAction}:{title:string;sub:string;action:string;onAction?:()=>void}){return <section className="rounded-[2.5rem] border border-cyan-300/20 bg-gradient-to-br from-slate-950 to-slate-900 p-6 shadow-2xl md:p-8"><div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between"><div><h1 className="text-4xl font-black leading-tight md:text-5xl">{title}</h1><p className="mt-3 text-lg text-slate-400">{sub}</p></div><Btn onClick={onAction}>{action}</Btn></div></section>}
+function Hero({title,sub,action,onAction}:{title:string;sub:string;action:string;onAction?:()=>void}){return <section className="rounded-[2.5rem] border border-cyan-300/20 bg-gradient-to-br from-slate-950 to-slate-900 p-6 shadow-2xl md:p-8"><div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between"><div><h1 className="text-4xl font-black leading-tight md:text-5xl">{title}</h1>{sub ? <p className="mt-3 text-lg text-slate-400">{sub}</p> : null}</div><Btn onClick={onAction}>{action}</Btn></div></section>}
 function Back({onClick}:{onClick:()=>void}){return <button onClick={onClick} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 font-black text-cyan-200">← Vissza</button>}
 
 function StepButton({
