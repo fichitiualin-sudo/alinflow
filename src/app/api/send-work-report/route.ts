@@ -76,6 +76,94 @@ function signatureBase64(dataUrl?: string) {
 }
 
 
+const SELLER_COMPANY = {
+  name: "AMOVA 4U Kft.",
+  taxNumber: "29253630-2-13",
+  representative: "Adorján Mirjam",
+};
+
+function formatKelt(value?: string) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return new Date().toLocaleDateString("hu-HU");
+  return date.toLocaleDateString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\s/g, "");
+}
+
+function dottedValue(value: unknown) {
+  const text = escapeHtml(value);
+  return `<span style="display:inline-block;min-width:280px;border-bottom:1px dotted #111;padding:0 4px 2px 4px;font-weight:700">${text || "&nbsp;"}</span>`;
+}
+
+function declarationItemsRows(items: QuoteItem[]) {
+  const rows = items.length ? items : [{ name: "Klímaberendezés", quantity: 1 }];
+  return rows.map((item) => {
+    const quantity = Number(item.quantity || 1);
+    const name = escapeHtml(item.name || "Klímaberendezés");
+    return `<tr>
+      <td style="border:1px solid #111;padding:10px 12px;font-size:14px;line-height:1.35">${name}</td>
+      <td style="border:1px solid #111;padding:10px 12px;text-align:center;font-size:14px;font-weight:700">${quantity}</td>
+    </tr>`;
+  }).join("");
+}
+
+function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report: WorkReport, copyLabel: "I." = "I.") {
+  const customerName = customer.name || report.signerName || "";
+  const customerAddress = fullAddress(customer.city, customer.address, "");
+  const kelt = formatKelt(report.signedAt);
+  const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
+
+  return `<div style="margin-top:28px;background:#ffffff;border:1px solid #d1d5db;border-radius:18px;padding:24px 20px;font-family:'Times New Roman',Times,serif;color:#111827">
+    <div style="text-align:right;color:#9ca3af;font-size:18px;margin-bottom:4px">${copyLabel} példány</div>
+    <h2 style="margin:0;text-align:center;font-size:22px;line-height:1.05;font-weight:900;letter-spacing:.02em">VÁSÁRLÁSI<br>NYILATKOZAT</h2>
+    <p style="margin:6px 0 18px 0;text-align:center;font-size:13px;line-height:1.35;font-weight:700">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br>28. § (5) bekezdése alapján</p>
+
+    <p style="margin:0 0 10px 0;font-size:15px;font-weight:900">Az értékesítő vállalkozás adatai:</p>
+    <div style="margin-left:22px;margin-bottom:18px;font-size:15px;line-height:1.8">
+      neve: ${dottedValue(SELLER_COMPANY.name)}<br>
+      adószáma: ${dottedValue(SELLER_COMPANY.taxNumber)}<br>
+      a képviseletében eljáró természetes személy neve: ${dottedValue(SELLER_COMPANY.representative)}
+    </div>
+
+    <p style="margin:0 0 10px 0;font-size:15px;font-weight:900">A telepíttető adatai:</p>
+    <div style="margin-left:22px;margin-bottom:12px;font-size:15px;line-height:1.8">
+      <strong>A.) Vállalkozás, intézmény, egyéb adószámmal rendelkező szervezet</strong><br>
+      neve: <span style="display:inline-block;min-width:280px;border-bottom:1px dotted #111">&nbsp;</span><br>
+      adószáma: <span style="display:inline-block;min-width:270px;border-bottom:1px dotted #111">&nbsp;</span><br>
+      a képviseletében eljáró természetes személy neve: <span style="display:inline-block;min-width:170px;border-bottom:1px dotted #111">&nbsp;</span>
+    </div>
+    <div style="margin-left:22px;margin-bottom:18px;font-size:15px;line-height:1.8">
+      <strong>B.) Természetes személy</strong><br>
+      neve: ${dottedValue(customerName)}<br>
+      lakcíme: ${dottedValue(customerAddress)}
+    </div>
+
+    <p style="margin:0 0 14px 0;font-size:14px;line-height:1.38;text-align:justify">Telepíttető – megfelelve az Európai Parlament és a Tanács 2024/573 Rendeletében, valamint a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. §-ban foglaltaknak – jelen nyilatkozat aláírásával kötelezettséget vállal arra, hogy az alábbi telepítési tanúsítvány-köteles berendezés(ek) telepítését és beüzemelését az arra képesítéssel rendelkező vállalkozás képesített alkalmazottjával fogja elvégeztetni.</p>
+
+    <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin:10px 0 8px 0">
+      <thead>
+        <tr>
+          <th style="border:1px solid #111;padding:12px 10px;text-align:center;font-size:14px;font-weight:900">Termék megnevezése</th>
+          <th style="border:1px solid #111;padding:12px 10px;text-align:center;font-size:14px;font-weight:900;width:34%">Megvásárolt termékek darabszáma</th>
+        </tr>
+      </thead>
+      <tbody>${declarationItemsRows(items)}</tbody>
+    </table>
+    <p style="margin:0 0 14px 0;font-size:13px;line-height:1.35">*Több berendezés típus vásárlása esetén a táblázat sorainak száma bővíthető egyéni szerkesztéssel</p>
+
+    <p style="margin:0 0 14px 0;font-size:14px;line-height:1.4;text-align:justify">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos jótállás telepítési tanúsítvány<sup>${copyLabel === "I." ? "1" : "2"}</sup> birtokában érvényesíthető.</p>
+    <p style="margin:0 0 18px 0;font-size:14px;line-height:1.4;text-align:justify;font-weight:700">Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</p>
+
+    <div style="display:flex;gap:18px;align-items:flex-end;justify-content:space-between;margin-top:16px">
+      <div style="font-size:15px;white-space:nowrap">Kelt: ${dottedValue(kelt)}</div>
+      <div style="width:300px;text-align:center">
+        ${hasSignature ? `<img src="cid:ugyfel-alairas" alt="Telepíttető aláírása" style="display:block;width:100%;max-width:260px;height:auto;margin:0 auto 4px auto;background:#ffffff" />` : `<div style="height:46px">&nbsp;</div>`}
+        <div style="border-top:1px solid #111;padding-top:4px;font-style:italic;font-size:15px">Telepíttető</div>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid #111;margin-top:20px;padding-top:6px;font-size:11px;line-height:1.3"><sup>${copyLabel === "I." ? "1" : "2"}</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</div>
+  </div>`;
+}
+
 function uniqueEmailRef(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -184,6 +272,12 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
             <div style="font-size:14px;line-height:1.6;color:#334155"><strong>Aláíró:</strong> ${signer || "nincs megadva"}<br><strong>Aláírás ideje:</strong> ${signedAt}</div>
           </div>
 
+          <div style="margin-top:26px;margin-bottom:18px">
+            <div style="font-size:14px;font-weight:900;color:#0f172a;margin-bottom:10px">Vásárlási nyilatkozat</div>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#334155">A munkalaphoz külön blokkban csatoljuk a 458/2024. (XII. 30.) Korm. rendelet 28. § (5) bekezdése szerinti vásárlási nyilatkozatot. A nyilatkozaton az ügyfél egyszerű aláírása a Telepíttető aláírási helyén szerepel.</p>
+            ${purchaseDeclarationHtml(customer, items, report, "I.")}
+          </div>
+
           <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">Üdvözlettel,<br><strong style="color:#020617">Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
         </div>
       </div>
@@ -223,7 +317,7 @@ export async function POST(request: Request) {
         from,
         to: [to],
         reply_to: replyTo,
-        subject: "Klímaszerelési munkalap – KLIMAlin",
+        subject: "Klímaszerelési munkalap és vásárlási nyilatkozat – KLIMAlin",
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("klimalin-work-report"),
         },

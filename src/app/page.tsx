@@ -247,6 +247,59 @@ function mapsHref(customer: Customer) {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
 }
 
+function compactCalendarDate(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${y}${m}${d}T${h}${min}00`;
+}
+
+function parseCalendarTime(value?: string) {
+  const firstTime = (value || "08:00").match(/\d{1,2}:\d{2}/)?.[0] || "08:00";
+  const [hour, minute] = firstTime.split(":").map(Number);
+  return { hour: Number.isFinite(hour) ? hour : 8, minute: Number.isFinite(minute) ? minute : 0 };
+}
+
+function googleCalendarHref(customer: Customer) {
+  const dateIso = customer.date || todayIso();
+  const { hour, minute } = parseCalendarTime(customer.time);
+  const start = new Date(`${dateIso}T00:00:00`);
+  start.setHours(hour, minute, 0, 0);
+  const end = new Date(start);
+  const isLongSlot = Number(qty(customer.quoteItems)) >= 2 || String(customer.time || "").includes("+");
+  if (isLongSlot) {
+    end.setHours(16, 0, 0, 0);
+  } else if (hour >= 16) {
+    end.setHours(hour + 2, minute, 0, 0);
+  } else {
+    end.setHours(hour + 4, minute, 0, 0);
+  }
+
+  const title = `Klímaszerelés – ${customer.name || "ügyfél"}`;
+  const details = [
+    customer.name ? `Ügyfél: ${customer.name}` : "",
+    customer.phone ? `Telefon: ${customer.phone}` : "",
+    customer.email ? `Email: ${customer.email}` : "",
+    climateSummary(customer.quoteItems) ? `Klíma: ${climateSummary(customer.quoteItems)} – szereléssel együtt` : "",
+    customer.need ? `Igény: ${customer.need}` : "",
+    customer.notes ? `Megjegyzés: ${customer.notes}` : "",
+    customer.status ? `Státusz: ${customer.status}` : "",
+  ].filter(Boolean).join("\n");
+
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: title,
+    dates: `${compactCalendarDate(start)}/${compactCalendarDate(end)}`,
+    ctz: "Europe/Budapest",
+    details,
+    location: displayAddress(customer),
+  });
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 function displayAddress(customer: Pick<Customer, "city" | "address">) {
   const city = (customer.city || "").trim();
   const address = (customer.address || "").trim();
@@ -1917,6 +1970,7 @@ export default function Home() {
             <Card title="Lezárási műveletek">
               <div className="space-y-3">
                 <StepButton color="cyan" onClick={openWorkReport}>Munkalap és egyszerű aláírás</StepButton>
+                {selected.date ? <a href={googleCalendarHref(selected)} target="_blank" rel="noreferrer" className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-amber-300 to-orange-400 px-5 py-4 text-left font-black text-slate-950 shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]"><span>Hozzáadás Google Naptárhoz</span><span className="rounded-full bg-black/10 px-3 py-1 text-sm">↗</span></a> : null}
                 <StepButton color="blue" onClick={()=>sendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
                 <StepButton color="green" onClick={markInstallationDone}>Szerelés kész – admin folyamatban</StepButton>
                 <StepButton color="blue" onClick={closeWork}>Teljes lezárás</StepButton>
