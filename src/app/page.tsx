@@ -1463,7 +1463,7 @@ export default function Home() {
           </Main>
           <Side>
             <Gradient title="Archív" value={`${filteredArchivedCustomers.length} ügyfél`} />
-            <CustomerSearchPanel title="Archív kereső"/>
+            {renderCustomerSearchPanel("Archív kereső")}
             <Card title="Visszaállítás">
               <p className="text-sm leading-relaxed text-slate-400">A visszaállítás gombbal az ügyfél újra aktív lesz. Időpontos ügyfélnél „Időpont foglalva”, időpont nélkülinél „Visszahívandó” státuszra kerül.</p>
             </Card>
@@ -2073,7 +2073,7 @@ export default function Home() {
     return null;
   }
 
-  function CustomerSearchPanel({ title = "Ügyfélkereső" }: { title?: string }) {
+  function renderCustomerSearchPanel(title = "Ügyfélkereső") {
     const results = filteredCustomers.slice(0, 8);
     return (
       <Card title={title}>
@@ -2323,7 +2323,7 @@ export default function Home() {
               </div>
             </Card>
           </Main>
-          <Side><Gradient title="Dokumentum állapot" value={`${documentCustomers.length} ügyfél`}/><CustomerSearchPanel title="Gyors kereső"/></Side>
+          <Side><Gradient title="Dokumentum állapot" value={`${documentCustomers.length} ügyfél`}/>{renderCustomerSearchPanel("Gyors kereső")}</Side>
         </Layout>
       </Shell>
     );
@@ -2587,7 +2587,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v60 · dokumentumkártyák egységesítve</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><CustomerSearchPanel/><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v61 · mobil kereső és rögzített vissza gomb</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
@@ -2708,7 +2708,7 @@ function Main({children}:{children:React.ReactNode}){return <div className="spac
 function Side({children}:{children:React.ReactNode}){return <aside className="space-y-6">{children}</aside>}
 function Card({title,children}:{title:string;children:React.ReactNode}){return <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl"><h2 className="mb-5 text-2xl font-black">{title}</h2>{children}</section>}
 function Hero({title,sub,action,onAction}:{title:string;sub:string;action:string;onAction?:()=>void}){return <section className="rounded-[2.5rem] border border-cyan-300/20 bg-gradient-to-br from-slate-950 to-slate-900 p-6 shadow-2xl md:p-8"><div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between"><div><h1 className="text-4xl font-black leading-tight md:text-5xl">{title}</h1>{sub ? <p className="mt-3 text-lg text-slate-400">{sub}</p> : null}</div><Btn onClick={onAction}>{action}</Btn></div></section>}
-function Back({onClick}:{onClick:()=>void}){return <button onClick={onClick} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 font-black text-cyan-200">← Vissza</button>}
+function Back({onClick}:{onClick:()=>void}){return <div className="sticky top-3 z-50 w-fit"><button onClick={onClick} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur">← Vissza</button></div>}
 
 function StepButton({
   children,
