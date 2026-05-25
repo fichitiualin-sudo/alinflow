@@ -649,9 +649,35 @@ export default function Home() {
     };
   }, []);
 
-  // Nincs automatikus időzített frissítés.
-  // Az adatok mentéskor, küldéskor vagy kézi frissítéskor frissülnek,
-  // hogy telefonon és asztali gépen ne ugorjon el váratlanul az aktuális nézet.
+  useEffect(() => {
+    if (!user) return;
+
+    const shouldRefresh = () => {
+      if (editCustomer) return false;
+      if (["lead", "quote", "quotePreview", "schedule", "workReport"].includes(view)) return false;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return false;
+      return true;
+    };
+
+    const refresh = () => {
+      if (!shouldRefresh()) return;
+      void loadCustomersFromDb();
+    };
+
+    const onVisibility = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") refresh();
+    };
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
+    const intervalId = window.setInterval(refresh, 45000);
+
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, [user, view, editCustomer]);
 
   const checklistItems: { key: keyof WorkChecklistState; label: string }[] = [
     { key: "nkvh", label: "NKVH adatok rögzítése" },
@@ -1906,21 +1932,13 @@ export default function Home() {
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
 
     const hasSignature = Boolean(report?.signatureDataUrl || saved.signature);
-    const purchaseDocStatus = purchaseDoc ? purchaseDoc.status : undefined;
-    const purchaseDocReady = Boolean(purchaseDoc || statusMeansDone(purchaseDocStatus));
-    const purchaseDocSent = Boolean(statusMeansSent(purchaseDocStatus));
-    const workReportReady = Boolean(
-      report?.id ||
-      report?.signatureDataUrl ||
-      statusMeansDone(workDoc?.status) ||
-      purchaseDocReady
-    );
-    const purchaseReady = Boolean(purchaseDocReady || hasSignature || report?.emailSentAt || saved.purchaseDeclaration);
+    const workReportReady = Boolean(report?.id || report?.signatureDataUrl || statusMeansDone(workDoc?.status));
+    const purchaseReady = Boolean(purchaseDoc || hasSignature || report?.emailSentAt || saved.purchaseDeclaration);
     const documentsSent = Boolean(
       saved.docsSent ||
       report?.emailSentAt ||
       statusMeansSent(workDoc?.status) ||
-      purchaseDocSent
+      statusMeansSent(purchaseDoc?.status)
     );
 
     return {
@@ -1982,13 +2000,9 @@ export default function Home() {
 
   function workReportDocumentStatus(customer: Customer) {
     const report = savedReportFor(customer);
-    const workDoc = docFor(customer, "work_report");
-    const purchaseDoc = docFor(customer, "purchase_declaration");
-
-    if (workDoc?.status) return workDoc.status;
-    if (report?.emailSentAt || statusMeansSent(purchaseDoc?.status)) return "Elküldve";
-    if (report?.signatureDataUrl || statusMeansDone(purchaseDoc?.status)) return "Aláírva, mentve";
-    if (report?.id || purchaseDoc) return "Mentve";
+    if (report?.emailSentAt) return "Elküldve";
+    if (report?.signatureDataUrl) return "Aláírva, mentve";
+    if (report?.id) return "Mentve";
     return "Nincs kész";
   }
 
@@ -2182,18 +2196,8 @@ export default function Home() {
 
   function documentIsReady(customer: Customer, row: { action: string; title: string; status: string }) {
     const report = savedReportFor(customer);
-    const workDoc = docFor(customer, "work_report");
-    const purchaseDoc = docFor(customer, "purchase_declaration");
-    if (row.action === "Munkalap") {
-      return Boolean(
-        report?.id ||
-        report?.signatureDataUrl ||
-        report?.emailSentAt ||
-        workDoc ||
-        purchaseDoc
-      );
-    }
-    if (row.action === "Nyilatkozat") return Boolean(report?.signatureDataUrl || report?.emailSentAt || purchaseDoc);
+    if (row.action === "Munkalap") return Boolean(report?.id || report?.signatureDataUrl || report?.emailSentAt);
+    if (row.action === "Nyilatkozat") return Boolean(report?.signatureDataUrl || report?.emailSentAt || docFor(customer, "purchase_declaration"));
     if (row.action === "Ajánlat") return row.status.includes("Elküld") || customer.status === "Ajánlat elküldve";
     if (row.action === "Időpont") return Boolean(customer.date || row.status.includes("Elküld"));
     if (row.action === "Számla") return row.status.includes("Kész") || row.status.includes("Kiállít");
@@ -2298,7 +2302,7 @@ export default function Home() {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
     const shownItems = items.length ? items : [{ productId: PRODUCTS[0]?.id || "", quantity: 1 }];
     return (
-      <article className="doc-print-page mx-auto max-w-[172mm] rounded-3xl bg-white p-6 font-serif text-[12px] leading-snug text-slate-950 shadow-2xl print:m-0 print:min-h-0 print:w-[172mm] print:max-w-[172mm] print:rounded-none print:border-0 print:p-[7mm] print:text-[11px] print:shadow-none">
+      <article className="doc-print-page work-report-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[13px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[14mm] print:text-[11.5px] print:shadow-none">
         <div className="text-center">
           <h2 className="text-xl font-black leading-none tracking-tight print:text-[17px]">KLÍMASZERELÉSI<br />MUNKALAP</h2>
           <p className="mt-1 text-xs font-bold print:text-[9.5px]">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p>
@@ -2378,7 +2382,7 @@ export default function Home() {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
     const shownItems = items.length ? items : [{ productId: PRODUCTS[0]?.id || "", quantity: 1 }];
     return (
-      <article className="doc-print-page mx-auto max-w-[172mm] rounded-3xl bg-white p-6 font-serif text-[11px] leading-snug text-slate-950 shadow-2xl print:m-0 print:min-h-0 print:w-[172mm] print:max-w-[172mm] print:rounded-none print:border-0 print:p-[6mm] print:text-[9.4px] print:leading-[1.16] print:shadow-none">
+      <article className="doc-print-page purchase-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[12px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[12mm] print:text-[10px] print:leading-[1.2] print:shadow-none">
         <div className="text-center">
           <h2 className="text-lg font-black leading-none tracking-tight print:text-[15px]">VÁSÁRLÁSI<br />NYILATKOZAT</h2>
           <p className="mt-1 text-[10px] font-bold leading-tight print:text-[8.3px]">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br />28. § (5) bekezdése alapján</p>
@@ -2605,7 +2609,7 @@ export default function Home() {
     const isAppointmentPreview = documentPreviewType === "appointment_confirmation";
     const isQuotePreview = documentPreviewType === "quote_document";
     const title = documentPreviewType === "purchase_declaration" ? "Vásárlási nyilatkozat" : isAppointmentPreview ? "Időpont-visszaigazolás" : isQuotePreview ? "Árajánlat" : "Klímaszerelési munkalap";
-    return <Shell><style>{`@media print { @page { size: A4; margin: 8mm; } html, body { background: #fff !important; } .doc-print-page { box-sizing: border-box !important; page-break-inside: avoid !important; break-inside: avoid !important; width: 172mm !important; max-width: 172mm !important; margin-left: auto !important; margin-right: auto !important; } .doc-print-page * { box-sizing: border-box !important; } }`}</style><Back onClick={()=>setView(documentBackView)}/><div className="print:hidden"><Hero title={title} sub={`${selected.name || "Ügyfél"} · ${fullCustomerAddress(selected)}`} action="Nyomtatás" onAction={()=>window.print()}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected}/> : isQuotePreview ? <QuoteDocument customer={selected}/> : <WorkReportDocument customer={selected} report={report}/>}</div></Shell>;
+    return <Shell><style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; min-height: 297mm !important; margin: 0 !important; background: #fff !important; } body * { visibility: hidden !important; } .print-document-area, .print-document-area * { visibility: visible !important; } .print-document-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; background: #fff !important; } .doc-print-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; min-height: 297mm !important; height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: hidden !important; page-break-after: always !important; break-after: page !important; } .work-report-doc { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; } .purchase-doc { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; } .doc-print-page * { box-sizing: border-box !important; } .doc-print-page:last-child { page-break-after: auto !important; break-after: auto !important; } }`}</style><Back onClick={()=>setView(documentBackView)}/><div className="print:hidden"><Hero title={title} sub={`${selected.name || "Ügyfél"} · ${fullCustomerAddress(selected)}`} action="Nyomtatás" onAction={()=>window.print()}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print-document-area print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected}/> : isQuotePreview ? <QuoteDocument customer={selected}/> : <WorkReportDocument customer={selected} report={report}/>}</div></Shell>;
   }
 
   if (view==="documents") {
@@ -2895,7 +2899,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v64 · kézi frissítés és dokumentum státusz fix</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => { void loadCustomersFromDb(); setView("documents"); }}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><button onClick={() => void loadCustomersFromDb()} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Frissítés</button><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v63 · dokumentum- és lezárási szinkron</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);

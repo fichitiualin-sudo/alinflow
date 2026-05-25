@@ -111,7 +111,7 @@ function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report:
   const kelt = formatKelt(report.signedAt);
   const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
 
-  return `<div class="purchase-page" style="max-width:640px;width:100%;margin:0 auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:18px 22px 16px 22px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
+  return `<div class="purchase-page" style="max-width:794px;width:100%;margin:0 auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:38px 45px 32px 45px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
     <h2 style="margin:0;text-align:center;font-size:16px;line-height:1;font-weight:900;letter-spacing:.02em">VÁSÁRLÁSI<br>NYILATKOZAT</h2>
     <p style="margin:3px 0 8px 0;text-align:center;font-size:9px;line-height:1.15;font-weight:700">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br>28. § (5) bekezdése alapján</p>
 
@@ -223,19 +223,19 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
         .sign-box { width: 100% !important; margin-top: 12px !important; }
       }
       @media print {
-        @page { size: A4; margin: 8mm; }
-        body { background: #ffffff !important; margin: 0 !important; }
-        .outer { background: #ffffff !important; padding: 0 !important; }
-        .document { margin: 0 auto !important; padding: 6mm 8mm !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; max-width: 172mm !important; width: 172mm !important; }
-        .work-page { page-break-after: always !important; break-after: page !important; page-break-inside: avoid !important; break-inside: avoid !important; }
-        .purchase-page { page-break-before: always !important; break-before: page !important; page-break-inside: avoid !important; break-inside: avoid !important; margin: 0 auto !important; padding: 6mm 8mm !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; max-width: 172mm !important; width: 172mm !important; }
+        @page { size: A4 portrait; margin: 0; }
+        html, body { width: 210mm !important; margin: 0 !important; background: #ffffff !important; }
+        .outer { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+        .document, .purchase-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; height: 297mm !important; min-height: 297mm !important; margin: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; overflow: hidden !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+        .document { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; page-break-after: always !important; break-after: page !important; }
+        .purchase-page { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; page-break-before: always !important; break-before: page !important; }
         .document *, .purchase-page * { box-sizing: border-box !important; }
       }
     </style>
   </head>
   <body style="margin:0;background:#f6f7fb;padding:0;color:#111827">
     <div class="outer" style="background:#f6f7fb;padding:24px 12px">
-      <div class="document work-page" style="max-width:640px;width:100%;margin:0 auto 18px auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:18px 22px 16px 22px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
+      <div class="document work-page" style="max-width:794px;width:100%;margin:0 auto 18px auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:42px 50px 36px 50px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
         <h1 class="doc-title" style="margin:0;text-align:center;font-size:17px;line-height:1;font-weight:900;letter-spacing:.02em">KLÍMASZERELÉSI<br>MUNKALAP</h1>
         <p style="margin:5px 0 10px 0;text-align:center;font-size:9px;line-height:1.1;font-weight:700">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p>
 
