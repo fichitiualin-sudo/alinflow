@@ -2051,17 +2051,24 @@ export default function Home() {
   }
 
   function DocumentActions({ customer, row }: { customer: Customer; row: { action: string; title: string; status: string } }) {
+    const baseButton = "rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-wait disabled:opacity-60";
+    const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
+    const sendButton = `${baseButton} bg-blue-400/20 text-blue-100 hover:bg-blue-400/30`;
+    const editButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
+    const helperButton = `${baseButton} bg-cyan-300/15 text-cyan-100 hover:bg-cyan-300/25`;
+    const gridClass = "mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2";
+
     if (row.action === "Munkalap") {
-      return <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2"><button onClick={()=>openDocumentPreview(customer,"work_report")} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés</button><button onClick={()=>openWorkReportFor(customer)} className="rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100">Szerkesztés / aláírás</button></div>;
+      return <div className={gridClass}><button onClick={()=>openDocumentPreview(customer,"work_report")} className={viewButton}>Megtekintés</button><button onClick={()=>openWorkReportFor(customer)} className={editButton}>Szerkesztés / aláírás</button></div>;
     }
     if (row.action === "Nyilatkozat") {
-      return <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2"><button onClick={()=>openDocumentPreview(customer,"purchase_declaration")} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés</button><button onClick={()=>openWorkReportFor(customer)} className="rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Aláíráshoz</button></div>;
+      return <div className={gridClass}><button onClick={()=>openDocumentPreview(customer,"purchase_declaration")} className={viewButton}>Megtekintés</button><button onClick={()=>openWorkReportFor(customer)} className={helperButton}>Aláíráshoz</button></div>;
     }
     if (row.action === "Ajánlat") {
-      return <button onClick={()=>openDocumentPreview(customer,"quote_document")} className="mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100">Ajánlat megtekintése</button>;
+      return <div className={gridClass}><button onClick={()=>openDocumentPreview(customer,"quote_document")} className={viewButton}>Megtekintés</button><button onClick={sendQuoteEmail} disabled={quoteEmailBusy} className={sendButton}>{quoteEmailBusy ? "Küldés..." : "Küldés"}</button></div>;
     }
     if (row.action === "Időpont") {
-      return <button onClick={()=>openDocumentPreview(customer,"appointment_confirmation")} className="mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Időpont megtekintése</button>;
+      return <div className={gridClass}><button onClick={()=>openDocumentPreview(customer,"appointment_confirmation")} className={viewButton}>Megtekintés</button><button onClick={()=>sendAppointmentEmailFor(customer)} disabled={appointmentEmailBusy} className={helperButton}>{appointmentEmailBusy ? "Küldés..." : "Email"}</button></div>;
     }
     return null;
   }
@@ -2132,12 +2139,156 @@ export default function Home() {
     const sum = total(items);
     const installerAmount = Math.min(60000 * Math.max(1, qty(items)), sum);
     const materialAmount = Math.max(0, sum - installerAmount);
-    return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-5 font-serif text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none"><div className="text-center"><h2 className="text-2xl font-black tracking-tight">KLÍMABERENDEZÉS<br/>ÁRAJÁNLAT</h2><p className="mt-2 text-sm font-bold">Klímaberendezés alapszereléssel együtt</p></div><div className="mt-6 space-y-4 text-sm leading-relaxed"><section><h3 className="mb-2 font-black">Ügyfél adatai</h3><div className="ml-3 space-y-1"><p>neve: {dottedLine(customer.name)}</p><p>címe: {dottedLine(fullCustomerAddress(customer))}</p><p>telefonszáma: {dottedLine(customer.phone)}</p><p>email címe: {dottedLine(customer.email)}</p></div></section><section><h3 className="mb-2 font-black">Ajánlat adatai</h3><div className="ml-3 space-y-1"><p>ajánlat érvényessége: {dottedLine("7 nap")}</p><p>kapcsolat: {dottedLine("06 30 700 4908")}</p><p>weboldal: {dottedLine("klimalin.hu")}</p></div></section><section><table className="w-full border-collapse text-xs"><thead><tr><th className="border border-slate-900 p-2 text-center">Termék megnevezése</th><th className="border border-slate-900 p-2 text-center">Darab</th><th className="border border-slate-900 p-2 text-center">Bruttó összeg</th></tr></thead><tbody>{items.map((item, index)=><tr key={`${item.productId}-${index}`}><td className="border border-slate-900 p-2">{itemName(item)}<br/><span className="font-normal">telepítéssel együtt</span></td><td className="border border-slate-900 p-2 text-center font-bold">{item.quantity}</td><td className="border border-slate-900 p-2 text-right font-bold">{ft(itemTotal(item))}</td></tr>)}</tbody></table></section><section className="rounded-xl border border-slate-900 p-3"><div className="flex items-center justify-between gap-4 text-base font-black"><span>Fizetendő bruttó végösszeg</span><span>{ft(sum)}</span></div></section><section><h3 className="mb-2 font-black">Alapszerelés tartalma</h3><ul className="list-disc space-y-1 pl-5"><li>max. 3 m szigetelt rézcső-pár / klíma</li><li>1 db faláttörés, tömítés és esztétikus lezárás</li><li>kondenzvíz elvezetés kialakítása gravitációsan, adottság szerint</li><li>kültéri fali konzol rezgéscsillapítókkal</li><li>nyomáspróba, vákuumozás, beüzemelés és működési teszt</li><li>felhasználói betanítás és rendrakás</li></ul></section><section><h3 className="mb-2 font-black">Belső számlázási bontás</h3><div className="rounded-xl border border-slate-300 p-3"><p>Adorján Alin E.V. – klímatelepítési munkadíj: <strong>{ft(installerAmount)}</strong></p><p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: <strong>{ft(materialAmount)}</strong></p><p className="mt-2 text-xs">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</p></div></section><section className="border-t border-slate-900 pt-3 text-sm"><p>Üdvözlettel,</p><p className="font-black">Adorján Alin · KLIMAlin</p><p>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p></section></div></article>;
+    return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-start gap-4">
+          <img src="/alin-klima-logo.png" alt="KLIMAlin logo" className="h-16 w-auto object-contain" />
+          <div>
+            <h2 className="text-3xl font-black">KLIMAlin árajánlat</h2>
+            <p className="mt-2 text-sm text-slate-600">Klímaberendezés alapszereléssel együtt</p>
+          </div>
+        </div>
+        <div className="text-sm text-slate-600 md:text-right">
+          <p>Ajánlat érvényessége: 7 nap</p>
+          <p>Kapcsolat: 06 30 700 4908</p>
+          <p>klimalin.hu</p>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl bg-slate-100 p-5">
+        <p className="text-sm text-slate-500">Ügyfél</p>
+        <p className="mt-1 text-2xl font-black">{customer.name || "Nincs név"}</p>
+        <p className="mt-2">{fullCustomerAddress(customer) || "nincs cím"}</p>
+        {customer.email ? <p>{customer.email}</p> : null}
+        {customer.phone ? <p>{customer.phone}</p> : null}
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-slate-100 p-5">
+        <p className="text-sm text-slate-500">Ajánlat összesítő</p>
+        <p className="mt-1 text-3xl font-black">{ft(sum)}</p>
+        <p className="mt-1 text-sm text-slate-600">Bruttó végösszeg alapszereléssel</p>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {items.map((item, index)=><div key={`${item.productId}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-lg font-black">{item.quantity} db · {itemName(item)}</p>
+              <p className="mt-1 text-sm text-slate-600">{ft(prod(item.productId).price)} / db · telepítéssel együtt</p>
+            </div>
+            <p className="text-xl font-black">{ft(itemTotal(item))}</p>
+          </div>
+        </div>)}
+      </div>
+
+      <div className="mt-6 flex flex-col gap-2 rounded-2xl bg-slate-950 p-5 text-white sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xl font-black">Fizetendő bruttó végösszeg</p>
+        <p className="text-2xl font-black">{ft(sum)}</p>
+      </div>
+
+      <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
+        <h3 className="text-lg font-black">Alapszerelés tartalma</h3>
+        <ul className="mt-3 list-disc space-y-2 pl-5">
+          <li>max. 3 m szigetelt rézcső-pár / klíma</li>
+          <li>1 db faláttörés, tömítés és esztétikus lezárás</li>
+          <li>kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint</li>
+          <li>kültéri fali konzol vastag rezgéscsillapítókkal</li>
+          <li>nyomáspróba, vákuumozás, beüzemelés és működési teszt</li>
+          <li>felhasználói betanítás és rendrakás</li>
+        </ul>
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
+        <h3 className="text-lg font-black">Minőségi kivitelezés</h3>
+        <ul className="mt-3 list-disc space-y-2 pl-5">
+          <li>Alukasírozott, hőszigetelt rézcső-pár.</li>
+          <li>Időjárásálló gumikábel a teljes nyomvonalon.</li>
+          <li>Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.</li>
+          <li>Szakszerű faláttörés, tömítés és esztétikus lezárás.</li>
+          <li>Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.</li>
+        </ul>
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-amber-50 p-5 text-sm leading-relaxed text-slate-800">
+        <h3 className="font-black">Belső számlázási bontás</h3>
+        <p className="mt-3">Adorján Alin E.V. – klímatelepítési munkadíj: <strong>{ft(installerAmount)}</strong></p>
+        <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: <strong>{ft(materialAmount)}</strong></p>
+        <p className="mt-2 text-xs">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</p>
+      </div>
+
+      <div className="mt-8 text-sm text-slate-700">
+        <p>Üdvözlettel,</p>
+        <p className="font-black">Adorján Alin · KLIMAlin</p>
+        <p>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+      </div>
+    </article>;
   }
 
   function AppointmentConfirmationDocument({ customer }: { customer: Customer }) {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
-    return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-5 font-serif text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none"><div className="text-center"><h2 className="text-2xl font-black tracking-tight">IDŐPONT-<br/>VISSZAIGAZOLÁS</h2><p className="mt-2 text-sm font-bold">Klímaszerelési időpont és telepítési adatok</p></div><div className="mt-6 space-y-4 text-sm leading-relaxed"><section><p className="font-black">Tisztelt {customer.name || "Ügyfelünk"}!</p><p className="mt-2">Ezúton visszaigazoljuk a klímaszerelés egyeztetett időpontját.</p></section><section><h3 className="mb-2 font-black">Ügyfél adatai</h3><div className="ml-3 space-y-1"><p>neve: {dottedLine(customer.name)}</p><p>címe: {dottedLine(fullCustomerAddress(customer))}</p><p>telefonszáma: {dottedLine(customer.phone)}</p><p>email címe: {dottedLine(customer.email)}</p></div></section><section><h3 className="mb-2 font-black">Időpont adatai</h3><div className="ml-3 space-y-1"><p>szerelés dátuma: {dottedLine(formatDocumentDate(customer.date))}</p><p>idősáv: {dottedLine(customer.time || "egyeztetés szerint")}</p><p>helyszín: {dottedLine(fullCustomerAddress(customer))}</p></div></section><section><table className="w-full border-collapse text-xs"><thead><tr><th className="border border-slate-900 p-2 text-center">Készülék megnevezése</th><th className="border border-slate-900 p-2 text-center">Darab</th><th className="border border-slate-900 p-2 text-center">Megjegyzés</th></tr></thead><tbody>{items.map((item, index)=><tr key={`${item.productId}-${index}`}><td className="border border-slate-900 p-2">{itemName(item)}</td><td className="border border-slate-900 p-2 text-center font-bold">{item.quantity}</td><td className="border border-slate-900 p-2">szereléssel együtt</td></tr>)}</tbody></table></section><section><h3 className="mb-2 font-black">Fontos tudnivaló</h3><p className="rounded-xl border border-slate-300 p-3 text-justify">Kérjük, hogy a szerelési helyszín legyen megközelíthető, és a beltéri/kültéri egység tervezett helye legyen hozzáférhető. Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze felénk telefonon.</p></section><section className="border-t border-slate-900 pt-3 text-sm"><p>Üdvözlettel,</p><p className="font-black">Adorján Alin · KLIMAlin</p><p>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p></section></div></article>;
+    return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-start gap-4">
+          <img src="/alin-klima-logo.png" alt="KLIMAlin logo" className="h-16 w-auto object-contain" />
+          <div>
+            <h2 className="text-3xl font-black">Időpont-visszaigazolás</h2>
+            <p className="mt-2 text-sm text-slate-600">Klímaszerelési időpont és helyszín összesítő</p>
+          </div>
+        </div>
+        <div className="text-sm text-slate-600 md:text-right">
+          <p>Kapcsolat: 06 30 700 4908</p>
+          <p>klimalin.hu</p>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
+        <p className="text-lg font-black">Tisztelt {customer.name || "Ügyfelünk"}!</p>
+        <p className="mt-3">Ezúton visszaigazoljuk az egyeztetett klímaszerelési időpontot. Kérjük, hogy a megadott időpontban a szerelési helyszín legyen hozzáférhető, és a beltéri, illetve kültéri egység tervezett helye körül legyen elegendő munkaterület.</p>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-2xl bg-slate-100 p-4">
+          <p className="text-sm text-slate-500">Ügyfél</p>
+          <p className="mt-1 text-xl font-black">{customer.name || "Nincs név"}</p>
+          {customer.email ? <p className="mt-1">{customer.email}</p> : null}
+          {customer.phone ? <p>{customer.phone}</p> : null}
+        </div>
+        <div className="rounded-2xl bg-slate-100 p-4">
+          <p className="text-sm text-slate-500">Időpont</p>
+          <p className="mt-1 text-xl font-black">{customer.date ? formatDocumentDate(customer.date) : "nincs időpont"}</p>
+          <p className="mt-1">{customer.time || "egyeztetés szerint"}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-slate-100 p-4">
+        <p className="text-sm text-slate-500">Telepítési helyszín</p>
+        <p className="mt-1 text-lg font-black">{fullCustomerAddress(customer) || "nincs megadva"}</p>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {items.map((item, i)=><div key={`${item.productId}-${i}`} className="rounded-2xl border border-slate-200 p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-lg font-black">{item.quantity} db · {itemName(item)}</p>
+            <p className="text-sm text-slate-600">szereléssel együtt</p>
+          </div>
+        </div>)}
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200 p-5 text-sm leading-relaxed">
+        <p className="font-black">Fontos tudnivalók</p>
+        <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-700">
+          <li>Kérjük, hogy a szerelési helyszín legyen megközelíthető.</li>
+          <li>A beltéri és kültéri egység tervezett helye legyen hozzáférhető.</li>
+          <li>Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.</li>
+        </ul>
+      </div>
+
+      <div className="mt-8 text-sm text-slate-700">
+        <p>Üdvözlettel,</p>
+        <p className="font-black">Adorján Alin · KLIMAlin</p>
+        <p>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+      </div>
+    </article>;
   }
 
 
@@ -2405,7 +2556,7 @@ export default function Home() {
                   </div>
 
                   {m.isExtra ? <div className="mt-3"><input className="input" value={m.unit} onChange={e=>updateMaterial(i,"unit",e.target.value)} placeholder="egység"/></div> : null}
-                </div>)}</div></Card></Main><Side><Gradient title="Munka státusz" value={selected.status || "Folyamatban"}/><Card title="Dokumentumok"><div className="space-y-3">{documentRowsFor(selected).map((row)=><div key={row.title} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${row.status.includes("Elküld") || row.status.includes("Kész") || row.status.includes("Aláírva") || row.status.includes("Elkészült") ? "bg-emerald-400/20 text-emerald-200" : row.status.includes("később") ? "bg-slate-500/20 text-slate-300" : "bg-amber-400/20 text-amber-200"}`}>{row.status}</span></div><DocumentActions customer={selected} row={row}/>{row.action === "Ajánlat" ? <button onClick={sendQuoteEmail} disabled={quoteEmailBusy} className="mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100 disabled:opacity-60">{quoteEmailBusy ? "Küldés..." : "Ajánlat küldése"}</button> : null}{row.action === "Időpont" ? <button onClick={()=>sendAppointmentEmailFor(selected)} disabled={appointmentEmailBusy} className="mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100 disabled:opacity-60">{appointmentEmailBusy ? "Küldés..." : "Időpont email"}</button> : null}</div>)}</div></Card><Card title="Lezárási műveletek">
+                </div>)}</div></Card></Main><Side><Gradient title="Munka státusz" value={selected.status || "Folyamatban"}/><Card title="Dokumentumok"><div className="space-y-3">{documentRowsFor(selected).map((row)=><div key={row.title} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${row.status.includes("Elküld") || row.status.includes("Kész") || row.status.includes("Aláírva") || row.status.includes("Elkészült") ? "bg-emerald-400/20 text-emerald-200" : row.status.includes("később") ? "bg-slate-500/20 text-slate-300" : "bg-amber-400/20 text-amber-200"}`}>{row.status}</span></div><DocumentActions customer={selected} row={row}/></div>)}</div></Card><Card title="Lezárási műveletek">
               <div className="space-y-3">
                 <StepButton color="cyan" onClick={openWorkReport}>Munkalap és egyszerű aláírás</StepButton>
                 
@@ -2436,7 +2587,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v59 · kereső és dokumentumtár javítva</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><CustomerSearchPanel/><Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v60 · dokumentumkártyák egységesítve</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side><CustomerSearchPanel/><Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
