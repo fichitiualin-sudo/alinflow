@@ -2302,7 +2302,7 @@ export default function Home() {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
     const shownItems = items.length ? items : [{ productId: PRODUCTS[0]?.id || "", quantity: 1 }];
     return (
-      <article className="doc-print-page mx-auto max-w-[185mm] rounded-3xl bg-white p-5 font-serif text-[12px] leading-tight text-slate-950 shadow-2xl print:m-0 print:min-h-0 print:w-[185mm] print:max-w-[185mm] print:rounded-none print:border-0 print:p-[6mm] print:text-[10.5px] print:shadow-none">
+      <article className="doc-print-page mx-auto max-w-[172mm] rounded-3xl bg-white p-6 font-serif text-[12px] leading-snug text-slate-950 shadow-2xl print:m-0 print:min-h-0 print:w-[172mm] print:max-w-[172mm] print:rounded-none print:border-0 print:p-[7mm] print:text-[11px] print:shadow-none">
         <div className="text-center">
           <h2 className="text-xl font-black leading-none tracking-tight print:text-[17px]">KLÍMASZERELÉSI<br />MUNKALAP</h2>
           <p className="mt-1 text-xs font-bold print:text-[9.5px]">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p>
@@ -2349,12 +2349,12 @@ export default function Home() {
 
           <section>
             <h3 className="mb-1 font-black">Elvégzett munka:</h3>
-            <p className="whitespace-pre-wrap border border-slate-900 p-2 text-justify print:p-1.5">{report.workDescription || defaultWorkDescription()}</p>
+            <p className="whitespace-pre-wrap border border-slate-900 p-2.5 text-justify print:p-2">{report.workDescription || defaultWorkDescription()}</p>
           </section>
 
           <section>
             <h3 className="mb-1 font-black">Átadás-átvételi nyilatkozat:</h3>
-            <p className="border border-slate-900 p-2 text-justify print:p-1.5">{workAcceptanceText()}</p>
+            <p className="border border-slate-900 p-2.5 text-justify print:p-2">{workAcceptanceText()}</p>
           </section>
 
           {report.notes ? <section><h3 className="mb-1 font-black">Megjegyzés:</h3><p className="whitespace-pre-wrap border border-slate-900 p-2 print:p-1.5">{report.notes}</p></section> : null}
@@ -2382,7 +2382,7 @@ export default function Home() {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
     const shownItems = items.length ? items : [{ productId: PRODUCTS[0]?.id || "", quantity: 1 }];
     return (
-      <article className="doc-print-page mx-auto max-w-[185mm] rounded-3xl bg-white p-5 font-serif text-[11px] leading-tight text-slate-950 shadow-2xl print:m-0 print:min-h-0 print:w-[185mm] print:max-w-[185mm] print:rounded-none print:border-0 print:p-[5mm] print:text-[9.2px] print:leading-[1.12] print:shadow-none">
+      <article className="doc-print-page mx-auto max-w-[172mm] rounded-3xl bg-white p-6 font-serif text-[11px] leading-snug text-slate-950 shadow-2xl print:m-0 print:min-h-0 print:w-[172mm] print:max-w-[172mm] print:rounded-none print:border-0 print:p-[6mm] print:text-[9.4px] print:leading-[1.16] print:shadow-none">
         <div className="text-center">
           <h2 className="text-lg font-black leading-none tracking-tight print:text-[15px]">VÁSÁRLÁSI<br />NYILATKOZAT</h2>
           <p className="mt-1 text-[10px] font-bold leading-tight print:text-[8.3px]">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br />28. § (5) bekezdése alapján</p>
@@ -2609,7 +2609,7 @@ export default function Home() {
     const isAppointmentPreview = documentPreviewType === "appointment_confirmation";
     const isQuotePreview = documentPreviewType === "quote_document";
     const title = documentPreviewType === "purchase_declaration" ? "Vásárlási nyilatkozat" : isAppointmentPreview ? "Időpont-visszaigazolás" : isQuotePreview ? "Árajánlat" : "Klímaszerelési munkalap";
-    return <Shell><style>{`@media print { @page { size: A4; margin: 8mm; } html, body { background: #fff !important; } .doc-print-page { box-sizing: border-box !important; page-break-inside: avoid !important; break-inside: avoid !important; } .doc-print-page * { box-sizing: border-box !important; } }`}</style><Back onClick={()=>setView(documentBackView)}/><div className="print:hidden"><Hero title={title} sub={`${selected.name || "Ügyfél"} · ${fullCustomerAddress(selected)}`} action="Nyomtatás" onAction={()=>window.print()}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected}/> : isQuotePreview ? <QuoteDocument customer={selected}/> : <WorkReportDocument customer={selected} report={report}/>}</div></Shell>;
+    return <Shell><style>{`@media print { @page { size: A4; margin: 8mm; } html, body { background: #fff !important; } .doc-print-page { box-sizing: border-box !important; page-break-inside: avoid !important; break-inside: avoid !important; width: 172mm !important; max-width: 172mm !important; margin-left: auto !important; margin-right: auto !important; } .doc-print-page * { box-sizing: border-box !important; } }`}</style><Back onClick={()=>setView(documentBackView)}/><div className="print:hidden"><Hero title={title} sub={`${selected.name || "Ügyfél"} · ${fullCustomerAddress(selected)}`} action="Nyomtatás" onAction={()=>window.print()}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected}/> : isQuotePreview ? <QuoteDocument customer={selected}/> : <WorkReportDocument customer={selected} report={report}/>}</div></Shell>;
   }
 
   if (view==="documents") {

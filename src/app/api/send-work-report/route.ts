@@ -111,7 +111,7 @@ function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report:
   const kelt = formatKelt(report.signedAt);
   const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
 
-  return `<div class="purchase-page" style="max-width:700px;width:100%;margin:0 auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:12px 14px 10px 14px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
+  return `<div class="purchase-page" style="max-width:640px;width:100%;margin:0 auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:18px 22px 16px 22px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
     <h2 style="margin:0;text-align:center;font-size:16px;line-height:1;font-weight:900;letter-spacing:.02em">VÁSÁRLÁSI<br>NYILATKOZAT</h2>
     <p style="margin:3px 0 8px 0;text-align:center;font-size:9px;line-height:1.15;font-weight:700">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br>28. § (5) bekezdése alapján</p>
 
@@ -135,7 +135,7 @@ function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report:
       lakcíme: ${dottedValue(customerAddress)}
     </div>
 
-    <p style="margin:0 0 6px 0;font-size:9.8px;line-height:1.12;text-align:justify">Telepíttető – megfelelve az Európai Parlament és a Tanács 2024/573 Rendeletében, valamint a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. §-ban foglaltaknak – jelen nyilatkozat aláírásával kötelezettséget vállal arra, hogy az alábbi telepítési tanúsítvány-köteles berendezés(ek) telepítését és beüzemelését az arra képesítéssel rendelkező vállalkozás képesített alkalmazottjával fogja elvégeztetni.</p>
+    <p style="margin:0 0 6px 0;font-size:10.2px;line-height:1.22;text-align:justify">Telepíttető – megfelelve az Európai Parlament és a Tanács 2024/573 Rendeletében, valamint a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. §-ban foglaltaknak – jelen nyilatkozat aláírásával kötelezettséget vállal arra, hogy az alábbi telepítési tanúsítvány-köteles berendezés(ek) telepítését és beüzemelését az arra képesítéssel rendelkező vállalkozás képesített alkalmazottjával fogja elvégeztetni.</p>
 
     <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin:4px 0 4px 0">
       <thead>
@@ -148,8 +148,8 @@ function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report:
     </table>
     <p style="margin:0 0 5px 0;font-size:8.8px;line-height:1.1">*Több berendezés típus vásárlása esetén a táblázat sorainak száma bővíthető egyéni szerkesztéssel</p>
 
-    <p style="margin:0 0 5px 0;font-size:9.8px;line-height:1.12;text-align:justify">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos jótállás telepítési tanúsítvány<sup>1</sup> birtokában érvényesíthető.</p>
-    <p style="margin:0 0 6px 0;font-size:9.8px;line-height:1.12;text-align:justify;font-weight:700">Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</p>
+    <p style="margin:0 0 5px 0;font-size:10.2px;line-height:1.22;text-align:justify">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos jótállás telepítési tanúsítvány<sup>1</sup> birtokában érvényesíthető.</p>
+    <p style="margin:0 0 6px 0;font-size:10.2px;line-height:1.22;text-align:justify;font-weight:700">Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</p>
 
     <div style="display:flex;gap:10px;align-items:flex-end;justify-content:space-between;margin-top:4px">
       <div style="font-size:10.5px;white-space:nowrap">Kelt: ${dottedValue(kelt)}</div>
@@ -226,16 +226,16 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
         @page { size: A4; margin: 8mm; }
         body { background: #ffffff !important; margin: 0 !important; }
         .outer { background: #ffffff !important; padding: 0 !important; }
-        .document { margin: 0 auto !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; max-width: 185mm !important; width: 185mm !important; }
+        .document { margin: 0 auto !important; padding: 6mm 8mm !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; max-width: 172mm !important; width: 172mm !important; }
         .work-page { page-break-after: always !important; break-after: page !important; page-break-inside: avoid !important; break-inside: avoid !important; }
-        .purchase-page { page-break-before: always !important; break-before: page !important; page-break-inside: avoid !important; break-inside: avoid !important; margin: 0 auto !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; max-width: 185mm !important; width: 185mm !important; }
+        .purchase-page { page-break-before: always !important; break-before: page !important; page-break-inside: avoid !important; break-inside: avoid !important; margin: 0 auto !important; padding: 6mm 8mm !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; max-width: 172mm !important; width: 172mm !important; }
         .document *, .purchase-page * { box-sizing: border-box !important; }
       }
     </style>
   </head>
   <body style="margin:0;background:#f6f7fb;padding:0;color:#111827">
     <div class="outer" style="background:#f6f7fb;padding:24px 12px">
-      <div class="document work-page" style="max-width:700px;width:100%;margin:0 auto 18px auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:12px 14px 10px 14px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
+      <div class="document work-page" style="max-width:640px;width:100%;margin:0 auto 18px auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:18px 22px 16px 22px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
         <h1 class="doc-title" style="margin:0;text-align:center;font-size:17px;line-height:1;font-weight:900;letter-spacing:.02em">KLÍMASZERELÉSI<br>MUNKALAP</h1>
         <p style="margin:5px 0 10px 0;text-align:center;font-size:9px;line-height:1.1;font-weight:700">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p>
 
@@ -266,11 +266,11 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
         </table>
 
         <p style="margin:0 0 5px 0;font-size:11px;font-weight:900">Elvégzett munka:</p>
-        <div style="border:1px solid #111;padding:7px 8px;margin-bottom:8px;font-size:10px;line-height:1.12;min-height:24px;text-align:justify">${workDescription}</div>
+        <div style="border:1px solid #111;padding:7px 8px;margin-bottom:8px;font-size:10.5px;line-height:1.22;min-height:28px;text-align:justify">${workDescription}</div>
 
-        ${notes ? `<p style="margin:0 0 5px 0;font-size:11px;font-weight:900">Megjegyzés:</p><div style="border:1px solid #111;padding:7px 8px;margin-bottom:8px;font-size:10px;line-height:1.12;min-height:24px;text-align:justify">${notes}</div>` : ""}
+        ${notes ? `<p style="margin:0 0 5px 0;font-size:11px;font-weight:900">Megjegyzés:</p><div style="border:1px solid #111;padding:7px 8px;margin-bottom:8px;font-size:10.5px;line-height:1.22;min-height:28px;text-align:justify">${notes}</div>` : ""}
 
-        <p style="margin:0 0 7px 0;font-size:9.8px;line-height:1.12;text-align:justify">Az ügyfél a munkalap aláírásával igazolja, hogy a fenti munkát átvette, a készülék működését bemutatták, és az alapvető használati tudnivalókról tájékoztatást kapott.</p>
+        <p style="margin:0 0 7px 0;font-size:10.2px;line-height:1.22;text-align:justify">Az ügyfél a munkalap aláírásával igazolja, hogy a fenti munkát átvette, a készülék működését bemutatták, és az alapvető használati tudnivalókról tájékoztatást kapott.</p>
 
         <div class="sign-row" style="display:flex;gap:12px;align-items:flex-end;justify-content:space-between;margin-top:5px">
           <div style="font-size:10.5px;line-height:1.25">
