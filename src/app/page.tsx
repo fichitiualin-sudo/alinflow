@@ -57,6 +57,26 @@ type DocumentRecord = {
   updatedAt?: string;
 };
 
+type WorkChecklistState = {
+  worksheet: boolean;
+  signature: boolean;
+  purchaseDeclaration: boolean;
+  alinInvoice: boolean;
+  amovaInvoice: boolean;
+  nkvh: boolean;
+  docsSent: boolean;
+};
+
+const EMPTY_WORK_CHECKLIST: WorkChecklistState = {
+  worksheet: false,
+  signature: false,
+  purchaseDeclaration: false,
+  alinInvoice: false,
+  amovaInvoice: false,
+  nkvh: false,
+  docsSent: false,
+};
+
 const STATUS_OPTIONS = [
   "Visszahívandó",
   "Ajánlat elküldve",
@@ -508,20 +528,13 @@ export default function Home() {
   const [workReport,setWorkReport] = useState<WorkReport>(emptyWorkReport());
   const [workReportsByCustomer,setWorkReportsByCustomer] = useState<Record<string, WorkReport>>({});
   const [documentsByCustomer,setDocumentsByCustomer] = useState<Record<string, DocumentRecord[]>>({});
+  const [workChecklistsByCustomer,setWorkChecklistsByCustomer] = useState<Record<string, WorkChecklistState>>({});
   const [documentPreviewType,setDocumentPreviewType] = useState<DocumentPreviewType>("work_report");
   const [documentBackView,setDocumentBackView] = useState<"documents" | "work">("work");
   const [workReportBusy,setWorkReportBusy] = useState(false);
   const [workReportEmailBusy,setWorkReportEmailBusy] = useState(false);
   const [editCustomer,setEditCustomer] = useState(false);
-  const [workChecklist,setWorkChecklist] = useState<Record<string, boolean>>({
-    worksheet: false,
-    signature: false,
-    purchaseDeclaration: false,
-    alinInvoice: false,
-    amovaInvoice: false,
-    nkvh: false,
-    docsSent: false,
-  });
+  const [workChecklist,setWorkChecklist] = useState<WorkChecklistState>(EMPTY_WORK_CHECKLIST);
 
   useEffect(() => {
     if (view === "dashboard" || view === "schedule") {
@@ -625,6 +638,8 @@ export default function Home() {
         setQuoteItems(EMPTY_CUSTOMER.quoteItems);
         setWorkReportsByCustomer({});
         setDocumentsByCustomer({});
+        setWorkChecklistsByCustomer({});
+        setWorkChecklist(EMPTY_WORK_CHECKLIST);
       }
     });
 
@@ -634,7 +649,37 @@ export default function Home() {
     };
   }, []);
 
-  const checklistItems = [
+  useEffect(() => {
+    if (!user) return;
+
+    const shouldRefresh = () => {
+      if (editCustomer) return false;
+      if (["lead", "quote", "quotePreview", "schedule", "workReport"].includes(view)) return false;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return false;
+      return true;
+    };
+
+    const refresh = () => {
+      if (!shouldRefresh()) return;
+      void loadCustomersFromDb();
+    };
+
+    const onVisibility = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") refresh();
+    };
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
+    const intervalId = window.setInterval(refresh, 45000);
+
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, [user, view, editCustomer]);
+
+  const checklistItems: { key: keyof WorkChecklistState; label: string }[] = [
     { key: "nkvh", label: "NKVH adatok rögzítése" },
     { key: "worksheet", label: "Munkalap kitöltve" },
     { key: "purchaseDeclaration", label: "Vásárlási nyilatkozat kész" },
@@ -644,7 +689,8 @@ export default function Home() {
     { key: "docsSent", label: "Dokumentumcsomag elküldve" },
   ];
 
-  const missingChecklist = checklistItems.filter((item) => !workChecklist[item.key]).map((item) => item.label);
+  const currentWorkChecklist = selected.id ? effectiveChecklistFor(selected) : workChecklist;
+  const missingChecklist = checklistItems.filter((item) => !currentWorkChecklist[item.key]).map((item) => item.label);
   const checklistReady = missingChecklist.length === 0;
 
   function openCustomer(c:Customer, v:View) {
@@ -653,6 +699,7 @@ export default function Home() {
     setScheduleDate(c.date || todayIso());
     setScheduleTime(c.time?.split(" ")[0] || "08:00");
     setWorkReport(emptyWorkReport(c));
+    setWorkChecklist(effectiveChecklistFor(c));
     setEditCustomer(false);
     setView(v);
   }
@@ -722,6 +769,10 @@ export default function Home() {
       .select("*")
       .order("created_at", { ascending: false });
 
+    const { data: checklistRows } = await supabase
+      .from("work_checklists")
+      .select("*");
+
     const quotesByCustomer = new Map<string, any>();
     (quoteRows || []).forEach((quote: any) => {
       if (!quotesByCustomer.has(quote.customer_id)) quotesByCustomer.set(quote.customer_id, quote);
@@ -751,6 +802,12 @@ export default function Home() {
       const current = documentsMap[row.customer_id] || [];
       current.push(documentFromRow(row));
       documentsMap[row.customer_id] = current;
+    });
+
+    const checklistsMap: Record<string, WorkChecklistState> = {};
+    (checklistRows || []).forEach((row: any) => {
+      if (!row.customer_id) return;
+      checklistsMap[row.customer_id] = workChecklistFromRow(row);
     });
 
     const loadedCustomers: Customer[] = (customerRows || []).map((row: any) => {
@@ -788,8 +845,10 @@ export default function Home() {
     setCustomers(loadedCustomers);
     setWorkReportsByCustomer(workReportsMap);
     setDocumentsByCustomer(documentsMap);
+    setWorkChecklistsByCustomer(checklistsMap);
     setSelected(nextSelected);
     setQuoteItems(nextSelected.quoteItems);
+    setWorkChecklist(effectiveChecklistFor(nextSelected, workReportsMap, documentsMap, checklistsMap));
 
     if (selectedFromReturn && returnContext) {
       setScheduleDate(nextSelected.date || todayIso());
@@ -924,8 +983,49 @@ export default function Home() {
     setSelected((prev) => ({ ...prev, status: normalizeStatus(value) }));
   }
 
-  function toggleChecklist(key: string) {
-    setWorkChecklist((prev) => ({ ...prev, [key]: !prev[key] }));
+  async function persistWorkChecklist(customer: Customer, checklist: WorkChecklistState) {
+    if (!customer.id || !user) return;
+
+    const payload = {
+      customer_id: customer.id,
+      worksheet: checklist.worksheet,
+      signature: checklist.signature,
+      purchase_declaration: checklist.purchaseDeclaration,
+      alin_invoice: checklist.alinInvoice,
+      amova_invoice: checklist.amovaInvoice,
+      nkvh: checklist.nkvh,
+      docs_sent: checklist.docsSent,
+      updated_by: user.id,
+    };
+
+    const { error } = await supabase
+      .from("work_checklists")
+      .upsert(payload, { onConflict: "customer_id" });
+
+    if (error) {
+      console.warn("work_checklists mentési hiba", error.message);
+      setMessage("A lezárási ellenőrzőlista nem mentődött. Futtasd a WORK_CHECKLIST_SQL.sql fájlt a Supabase-ben.");
+    }
+  }
+
+  async function updateChecklistForCustomer(customer: Customer, patch: Partial<WorkChecklistState>) {
+    const base = effectiveChecklistFor(customer);
+    const next: WorkChecklistState = { ...base, ...patch };
+    setWorkChecklist(next);
+    setWorkChecklistsByCustomer((prev) => ({ ...prev, [customer.id]: next }));
+    await persistWorkChecklist(customer, next);
+    return next;
+  }
+
+  async function toggleChecklist(key: keyof WorkChecklistState) {
+    const base = selected.id ? effectiveChecklistFor(selected) : workChecklist;
+    const next: WorkChecklistState = { ...base, [key]: !base[key] };
+    setWorkChecklist(next);
+
+    if (selected.id) {
+      setWorkChecklistsByCustomer((prev) => ({ ...prev, [selected.id]: next }));
+      await persistWorkChecklist(selected, next);
+    }
   }
 
   async function saveCustomer(nextView: View = "quote") {
@@ -1796,6 +1896,61 @@ export default function Home() {
     };
   }
 
+  function workChecklistFromRow(row: any): WorkChecklistState {
+    return {
+      worksheet: Boolean(row.worksheet),
+      signature: Boolean(row.signature),
+      purchaseDeclaration: Boolean(row.purchase_declaration),
+      alinInvoice: Boolean(row.alin_invoice),
+      amovaInvoice: Boolean(row.amova_invoice),
+      nkvh: Boolean(row.nkvh),
+      docsSent: Boolean(row.docs_sent),
+    };
+  }
+
+  function statusMeansDone(status?: string) {
+    const text = (status || "").toLowerCase();
+    return text.includes("elküld") || text.includes("kész") || text.includes("aláír") || text.includes("elkészült") || text.includes("mentve");
+  }
+
+  function statusMeansSent(status?: string) {
+    return (status || "").toLowerCase().includes("elküld");
+  }
+
+  function effectiveChecklistFor(
+    customer: Customer = selected,
+    reportsMap: Record<string, WorkReport> = workReportsByCustomer,
+    docsMap: Record<string, DocumentRecord[]> = documentsByCustomer,
+    checklistsMap: Record<string, WorkChecklistState> = workChecklistsByCustomer
+  ): WorkChecklistState {
+    if (!customer.id) return { ...workChecklist };
+
+    const saved = checklistsMap[customer.id] || EMPTY_WORK_CHECKLIST;
+    const report = reportsMap[customer.id];
+    const docs = docsMap[customer.id] || [];
+    const workDoc = docs.find((doc) => doc.type === "work_report");
+    const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
+
+    const hasSignature = Boolean(report?.signatureDataUrl || saved.signature);
+    const workReportReady = Boolean(report?.id || report?.signatureDataUrl || statusMeansDone(workDoc?.status));
+    const purchaseReady = Boolean(purchaseDoc || hasSignature || report?.emailSentAt || saved.purchaseDeclaration);
+    const documentsSent = Boolean(
+      saved.docsSent ||
+      report?.emailSentAt ||
+      statusMeansSent(workDoc?.status) ||
+      statusMeansSent(purchaseDoc?.status)
+    );
+
+    return {
+      ...EMPTY_WORK_CHECKLIST,
+      ...saved,
+      worksheet: Boolean(saved.worksheet || workReportReady),
+      signature: Boolean(saved.signature || hasSignature),
+      purchaseDeclaration: Boolean(saved.purchaseDeclaration || purchaseReady),
+      docsSent: documentsSent,
+    };
+  }
+
   function savedReportFor(customer: Customer = selected) {
     if (!customer.id) return undefined;
     if (workReport.customerId === customer.id || workReport.id) return workReport.customerId === customer.id ? workReport : workReportsByCustomer[customer.id];
@@ -1865,8 +2020,8 @@ export default function Home() {
       { title: "Időpont-visszaigazolás", status: docStatus(customer, "appointment_email", customer.date ? "Időpont rögzítve" : "Nincs időpont"), action: "Időpont" },
       { title: "Klímaszerelési munkalap", status: workReportDocumentStatus(customer), action: "Munkalap" },
       { title: "Vásárlási nyilatkozat", status: purchaseDeclarationStatus(customer), action: "Nyilatkozat" },
-      { title: "Adorján Alin E.V. számla", status: workChecklist.alinInvoice && customer.id === selected.id ? "Kész" : "Számlázz.hu később", action: "Számla" },
-      { title: "AMOVA 4U Kft. számla", status: workChecklist.amovaInvoice && customer.id === selected.id ? "Kész" : "Számlázz.hu később", action: "Számla" },
+      { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla" },
+      { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla" },
     ];
   }
 
@@ -1956,7 +2111,7 @@ export default function Home() {
         customer_name: selected.name || null,
         customer_email: selected.email || null,
         customer_phone: selected.phone || null,
-        customer_address: selected.address || selected.city || null,
+        customer_address: fullCustomerAddress(selected) || null,
         climate_summary: climateSummary(quoteItems),
         work_description: reportToSave.workDescription || defaultWorkDescription(),
         notes: reportToSave.notes || null,
@@ -1989,18 +2144,17 @@ export default function Home() {
         await supabase.from("work_reports").update({ email_sent_at: emailSentAt }).eq("id", data.id);
       }
 
-      setWorkChecklist((prev) => ({
-        ...prev,
-        worksheet: true,
-        purchaseDeclaration: Boolean(reportToSave.signatureDataUrl) || prev.purchaseDeclaration || sendEmail,
-        signature: Boolean(reportToSave.signatureDataUrl) || prev.signature,
-        docsSent: sendEmail ? true : prev.docsSent,
-      }));
-
       await logDocument(selected, "work_report", "Klímaszerelési munkalap", sendEmail ? "Elküldve" : "Mentve");
       if (reportToSave.signatureDataUrl || sendEmail) {
         await logDocument(selected, "purchase_declaration", "Vásárlási nyilatkozat", sendEmail ? "Elküldve" : "Elkészült");
       }
+
+      await updateChecklistForCustomer(selected, {
+        worksheet: true,
+        purchaseDeclaration: Boolean(reportToSave.signatureDataUrl) || sendEmail,
+        signature: Boolean(reportToSave.signatureDataUrl),
+        docsSent: sendEmail,
+      });
 
       const savedReportForState: WorkReport = {
         id: data.id,
@@ -2594,9 +2748,9 @@ export default function Home() {
                   <button
                     key={item.key}
                     onClick={() => toggleChecklist(item.key)}
-                    className={`w-full rounded-2xl p-4 text-left font-black transition ${workChecklist[item.key] ? "bg-emerald-400/20 text-emerald-200 border border-emerald-300/30" : "bg-slate-900/80 text-slate-200 border border-white/10"}`}
+                    className={`w-full rounded-2xl p-4 text-left font-black transition ${currentWorkChecklist[item.key] ? "bg-emerald-400/20 text-emerald-200 border border-emerald-300/30" : "bg-slate-900/80 text-slate-200 border border-white/10"}`}
                   >
-                    <span className="mr-3">{workChecklist[item.key] ? "✓" : "○"}</span>
+                    <span className="mr-3">{currentWorkChecklist[item.key] ? "✓" : "○"}</span>
                     {item.label}
                   </button>
                 ))}
@@ -2607,7 +2761,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v62 · archív kereső és lista-limit</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v63 · dokumentum- és lezárási szinkron</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
