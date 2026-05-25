@@ -485,6 +485,7 @@ export default function Home() {
   const [customers,setCustomers] = useState<Customer[]>([]);
   const [customerSearch,setCustomerSearch] = useState("");
   const [customerStatusFilter,setCustomerStatusFilter] = useState("all");
+  const [archiveVisibleCount,setArchiveVisibleCount] = useState(30);
   const [selected,setSelected] = useState<Customer>(EMPTY_CUSTOMER);
   const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(EMPTY_CUSTOMER.quoteItems);
   const [scheduleDate,setScheduleDate] = useState(() => todayIso());
@@ -529,6 +530,10 @@ export default function Home() {
     }
   }, [view]);
 
+  useEffect(() => {
+    setArchiveVisibleCount(30);
+  }, [customerSearch, customerStatusFilter, view]);
+
   const q = qty(quoteItems);
   const t = total(quoteItems);
   const installer = Math.min(60000*q, t);
@@ -541,6 +546,8 @@ export default function Home() {
   const filteredCustomers = customers.filter((customer) => customerMatchesSearch(customer));
   const filteredActiveCustomers = activeCustomers.filter((customer) => customerMatchesSearch(customer));
   const filteredArchivedCustomers = archivedCustomers.filter((customer) => customerMatchesSearch(customer));
+  const visibleArchivedCustomers = filteredArchivedCustomers.slice(0, archiveVisibleCount);
+  const hasMoreArchivedCustomers = filteredArchivedCustomers.length > visibleArchivedCustomers.length;
 
   function normalizeSearch(value?: string) {
     return String(value || "")
@@ -576,6 +583,7 @@ export default function Home() {
   function clearCustomerFilter() {
     setCustomerSearch("");
     setCustomerStatusFilter("all");
+    setArchiveVisibleCount(30);
   }
 
   function openCustomerFromSearch(customer: Customer) {
@@ -1424,12 +1432,17 @@ export default function Home() {
         />
         <Layout>
           <Main>
+            {renderCustomerSearchPanel("Archív kereső")}
             <Card title="Archív ügyfelek">
+              <div className="mb-4 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+                <span>{filteredArchivedCustomers.length} lezárt / lemondott ügyfél</span>
+                {!hasCustomerFilter && filteredArchivedCustomers.length > archiveVisibleCount ? <span>Első {archiveVisibleCount} megjelenítve</span> : null}
+              </div>
               <div className="space-y-3">
                 {filteredArchivedCustomers.length === 0 ? (
                   <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Még nincs ilyen lezárt vagy lemondott ügyfél.</div>
                 ) : null}
-                {filteredArchivedCustomers.map((customer) => (
+                {visibleArchivedCustomers.map((customer) => (
                   <div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div>
@@ -1458,12 +1471,19 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
+                {hasMoreArchivedCustomers ? (
+                  <button
+                    onClick={() => setArchiveVisibleCount((count) => count + 30)}
+                    className="w-full rounded-2xl border border-cyan-300/30 bg-cyan-300/10 px-5 py-4 font-black text-cyan-100"
+                  >
+                    További 30 ügyfél betöltése
+                  </button>
+                ) : null}
               </div>
             </Card>
           </Main>
           <Side>
             <Gradient title="Archív" value={`${filteredArchivedCustomers.length} ügyfél`} />
-            {renderCustomerSearchPanel("Archív kereső")}
             <Card title="Visszaállítás">
               <p className="text-sm leading-relaxed text-slate-400">A visszaállítás gombbal az ügyfél újra aktív lesz. Időpontos ügyfélnél „Időpont foglalva”, időpont nélkülinél „Visszahívandó” státuszra kerül.</p>
             </Card>
@@ -2587,7 +2607,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v61 · mobil kereső és rögzített vissza gomb</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v62 · archív kereső és lista-limit</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={activeCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
