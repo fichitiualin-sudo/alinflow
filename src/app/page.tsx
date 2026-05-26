@@ -649,36 +649,6 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-
-    const shouldRefresh = () => {
-      if (editCustomer) return false;
-      if (["lead", "quote", "quotePreview", "schedule", "workReport"].includes(view)) return false;
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return false;
-      return true;
-    };
-
-    const refresh = () => {
-      if (!shouldRefresh()) return;
-      void loadCustomersFromDb();
-    };
-
-    const onVisibility = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") refresh();
-    };
-
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", onVisibility);
-    const intervalId = window.setInterval(refresh, 45000);
-
-    return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(intervalId);
-    };
-  }, [user, view, editCustomer]);
-
   const checklistItems: { key: keyof WorkChecklistState; label: string }[] = [
     { key: "nkvh", label: "NKVH adatok rögzítése" },
     { key: "worksheet", label: "Munkalap kitöltve" },
