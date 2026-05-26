@@ -1194,6 +1194,97 @@ export default function Home() {
     }
   }
 
+
+  function climateInventoryFromRows(rows: any[] | null | undefined, productList: ClimateProduct[]) {
+    const defaults = ensureInventoryForProducts(DEFAULT_INVENTORY, productList);
+    const rowMap = new Map<string, number>();
+    (rows || []).forEach((row: any) => {
+      if (!row?.product_id) return;
+      rowMap.set(String(row.product_id), Number(row.stock ?? 0) || 0);
+    });
+
+    const merged = defaults.map((item) => (
+      rowMap.has(item.productId) ? { ...item, stock: rowMap.get(item.productId) ?? item.stock } : item
+    ));
+
+    (rows || []).forEach((row: any) => {
+      const productId = String(row?.product_id || "");
+      if (!productId || merged.some((item) => item.productId === productId)) return;
+      merged.push({ productId, stock: Number(row.stock ?? 0) || 0 });
+    });
+
+    return ensureInventoryForProducts(merged, productList);
+  }
+
+  function materialInventoryFromRows(rows: any[] | null | undefined) {
+    const rowMap = new Map<string, any>();
+    (rows || []).forEach((row: any) => {
+      if (!row?.name) return;
+      rowMap.set(String(row.name), row);
+    });
+
+    const merged = MATERIAL_STOCK.map((item) => {
+      const row = rowMap.get(item.name);
+      if (!row) return item;
+      return {
+        ...item,
+        stock: Number(row.stock ?? item.stock) || 0,
+        unit: row.unit || item.unit,
+        lowAt: Number(row.low_at ?? item.lowAt) || item.lowAt,
+      };
+    });
+
+    (rows || []).forEach((row: any) => {
+      const name = String(row?.name || "");
+      if (!name || merged.some((item) => item.name === name)) return;
+      merged.push({
+        name,
+        stock: Number(row.stock ?? 0) || 0,
+        unit: row.unit || "db",
+        lowAt: Number(row.low_at ?? 0) || 0,
+      });
+    });
+
+    return merged;
+  }
+
+  async function loadInventoryFromDb(productList: ClimateProduct[]) {
+    try {
+      const { data, error } = await supabase.from("inventory_stock").select("*");
+      if (error) throw error;
+      setInventory(climateInventoryFromRows(data, productList));
+    } catch (error: any) {
+      console.warn("inventory_stock betöltési hiba", error?.message || error);
+      setInventory((prev) => ensureInventoryForProducts(prev, productList));
+    }
+
+    try {
+      const { data, error } = await supabase.from("material_inventory").select("*");
+      if (error) throw error;
+      if (data && data.length) setMaterialInventory(materialInventoryFromRows(data));
+    } catch (error: any) {
+      console.warn("material_inventory betöltési hiba", error?.message || error);
+    }
+  }
+
+  async function persistClimateStock(productId: string, stock: number) {
+    const { error } = await supabase.from("inventory_stock").upsert({
+      product_id: productId,
+      stock: Math.max(0, Number(stock || 0)),
+    }, { onConflict: "product_id" });
+    if (error) throw error;
+  }
+
+  async function persistMaterialStock(item: any) {
+    const { error } = await supabase.from("material_inventory").upsert({
+      name: item.name,
+      stock: Math.max(0, Number(item.stock || 0)),
+      unit: item.unit || "db",
+      low_at: Number(item.lowAt ?? item.low_at ?? 0) || 0,
+    }, { onConflict: "name" });
+    if (error) throw error;
+  }
+
   function productDevicePrice(product: ClimateProduct) {
     return Math.max(0, Number(product.price || 0) - Number(product.installPrice || 0));
   }
@@ -1367,7 +1458,8 @@ export default function Home() {
     setDataLoading(true);
     setMessage("");
 
-    await loadProductsFromDb();
+    const loadedProducts = await loadProductsFromDb();
+    await loadInventoryFromDb(loadedProducts);
 
     const { data: customerRows, error: customerError } = await supabase
       .from("customers")
@@ -1465,6 +1557,7 @@ export default function Home() {
         time: job?.scheduled_time || undefined,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
+        stockDeducted: Boolean(row.stock_deducted),
       };
     });
 
@@ -1530,6 +1623,7 @@ export default function Home() {
       status: customer.status || "Visszahívandó",
       need: customer.need || null,
       notes: customer.notes || null,
+      stock_deducted: Boolean(customer.stockDeducted),
       created_by: user.id,
     });
 
@@ -1918,20 +2012,36 @@ export default function Home() {
     return "";
   }
 
-  function deductStockIfNeeded() {
+  async function deductStockIfNeeded() {
     if (selected.stockDeducted) return;
 
-    setInventory(prev => prev.map(item => {
+    const changedInventory: InventoryItem[] = [];
+    const nextInventory = inventory.map(item => {
       const used = quoteItems
         .filter(q => q.productId === item.productId)
         .reduce((sum, q) => sum + q.quantity, 0);
-      return used > 0 ? { ...item, stock: Math.max(0, item.stock - used) } : item;
-    }));
+      if (used <= 0) return item;
+      const nextItem = { ...item, stock: Math.max(0, item.stock - used) };
+      changedInventory.push(nextItem);
+      return nextItem;
+    });
 
-    setMaterialInventory(prev => prev.map((item: any) => {
+    const changedMaterials: any[] = [];
+    const nextMaterials = materialInventory.map((item: any) => {
       const used = usedMaterialAmountForStock(item.name);
-      return used > 0 ? { ...item, stock: Math.max(0, Math.round((item.stock - used) * 10) / 10) } : item;
-    }));
+      if (used <= 0) return item;
+      const nextItem = { ...item, stock: Math.max(0, Math.round((item.stock - used) * 10) / 10) };
+      changedMaterials.push(nextItem);
+      return nextItem;
+    });
+
+    setInventory(nextInventory);
+    setMaterialInventory(nextMaterials);
+
+    await Promise.all([
+      ...changedInventory.map((item) => persistClimateStock(item.productId, item.stock)),
+      ...changedMaterials.map((item) => persistMaterialStock(item)),
+    ]);
   }
 
   async function markInstallationDone() {
@@ -1942,7 +2052,7 @@ export default function Home() {
       return;
     }
 
-    deductStockIfNeeded();
+    await deductStockIfNeeded();
 
     const updated: Customer = {
       ...selected,
@@ -1977,7 +2087,7 @@ export default function Home() {
       return;
     }
 
-    deductStockIfNeeded();
+    await deductStockIfNeeded();
 
     const updated: Customer = {
       ...selected,
@@ -2061,15 +2171,23 @@ export default function Home() {
     return stockOf(productId) - reservedForProduct(productId);
   }
 
-  function addStock(productId: string, amount: number) {
+  async function addStock(productId: string, amount: number) {
     if (!amount || amount <= 0) return;
+    const nextStock = stockOf(productId) + amount;
     setInventory((prev) => {
       const exists = prev.some((item) => item.productId === productId);
       if (exists) {
-        return prev.map((item) => item.productId === productId ? { ...item, stock: item.stock + amount } : item);
+        return prev.map((item) => item.productId === productId ? { ...item, stock: nextStock } : item);
       }
-      return [...prev, { productId, stock: amount }];
+      return [...prev, { productId, stock: nextStock }];
     });
+
+    try {
+      await persistClimateStock(productId, nextStock);
+      setMessage("Klíma készlet mentve ✅");
+    } catch (error: any) {
+      setMessage(`Klíma készlet mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
+    }
   }
 
 
@@ -2105,9 +2223,19 @@ export default function Home() {
     }, 0) * 10) / 10;
   }
 
-  function addMaterialStock(materialName: string, amount: number) {
+  async function addMaterialStock(materialName: string, amount: number) {
     if (!amount || amount <= 0) return;
-    setMaterialInventory((prev: any[]) => prev.map((item: any) => item.name === materialName ? { ...item, stock: item.stock + amount } : item));
+    const current = materialInventory.find((item: any) => item.name === materialName);
+    if (!current) return;
+    const nextItem = { ...current, stock: Math.round((Number(current.stock || 0) + amount) * 10) / 10 };
+    setMaterialInventory((prev: any[]) => prev.map((item: any) => item.name === materialName ? nextItem : item));
+
+    try {
+      await persistMaterialStock(nextItem);
+      setMessage("Anyagkészlet mentve ✅");
+    } catch (error: any) {
+      setMessage(`Anyagkészlet mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
+    }
   }
 
 
