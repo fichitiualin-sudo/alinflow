@@ -2940,6 +2940,24 @@ export default function Home() {
         </Side></Layout></Shell>;
 }
 
+
+function calendarStatusStyle(status: string) {
+  if (status === "Lezárva") return "border border-emerald-700/70 bg-emerald-950/90 text-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.12)]";
+  if (status === "Szerelés kész – admin folyamatban") return "border border-amber-300/45 bg-amber-400/20 text-amber-50 shadow-[0_0_0_1px_rgba(251,191,36,0.10)]";
+  if (status === "Időpont foglalva") return "border border-sky-300/45 bg-sky-400/20 text-sky-50 shadow-[0_0_0_1px_rgba(56,189,248,0.10)]";
+  if (status === "Ajánlat elküldve") return "border border-violet-300/40 bg-violet-400/15 text-violet-50";
+  return "border border-white/10 bg-white/10 text-white";
+}
+
+function calendarStatusLabel(status: string) {
+  if (status === "Szerelés kész – admin folyamatban") return "Admin";
+  if (status === "Időpont foglalva") return "Foglalva";
+  if (status === "Lezárva") return "Lezárva";
+  if (status === "Ajánlat elküldve") return "Ajánlat";
+  if (status === "Visszahívandó") return "Visszahívandó";
+  return status || "Munka";
+}
+
 function Calendar({ mode, date, customers, onMode, onStep, onOpen, selectable, selectedDate, onSelect }: { mode:CalendarMode; date:Date; customers:Customer[]; onMode:(m:CalendarMode)=>void; onStep:(n:number)=>void; onOpen:(c:Customer)=>void; selectable?:boolean; selectedDate?:string; onSelect?:(d:string)=>void }) {
   const start = weekStart(date);
   const weekdayNames = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"];
@@ -2964,6 +2982,14 @@ function Calendar({ mode, date, customers, onMode, onStep, onOpen, selectable, s
           <button onClick={()=>onStep(1)} className="arrow">›</button>
         </div>
       </div>
+
+      {!selectable ? (
+        <div className="mb-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/10 bg-slate-950/40 p-3 text-[11px] font-black text-slate-200 sm:grid-cols-3 md:flex md:flex-wrap md:items-center">
+          <span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded-full bg-sky-400/70" /> Időpont foglalva</span>
+          <span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded-full bg-amber-400/80" /> Admin folyamatban</span>
+          <span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded-full bg-emerald-800" /> Lezárva</span>
+        </div>
+      ) : null}
 
       {/* Telefonon lista nézetet használunk, ezért a heti fejlécet csak asztali/tablet szélességnél mutatjuk. */}
       <div className="mb-2 hidden grid-cols-7 gap-2 text-center text-[11px] font-black text-slate-400 md:grid">
@@ -2994,14 +3020,17 @@ function Calendar({ mode, date, customers, onMode, onStep, onOpen, selectable, s
                 {jobs.map(j=>(
                   <div
                     key={j.id}
-                    className={`w-full rounded-2xl p-3 text-left hover:ring-2 hover:ring-cyan-300/50 md:p-2 ${j.status === "Lezárva" ? "border border-emerald-700/60 bg-emerald-950/80 text-emerald-50" : j.isFresh ? "bg-emerald-400/30 border border-emerald-300/40" : "bg-white/10"}`}
+                    className={`w-full rounded-2xl p-3 text-left transition hover:ring-2 hover:ring-cyan-300/50 md:p-2 ${calendarStatusStyle(j.status)}`}
                   >
                     <button
                       type="button"
                       onClick={e=>{e.stopPropagation();onOpen(j)}}
                       className="w-full text-left"
                     >
-                      <p className="text-xs font-black">{j.time}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs font-black">{j.time}</p>
+                        <span className="shrink-0 rounded-full bg-black/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide opacity-90">{calendarStatusLabel(j.status)}</span>
+                      </div>
                       <p className="mt-1 truncate text-sm font-semibold md:text-xs">{j.name}</p>
                       <p className="truncate text-xs text-cyan-100/80 md:text-[11px]">{climateSummary(j.quoteItems)}</p>
                       <p className="truncate text-xs opacity-70 md:text-[11px]">{j.city}</p>
