@@ -2876,20 +2876,16 @@ export default function Home() {
 
   function purchaseDeclarationStatus(customer: Customer) {
     const report = savedReportFor(customer);
-    if (docFor(customer, "purchase_declaration")?.status) return docFor(customer, "purchase_declaration")!.status;
     if (report?.emailSentAt) return "Elküldve";
     if (report?.signatureDataUrl) return "Elkészült";
-    return "Aláírásra vár";
+    return "Nincs kész";
   }
 
   function workAndDeclarationStatus(customer: Customer) {
     const report = savedReportFor(customer);
-    const workStatus = workReportDocumentStatus(customer);
-    const declarationStatus = purchaseDeclarationStatus(customer);
-
-    if (report?.emailSentAt || workStatus.includes("Elküld") || declarationStatus.includes("Elküld")) return "Elküldve";
-    if (report?.signatureDataUrl || declarationStatus.includes("Elkészült") || declarationStatus.includes("Aláír")) return "Elkészült";
-    if (report?.id || workStatus.includes("Mentve")) return "Mentve";
+    if (report?.emailSentAt) return "Elküldve";
+    if (report?.signatureDataUrl) return "Elkészült";
+    if (report?.id) return "Munkalap mentve";
     return "Nincs kész";
   }
 
@@ -3076,7 +3072,7 @@ export default function Home() {
     const report = savedReportFor(customer);
     if (row.action === "Munkalap") return Boolean(report?.id || report?.signatureDataUrl || report?.emailSentAt);
     if (row.action === "Nyilatkozat") return Boolean(report?.signatureDataUrl || report?.emailSentAt || docFor(customer, "purchase_declaration"));
-    if (row.action === "MunkalapNyilatkozat") return Boolean(report?.id || report?.signatureDataUrl || report?.emailSentAt || docFor(customer, "work_report") || docFor(customer, "purchase_declaration"));
+    if (row.action === "MunkalapNyilatkozat") return Boolean(report?.id || report?.signatureDataUrl || report?.emailSentAt);
     if (row.action === "Ajánlat") return row.status.includes("Elküld") || customer.status === "Ajánlat elküldve";
     if (row.action === "Időpont") return Boolean(customer.date || row.status.includes("Elküld"));
     if (row.action === "Számla") return row.status.includes("Kész") || row.status.includes("Kiállít");
@@ -3798,11 +3794,6 @@ export default function Home() {
                 {workResourceEditLocked && !allowWorkResourceEdit ? <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={()=>setAllowWorkResourceEdit(true)}>Módosítás engedélyezése</button> : null}
                 {canEditWorkResources ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={saveWorkChanges}>Módosítás mentése az időpontra</button> : null}
               </div>
-              <div className="mt-4 rounded-2xl bg-slate-950/60 p-4">
-                <InfoRow label="Összesen" value={ft(total(quoteItems))} />
-                <InfoRow label="Klímák száma" value={`${qty(quoteItems)} db`} />
-                <InfoRow label="Idősáv logika" value={qty(quoteItems) >= 2 ? "08:00 + 12:00" : (selected.time || scheduleTime || "08:00")} />
-              </div>
             </Card><Card title="Felhasznált anyagok"><div className="mb-4 flex justify-end"><button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={addExtraMaterial}>+ Egyéb anyag</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{materials.map((m,i)=><div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -3866,7 +3857,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></div></div>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><div className="xl:hidden">{renderCustomerSearchPanel()}</div><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></div></div>)}</div></Card></Main><Side><div className="hidden xl:block">{renderCustomerSearchPanel()}</div>{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {products.map((product: any) => {
                 const stock = stockOf(product.id);
