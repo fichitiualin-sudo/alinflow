@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 
 type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "workReport" | "warehouse" | "tasks" | "archive" | "documents" | "documentPreview";
 const RETURN_CONTEXT_KEY = "alinflow:returnContext";
+const CUSTOMER_DRAFT_KEY = "alinflow:customerDraft";
 const RESTORABLE_VIEWS: View[] = ["lead", "quote", "quotePreview", "schedule", "work", "workReport", "documentPreview"];
 
 type CalendarMode = "week" | "month";
@@ -55,18 +56,6 @@ type DocumentRecord = {
   sentAt?: string;
   createdAt?: string;
   updatedAt?: string;
-};
-
-type LeadImportCandidate = {
-  id: string;
-  rowNumber: number;
-  name: string;
-  phone: string;
-  email: string;
-  duplicate: boolean;
-  duplicateReason?: string;
-  invalid?: boolean;
-  invalidReason?: string;
 };
 
 type WorkChecklistState = {
@@ -295,6 +284,16 @@ function mapsHref(customer: Customer) {
 }
 
 type ReturnContext = { customerId: string; view: View; at: number };
+type CustomerDraft = {
+  customer: Customer;
+  quoteItems: QuoteItem[];
+  scheduleDate: string;
+  scheduleTime: string;
+  view: View;
+  editCustomer: boolean;
+  allowWorkResourceEdit: boolean;
+  at: number;
+};
 
 function safeReturnView(value: unknown): View {
   return typeof value === "string" && RESTORABLE_VIEWS.includes(value as View) ? (value as View) : "work";
@@ -318,6 +317,54 @@ function readReturnContext(): ReturnContext | null {
     window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
     return null;
   }
+}
+
+function readCustomerDraft(): CustomerDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(CUSTOMER_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CustomerDraft>;
+    if (!parsed.customer?.id) return null;
+    const at = typeof parsed.at === "number" ? parsed.at : Date.now();
+    const maxAgeMs = 6 * 60 * 60 * 1000;
+    if (Date.now() - at > maxAgeMs) {
+      window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
+      return null;
+    }
+    return {
+      customer: parsed.customer as Customer,
+      quoteItems: Array.isArray(parsed.quoteItems) && parsed.quoteItems.length ? parsed.quoteItems as QuoteItem[] : (parsed.customer as Customer).quoteItems || [{ productId: PRODUCTS[0].id, quantity: 1 }],
+      scheduleDate: typeof parsed.scheduleDate === "string" ? parsed.scheduleDate : (parsed.customer as Customer).date || todayIso(),
+      scheduleTime: typeof parsed.scheduleTime === "string" ? parsed.scheduleTime : (parsed.customer as Customer).time?.split(" ")[0] || "08:00",
+      view: safeReturnView(parsed.view),
+      editCustomer: Boolean(parsed.editCustomer),
+      allowWorkResourceEdit: Boolean(parsed.allowWorkResourceEdit),
+      at,
+    };
+  } catch {
+    window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
+    return null;
+  }
+}
+
+function writeCustomerDraft(draft: CustomerDraft) {
+  if (typeof window === "undefined" || !draft.customer?.id) return;
+  try {
+    window.sessionStorage.setItem(CUSTOMER_DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // A sessionStorage csak kényelmi biztonsági mentés. Ha megtelik vagy tiltott, az app működjön tovább.
+  }
+}
+
+function clearCustomerDraft(customerId?: string) {
+  if (typeof window === "undefined") return;
+  if (!customerId) {
+    window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
+    return;
+  }
+  const current = readCustomerDraft();
+  if (current?.customer.id === customerId) window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
 }
 
 function compactCalendarDate(date: Date) {
@@ -548,10 +595,6 @@ export default function Home() {
   const [editCustomer,setEditCustomer] = useState(false);
   const [allowWorkResourceEdit,setAllowWorkResourceEdit] = useState(false);
   const [workChecklist,setWorkChecklist] = useState<WorkChecklistState>(EMPTY_WORK_CHECKLIST);
-  const [leadImportRows,setLeadImportRows] = useState<LeadImportCandidate[]>([]);
-  const [leadImportMessage,setLeadImportMessage] = useState("");
-  const [leadImportBusy,setLeadImportBusy] = useState(false);
-  const leadImportInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (view === "dashboard" || view === "schedule") {
@@ -619,228 +662,6 @@ export default function Home() {
     setArchiveVisibleCount(30);
   }
 
-  function normalizeEmailForCompare(value?: string) {
-    return String(value || "").trim().toLowerCase();
-  }
-
-  function normalizePhoneForStorage(value?: string) {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-
-    const digits = raw.replace(/\D/g, "");
-    if (!digits) return "";
-
-    if (digits.startsWith("0036")) return `06${digits.slice(4)}`;
-    if (digits.startsWith("36")) return `06${digits.slice(2)}`;
-    if (digits.startsWith("06")) return digits;
-    if (digits.startsWith("0")) return digits;
-
-    return `06${digits}`;
-  }
-
-  function normalizePhoneForCompare(value?: string) {
-    return normalizePhoneForStorage(value).replace(/\D/g, "");
-  }
-
-  function normalizeCsvHeader(value?: string) {
-    return normalizeSearch(value).replace(/[^a-z0-9]/g, "");
-  }
-
-  function parseCsvText(text: string) {
-    const rows: string[][] = [];
-    let row: string[] = [];
-    let cell = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < text.length; i += 1) {
-      const ch = text[i];
-      const next = text[i + 1];
-
-      if (ch === '"') {
-        if (inQuotes && next === '"') {
-          cell += '"';
-          i += 1;
-        } else {
-          inQuotes = !inQuotes;
-        }
-        continue;
-      }
-
-      if (ch === "," && !inQuotes) {
-        row.push(cell.trim());
-        cell = "";
-        continue;
-      }
-
-      if ((ch === "\n" || ch === "\r") && !inQuotes) {
-        if (ch === "\r" && next === "\n") i += 1;
-        row.push(cell.trim());
-        cell = "";
-        if (row.some((value) => value.trim())) rows.push(row);
-        row = [];
-        continue;
-      }
-
-      cell += ch;
-    }
-
-    row.push(cell.trim());
-    if (row.some((value) => value.trim())) rows.push(row);
-    return rows;
-  }
-
-  function findCsvIndex(headers: string[], variants: string[]) {
-    const normalizedHeaders = headers.map(normalizeCsvHeader);
-    const normalizedVariants = variants.map(normalizeCsvHeader);
-    return normalizedHeaders.findIndex((header) => normalizedVariants.includes(header));
-  }
-
-  function buildLeadImportPreview(text: string): LeadImportCandidate[] {
-    const rows = parseCsvText(text.replace(/^\uFEFF/, ""));
-    if (rows.length < 2) return [];
-
-    const headers = rows[0];
-    const nameIndex = findCsvIndex(headers, ["Név", "Nev", "Name", "Full name", "Teljes név"]);
-    const emailIndex = findCsvIndex(headers, ["E-mail-cím", "Email", "E-mail", "Email cím", "E-mail cím"]);
-    const phoneIndex = findCsvIndex(headers, ["Telefon", "Phone", "Telefonszám", "Phone number", "Mobile"]);
-
-    const existingPhones = new Set(customers.map((customer) => normalizePhoneForCompare(customer.phone)).filter(Boolean));
-    const existingEmails = new Set(customers.map((customer) => normalizeEmailForCompare(customer.email)).filter(Boolean));
-    const importedPhones = new Set<string>();
-    const importedEmails = new Set<string>();
-
-    return rows.slice(1).map((cells, index) => {
-      const rowNumber = index + 2;
-      const name = nameIndex >= 0 ? String(cells[nameIndex] || "").trim() : "";
-      const email = emailIndex >= 0 ? normalizeEmailForCompare(cells[emailIndex]) : "";
-      const phone = phoneIndex >= 0 ? normalizePhoneForStorage(cells[phoneIndex]) : "";
-      const phoneKey = normalizePhoneForCompare(phone);
-      const emailKey = normalizeEmailForCompare(email);
-
-      let duplicate = false;
-      let duplicateReason = "";
-      let invalid = false;
-      let invalidReason = "";
-
-      if (!name && !phone && !email) {
-        invalid = true;
-        invalidReason = "üres sor";
-      } else if (!name) {
-        invalid = true;
-        invalidReason = "hiányzó név";
-      } else if (!phone && !email) {
-        invalid = true;
-        invalidReason = "hiányzó telefonszám és email";
-      }
-
-      if (!invalid) {
-        if (phoneKey && existingPhones.has(phoneKey)) {
-          duplicate = true;
-          duplicateReason = "már létező telefonszám";
-        } else if (emailKey && existingEmails.has(emailKey)) {
-          duplicate = true;
-          duplicateReason = "már létező email";
-        } else if (phoneKey && importedPhones.has(phoneKey)) {
-          duplicate = true;
-          duplicateReason = "duplikált telefonszám a fájlban";
-        } else if (emailKey && importedEmails.has(emailKey)) {
-          duplicate = true;
-          duplicateReason = "duplikált email a fájlban";
-        }
-      }
-
-      if (!invalid && !duplicate) {
-        if (phoneKey) importedPhones.add(phoneKey);
-        if (emailKey) importedEmails.add(emailKey);
-      }
-
-      return {
-        id: `${rowNumber}-${phoneKey || emailKey || name}`,
-        rowNumber,
-        name,
-        phone,
-        email,
-        duplicate,
-        duplicateReason,
-        invalid,
-        invalidReason,
-      };
-    }).filter((candidate) => candidate.name || candidate.phone || candidate.email || candidate.invalid);
-  }
-
-  async function handleLeadCsvFile(file?: File | null) {
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const preview = buildLeadImportPreview(text);
-      const importable = preview.filter((row) => !row.duplicate && !row.invalid).length;
-      const duplicates = preview.filter((row) => row.duplicate).length;
-      const invalid = preview.filter((row) => row.invalid).length;
-      setLeadImportRows(preview);
-      setLeadImportMessage(`${preview.length} sor beolvasva · ${importable} új érdeklődő · ${duplicates} duplikált kihagyva${invalid ? ` · ${invalid} hibás sor` : ""}`);
-    } catch (error: any) {
-      setLeadImportRows([]);
-      setLeadImportMessage(`Nem sikerült beolvasni a CSV fájlt: ${error.message}`);
-    }
-  }
-
-  async function importLeadRows() {
-    const importable = leadImportRows.filter((row) => !row.duplicate && !row.invalid);
-    if (!importable.length) {
-      setLeadImportMessage("Nincs importálható új érdeklődő.");
-      return;
-    }
-
-    if (!user) {
-      setLeadImportMessage("Importáláshoz be kell jelentkezni.");
-      return;
-    }
-
-    setLeadImportBusy(true);
-    try {
-      const rows = importable.map((lead) => ({
-        id: crypto.randomUUID(),
-        name: lead.name,
-        phone: lead.phone || null,
-        email: lead.email || null,
-        city: null,
-        address: null,
-        source: null,
-        status: "Visszahívandó",
-        need: null,
-        notes: null,
-        created_by: user.id,
-      }));
-
-      const { error } = await supabase.from("customers").insert(rows);
-      if (error) throw error;
-
-      const newCustomers: Customer[] = rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        city: "",
-        phone: row.phone || "",
-        email: row.email || "",
-        address: "",
-        source: "",
-        status: "Visszahívandó",
-        need: "",
-        notes: "",
-        quoteItems: [{ productId: PRODUCTS[0].id, quantity: 1 }],
-      }));
-
-      setCustomers((prev) => [...newCustomers, ...prev]);
-      setLeadImportRows([]);
-      setLeadImportMessage(`${newCustomers.length} új érdeklődő importálva ✅ A duplikált sorokat kihagytam.`);
-      setCustomerStatusFilter("Visszahívandó");
-      setView("dashboard");
-    } catch (error: any) {
-      setLeadImportMessage(`Import hiba: ${error.message}`);
-    } finally {
-      setLeadImportBusy(false);
-    }
-  }
-
   function openCustomerFromSearch(customer: Customer) {
     openCustomer(customer, customer.date ? "work" : "lead");
   }
@@ -852,6 +673,20 @@ export default function Home() {
       JSON.stringify({ customerId: customer.id, view: safeReturnView(returnView), at: Date.now() })
     );
   }
+
+  useEffect(() => {
+    if (!selected.id || !RESTORABLE_VIEWS.includes(view)) return;
+    writeCustomerDraft({
+      customer: { ...selected, quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || [{ productId: PRODUCTS[0].id, quantity: 1 }] },
+      quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || [{ productId: PRODUCTS[0].id, quantity: 1 }],
+      scheduleDate,
+      scheduleTime,
+      view,
+      editCustomer,
+      allowWorkResourceEdit,
+      at: Date.now(),
+    });
+  }, [selected, quoteItems, scheduleDate, scheduleTime, view, editCustomer, allowWorkResourceEdit]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -939,6 +774,7 @@ export default function Home() {
   }
 
   async function handleLogout() {
+    clearCustomerDraft();
     await supabase.auth.signOut();
     setView("dashboard");
   }
@@ -1047,20 +883,33 @@ export default function Home() {
     });
 
     const returnContext = readReturnContext();
+    const customerDraft = readCustomerDraft();
     const selectedFromReturn = returnContext?.customerId
       ? loadedCustomers.find((customer) => customer.id === returnContext.customerId)
+      : undefined;
+    const selectedFromDraftDb = customerDraft?.customer.id
+      ? loadedCustomers.find((customer) => customer.id === customerDraft.customer.id)
+      : undefined;
+    const selectedFromDraft = customerDraft
+      ? {
+          ...(selectedFromDraftDb || {}),
+          ...customerDraft.customer,
+          quoteItems: customerDraft.quoteItems.length ? customerDraft.quoteItems : customerDraft.customer.quoteItems,
+        } as Customer
       : undefined;
     const selectedFromCurrentState = selected.id
       ? loadedCustomers.find((customer) => customer.id === selected.id)
       : undefined;
-    const nextSelected = selectedFromReturn || selectedFromCurrentState || loadedCustomers[0] || EMPTY_CUSTOMER;
+    const unsavedSelected = selected.id ? selected : undefined;
+    const nextSelected = selectedFromReturn || selectedFromDraft || selectedFromCurrentState || unsavedSelected || loadedCustomers[0] || EMPTY_CUSTOMER;
+    const nextQuoteItems = selectedFromDraft ? (customerDraft?.quoteItems || nextSelected.quoteItems) : nextSelected.quoteItems;
 
     setCustomers(loadedCustomers);
     setWorkReportsByCustomer(workReportsMap);
     setDocumentsByCustomer(documentsMap);
     setWorkChecklistsByCustomer(checklistsMap);
     setSelected(nextSelected);
-    setQuoteItems(nextSelected.quoteItems);
+    setQuoteItems(nextQuoteItems);
     setWorkChecklist(effectiveChecklistFor(nextSelected, workReportsMap, documentsMap, checklistsMap));
 
     if (selectedFromReturn && returnContext) {
@@ -1070,6 +919,12 @@ export default function Home() {
       setEditCustomer(false);
       setView(returnContext.view);
       if (typeof window !== "undefined") window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
+    } else if (customerDraft && selectedFromDraft) {
+      setScheduleDate(customerDraft.scheduleDate || nextSelected.date || todayIso());
+      setScheduleTime(customerDraft.scheduleTime || nextSelected.time?.split(" ")[0] || "08:00");
+      setEditCustomer(customerDraft.editCustomer);
+      setAllowWorkResourceEdit(customerDraft.allowWorkResourceEdit);
+      if (RESTORABLE_VIEWS.includes(customerDraft.view)) setView(customerDraft.view);
     }
 
     setDataLoading(false);
@@ -1295,6 +1150,7 @@ export default function Home() {
     try {
       await persistCustomerToDb(customerToSave);
       setMessage("Ügyféladatok mentve ✅");
+      clearCustomerDraft(customerToSave.id);
       setView("dashboard");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
@@ -2548,68 +2404,6 @@ export default function Home() {
   }
 
 
-  function renderLeadImportPanel() {
-    const importable = leadImportRows.filter((row) => !row.duplicate && !row.invalid);
-    const skipped = leadImportRows.filter((row) => row.duplicate || row.invalid);
-    const previewRows = leadImportRows.slice(0, 6);
-
-    return (
-      <Card title="Meta lead import">
-        <input
-          ref={leadImportInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            handleLeadCsvFile(file);
-            event.currentTarget.value = "";
-          }}
-        />
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => leadImportInputRef.current?.click()}
-            className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
-          >
-            CSV feltöltése
-          </button>
-          {leadImportMessage ? <div className="rounded-2xl bg-slate-950/60 p-3 text-sm font-bold text-slate-200">{leadImportMessage}</div> : null}
-
-          {leadImportRows.length ? (
-            <div className="space-y-2">
-              {previewRows.map((row) => (
-                <div key={row.id} className="rounded-2xl border border-white/10 bg-slate-950/60 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-black text-white">{row.name || "Névtelen sor"}</p>
-                      <p className="mt-1 text-xs text-slate-400">{row.phone || "nincs telefonszám"} · {row.email || "nincs email"}</p>
-                    </div>
-                    <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${row.invalid ? "bg-red-400/20 text-red-200" : row.duplicate ? "bg-amber-400/20 text-amber-200" : "bg-emerald-400/20 text-emerald-200"}`}>
-                      {row.invalid ? "hibás" : row.duplicate ? "kihagyva" : "új"}
-                    </span>
-                  </div>
-                  {row.duplicateReason || row.invalidReason ? <p className="mt-2 text-xs font-bold text-slate-500">{row.duplicateReason || row.invalidReason}</p> : null}
-                </div>
-              ))}
-              {leadImportRows.length > previewRows.length ? <p className="text-xs text-slate-500">+ {leadImportRows.length - previewRows.length} további sor az előnézetben.</p> : null}
-              <button
-                type="button"
-                disabled={leadImportBusy || !importable.length}
-                onClick={importLeadRows}
-                className="w-full rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {leadImportBusy ? "Importálás..." : `${importable.length} új érdeklődő importálása`}
-              </button>
-              {skipped.length ? <p className="text-xs text-slate-500">A duplikált és hibás sorokat a rendszer teljesen kihagyja.</p> : null}
-            </div>
-          ) : null}
-        </div>
-      </Card>
-    );
-  }
-
-
   function WorkReportDocument({ customer, report }: { customer: Customer; report: WorkReport }) {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
     const shownItems = items.length ? items : [{ productId: PRODUCTS[0]?.id || "", quantity: 1 }];
@@ -3214,7 +3008,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v63 · dokumentum- és lezárási szinkron</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v63 · dokumentum- és lezárási szinkron</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {PRODUCTS.map((product: any) => {
                 const stock = stockOf(product.id);
