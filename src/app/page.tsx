@@ -207,6 +207,31 @@ const PRODUCTS = [
   }
 ];
 
+const EMPTY_PRODUCT = { id: "", name: "Válassz klímát", price: 0, priceText: "Nincs klíma kiválasztva" };
+
+function isKnownProductId(productId?: string) {
+  return Boolean(productId && PRODUCTS.some((product: any) => product.id === productId));
+}
+
+function isCustomQuoteItem(item: QuoteItem) {
+  return Boolean(item.isManual || item.customName?.trim() || (item.productId && !isKnownProductId(item.productId)));
+}
+
+function isQuoteItemFilled(item: QuoteItem) {
+  return Boolean(item.customName?.trim() || isKnownProductId(item.productId));
+}
+
+function cleanQuoteItems(items?: QuoteItem[]) {
+  return (items || []).filter(isQuoteItemFilled).map((item) => ({
+    ...item,
+    productId: isKnownProductId(item.productId) ? item.productId : "",
+    customName: item.customName?.trim() || undefined,
+    isManual: item.isManual || !isKnownProductId(item.productId),
+  }));
+}
+
+const EMPTY_QUOTE_ITEMS: QuoteItem[] = [];
+
 const INITIAL_CUSTOMERS: Customer[] = [
   { id:"c1", name:"Kovács Réka", city:"Hévízgyörk", phone:"+36 30 123 4567", email:"reka@email.hu", address:"2192 Hévízgyörk, Minta utca 12.", source:"Facebook hirdetés", status:"Időpont foglalva", need:"Hűtés · 35 m² nappali", date:"2026-05-12", time:"08:00", quoteItems:[{ productId: PRODUCTS[6]?.id || PRODUCTS[0].id, quantity:1 }] },
   { id:"c2", name:"Kovács Béla", city:"Gödöllő", phone:"+36 30 111 1111", email:"bela@email.hu", address:"2100 Gödöllő, Fő utca 4.", source:"Telefon", status:"Időpont foglalva", need:"Hűtés + fűtés · 42 m² nappali", date:"2026-05-11", time:"08:00", quoteItems:[{ productId: PRODUCTS[12]?.id || PRODUCTS[0].id, quantity:1 }] },
@@ -261,10 +286,13 @@ function calLabel(mode:CalendarMode, d:Date) {
   const a = weekStart(d); const b = new Date(a); b.setDate(a.getDate()+6);
   return `${a.getFullYear()}. ${pad(a.getMonth()+1)}.${pad(a.getDate())} – ${pad(b.getMonth()+1)}.${pad(b.getDate())}`;
 }
-function prod(id:string) { return PRODUCTS.find((p:any)=>p.id===id) || PRODUCTS[0]; }
-function qty(items:QuoteItem[]) { return items.reduce((s,i)=>s+i.quantity,0); }
+function prod(id:string) { return PRODUCTS.find((p:any)=>p.id===id) || EMPTY_PRODUCT; }
+function qty(items:QuoteItem[]) { return cleanQuoteItems(items).reduce((s,i)=>s+i.quantity,0); }
 function itemName(item: QuoteItem) {
-  return item.customName?.trim() || prod(item.productId).name;
+  const custom = item.customName?.trim();
+  if (custom) return custom;
+  if (isKnownProductId(item.productId)) return prod(item.productId).name;
+  return item.isManual ? "Egyedi klíma" : "Válassz klímát";
 }
 function itemUnitPrice(item: QuoteItem) {
   return typeof item.customPrice === "number" && !Number.isNaN(item.customPrice) ? item.customPrice : prod(item.productId).price;
@@ -273,12 +301,14 @@ function itemTotal(item: QuoteItem) {
   return itemUnitPrice(item) * item.quantity;
 }
 function itemPriceLine(item: QuoteItem) {
-  return item.isManual ? "Egyedi tétel" : `${ft(itemUnitPrice(item))} / db (telepítéssel együtt)`;
+  if (!isQuoteItemFilled(item)) return "Nincs klíma kiválasztva";
+  if (isCustomQuoteItem(item)) return "Egyedi klíma / tétel";
+  return `${ft(itemUnitPrice(item))} / db (telepítéssel együtt)`;
 }
 function hasCustomProductPrice(item: QuoteItem) {
-  return !item.isManual && itemUnitPrice(item) !== prod(item.productId).price;
+  return isKnownProductId(item.productId) && !item.isManual && itemUnitPrice(item) !== prod(item.productId).price;
 }
-function total(items:QuoteItem[]) { return items.reduce((s,i)=>s+itemTotal(i),0); }
+function total(items:QuoteItem[]) { return cleanQuoteItems(items).reduce((s,i)=>s+itemTotal(i),0); }
 function occupiedSlots(customer:Customer) {
   if (!customer.time) return [];
   if (qty(customer.quoteItems) >= 2 || customer.time.includes("+")) return ["08:00","12:00"];
@@ -347,7 +377,7 @@ function readCustomerDraft(): CustomerDraft | null {
     }
     return {
       customer: parsed.customer as Customer,
-      quoteItems: Array.isArray(parsed.quoteItems) && parsed.quoteItems.length ? parsed.quoteItems as QuoteItem[] : (parsed.customer as Customer).quoteItems || [{ productId: PRODUCTS[0].id, quantity: 1 }],
+      quoteItems: Array.isArray(parsed.quoteItems) && parsed.quoteItems.length ? parsed.quoteItems as QuoteItem[] : (parsed.customer as Customer).quoteItems || EMPTY_QUOTE_ITEMS,
       scheduleDate: typeof parsed.scheduleDate === "string" ? parsed.scheduleDate : (parsed.customer as Customer).date || todayIso(),
       scheduleTime: typeof parsed.scheduleTime === "string" ? parsed.scheduleTime : (parsed.customer as Customer).time?.split(" ")[0] || "08:00",
       view: safeReturnView(parsed.view),
@@ -453,7 +483,7 @@ const EMPTY_CUSTOMER: Customer = {
   status: "Visszahívandó",
   need: "",
   notes: "",
-  quoteItems: [{ productId: PRODUCTS[0].id, quantity: 1 }],
+  quoteItems: EMPTY_QUOTE_ITEMS,
 };
 
 function normalizeStatus(status?: string) {
@@ -468,7 +498,7 @@ function isArchivedCustomer(customer: Customer) {
 }
 
 function climateSummary(items?: QuoteItem[]) {
-  const activeItems = items?.filter((item) => item.quantity > 0) || [];
+  const activeItems = cleanQuoteItems(items).filter((item) => item.quantity > 0);
   if (!activeItems.length) return "Nincs klíma megadva";
   return activeItems.map((item) => `${item.quantity} db ${itemName(item)}`).join(" + ");
 }
@@ -504,7 +534,7 @@ function quoteItemFromRow(row: any): QuoteItem {
   const matchedProduct = productById || productByName;
 
   return {
-    productId: matchedProduct?.id || PRODUCTS[0].id,
+    productId: matchedProduct?.id || "",
     quantity: Number(row.quantity || 1),
     customPrice: Number(row.unit_price || matchedProduct?.price || 0),
     customName: matchedProduct ? undefined : row.product_name,
@@ -732,10 +762,8 @@ export default function Home() {
         continue;
       }
 
-      if ((ch === "
-" || ch === "") && !inQuotes) {
-        if (ch === "" && next === "
-") i += 1;
+      if ((ch === "\n" || ch === "\r") && !inQuotes) {
+        if (ch === "\r" && next === "\n") i += 1;
         row.push(cell.trim());
         cell = "";
         if (row.some((value) => value.trim())) rows.push(row);
@@ -922,7 +950,7 @@ export default function Home() {
         status: normalizeStatus(row.status || "Visszahívandó"),
         need: row.need || "",
         notes: row.notes || "",
-        quoteItems: [{ productId: PRODUCTS[0].id, quantity: 1 }],
+        quoteItems: EMPTY_QUOTE_ITEMS,
       })) as Customer[];
 
       setCustomers((prev) => [...newCustomers, ...prev]);
@@ -950,8 +978,8 @@ export default function Home() {
   useEffect(() => {
     if (!selected.id || !RESTORABLE_VIEWS.includes(view)) return;
     writeCustomerDraft({
-      customer: { ...selected, quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || [{ productId: PRODUCTS[0].id, quantity: 1 }] },
-      quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || [{ productId: PRODUCTS[0].id, quantity: 1 }],
+      customer: { ...selected, quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || EMPTY_QUOTE_ITEMS },
+      quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || EMPTY_QUOTE_ITEMS,
       scheduleDate,
       scheduleTime,
       view,
@@ -1150,7 +1178,7 @@ export default function Home() {
         notes: row.notes || "",
         date: job?.scheduled_date || undefined,
         time: job?.scheduled_time || undefined,
-        quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : [{ productId: PRODUCTS[0].id, quantity: 1 }],
+        quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
       };
     });
@@ -1248,8 +1276,9 @@ export default function Home() {
 
     if (quoteId) {
       await supabase.from("quote_items").delete().eq("quote_id", quoteId);
-      if (customer.quoteItems?.length) {
-        const { error } = await supabase.from("quote_items").insert(customer.quoteItems.map((item) => quoteItemToRow(item, quoteId as string)));
+      const rowsToInsert = cleanQuoteItems(customer.quoteItems);
+      if (rowsToInsert.length) {
+        const { error } = await supabase.from("quote_items").insert(rowsToInsert.map((item) => quoteItemToRow(item, quoteId as string)));
         if (error) throw error;
       }
     }
@@ -1295,7 +1324,7 @@ export default function Home() {
       status: "Visszahívandó",
       need: "",
       notes: "",
-      quoteItems: [{ productId: PRODUCTS[0].id, quantity: 1 }],
+      quoteItems: EMPTY_QUOTE_ITEMS,
     };
 
     setSelected(fresh);
@@ -1382,7 +1411,7 @@ export default function Home() {
       ...selected,
       source: selected.source || "Kézi rögzítés",
       status: autoStatus,
-      quoteItems: quoteItems.length ? quoteItems : [{ productId: PRODUCTS[0].id, quantity: 1 }],
+      quoteItems: quoteItems.length ? quoteItems : EMPTY_QUOTE_ITEMS,
     };
 
     setSelected(customerToSave);
@@ -1408,7 +1437,7 @@ export default function Home() {
       ...selected,
       source: selected.source || "Kézi rögzítés",
       status: normalizeStatus(selected.status || "Visszahívandó"),
-      quoteItems: quoteItems.length ? quoteItems : [{ productId: PRODUCTS[0].id, quantity: 1 }],
+      quoteItems: quoteItems.length ? quoteItems : EMPTY_QUOTE_ITEMS,
     };
 
     setSelected(customerToSave);
@@ -1434,8 +1463,8 @@ export default function Home() {
     if (mode==="week") n.setDate(n.getDate()+d*7); else n.setMonth(n.getMonth()+d);
     setCalDate(n);
   }
-  function addQuoteItem() { setQuoteItems(prev=>[...prev, { productId: PRODUCTS[0].id, quantity: 1 }]); }
-  function addManualQuoteItem() { setQuoteItems(prev=>[...prev, { productId: PRODUCTS[0].id, customName: "Egyedi tétel", customPrice: 0, quantity: 1, isManual: true }]); }
+  function addQuoteItem() { setQuoteItems(prev=>[...prev, { productId: "", quantity: 1 }]); }
+  function addManualQuoteItem() { setQuoteItems(prev=>[...prev, { productId: "", customName: "", customPrice: 0, quantity: 1, isManual: true }]); }
   function updateQuoteItem(i:number, key:keyof QuoteItem, value:string|number|boolean) {
     setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {...it, [key]: value} : it));
   }
@@ -1443,9 +1472,9 @@ export default function Home() {
     setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {
       ...it,
       productId,
-      isManual: false,
-      customName: undefined,
-      customPrice: prod(productId).price,
+      isManual: !isKnownProductId(productId),
+      customName: isKnownProductId(productId) ? undefined : it.customName,
+      customPrice: isKnownProductId(productId) ? prod(productId).price : (it.customPrice ?? 0),
     } : it));
   }
   function syncQuoteItemPrice(i:number) {
@@ -1454,7 +1483,8 @@ export default function Home() {
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
     const wasExistingSchedule = Boolean(selected.date);
-    const updated:Customer = {...selected, date:scheduleDate, time:shownTime, status:"Időpont foglalva", quoteItems, productId:quoteItems[0].productId, isFresh:true};
+    const scheduledQuoteItems = cleanQuoteItems(quoteItems);
+    const updated:Customer = {...selected, date:scheduleDate, time:shownTime, status:"Időpont foglalva", quoteItems: scheduledQuoteItems, productId: scheduledQuoteItems[0]?.productId || undefined, isFresh:true};
     try {
       await persistCustomerToDb(updated);
       setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
@@ -1479,12 +1509,13 @@ export default function Home() {
       return;
     }
 
-    const newQty = qty(quoteItems);
+    const updatedQuoteItems = cleanQuoteItems(quoteItems);
+    const newQty = qty(updatedQuoteItems);
     const updatedTime = newQty >= 2 ? "08:00 + 12:00" : (selected.time || scheduleTime || "08:00");
     const updated: Customer = {
       ...selected,
-      quoteItems,
-      productId: quoteItems[0]?.productId || selected.productId,
+      quoteItems: updatedQuoteItems,
+      productId: updatedQuoteItems[0]?.productId || selected.productId,
       time: updatedTime,
       status: selected.status || "Időpont foglalva",
       isFresh: true,
@@ -1516,7 +1547,7 @@ export default function Home() {
   }
 
   function stockErrorMessage() {
-    const shortageProduct = quoteItems.find((q) => reservedForProduct(q.productId) > stockOf(q.productId));
+    const shortageProduct = cleanQuoteItems(quoteItems).find((q) => isKnownProductId(q.productId) && reservedForProduct(q.productId) > stockOf(q.productId));
     if (shortageProduct) {
       const p = prod(shortageProduct.productId);
       return `Nem zárható le: ${p.name} készlethiányos. Raktáron: ${stockOf(shortageProduct.productId)} db, lefoglalva: ${reservedForProduct(shortageProduct.productId)} db.`;
@@ -2744,7 +2775,7 @@ export default function Home() {
 
   function WorkReportDocument({ customer, report }: { customer: Customer; report: WorkReport }) {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
-    const shownItems = items.length ? items : [{ productId: PRODUCTS[0]?.id || "", quantity: 1 }];
+    const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
     return (
       <article className="doc-print-page work-report-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[13px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[14mm] print:text-[11.5px] print:shadow-none">
         <div className="text-center">
@@ -2824,7 +2855,7 @@ export default function Home() {
 
   function PurchaseDeclarationDocument({ customer, report }: { customer: Customer; report: WorkReport }) {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
-    const shownItems = items.length ? items : [{ productId: PRODUCTS[0]?.id || "", quantity: 1 }];
+    const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
     return (
       <article className="doc-print-page purchase-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[12px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[12mm] print:text-[10px] print:leading-[1.2] print:shadow-none">
         <div className="text-center">
@@ -2930,7 +2961,7 @@ export default function Home() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-lg font-black">{item.quantity} db · {itemName(item)}</p>
-              <p className="mt-1 text-sm text-slate-600">{ft(prod(item.productId).price)} / db · telepítéssel együtt</p>
+              <p className="mt-1 text-sm text-slate-600">{ft(itemUnitPrice(item))} / db · telepítéssel együtt</p>
             </div>
             <p className="text-xl font-black">{ft(itemTotal(item))}</p>
           </div>
@@ -3099,8 +3130,8 @@ export default function Home() {
                 {quoteItems.map((it,i)=>
                   <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_120px_150px_44px]">
-                      {it.isManual ? (
-                        <input className="input" value={it.customName || ""} onChange={e=>updateQuoteItem(i,"customName",e.target.value)} placeholder="Tétel megnevezése" />
+                      {isCustomQuoteItem(it) ? (
+                        <input className="input" value={it.customName || ""} onChange={e=>updateQuoteItem(i,"customName",e.target.value)} placeholder="Klíma/tétel megnevezése" />
                       ) : (
                         <ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/>
                       )}
@@ -3246,7 +3277,7 @@ export default function Home() {
     const booked = customers.filter(c=>c.id!==selected.id && c.date===scheduleDate).flatMap(c=>occupiedSlots(c));
     const free = BASE_SLOTS.filter(s=>!booked.includes(s));
     const isExistingSchedule = Boolean(selected.date);
-    return <Shell><Back onClick={()=>setView(isExistingSchedule ? "work" : "quote")}/><Hero title={isExistingSchedule ? "Időpont módosítása" : "Időpont választása"} sub={`${selected.name} · ${selected.city}`} action={isExistingSchedule ? "Időpont frissítése" : "Időpont mentése"} onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák"><p className="mb-4 text-sm leading-relaxed text-slate-400">Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. Telefonról is ugyanígy működik.</p>{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{prod(it.productId).name}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3"><ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/><input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200"><input type="checkbox" checked={sendAppointmentNotice} onChange={e=>setSendAppointmentNotice(e.target.checked)} className="mt-1 h-5 w-5 accent-cyan-300"/><span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span></label><Btn color="green" onClick={saveSchedule}>{appointmentEmailBusy ? "Mentés és email küldés..." : (isExistingSchedule ? "Időpont frissítése" : "Időpont mentése")}</Btn></Card></Side></Layout></Shell>;
+    return <Shell><Back onClick={()=>setView(isExistingSchedule ? "work" : "quote")}/><Hero title={isExistingSchedule ? "Időpont módosítása" : "Időpont választása"} sub={`${selected.name} · ${selected.city}`} action={isExistingSchedule ? "Időpont frissítése" : "Időpont mentése"} onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák"><p className="mb-4 text-sm leading-relaxed text-slate-400">Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. Telefonról is ugyanígy működik.</p>{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{itemName(it)}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3">{isCustomQuoteItem(it) ? <input className="input" value={it.customName || ""} onChange={e=>updateQuoteItem(i,"customName",e.target.value)} placeholder="Klíma megnevezése" /> : <ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/>}<input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200"><input type="checkbox" checked={sendAppointmentNotice} onChange={e=>setSendAppointmentNotice(e.target.checked)} className="mt-1 h-5 w-5 accent-cyan-300"/><span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span></label><Btn color="green" onClick={saveSchedule}>{appointmentEmailBusy ? "Mentés és email küldés..." : (isExistingSchedule ? "Időpont frissítése" : "Időpont mentése")}</Btn></Card></Side></Layout></Shell>;
   }
 
   if (view==="workReport") return <Shell><Back onClick={()=>setView("work")}/><Hero title="Klímás munkalap" sub={`${selected.name} · ${selected.city} · ${selected.date || scheduleDate}`} action={workReportBusy ? "Mentés..." : "Munkalap mentése"} onAction={()=>saveWorkReport(false)}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Munkalap adatai"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><Field label="Ügyfél" value={selected.name || "nincs megadva"}/><Field label="Telepítési cím" value={fullCustomerAddress(selected)}/><Field label="Időpont" value={`${selected.date || scheduleDate} · ${selected.time || shownTime}`}/><Field label="Klíma" value={climateSummary(quoteItems)}/></div><label className="mt-5 block rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">Elvégzett munka leírása</span><textarea className="mt-2 min-h-32 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={workReport.workDescription} onChange={(event)=>updateWorkReportField("workDescription", event.target.value)} /></label><label className="mt-4 block rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">Munkalap megjegyzés</span><textarea className="mt-2 min-h-28 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={workReport.notes} onChange={(event)=>updateWorkReportField("notes", event.target.value)} placeholder="Például: ügyfél tájékoztatva, rendben átadva, egyedi megjegyzés..." /></label></Card><Card title="Egyszerű ügyfél aláírás"><EditField label="Aláíró neve" value={workReport.signerName || selected.name || ""} onChange={(value)=>updateWorkReportField("signerName", value)} /><SignaturePad value={workReport.signatureDataUrl} onChange={(value)=>setWorkReport((prev)=>({ ...prev, signatureDataUrl: value, signedAt: value ? new Date().toISOString() : undefined }))}/>{workReport.signedAt ? <p className="mt-3 text-sm font-bold text-emerald-200">Aláírva: {formatSignedAt(workReport.signedAt)}</p> : <p className="mt-3 text-sm font-bold text-amber-200">Még nincs aláírás.</p>}</Card></Main><Side><Gradient title="Munkalap státusz" value={workReport.signatureDataUrl ? "Aláírva" : "Aláírásra vár"}/><Card title="Műveletek"><div className="grid grid-cols-1 gap-3"><StepButton color="green" onClick={()=>saveWorkReport(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton><StepButton color="blue" onClick={()=>saveWorkReport(true)}>{workReportEmailBusy ? "Email küldése..." : "Mentés és email küldése"}</StepButton></div><p className="mt-4 text-sm leading-relaxed text-slate-400">Az email telefonról és laptopról is ugyanazzal a Resend küldéssel megy ki. PDF nincs, így az ékezetek rendben maradnak.</p></Card><Card title="Email állapot"><InfoRow label="Ügyfél email" value={selected.email || "nincs megadva"}/><InfoRow label="Elküldve" value={workReport.emailSentAt ? formatSignedAt(workReport.emailSentAt) : "még nem"}/></Card></Side></Layout></Shell>;
@@ -3257,7 +3288,7 @@ export default function Home() {
                 {quoteItems.map((it,i)=>
                   <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                     <div className="grid grid-cols-1 md:grid-cols-[1fr_110px_44px] gap-3">
-                      <ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)} disabled={!canEditWorkResources} />
+                      {isCustomQuoteItem(it) ? <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={e=>updateQuoteItem(i,"customName",e.target.value)} placeholder="Klíma megnevezése" /> : <ProductSelect value={it.productId} onChange={v=>updateQuoteProduct(i,v)} disabled={!canEditWorkResources} />}
                       <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))} />
                       <button className="rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={()=>removeQuoteItem(i)}>×</button>
                     </div>
@@ -3710,8 +3741,10 @@ function Gradient({title,value}:{title:string;value:string;tone?:string}) {
 }
 
 function ProductSelect({value,onChange,disabled=false}:{value:string;onChange:(v:string)=>void;disabled?:boolean}) {
+  const selectValue = isKnownProductId(value) ? value : "";
   return (
-    <select value={value} onChange={e=>onChange(e.target.value)} disabled={disabled} className="input disabled:cursor-not-allowed disabled:opacity-60">
+    <select value={selectValue} onChange={e=>onChange(e.target.value)} disabled={disabled} className="input disabled:cursor-not-allowed disabled:opacity-60">
+      <option value="">Válassz klímát...</option>
       {PRODUCTS.map((p:any)=>
         <option key={p.id} value={p.id}>
           {p.name}
