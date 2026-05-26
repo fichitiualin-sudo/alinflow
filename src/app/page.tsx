@@ -1702,6 +1702,77 @@ export default function Home() {
       setMessage(`Mentési hiba: ${error.message}`);
     }
   }
+
+
+  async function deleteCustomer(customer: Customer) {
+    if (!customer?.id) return;
+    const confirmed = window.confirm(`Biztosan törlöd ezt az érdeklődőt?\n\n${customer.name || "Névtelen ügyfél"}\n\nEz a művelet véglegesen eltávolítja az ügyfelet és a hozzá tartozó időpontot / ajánlatot.`);
+    if (!confirmed) return;
+
+    try {
+      setMessage("");
+
+      await supabase.from("documents").delete().eq("customer_id", customer.id);
+      await supabase.from("work_checklists").delete().eq("customer_id", customer.id);
+      await supabase.from("work_reports").delete().eq("customer_id", customer.id);
+      await supabase.from("jobs").delete().eq("customer_id", customer.id);
+
+      const { data: quoteRows, error: quoteReadError } = await supabase
+        .from("quotes")
+        .select("id")
+        .eq("customer_id", customer.id);
+      if (quoteReadError) throw quoteReadError;
+
+      const quoteIds = (quoteRows || []).map((quote: any) => quote.id).filter(Boolean);
+      if (quoteIds.length) {
+        const { error: itemDeleteError } = await supabase
+          .from("quote_items")
+          .delete()
+          .in("quote_id", quoteIds);
+        if (itemDeleteError) throw itemDeleteError;
+      }
+
+      const { error: quoteDeleteError } = await supabase
+        .from("quotes")
+        .delete()
+        .eq("customer_id", customer.id);
+      if (quoteDeleteError) throw quoteDeleteError;
+
+      const { error: customerDeleteError } = await supabase
+        .from("customers")
+        .delete()
+        .eq("id", customer.id);
+      if (customerDeleteError) throw customerDeleteError;
+
+      setCustomers((prev) => prev.filter((item) => item.id !== customer.id));
+      setDocumentsByCustomer((prev) => {
+        const next = { ...prev };
+        delete next[customer.id];
+        return next;
+      });
+      setWorkReportsByCustomer((prev) => {
+        const next = { ...prev };
+        delete next[customer.id];
+        return next;
+      });
+      setWorkChecklistsByCustomer((prev) => {
+        const next = { ...prev };
+        delete next[customer.id];
+        return next;
+      });
+
+      if (selected.id === customer.id) {
+        setSelected(EMPTY_CUSTOMER);
+        setQuoteItems(EMPTY_QUOTE_ITEMS);
+        setView("dashboard");
+      }
+
+      clearCustomerDraft(customer.id);
+      setMessage("Érdeklődő törölve ✅");
+    } catch (error: any) {
+      setMessage(`Törlési hiba: ${error.message}`);
+    }
+  }
   function step(d:number) {
     const n = new Date(calDate);
     if (mode==="week") n.setDate(n.getDate()+d*7); else n.setMonth(n.getMonth()+d);
@@ -3362,7 +3433,7 @@ export default function Home() {
     );
   }
 
-  if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><div><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/>{selected.address || selected.city ? <a href={mapsHref(selected)} target="_blank" rel="noreferrer" onClick={()=>rememberExternalCustomer(selected,"lead")} className="mt-3 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">Útvonal tervezése Google Térképpel</a> : null}</div></div></Card><Card title="Telefonos jegyzet"><textarea className="input min-h-32" value={selected.notes || ""} onChange={e=>updateSelectedField("notes", e.target.value)} placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
+  if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/></div>{selected.address || selected.city ? <a href={mapsHref(selected)} target="_blank" rel="noreferrer" onClick={()=>rememberExternalCustomer(selected,"lead")} className="mt-4 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">Útvonal tervezése Google Térképpel</a> : null}</Card><Card title="Telefonos jegyzet"><textarea className="input min-h-32" value={selected.notes || ""} onChange={e=>updateSelectedField("notes", e.target.value)} placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
               <div className="grid grid-cols-1 gap-3">
                 <StepButton color="green" href={telHref(selected.phone)} onClick={()=>rememberExternalCustomer(selected,"lead")}>Hívás</StepButton>
                 <StepButton color="amber" onClick={saveCustomerOnly}>Mentés</StepButton>
@@ -3623,7 +3694,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><button key={c.id} onClick={()=>openCustomer(c,"lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></button>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span><button type="button" onClick={()=>deleteCustomer(c)} className="rounded-2xl bg-rose-500/20 px-4 py-3 text-sm font-black text-rose-100 ring-1 ring-rose-300/20 transition hover:bg-rose-500/30">Törlés</button></div></div></div>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {products.map((product: any) => {
                 const stock = stockOf(product.id);
