@@ -3029,7 +3029,6 @@ function Calendar({ mode, date, customers, onMode, onStep, onOpen, selectable, s
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-xs font-black">{j.time}</p>
-                        <span className="shrink-0 rounded-full bg-black/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide opacity-90">{calendarStatusLabel(j.status)}</span>
                       </div>
                       <p className="mt-1 truncate text-sm font-semibold md:text-xs">{j.name}</p>
                       <p className="truncate text-xs text-cyan-100/80 md:text-[11px]">{climateSummary(j.quoteItems)}</p>
