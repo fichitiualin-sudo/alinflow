@@ -227,8 +227,12 @@ function productSlug(value: string) {
     .replace(/^-+|-+$/g, "") || `klima-${Date.now()}`;
 }
 
-function productPriceText(product: Pick<ClimateProduct, "price">) {
-  return `${Number(product.price || 0).toLocaleString("hu-HU")} Ft (telepítéssel együtt)`;
+function productCustomerPrice(product: Pick<ClimateProduct, "price"> & Partial<Pick<ClimateProduct, "installPrice">>) {
+  return Math.max(0, Number(product.price || 0)) + Math.max(0, Number(product.installPrice || 0));
+}
+
+function productPriceText(product: Pick<ClimateProduct, "price"> & Partial<Pick<ClimateProduct, "installPrice">>) {
+  return `${productCustomerPrice(product).toLocaleString("hu-HU")} Ft (készülék + szerelés)`;
 }
 
 function normalizeProduct(product: any): ClimateProduct {
@@ -344,7 +348,7 @@ function itemName(item: QuoteItem) {
   return item.isManual ? "Egyedi klíma" : "Válassz klímát";
 }
 function itemUnitPrice(item: QuoteItem) {
-  return typeof item.customPrice === "number" && !Number.isNaN(item.customPrice) ? item.customPrice : prod(item.productId).price;
+  return typeof item.customPrice === "number" && !Number.isNaN(item.customPrice) ? item.customPrice : productCustomerPrice(prod(item.productId));
 }
 function itemInstallPrice(item: QuoteItem) {
   if (!isQuoteItemFilled(item)) return 0;
@@ -367,7 +371,7 @@ function itemPriceLine(item: QuoteItem) {
   return `${ft(itemUnitPrice(item))} / db (telepítéssel együtt)`;
 }
 function hasCustomProductPrice(item: QuoteItem) {
-  return isKnownProductId(item.productId) && !item.isManual && itemUnitPrice(item) !== prod(item.productId).price;
+  return isKnownProductId(item.productId) && !item.isManual && itemUnitPrice(item) !== productCustomerPrice(prod(item.productId));
 }
 function total(items:QuoteItem[]) { return cleanQuoteItems(items).reduce((s,i)=>s+itemTotal(i),0); }
 function occupiedSlots(customer:Customer) {
@@ -597,7 +601,7 @@ function quoteItemFromRow(row: any): QuoteItem {
   return {
     productId: matchedProduct?.id || "",
     quantity: Number(row.quantity || 1),
-    customPrice: Number(row.unit_price || matchedProduct?.price || 0),
+    customPrice: Number(row.unit_price || (matchedProduct ? productCustomerPrice(matchedProduct) : 0) || 0),
     customName: matchedProduct ? undefined : row.product_name,
     isManual: !matchedProduct,
   };
@@ -706,6 +710,7 @@ export default function Home() {
   const [products,setProducts] = useState<ClimateProduct[]>(() => sortProducts(PRODUCTS as any));
   const [productMessage,setProductMessage] = useState("");
   const [productBusy,setProductBusy] = useState(false);
+  const [showProductManager,setShowProductManager] = useState(false);
   const [newProductName,setNewProductName] = useState("");
   const [newProductPrice,setNewProductPrice] = useState("");
   const [newProductInstallPrice,setNewProductInstallPrice] = useState(String(DEFAULT_INSTALL_PRICE));
@@ -1239,7 +1244,7 @@ export default function Home() {
       return;
     }
     if (!price) {
-      setProductMessage("Add meg az új klíma bruttó árát szereléssel együtt.");
+      setProductMessage("Add meg az új klíma készülék árát.");
       return;
     }
     const baseId = productSlug(name);
@@ -1262,7 +1267,7 @@ export default function Home() {
     return (
       <Card title="Klímatípusok és árak">
         <div className="mb-5 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
-          Az itt mentett klímák jelennek meg az összes lenyíló listában, ABC sorrendben. A bruttó ár szereléssel együtt értendő, a szerelési munkadíj pedig a belső bontáshoz kell.
+          Az itt mentett klímák jelennek meg az összes lenyíló listában, ABC sorrendben. A készülék ár és a szerelési ár külön módosítható; az ügyfélár ezek összegeként számolódik.
         </div>
 
         <div className="mb-6 rounded-3xl border border-white/10 bg-slate-950/60 p-4">
@@ -1273,7 +1278,7 @@ export default function Home() {
               <input className="input" value={newProductName} onChange={(event) => setNewProductName(event.target.value)} placeholder="pl. Gree Comfort Pro 3,5 kW" />
             </div>
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Bruttó ár</label>
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Készülék ár</label>
               <input className="input" type="number" value={newProductPrice} onChange={(event) => setNewProductPrice(event.target.value)} placeholder="305000" />
             </div>
             <div>
@@ -1288,7 +1293,7 @@ export default function Home() {
 
         <div className="space-y-3">
           {products.map((product) => {
-            const equipmentPart = Math.max(0, product.price - product.installPrice);
+            const customerPrice = productCustomerPrice(product);
             return (
               <div key={product.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                 <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_140px_140px_140px_auto] xl:items-end">
@@ -1297,7 +1302,7 @@ export default function Home() {
                     <input className="input" value={product.name} onChange={(event) => updateProductField(product.id, "name", event.target.value)} />
                   </div>
                   <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Bruttó ár</label>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Készülék ár</label>
                     <input className="input" type="number" value={product.price} onChange={(event) => updateProductField(product.id, "price", event.target.value)} />
                   </div>
                   <div>
@@ -1305,8 +1310,8 @@ export default function Home() {
                     <input className="input" type="number" value={product.installPrice} onChange={(event) => updateProductField(product.id, "installPrice", event.target.value)} />
                   </div>
                   <div className="rounded-2xl bg-white/10 p-3 text-sm">
-                    <p className="text-slate-400">Klíma + anyag</p>
-                    <p className="font-black text-slate-100">{ft(equipmentPart)}</p>
+                    <p className="text-slate-400">Készülék + szerelés</p>
+                    <p className="font-black text-slate-100">{ft(customerPrice)}</p>
                   </div>
                   <button onClick={() => saveClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
                     Mentés
@@ -1789,11 +1794,11 @@ export default function Home() {
       productId,
       isManual: !isKnownProductId(productId),
       customName: isKnownProductId(productId) ? undefined : it.customName,
-      customPrice: isKnownProductId(productId) ? prod(productId).price : (it.customPrice ?? 0),
+      customPrice: isKnownProductId(productId) ? productCustomerPrice(prod(productId)) : (it.customPrice ?? 0),
     } : it));
   }
   function syncQuoteItemPrice(i:number) {
-    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: prod(it.productId).price } : it));
+    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: productCustomerPrice(prod(it.productId)) } : it));
   }
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
@@ -2302,7 +2307,22 @@ export default function Home() {
 
         <Layout>
           <Main>
-            {renderClimateProductManager()}
+            <Card title="Klímatípusok kezelése">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm text-slate-400">Új klímatípus, készülék ár vagy szerelési ár módosítása.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowProductManager((value) => !value)}
+                  className="rounded-2xl bg-cyan-300 px-5 py-3 font-black text-slate-950 transition hover:bg-cyan-200"
+                >
+                  {showProductManager ? "Klímatípus-kezelő elrejtése" : "Klímatípus-kezelő megnyitása"}
+                </button>
+              </div>
+            </Card>
+
+            {showProductManager ? renderClimateProductManager() : null}
 
             <Card title="Klíma készlet">
               <div className="space-y-3">
@@ -3462,7 +3482,7 @@ export default function Home() {
                     </div>
                     {hasCustomProductPrice(it) ? (
                       <button type="button" disabled={!canEditWorkResources} onClick={()=>syncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
-                        Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
+                        Ár frissítése a klíma listaárára: {ft(productCustomerPrice(prod(it.productId)))}
                       </button>
                     ) : null}
                   </div>
@@ -3615,7 +3635,7 @@ export default function Home() {
                     </div>
                     {hasCustomProductPrice(it) ? (
                       <button type="button" disabled={!canEditWorkResources} onClick={()=>syncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
-                        Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
+                        Ár frissítése a klíma listaárára: {ft(productCustomerPrice(prod(it.productId)))}
                       </button>
                     ) : null}
                   </div>
