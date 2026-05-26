@@ -227,12 +227,8 @@ function productSlug(value: string) {
     .replace(/^-+|-+$/g, "") || `klima-${Date.now()}`;
 }
 
-function productCustomerPrice(product: Pick<ClimateProduct, "price"> & Partial<Pick<ClimateProduct, "installPrice">>) {
-  return Math.max(0, Number(product.price || 0)) + Math.max(0, Number(product.installPrice || 0));
-}
-
-function productPriceText(product: Pick<ClimateProduct, "price"> & Partial<Pick<ClimateProduct, "installPrice">>) {
-  return `${productCustomerPrice(product).toLocaleString("hu-HU")} Ft (készülék + szerelés)`;
+function productPriceText(product: Pick<ClimateProduct, "price">) {
+  return `${Number(product.price || 0).toLocaleString("hu-HU")} Ft (telepítéssel együtt)`;
 }
 
 function normalizeProduct(product: any): ClimateProduct {
@@ -348,7 +344,7 @@ function itemName(item: QuoteItem) {
   return item.isManual ? "Egyedi klíma" : "Válassz klímát";
 }
 function itemUnitPrice(item: QuoteItem) {
-  return typeof item.customPrice === "number" && !Number.isNaN(item.customPrice) ? item.customPrice : productCustomerPrice(prod(item.productId));
+  return typeof item.customPrice === "number" && !Number.isNaN(item.customPrice) ? item.customPrice : prod(item.productId).price;
 }
 function itemInstallPrice(item: QuoteItem) {
   if (!isQuoteItemFilled(item)) return 0;
@@ -371,7 +367,7 @@ function itemPriceLine(item: QuoteItem) {
   return `${ft(itemUnitPrice(item))} / db (telepítéssel együtt)`;
 }
 function hasCustomProductPrice(item: QuoteItem) {
-  return isKnownProductId(item.productId) && !item.isManual && itemUnitPrice(item) !== productCustomerPrice(prod(item.productId));
+  return isKnownProductId(item.productId) && !item.isManual && itemUnitPrice(item) !== prod(item.productId).price;
 }
 function total(items:QuoteItem[]) { return cleanQuoteItems(items).reduce((s,i)=>s+itemTotal(i),0); }
 function occupiedSlots(customer:Customer) {
@@ -601,7 +597,7 @@ function quoteItemFromRow(row: any): QuoteItem {
   return {
     productId: matchedProduct?.id || "",
     quantity: Number(row.quantity || 1),
-    customPrice: Number(row.unit_price || (matchedProduct ? productCustomerPrice(matchedProduct) : 0) || 0),
+    customPrice: Number(row.unit_price || matchedProduct?.price || 0),
     customName: matchedProduct ? undefined : row.product_name,
     isManual: !matchedProduct,
   };
@@ -710,7 +706,6 @@ export default function Home() {
   const [products,setProducts] = useState<ClimateProduct[]>(() => sortProducts(PRODUCTS as any));
   const [productMessage,setProductMessage] = useState("");
   const [productBusy,setProductBusy] = useState(false);
-  const [showProductManager,setShowProductManager] = useState(false);
   const [newProductName,setNewProductName] = useState("");
   const [newProductPrice,setNewProductPrice] = useState("");
   const [newProductInstallPrice,setNewProductInstallPrice] = useState(String(DEFAULT_INSTALL_PRICE));
@@ -1244,7 +1239,7 @@ export default function Home() {
       return;
     }
     if (!price) {
-      setProductMessage("Add meg az új klíma készülék árát.");
+      setProductMessage("Add meg az új klíma bruttó árát szereléssel együtt.");
       return;
     }
     const baseId = productSlug(name);
@@ -1267,7 +1262,7 @@ export default function Home() {
     return (
       <Card title="Klímatípusok és árak">
         <div className="mb-5 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
-          Az itt mentett klímák jelennek meg az összes lenyíló listában, ABC sorrendben. A készülék ár és a szerelési ár külön módosítható; az ügyfélár ezek összegeként számolódik.
+          Az itt mentett klímák jelennek meg az összes lenyíló listában, ABC sorrendben. A bruttó ár szereléssel együtt értendő, a szerelési munkadíj pedig a belső bontáshoz kell.
         </div>
 
         <div className="mb-6 rounded-3xl border border-white/10 bg-slate-950/60 p-4">
@@ -1278,7 +1273,7 @@ export default function Home() {
               <input className="input" value={newProductName} onChange={(event) => setNewProductName(event.target.value)} placeholder="pl. Gree Comfort Pro 3,5 kW" />
             </div>
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Készülék ár</label>
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Bruttó ár</label>
               <input className="input" type="number" value={newProductPrice} onChange={(event) => setNewProductPrice(event.target.value)} placeholder="305000" />
             </div>
             <div>
@@ -1293,7 +1288,7 @@ export default function Home() {
 
         <div className="space-y-3">
           {products.map((product) => {
-            const customerPrice = productCustomerPrice(product);
+            const equipmentPart = Math.max(0, product.price - product.installPrice);
             return (
               <div key={product.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                 <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_140px_140px_140px_auto] xl:items-end">
@@ -1302,7 +1297,7 @@ export default function Home() {
                     <input className="input" value={product.name} onChange={(event) => updateProductField(product.id, "name", event.target.value)} />
                   </div>
                   <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Készülék ár</label>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Bruttó ár</label>
                     <input className="input" type="number" value={product.price} onChange={(event) => updateProductField(product.id, "price", event.target.value)} />
                   </div>
                   <div>
@@ -1310,8 +1305,8 @@ export default function Home() {
                     <input className="input" type="number" value={product.installPrice} onChange={(event) => updateProductField(product.id, "installPrice", event.target.value)} />
                   </div>
                   <div className="rounded-2xl bg-white/10 p-3 text-sm">
-                    <p className="text-slate-400">Készülék + szerelés</p>
-                    <p className="font-black text-slate-100">{ft(customerPrice)}</p>
+                    <p className="text-slate-400">Klíma + anyag</p>
+                    <p className="font-black text-slate-100">{ft(equipmentPart)}</p>
                   </div>
                   <button onClick={() => saveClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
                     Mentés
@@ -1711,7 +1706,7 @@ export default function Home() {
 
   async function deleteCustomer(customer: Customer) {
     if (!customer?.id) return;
-    const confirmed = window.confirm(`Biztosan törlöd ezt az érdeklődőt?\n\n${customer.name || "Névtelen ügyfél"}\n\nEz a művelet véglegesen eltávolítja az ügyfelet és a hozzá tartozó időpontot / ajánlatot.`);
+    const confirmed = window.confirm(`Biztosan törlöd ezt az ügyfelet / érdeklődőt?\n\n${customer.name || "Névtelen ügyfél"}\n\nEz a művelet véglegesen eltávolítja az ügyfelet és a hozzá tartozó időpontot / ajánlatot.`);
     if (!confirmed) return;
 
     try {
@@ -1773,7 +1768,7 @@ export default function Home() {
       }
 
       clearCustomerDraft(customer.id);
-      setMessage("Érdeklődő törölve ✅");
+      setMessage("Ügyfél törölve ✅");
     } catch (error: any) {
       setMessage(`Törlési hiba: ${error.message}`);
     }
@@ -1794,11 +1789,11 @@ export default function Home() {
       productId,
       isManual: !isKnownProductId(productId),
       customName: isKnownProductId(productId) ? undefined : it.customName,
-      customPrice: isKnownProductId(productId) ? productCustomerPrice(prod(productId)) : (it.customPrice ?? 0),
+      customPrice: isKnownProductId(productId) ? prod(productId).price : (it.customPrice ?? 0),
     } : it));
   }
   function syncQuoteItemPrice(i:number) {
-    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: productCustomerPrice(prod(it.productId)) } : it));
+    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: prod(it.productId).price } : it));
   }
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
@@ -2307,22 +2302,7 @@ export default function Home() {
 
         <Layout>
           <Main>
-            <Card title="Klímatípusok kezelése">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm text-slate-400">Új klímatípus, készülék ár vagy szerelési ár módosítása.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowProductManager((value) => !value)}
-                  className="rounded-2xl bg-cyan-300 px-5 py-3 font-black text-slate-950 transition hover:bg-cyan-200"
-                >
-                  {showProductManager ? "Klímatípus-kezelő elrejtése" : "Klímatípus-kezelő megnyitása"}
-                </button>
-              </div>
-            </Card>
-
-            {showProductManager ? renderClimateProductManager() : null}
+            {renderClimateProductManager()}
 
             <Card title="Klíma készlet">
               <div className="space-y-3">
@@ -3458,6 +3438,9 @@ export default function Home() {
                 <StepButton color="green" href={telHref(selected.phone)} onClick={()=>rememberExternalCustomer(selected,"lead")}>Hívás</StepButton>
                 <StepButton color="amber" onClick={saveCustomerOnly}>Mentés</StepButton>
                 <StepButton color="blue" onClick={()=>saveCustomer("quote")}>Mentés és ajánlat</StepButton>
+                {selected.id && customers.some((customer) => customer.id === selected.id) ? (
+                  <StepButton color="red" onClick={()=>deleteCustomer(selected)}>Ügyfél törlése</StepButton>
+                ) : null}
               </div>
             </Card></Side></Layout></Shell>;
 
@@ -3482,7 +3465,7 @@ export default function Home() {
                     </div>
                     {hasCustomProductPrice(it) ? (
                       <button type="button" disabled={!canEditWorkResources} onClick={()=>syncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
-                        Ár frissítése a klíma listaárára: {ft(productCustomerPrice(prod(it.productId)))}
+                        Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
                       </button>
                     ) : null}
                   </div>
@@ -3635,7 +3618,7 @@ export default function Home() {
                     </div>
                     {hasCustomProductPrice(it) ? (
                       <button type="button" disabled={!canEditWorkResources} onClick={()=>syncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
-                        Ár frissítése a klíma listaárára: {ft(productCustomerPrice(prod(it.productId)))}
+                        Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
                       </button>
                     ) : null}
                   </div>
@@ -3714,7 +3697,7 @@ export default function Home() {
             </Card>
             </Side></Layout></Shell>;
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span><button type="button" onClick={()=>deleteCustomer(c)} className="rounded-2xl bg-rose-500/20 px-4 py-3 text-sm font-black text-rose-100 ring-1 ring-rose-300/20 transition hover:bg-rose-500/30">Törlés</button></div></div></div>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{c.status}</span></div></div></div>)}</div></Card></Main><Side>{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {products.map((product: any) => {
                 const stock = stockOf(product.id);
@@ -3782,14 +3765,6 @@ function Calendar({ mode, date, customers, onMode, onStep, onOpen, selectable, s
           <button onClick={()=>onStep(1)} className="arrow">›</button>
         </div>
       </div>
-
-      {!selectable ? (
-        <div className="mb-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/10 bg-slate-950/40 p-3 text-[11px] font-black text-slate-200 sm:grid-cols-3 md:flex md:flex-wrap md:items-center">
-          <span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded-full bg-sky-400/70" /> Időpont foglalva</span>
-          <span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded-full bg-amber-400/80" /> Admin folyamatban</span>
-          <span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded-full bg-emerald-800" /> Lezárva</span>
-        </div>
-      ) : null}
 
       {/* Telefonon lista nézetet használunk, ezért a heti fejlécet csak asztali/tablet szélességnél mutatjuk. */}
       <div className="mb-2 hidden grid-cols-7 gap-2 text-center text-[11px] font-black text-slate-400 md:grid">
