@@ -2231,6 +2231,8 @@ export default function Home() {
 
         <Layout>
           <Main>
+            {renderClimateProductManager()}
+
             <Card title="Klíma készlet">
               <div className="space-y-3">
                 {products.map((product) => {
