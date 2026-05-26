@@ -1997,6 +1997,10 @@ export default function Home() {
   }
 
   function stockErrorMessage() {
+    // Ha a készletet ennél a munkánál már levontuk, akkor a teljes lezárást
+    // nem szabad újra készlet/foglalás ellenőrzéssel blokkolni.
+    if (selected.stockDeducted) return "";
+
     const shortageProduct = cleanQuoteItems(quoteItems).find((q) => isKnownProductId(q.productId) && reservedForProduct(q.productId) > stockOf(q.productId));
     if (shortageProduct) {
       const p = prod(shortageProduct.productId);
@@ -2067,7 +2071,7 @@ export default function Home() {
       setSelected(updated);
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
-      setMessage("Szerelés kész ✅ A klímák és az anyagok zárolva, admin még folyamatban.");
+      setMessage("Szerelés kész ✅ A készlet levonva, a foglalás felszabadítva, admin még folyamatban.");
       setView("work");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
@@ -2154,7 +2158,10 @@ export default function Home() {
 
   function reservedForProduct(productId: string) {
     return customers
-      .filter((customer) => Boolean(customer.date) && customer.status !== "Lezárva" && customer.status !== "Lemondva")
+      // Foglaltnak csak a még ténylegesen beépítés előtt álló időpontok számítanak.
+      // A "Szerelés kész – admin folyamatban" státusznál a készlet már levonásra került,
+      // ezért az nem maradhat lefoglalva is, különben dupla terhelést okoz.
+      .filter((customer) => Boolean(customer.date) && customer.status === "Időpont foglalva")
       .reduce((sum, customer) => {
         const items = customer.quoteItems ?? [];
         return sum + items
@@ -2207,7 +2214,7 @@ export default function Home() {
   }
 
   function materialReserved(materialName: string) {
-    const activeJobs = customers.filter((customer: any) => Boolean(customer.date) && customer.status !== "Lezárva" && customer.status !== "Lemondva");
+    const activeJobs = customers.filter((customer: any) => Boolean(customer.date) && customer.status === "Időpont foglalva");
 
     return Math.round(activeJobs.reduce((sum: number, customer: any) => {
       const items = customer.quoteItems ?? [];
