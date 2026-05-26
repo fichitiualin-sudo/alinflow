@@ -709,6 +709,7 @@ export default function Home() {
   const [newProductName,setNewProductName] = useState("");
   const [newProductPrice,setNewProductPrice] = useState("");
   const [newProductInstallPrice,setNewProductInstallPrice] = useState(String(DEFAULT_INSTALL_PRICE));
+  const [showClimateProductManager,setShowClimateProductManager] = useState(false);
 
   setActiveProducts(products);
 
@@ -1193,10 +1194,34 @@ export default function Home() {
     }
   }
 
-  function updateProductField(productId: string, field: "name" | "price" | "installPrice", value: string) {
+  function productDevicePrice(product: ClimateProduct) {
+    return Math.max(0, Number(product.price || 0) - Number(product.installPrice || 0));
+  }
+
+  function updateProductName(productId: string, value: string) {
     setProducts((prev) => sortProducts(prev.map((product) => {
       if (product.id !== productId) return product;
-      const next: ClimateProduct = { ...product, [field]: field === "name" ? value : Math.max(0, Number(value || 0)) } as ClimateProduct;
+      return { ...product, name: value };
+    })));
+  }
+
+  function updateProductDevicePrice(productId: string, value: string) {
+    setProducts((prev) => sortProducts(prev.map((product) => {
+      if (product.id !== productId) return product;
+      const devicePrice = Math.max(0, Number(value || 0));
+      const installPrice = Math.max(0, Number(product.installPrice || 0));
+      const next: ClimateProduct = { ...product, price: devicePrice + installPrice, installPrice };
+      next.priceText = productPriceText(next);
+      return next;
+    })));
+  }
+
+  function updateProductInstallPrice(productId: string, value: string) {
+    setProducts((prev) => sortProducts(prev.map((product) => {
+      if (product.id !== productId) return product;
+      const devicePrice = productDevicePrice(product);
+      const installPrice = Math.max(0, Number(value || 0));
+      const next: ClimateProduct = { ...product, price: devicePrice + installPrice, installPrice };
       next.priceText = productPriceText(next);
       return next;
     })));
@@ -1232,14 +1257,14 @@ export default function Home() {
 
   async function addClimateProduct() {
     const name = newProductName.trim();
-    const price = Math.max(0, Number(newProductPrice || 0));
+    const devicePrice = Math.max(0, Number(newProductPrice || 0));
     const installPrice = Math.max(0, Number(newProductInstallPrice || DEFAULT_INSTALL_PRICE));
     if (!name) {
       setProductMessage("Add meg az új klíma nevét.");
       return;
     }
-    if (!price) {
-      setProductMessage("Add meg az új klíma bruttó árát szereléssel együtt.");
+    if (!devicePrice) {
+      setProductMessage("Add meg az új klíma készülék árát.");
       return;
     }
     const baseId = productSlug(name);
@@ -1249,7 +1274,7 @@ export default function Home() {
       id = `${baseId}-${counter}`;
       counter += 1;
     }
-    const product = normalizeProduct({ id, name, price, installPrice, active: true });
+    const product = normalizeProduct({ id, name, price: devicePrice + installPrice, installPrice, active: true });
     setProducts((prev) => sortProducts([...prev, product]));
     setInventory((prev) => ensureInventoryForProducts(prev, [product]));
     await saveClimateProduct(product);
@@ -1261,63 +1286,79 @@ export default function Home() {
   function renderClimateProductManager() {
     return (
       <Card title="Klímatípusok és árak">
-        <div className="mb-5 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
-          Az itt mentett klímák jelennek meg az összes lenyíló listában, ABC sorrendben. A bruttó ár szereléssel együtt értendő, a szerelési munkadíj pedig a belső bontáshoz kell.
-        </div>
+        <button
+          onClick={() => setShowClimateProductManager((open) => !open)}
+          className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
+        >
+          {showClimateProductManager ? "Klímatípus-kezelő bezárása" : "Klímatípus-kezelő megnyitása"}
+        </button>
 
-        <div className="mb-6 rounded-3xl border border-white/10 bg-slate-950/60 p-4">
-          <p className="mb-3 text-lg font-black">Új klímatípus hozzáadása</p>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_150px_150px_auto] lg:items-end">
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Klíma megnevezése</label>
-              <input className="input" value={newProductName} onChange={(event) => setNewProductName(event.target.value)} placeholder="pl. Gree Comfort Pro 3,5 kW" />
+        {showClimateProductManager ? (
+          <div className="mt-5 space-y-5">
+            <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
+              A készülék árát és a szerelési árat külön add meg. Az ügyfélnek mutatott ár: készülék ár + szerelési ár.
             </div>
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Bruttó ár</label>
-              <input className="input" type="number" value={newProductPrice} onChange={(event) => setNewProductPrice(event.target.value)} placeholder="305000" />
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Szerelési ár</label>
-              <input className="input" type="number" value={newProductInstallPrice} onChange={(event) => setNewProductInstallPrice(event.target.value)} placeholder="60000" />
-            </div>
-            <button onClick={addClimateProduct} disabled={productBusy} className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
-              + Hozzáadás
-            </button>
-          </div>
-        </div>
 
-        <div className="space-y-3">
-          {products.map((product) => {
-            const equipmentPart = Math.max(0, product.price - product.installPrice);
-            return (
-              <div key={product.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_140px_140px_140px_auto] xl:items-end">
-                  <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Megnevezés</label>
-                    <input className="input" value={product.name} onChange={(event) => updateProductField(product.id, "name", event.target.value)} />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Bruttó ár</label>
-                    <input className="input" type="number" value={product.price} onChange={(event) => updateProductField(product.id, "price", event.target.value)} />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Szerelési ár</label>
-                    <input className="input" type="number" value={product.installPrice} onChange={(event) => updateProductField(product.id, "installPrice", event.target.value)} />
-                  </div>
-                  <div className="rounded-2xl bg-white/10 p-3 text-sm">
-                    <p className="text-slate-400">Klíma + anyag</p>
-                    <p className="font-black text-slate-100">{ft(equipmentPart)}</p>
-                  </div>
-                  <button onClick={() => saveClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
-                    Mentés
-                  </button>
+            <div className="rounded-3xl border border-white/10 bg-slate-950/60 p-4">
+              <p className="mb-3 text-lg font-black">Új klímatípus hozzáadása</p>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_150px_150px_150px_auto] lg:items-end">
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Klíma megnevezése</label>
+                  <input className="input" value={newProductName} onChange={(event) => setNewProductName(event.target.value)} placeholder="pl. Gree Comfort Pro 3,5 kW" />
                 </div>
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Készülék ár</label>
+                  <input className="input" type="number" value={newProductPrice} onChange={(event) => setNewProductPrice(event.target.value)} placeholder="160000" />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Szerelési ár</label>
+                  <input className="input" type="number" value={newProductInstallPrice} onChange={(event) => setNewProductInstallPrice(event.target.value)} placeholder="60000" />
+                </div>
+                <div className="rounded-2xl bg-white/10 p-3 text-sm">
+                  <p className="text-slate-400">Készülék + szerelés</p>
+                  <p className="font-black text-slate-100">{ft((Number(newProductPrice || 0) || 0) + (Number(newProductInstallPrice || 0) || 0))}</p>
+                </div>
+                <button onClick={addClimateProduct} disabled={productBusy} className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
+                  + Hozzáadás
+                </button>
               </div>
-            );
-          })}
-        </div>
+            </div>
 
-        {productMessage ? <div className="mt-4 rounded-2xl bg-slate-950/70 p-4 text-sm font-bold text-slate-100">{productMessage}</div> : null}
+            <div className="space-y-3">
+              {products.map((product) => {
+                const devicePrice = productDevicePrice(product);
+                const customerPrice = Math.max(0, devicePrice + Number(product.installPrice || 0));
+                return (
+                  <div key={product.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_140px_140px_150px_auto] xl:items-end">
+                      <div>
+                        <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Megnevezés</label>
+                        <input className="input" value={product.name} onChange={(event) => updateProductName(product.id, event.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Készülék ár</label>
+                        <input className="input" type="number" value={devicePrice} onChange={(event) => updateProductDevicePrice(product.id, event.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Szerelési ár</label>
+                        <input className="input" type="number" value={product.installPrice} onChange={(event) => updateProductInstallPrice(product.id, event.target.value)} />
+                      </div>
+                      <div className="rounded-2xl bg-white/10 p-3 text-sm">
+                        <p className="text-slate-400">Készülék + szerelés</p>
+                        <p className="font-black text-slate-100">{ft(customerPrice)}</p>
+                      </div>
+                      <button onClick={() => saveClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
+                        Mentés
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {productMessage ? <div className="rounded-2xl bg-slate-950/70 p-4 text-sm font-bold text-slate-100">{productMessage}</div> : null}
+          </div>
+        ) : null}
       </Card>
     );
   }
