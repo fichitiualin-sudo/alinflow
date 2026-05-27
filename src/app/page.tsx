@@ -4,636 +4,95 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
-type View = "dashboard" | "lead" | "quote" | "quotePreview" | "schedule" | "work" | "workReport" | "warehouse" | "tasks" | "archive" | "documents" | "documentPreview";
-const RETURN_CONTEXT_KEY = "alinflow:returnContext";
-const CUSTOMER_DRAFT_KEY = "alinflow:customerDraft";
-const RESTORABLE_VIEWS: View[] = ["lead", "quote", "quotePreview", "schedule", "work", "workReport", "documentPreview"];
-
-type CalendarMode = "week" | "month";
-type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document";
-type QuoteItem = { productId: string; quantity: number; customPrice?: number; customName?: string; isManual?: boolean };
-type ClimateProduct = {
-  id: string;
-  name: string;
-  price: number;
-  installPrice: number;
-  priceText?: string;
-  active?: boolean;
-};
-type InventoryItem = {
-  productId: string;
-  stock: number;
-};
-
-type Customer = {
-  id: string;
-  name: string;
-  city: string;
-  phone: string;
-  email: string;
-  address: string;
-  source: string;
-  status: string;
-  need: string;
-  notes?: string;
-  date?: string;
-  time?: string;
-  quoteItems: QuoteItem[];
-  productId?: string;
-  isFresh?: boolean;
-  stockDeducted?: boolean;
-};
-
-type WorkReport = {
-  id?: string;
-  customerId?: string;
-  workDescription: string;
-  notes: string;
-  signatureDataUrl: string;
-  signerName: string;
-  signedAt?: string;
-  emailSentAt?: string;
-};
-
-type DocumentRecord = {
-  id?: string;
-  customerId: string;
-  type: string;
-  title: string;
-  status: string;
-  sentAt?: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
-
-type LeadImportCandidate = {
-  id: string;
-  rowNumber: number;
-  name: string;
-  phone: string;
-  email: string;
-  duplicate: boolean;
-  duplicateReason?: string;
-  invalid?: boolean;
-  invalidReason?: string;
-  mergedRows?: number;
-};
-
-type WorkChecklistState = {
-  worksheet: boolean;
-  signature: boolean;
-  purchaseDeclaration: boolean;
-  alinInvoice: boolean;
-  amovaInvoice: boolean;
-  nkvh: boolean;
-  docsSent: boolean;
-};
-
-const EMPTY_WORK_CHECKLIST: WorkChecklistState = {
-  worksheet: false,
-  signature: false,
-  purchaseDeclaration: false,
-  alinInvoice: false,
-  amovaInvoice: false,
-  nkvh: false,
-  docsSent: false,
-};
-
-const STATUS_OPTIONS = [
-  "Visszahívandó",
-  "Ajánlat elküldve",
-  "Időpont foglalva",
-  "Szerelés kész – admin folyamatban",
-  "Lezárva",
-  "Lemondva",
-];
-
-const ARCHIVED_STATUSES = ["Lezárva", "Lemondva"];
-
-const PRODUCTS = [
-  {
-    "id": "auratsu-osaka-3-4-kw-tcl",
-    "name": "Auratsu Osaka 3,4 kW (TCL)",
-    "price": 220000,
-    "priceText": "220 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "mdv-one-3-5-kw-by-midea",
-    "name": "MDV One 3,5 kW (by Midea)",
-    "price": 240000,
-    "priceText": "240 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "kinghome-by-gree-primor-3-2-kw",
-    "name": "Kinghome (by Gree) Primor 3,2 kW",
-    "price": 235000,
-    "priceText": "235 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "tcl-t-pro-3-5-kw",
-    "name": "TCL T-Pro 3,5 kW",
-    "price": 270000,
-    "priceText": "270 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "kinghome-by-gree-maximus-3-51-kw",
-    "name": "Kinghome (by Gree) Maximus 3,51 kW",
-    "price": 250000,
-    "priceText": "250 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "midea-xtreme-save-3-5-kw",
-    "name": "Midea Xtreme Save 3,5 kW",
-    "price": 290000,
-    "priceText": "290 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "syen-by-gree-muse-next-3-5-kw",
-    "name": "Syen (by Gree) Muse Next 3,5 kW",
-    "price": 275000,
-    "priceText": "275 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "nord-quantum-3-6-kw",
-    "name": "Nord Quantum 3,6 kW",
-    "price": 285000,
-    "priceText": "285 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "kaisai-ice-3-5-kw",
-    "name": "Kaisai Ice 3,5 kW",
-    "price": 280000,
-    "priceText": "280 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "midea-xtreme-save-pro-3-5-kw",
-    "name": "Midea Xtreme Save Pro 3,5 kW",
-    "price": 325000,
-    "priceText": "325 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "midea-breezeless-e-3-5-kw-huzatmentes",
-    "name": "Midea Breezeless E 3,5 kW (huzatmentes)",
-    "price": 305000,
-    "priceText": "305 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "fisher-comfort-plus-3-5-kw",
-    "name": "Fisher Comfort Plus 3,5 kW",
-    "price": 295000,
-    "priceText": "295 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "gree-comfort-pro-3-5-kw",
-    "name": "Gree Comfort Pro 3,5 kW",
-    "price": 305000,
-    "priceText": "305 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "fisher-art-3-52-kw-fekete",
-    "name": "Fisher Art 3,52 kW (fekete)",
-    "price": 360000,
-    "priceText": "360 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "midea-solstice-3-5-kw",
-    "name": "Midea Solstice 3,5 kW",
-    "price": 325000,
-    "priceText": "325 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "fisher-nordic-3-5-kw",
-    "name": "Fisher Nordic 3,5 kW",
-    "price": 400000,
-    "priceText": "400 000 Ft (telepítéssel együtt)"
-  },
-  {
-    "id": "midea-oasis-3-5-kw",
-    "name": "Midea Oasis 3,5 kW",
-    "price": 460000,
-    "priceText": "460 000 Ft (telepítéssel együtt)"
-  }
-];
-
-const DEFAULT_INSTALL_PRICE = 60000;
-const EMPTY_PRODUCT: ClimateProduct = { id: "", name: "Válassz klímát", price: 0, installPrice: 0, priceText: "Nincs klíma kiválasztva", active: true };
-
-function productSlug(value: string) {
-  return String(value || "klima")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || `klima-${Date.now()}`;
-}
-
-function productPriceText(product: Pick<ClimateProduct, "price">) {
-  return `${Number(product.price || 0).toLocaleString("hu-HU")} Ft (telepítéssel együtt)`;
-}
-
-function normalizeProduct(product: any): ClimateProduct {
-  const name = String(product?.name || "Névtelen klíma").trim();
-  const price = Number(product?.price ?? product?.total_price ?? 0) || 0;
-  const installPrice = Number(product?.installPrice ?? product?.install_price ?? DEFAULT_INSTALL_PRICE) || 0;
-  return {
-    id: String(product?.id || productSlug(name)),
-    name,
-    price,
-    installPrice,
-    priceText: product?.priceText || productPriceText({ price }),
-    active: product?.active !== false,
-  };
-}
-
-function sortProducts(products: ClimateProduct[]) {
-  return [...products]
-    .map(normalizeProduct)
-    .filter((product) => product.active !== false)
-    .sort((a, b) => a.name.localeCompare(b.name, "hu", { sensitivity: "base" }));
-}
-
-let ACTIVE_PRODUCTS: ClimateProduct[] = sortProducts(PRODUCTS as any);
-
-function setActiveProducts(products: ClimateProduct[]) {
-  ACTIVE_PRODUCTS = sortProducts(products);
-}
-
-function isKnownProductId(productId?: string) {
-  return Boolean(productId && ACTIVE_PRODUCTS.some((product: any) => product.id === productId));
-}
-
-function isCustomQuoteItem(item: QuoteItem) {
-  return Boolean(item.isManual || item.customName?.trim() || (item.productId && !isKnownProductId(item.productId)));
-}
-
-function isQuoteItemFilled(item: QuoteItem) {
-  return Boolean(item.customName?.trim() || isKnownProductId(item.productId));
-}
-
-function cleanQuoteItems(items?: QuoteItem[]) {
-  return (items || []).filter(isQuoteItemFilled).map((item) => ({
-    ...item,
-    productId: isKnownProductId(item.productId) ? item.productId : "",
-    customName: item.customName?.trim() || undefined,
-    isManual: item.isManual || !isKnownProductId(item.productId),
-  }));
-}
-
-const EMPTY_QUOTE_ITEMS: QuoteItem[] = [];
-
-const INITIAL_CUSTOMERS: Customer[] = [
-  { id:"c1", name:"Kovács Réka", city:"Hévízgyörk", phone:"+36 30 123 4567", email:"reka@email.hu", address:"2192 Hévízgyörk, Minta utca 12.", source:"Facebook hirdetés", status:"Időpont foglalva", need:"Hűtés · 35 m² nappali", date:"2026-05-12", time:"08:00", quoteItems:[{ productId: PRODUCTS[6]?.id || PRODUCTS[0].id, quantity:1 }] },
-  { id:"c2", name:"Kovács Béla", city:"Gödöllő", phone:"+36 30 111 1111", email:"bela@email.hu", address:"2100 Gödöllő, Fő utca 4.", source:"Telefon", status:"Időpont foglalva", need:"Hűtés + fűtés · 42 m² nappali", date:"2026-05-11", time:"08:00", quoteItems:[{ productId: PRODUCTS[12]?.id || PRODUCTS[0].id, quantity:1 }] },
-  { id:"c3", name:"Nagy István", city:"Hatvan", phone:"+36 30 222 2222", email:"istvan@email.hu", address:"3000 Hatvan, Kossuth tér 2.", source:"Weboldal", status:"Visszahívandó", need:"Felmérés · 2 helyiség", date:"2026-05-11", time:"12:00", quoteItems:[{ productId: PRODUCTS[1]?.id || PRODUCTS[0].id, quantity:1 }] },
-  { id:"l1", name:"Balogh Réka", city:"Hévízgyörk", phone:"+36 30 222 3344", email:"balogh.reka@email.hu", address:"2192 Hévízgyörk, Dózsa György út 5.", source:"Facebook hirdetés", status:"Visszahívandó", need:"Hűtés · 35 m² nappali", quoteItems:[{ productId: PRODUCTS[6]?.id || PRODUCTS[0].id, quantity:1 }] },
-  { id:"l2", name:"Molnár Gábor", city:"Kartal", phone:"+36 30 666 6666", email:"gabor@email.hu", address:"2173 Kartal, Béke utca 9.", source:"Facebook hirdetés", status:"Ajánlat elküldve", need:"Hűtés + fűtés · 40 m² nappali", quoteItems:[{ productId: PRODUCTS[12]?.id || PRODUCTS[0].id, quantity:1 }] },
-];
-
-const DEFAULT_MATERIALS = [
-  { name:"Alukasírozott rézcső", qty:"3", unit:"m", isExtra:false },
-  { name:"Konzol", qty:"450-es konzol", unit:"1 db", isExtra:false },
-  { name:"Rezgéscsillapító", qty:"1", unit:"készlet", isExtra:false },
-  { name:"3×1,5 gumikábel", qty:"5", unit:"m", isExtra:false },
-  { name:"5×1,5 gumikábel", qty:"2,5", unit:"m", isExtra:false },
-  { name:"160-as csavar", qty:"4", unit:"db", isExtra:false },
-];
-const MATERIAL_STOCK = [
-  { name: "Alukasírozott rézcső", stock: 41, unit: "m", lowAt: 15 },
-  { name: "450-es konzol", stock: 3, unit: "db", lowAt: 4 },
-  { name: "550-es konzol", stock: 6, unit: "db", lowAt: 4 },
-  { name: "Rezgéscsillapító", stock: 12, unit: "készlet", lowAt: 5 },
-  { name: "3×1,5 gumikábel", stock: 52, unit: "m", lowAt: 20 },
-  { name: "5×1,5 gumikábel", stock: 28, unit: "m", lowAt: 10 },
-  { name: "160-as csavar", stock: 64, unit: "db", lowAt: 20 },
-];
-
-
-const DEFAULT_INVENTORY: InventoryItem[] = PRODUCTS.slice(0, 10).map((product, index) => ({
-  productId: product.id,
-  stock: [4, 3, 5, 2, 8, 1, 2, 3, 1, 2][index] ?? 0,
-}));
-
-
-const BASE_SLOTS = ["08:00", "12:00", "16:00"];
-
-function ft(n:number) { return n.toLocaleString("hu-HU") + " Ft"; }
-function pad(n:number) { return String(n).padStart(2,"0"); }
-function iso(d:Date) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
-function todayIso() { return iso(new Date()); }
-function offsetIso(days:number) { const d = new Date(); d.setDate(d.getDate()+days); return iso(d); }
-function fullCustomerAddress(customer: Pick<Customer, "city" | "address">) {
-  const city = (customer.city || "").trim();
-  const address = (customer.address || "").trim();
-  if (city && address) {
-    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
-  }
-  return address || city || "nincs megadva";
-}
-function weekStart(d:Date) { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay()+6)%7)); return x; }
-function calLabel(mode:CalendarMode, d:Date) {
-  if (mode==="month") return `${d.getFullYear()}. ${pad(d.getMonth()+1)}`;
-  const a = weekStart(d); const b = new Date(a); b.setDate(a.getDate()+6);
-  return `${a.getFullYear()}. ${pad(a.getMonth()+1)}.${pad(a.getDate())} – ${pad(b.getMonth()+1)}.${pad(b.getDate())}`;
-}
-function prod(id:string) { return ACTIVE_PRODUCTS.find((p:any)=>p.id===id) || EMPTY_PRODUCT; }
-function qty(items:QuoteItem[]) { return cleanQuoteItems(items).reduce((s,i)=>s+i.quantity,0); }
-function itemName(item: QuoteItem) {
-  const custom = item.customName?.trim();
-  if (custom) return custom;
-  if (isKnownProductId(item.productId)) return prod(item.productId).name;
-  return item.isManual ? "Egyedi klíma" : "Válassz klímát";
-}
-function itemUnitPrice(item: QuoteItem) {
-  return typeof item.customPrice === "number" && !Number.isNaN(item.customPrice) ? item.customPrice : prod(item.productId).price;
-}
-function itemInstallPrice(item: QuoteItem) {
-  if (!isQuoteItemFilled(item)) return 0;
-  if (isCustomQuoteItem(item)) return Math.min(DEFAULT_INSTALL_PRICE, itemUnitPrice(item));
-  return Math.min(prod(item.productId).installPrice || DEFAULT_INSTALL_PRICE, itemUnitPrice(item));
-}
-function itemTotal(item: QuoteItem) {
-  return itemUnitPrice(item) * item.quantity;
-}
-function itemInstallTotal(item: QuoteItem) {
-  return itemInstallPrice(item) * item.quantity;
-}
-function quoteInstallTotal(items: QuoteItem[]) {
-  const clean = cleanQuoteItems(items);
-  return Math.min(total(clean), clean.reduce((sum, item) => sum + itemInstallTotal(item), 0));
-}
-function itemPriceLine(item: QuoteItem) {
-  if (!isQuoteItemFilled(item)) return "Nincs klíma kiválasztva";
-  if (isCustomQuoteItem(item)) return "Egyedi klíma / tétel";
-  return `${ft(itemUnitPrice(item))} / db (telepítéssel együtt)`;
-}
-function hasCustomProductPrice(item: QuoteItem) {
-  return isKnownProductId(item.productId) && !item.isManual && itemUnitPrice(item) !== prod(item.productId).price;
-}
-function total(items:QuoteItem[]) { return cleanQuoteItems(items).reduce((s,i)=>s+itemTotal(i),0); }
-function occupiedSlots(customer:Customer) {
-  if (!customer.time) return [];
-  if (qty(customer.quoteItems) >= 2 || customer.time.includes("+")) return ["08:00","12:00"];
-  return [customer.time];
-}
-
-
-function telHref(phone: string) {
-  const cleaned = phone.replace(/[^+0-9]/g, "");
-  return `tel:${cleaned}`;
-}
-
-function mapsHref(customer: Customer) {
-  const destination = displayAddress(customer) || customer.name || "";
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
-}
-
-type ReturnContext = { customerId: string; view: View; at: number };
-type CustomerDraft = {
-  customer: Customer;
-  quoteItems: QuoteItem[];
-  scheduleDate: string;
-  scheduleTime: string;
-  view: View;
-  editCustomer: boolean;
-  allowWorkResourceEdit: boolean;
-  at: number;
-};
-
-function safeReturnView(value: unknown): View {
-  return typeof value === "string" && RESTORABLE_VIEWS.includes(value as View) ? (value as View) : "work";
-}
-
-function readReturnContext(): ReturnContext | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.sessionStorage.getItem(RETURN_CONTEXT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ReturnContext>;
-    if (!parsed.customerId) return null;
-    const at = typeof parsed.at === "number" ? parsed.at : Date.now();
-    const maxAgeMs = 6 * 60 * 60 * 1000;
-    if (Date.now() - at > maxAgeMs) {
-      window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
-      return null;
-    }
-    return { customerId: parsed.customerId, view: safeReturnView(parsed.view), at };
-  } catch {
-    window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
-    return null;
-  }
-}
-
-function readCustomerDraft(): CustomerDraft | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.sessionStorage.getItem(CUSTOMER_DRAFT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<CustomerDraft>;
-    if (!parsed.customer?.id) return null;
-    const at = typeof parsed.at === "number" ? parsed.at : Date.now();
-    const maxAgeMs = 6 * 60 * 60 * 1000;
-    if (Date.now() - at > maxAgeMs) {
-      window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
-      return null;
-    }
-    return {
-      customer: parsed.customer as Customer,
-      quoteItems: Array.isArray(parsed.quoteItems) && parsed.quoteItems.length ? parsed.quoteItems as QuoteItem[] : (parsed.customer as Customer).quoteItems || EMPTY_QUOTE_ITEMS,
-      scheduleDate: typeof parsed.scheduleDate === "string" ? parsed.scheduleDate : (parsed.customer as Customer).date || todayIso(),
-      scheduleTime: typeof parsed.scheduleTime === "string" ? parsed.scheduleTime : (parsed.customer as Customer).time?.split(" ")[0] || "08:00",
-      view: safeReturnView(parsed.view),
-      editCustomer: Boolean(parsed.editCustomer),
-      allowWorkResourceEdit: Boolean(parsed.allowWorkResourceEdit),
-      at,
-    };
-  } catch {
-    window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
-    return null;
-  }
-}
-
-function writeCustomerDraft(draft: CustomerDraft) {
-  if (typeof window === "undefined" || !draft.customer?.id) return;
-  try {
-    window.sessionStorage.setItem(CUSTOMER_DRAFT_KEY, JSON.stringify(draft));
-  } catch {
-    // A sessionStorage csak kényelmi biztonsági mentés. Ha megtelik vagy tiltott, az app működjön tovább.
-  }
-}
-
-function clearCustomerDraft(customerId?: string) {
-  if (typeof window === "undefined") return;
-  if (!customerId) {
-    window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
-    return;
-  }
-  const current = readCustomerDraft();
-  if (current?.customer.id === customerId) window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
-}
-
-function draftForCustomer(customer: Customer) {
-  const draft = readCustomerDraft();
-  if (!draft || draft.customer.id !== customer.id) return null;
-
-  const nextQuoteItems = draft.quoteItems.length
-    ? draft.quoteItems
-    : draft.customer.quoteItems?.length
-    ? draft.customer.quoteItems
-    : customer.quoteItems || EMPTY_QUOTE_ITEMS;
-
-  return {
-    ...draft,
-    customer: {
-      ...customer,
-      ...draft.customer,
-      quoteItems: nextQuoteItems,
-    } as Customer,
-    quoteItems: nextQuoteItems,
-  };
-}
-
-function compactCalendarDate(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const h = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${y}${m}${d}T${h}${min}00`;
-}
-
-function parseCalendarTime(value?: string) {
-  const firstTime = (value || "08:00").match(/\d{1,2}:\d{2}/)?.[0] || "08:00";
-  const [hour, minute] = firstTime.split(":").map(Number);
-  return { hour: Number.isFinite(hour) ? hour : 8, minute: Number.isFinite(minute) ? minute : 0 };
-}
-
-function googleCalendarHref(customer: Customer) {
-  const dateIso = customer.date || todayIso();
-  const { hour, minute } = parseCalendarTime(customer.time);
-  const start = new Date(`${dateIso}T00:00:00`);
-  start.setHours(hour, minute, 0, 0);
-  const end = new Date(start);
-  const isLongSlot = Number(qty(customer.quoteItems)) >= 2 || String(customer.time || "").includes("+");
-  if (isLongSlot) {
-    end.setHours(16, 0, 0, 0);
-  } else if (hour >= 16) {
-    end.setHours(hour + 2, minute, 0, 0);
-  } else {
-    end.setHours(hour + 4, minute, 0, 0);
-  }
-
-  const title = `Klímaszerelés – ${customer.name || "ügyfél"}`;
-  const details = [
-    customer.name ? `Ügyfél: ${customer.name}` : "",
-    customer.phone ? `Telefon: ${customer.phone}` : "",
-    customer.email ? `Email: ${customer.email}` : "",
-    climateSummary(customer.quoteItems) ? `Klíma: ${climateSummary(customer.quoteItems)} – szereléssel együtt` : "",
-    customer.need ? `Igény: ${customer.need}` : "",
-    customer.notes ? `Megjegyzés: ${customer.notes}` : "",
-    customer.status ? `Státusz: ${customer.status}` : "",
-  ].filter(Boolean).join("\n");
-
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: title,
-    dates: `${compactCalendarDate(start)}/${compactCalendarDate(end)}`,
-    ctz: "Europe/Budapest",
-    details,
-    location: displayAddress(customer),
-  });
-
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
-
-function displayAddress(customer: Pick<Customer, "city" | "address">) {
-  const city = (customer.city || "").trim();
-  const address = (customer.address || "").trim();
-  if (city && address) {
-    return address.toLocaleLowerCase("hu-HU").includes(city.toLocaleLowerCase("hu-HU")) ? address : `${city}, ${address}`;
-  }
-  return address || city || "";
-}
-
-const EMPTY_CUSTOMER: Customer = {
-  id: "",
-  name: "",
-  city: "",
-  phone: "",
-  email: "",
-  address: "",
-  source: "Kézi rögzítés",
-  status: "Visszahívandó",
-  need: "",
-  notes: "",
-  quoteItems: EMPTY_QUOTE_ITEMS,
-};
-
-function normalizeStatus(status?: string) {
-  if (status && STATUS_OPTIONS.includes(status)) return status;
-  if (status === "Ajánlat készül" || status === "Időpont egyeztetés" || status === "Beszélve") return "Ajánlat elküldve";
-  if (status === "Szerelés folyamatban") return "Időpont foglalva";
-  return "Visszahívandó";
-}
-
-function isArchivedCustomer(customer: Customer) {
-  return ARCHIVED_STATUSES.includes(customer.status);
-}
-
-function climateSummary(items?: QuoteItem[]) {
-  const activeItems = cleanQuoteItems(items).filter((item) => item.quantity > 0);
-  if (!activeItems.length) return "Nincs klíma megadva";
-  return activeItems.map((item) => `${item.quantity} db ${itemName(item)}`).join(" + ");
-}
-
-function defaultWorkDescription() {
-  return "Klímaberendezés telepítése, szükséges szerelési anyagok beépítése, nyomáspróba, vákuumozás, beüzemelés, működési próba és felhasználói betanítás.";
-}
-
-function workAcceptanceText() {
-  return "Az ügyfél a munkalap aláírásával igazolja, hogy a fenti munkát átvette, a készülék működését bemutatták, és az alapvető használati tudnivalókról tájékoztatást kapott.";
-}
-
-function emptyWorkReport(customer?: Customer): WorkReport {
-  return {
-    customerId: customer?.id,
-    workDescription: defaultWorkDescription(),
-    notes: "",
-    signatureDataUrl: "",
-    signerName: customer?.name || "",
-  };
-}
-
-function formatSignedAt(value?: string) {
-  if (!value) return "nincs aláírva";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function quoteItemFromRow(row: any): QuoteItem {
-  const productById = ACTIVE_PRODUCTS.find((product) => product.id === row.description);
-  const productByName = ACTIVE_PRODUCTS.find((product) => product.name === row.product_name);
-  const matchedProduct = productById || productByName;
-
-  return {
-    productId: matchedProduct?.id || "",
-    quantity: Number(row.quantity || 1),
-    customPrice: Number(row.unit_price || matchedProduct?.price || 0),
-    customName: matchedProduct ? undefined : row.product_name,
-    isManual: !matchedProduct,
-  };
-}
-
-function quoteItemToRow(item: QuoteItem, quoteId: string) {
-  return {
-    quote_id: quoteId,
-    product_name: itemName(item),
-    description: item.productId,
-    quantity: item.quantity,
-    unit_price: itemUnitPrice(item),
-    total_price: itemTotal(item),
-  };
-}
+import type {
+  CalendarMode,
+  ClimateProduct,
+  Customer,
+  CustomerDraft,
+  DocumentPreviewType,
+  DocumentRecord,
+  InventoryItem,
+  LeadImportCandidate,
+  QuoteItem,
+  View,
+  WorkChecklistState,
+  WorkReport,
+} from "@/lib/alinflow/types";
+import {
+  ARCHIVED_STATUSES,
+  BASE_SLOTS,
+  CUSTOMER_DRAFT_KEY,
+  RETURN_CONTEXT_KEY,
+  RESTORABLE_VIEWS,
+  DEFAULT_INSTALL_PRICE,
+  DEFAULT_INVENTORY,
+  DEFAULT_MATERIALS,
+  EMPTY_CUSTOMER,
+  EMPTY_PRODUCT,
+  EMPTY_QUOTE_ITEMS,
+  EMPTY_WORK_CHECKLIST,
+  INITIAL_CUSTOMERS,
+  MATERIAL_STOCK,
+  PRODUCTS,
+  STATUS_OPTIONS,
+  isArchivedCustomer,
+  normalizeStatus,
+} from "@/lib/alinflow/constants";
+import {
+  cleanQuoteItems,
+  climateSummary,
+  hasCustomProductPrice,
+  isCustomQuoteItem,
+  isKnownProductId,
+  isQuoteItemFilled,
+  itemInstallPrice,
+  itemInstallTotal,
+  itemName,
+  itemPriceLine,
+  itemTotal,
+  itemUnitPrice,
+  normalizeProduct,
+  occupiedSlots,
+  prod,
+  productPriceText,
+  productSlug,
+  quoteInstallTotal,
+  quoteItemFromRow,
+  quoteItemToRow,
+  qty,
+  setActiveProducts,
+  sortProducts,
+  total,
+} from "@/lib/alinflow/products";
+import {
+  displayAddress,
+  ft,
+  fullCustomerAddress,
+  iso,
+  mapsHref,
+  offsetIso,
+  telHref,
+  todayIso,
+} from "@/lib/alinflow/format";
+import {
+  calLabel,
+  googleCalendarHref,
+  weekStart,
+} from "@/lib/alinflow/calendar";
+import {
+  clearCustomerDraft,
+  draftForCustomer,
+  readCustomerDraft,
+  readReturnContext,
+  safeReturnView,
+  writeCustomerDraft,
+} from "@/lib/alinflow/drafts";
+import {
+  defaultWorkDescription,
+  emptyWorkReport,
+  formatSignedAt,
+  workAcceptanceText,
+} from "@/lib/alinflow/work-report";
 
 function LoginScreen({
   email,
