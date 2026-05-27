@@ -74,6 +74,7 @@ import {
   todayIso,
 } from "@/lib/alinflow/format";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
+import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
 import {
   clearCustomerDraft,
   draftForCustomer,
@@ -894,86 +895,6 @@ export default function Home() {
     setNewProductName("");
     setNewProductPrice("");
     setNewProductInstallPrice(String(DEFAULT_INSTALL_PRICE));
-  }
-
-  function renderClimateProductManager() {
-    return (
-      <Card title="Klímatípusok és árak">
-        <button
-          onClick={() => setShowClimateProductManager((open) => !open)}
-          className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
-        >
-          {showClimateProductManager ? "Klímatípus-kezelő bezárása" : "Klímatípus-kezelő megnyitása"}
-        </button>
-
-        {showClimateProductManager ? (
-          <div className="mt-5 space-y-5">
-            <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
-              A készülék árát és a szerelési árat külön add meg. Az ügyfélnek mutatott ár: készülék ár + szerelési ár.
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-slate-950/60 p-4">
-              <p className="mb-3 text-lg font-black">Új klímatípus hozzáadása</p>
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_150px_150px_150px_auto] lg:items-end">
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Klíma megnevezése</label>
-                  <input className="input" value={newProductName} onChange={(event) => setNewProductName(event.target.value)} placeholder="pl. Gree Comfort Pro 3,5 kW" />
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Készülék ár</label>
-                  <input className="input" type="number" value={newProductPrice} onChange={(event) => setNewProductPrice(event.target.value)} placeholder="160000" />
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Szerelési ár</label>
-                  <input className="input" type="number" value={newProductInstallPrice} onChange={(event) => setNewProductInstallPrice(event.target.value)} placeholder="60000" />
-                </div>
-                <div className="rounded-2xl bg-white/10 p-3 text-sm">
-                  <p className="text-slate-400">Készülék + szerelés</p>
-                  <p className="font-black text-slate-100">{ft((Number(newProductPrice || 0) || 0) + (Number(newProductInstallPrice || 0) || 0))}</p>
-                </div>
-                <button onClick={addClimateProduct} disabled={productBusy} className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
-                  + Hozzáadás
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {products.map((product) => {
-                const devicePrice = productDevicePrice(product);
-                const customerPrice = Math.max(0, devicePrice + Number(product.installPrice || 0));
-                return (
-                  <div key={product.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_140px_140px_150px_auto] xl:items-end">
-                      <div>
-                        <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Megnevezés</label>
-                        <input className="input" value={product.name} onChange={(event) => updateProductName(product.id, event.target.value)} />
-                      </div>
-                      <div>
-                        <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Készülék ár</label>
-                        <input className="input" type="number" value={devicePrice} onChange={(event) => updateProductDevicePrice(product.id, event.target.value)} />
-                      </div>
-                      <div>
-                        <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Szerelési ár</label>
-                        <input className="input" type="number" value={product.installPrice} onChange={(event) => updateProductInstallPrice(product.id, event.target.value)} />
-                      </div>
-                      <div className="rounded-2xl bg-white/10 p-3 text-sm">
-                        <p className="text-slate-400">Készülék + szerelés</p>
-                        <p className="font-black text-slate-100">{ft(customerPrice)}</p>
-                      </div>
-                      <button onClick={() => saveClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
-                        Mentés
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {productMessage ? <div className="rounded-2xl bg-slate-950/70 p-4 text-sm font-bold text-slate-100">{productMessage}</div> : null}
-          </div>
-        ) : null}
-      </Card>
-    );
   }
 
   async function loadCustomersFromDb() {
@@ -1999,148 +1920,31 @@ export default function Home() {
 
   if (view === "warehouse") {
     return (
-      <Shell>
-        <Back onClick={() => setView("dashboard")} />
-        <Hero
-          title="Raktárkészlet"
-          sub="Készletkezelés és bevételezés."
-          action="Készlet kezelése"
-        />
-
-        <Layout>
-          <Main>
-            {renderClimateProductManager()}
-
-            <Card title="Klíma készlet">
-              <div className="space-y-3">
-                {products.map((product) => {
-                  const stock = stockOf(product.id);
-                  const reserved = reservedForProduct(product.id);
-                  const free = stock - reserved;
-
-                  return (
-                    <div key={product.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <p className="text-lg font-black">{product.name}</p>
-                          <p className="text-sm text-slate-400">{product.priceText}</p>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                          <div className="rounded-2xl bg-white/10 p-3">
-                            <p className="text-slate-400">Raktáron</p>
-                            <b>{stock} db</b>
-                          </div>
-                          <div className="rounded-2xl bg-amber-400/20 p-3">
-                            <p className="text-amber-200">Lefoglalva</p>
-                            <b>{reserved} db</b>
-                          </div>
-                          <div className={`rounded-2xl p-3 ${free > 0 ? "bg-emerald-400/20" : "bg-red-500/20"}`}>
-                            <p className={free > 0 ? "text-emerald-200" : "text-red-200"}>Szabad</p>
-                            <b>{free} db</b>
-                          </div>
-                        </div>
-                      </div>
-
-                      {reserved > stock ? (
-                        <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/20 p-4 text-sm font-black text-red-100">
-                          Figyelem: {reserved - stock} db-bal több van lefoglalva, mint amennyi raktáron van.
-                        </div>
-                      ) : null}
-
-                      <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
-                        <input id={`stock-${product.id}`} type="number" min={1} defaultValue={1} className="input md:max-w-[140px]" />
-                        <button
-                          onClick={() => {
-                            const input = document.getElementById(`stock-${product.id}`) as HTMLInputElement | null;
-                            addStock(product.id, Number(input?.value || 0));
-                          }}
-                          className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
-                        >
-                          + Bevételezés
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-
-            <Card title="Szerelési anyagok">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {materialInventory.map((item: any) => {
-                  const reserved = materialReserved(item.name);
-                  const free = item.stock - reserved;
-                  const status = free <= 0 ? "hiány" : free <= item.lowAt ? "alacsony" : "rendben";
-
-                  return (
-                    <div key={item.name} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-black">{item.name}</p>
-                          <p className="mt-1 text-xs text-slate-400">egység: {item.unit}</p>
-                        </div>
-                        <span className={
-                          status === "hiány"
-                            ? "rounded-full bg-red-500/20 px-3 py-1 text-xs font-black text-red-200"
-                            : status === "alacsony"
-                            ? "rounded-full bg-amber-400/20 px-3 py-1 text-xs font-black text-amber-200"
-                            : "rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-black text-emerald-200"
-                        }>
-                          {status}
-                        </span>
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
-                        <div className="rounded-2xl bg-white/10 p-3">
-                          <p className="text-slate-400">Raktáron</p>
-                          <b>{item.stock} {item.unit}</b>
-                        </div>
-                        <div className="rounded-2xl bg-amber-400/20 p-3">
-                          <p className="text-amber-200">Lefoglalva</p>
-                          <b>{reserved} {item.unit}</b>
-                        </div>
-                        <div className={`rounded-2xl p-3 ${free > 0 ? "bg-emerald-400/20" : "bg-red-500/20"}`}>
-                          <p className={free > 0 ? "text-emerald-200" : "text-red-200"}>Szabad</p>
-                          <b>{free} {item.unit}</b>
-                        </div>
-                      </div>
-
-                      {reserved > item.stock ? (
-                        <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/20 p-4 text-sm font-black text-red-100">
-                          Figyelem: {reserved - item.stock} {item.unit} hiányzik a lefoglalt munkákhoz.
-                        </div>
-                      ) : null}
-
-                      <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
-                        <input id={`mat-${item.name}`} type="number" min={1} defaultValue={1} className="input md:max-w-[140px]" />
-                        <button
-                          onClick={() => {
-                            const input = document.getElementById(`mat-${item.name}`) as HTMLInputElement | null;
-                            addMaterialStock(item.name, Number(input?.value || 0));
-                          }}
-                          className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
-                        >
-                          + Bevételezés
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-
-          </Main>
-
-          <Side>
-            <Gradient title="Raktár logika" value="Foglalás ≠ levonás" tone="blue" />
-            <Card title="Mit jelent?">
-              <InfoRow label="Raktáron" value="fizikailag nálad van" />
-              <InfoRow label="Lefoglalva" value="már időpontra van téve" />
-              <InfoRow label="Szabad" value="még eladható" />
-            </Card>
-          </Side>
-        </Layout>
-      </Shell>
+      <WarehousePanel
+        onBack={() => setView("dashboard")}
+        products={products}
+        materialInventory={materialInventory}
+        showClimateProductManager={showClimateProductManager}
+        onToggleClimateProductManager={() => setShowClimateProductManager((open) => !open)}
+        newProductName={newProductName}
+        onNewProductName={setNewProductName}
+        newProductPrice={newProductPrice}
+        onNewProductPrice={setNewProductPrice}
+        newProductInstallPrice={newProductInstallPrice}
+        onNewProductInstallPrice={setNewProductInstallPrice}
+        productBusy={productBusy}
+        productMessage={productMessage}
+        onAddClimateProduct={addClimateProduct}
+        onUpdateProductName={updateProductName}
+        onUpdateProductDevicePrice={updateProductDevicePrice}
+        onUpdateProductInstallPrice={updateProductInstallPrice}
+        onSaveClimateProduct={saveClimateProduct}
+        stockOf={stockOf}
+        reservedForProduct={reservedForProduct}
+        addStock={addStock}
+        materialReserved={materialReserved}
+        addMaterialStock={addMaterialStock}
+      />
     );
   }
 
