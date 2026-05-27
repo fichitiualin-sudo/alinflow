@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
@@ -68,17 +68,12 @@ import {
   displayAddress,
   ft,
   fullCustomerAddress,
-  iso,
   mapsHref,
   offsetIso,
   telHref,
   todayIso,
 } from "@/lib/alinflow/format";
-import {
-  calLabel,
-  googleCalendarHref,
-  weekStart,
-} from "@/lib/alinflow/calendar";
+import { Calendar } from "@/components/alinflow/CalendarPanel";
 import {
   clearCustomerDraft,
   draftForCustomer,
@@ -3466,114 +3461,6 @@ export default function Home() {
         </Side></Layout></Shell>;
 }
 
-
-function calendarStatusStyle(status: string) {
-  if (status === "Lezárva") return "border border-emerald-700/70 bg-emerald-950/90 text-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.12)]";
-  if (status === "Szerelés kész – admin folyamatban") return "border border-amber-300/45 bg-amber-400/20 text-amber-50 shadow-[0_0_0_1px_rgba(251,191,36,0.10)]";
-  if (status === "Időpont foglalva") return "border border-sky-300/45 bg-sky-400/20 text-sky-50 shadow-[0_0_0_1px_rgba(56,189,248,0.10)]";
-  if (status === "Ajánlat elküldve") return "border border-violet-300/40 bg-violet-400/15 text-violet-50";
-  return "border border-white/10 bg-white/10 text-white";
-}
-
-function calendarStatusLabel(status: string) {
-  if (status === "Szerelés kész – admin folyamatban") return "Admin";
-  if (status === "Időpont foglalva") return "Foglalva";
-  if (status === "Lezárva") return "Lezárva";
-  if (status === "Ajánlat elküldve") return "Ajánlat";
-  if (status === "Visszahívandó") return "Visszahívandó";
-  return status || "Munka";
-}
-
-function Calendar({ mode, date, customers, onMode, onStep, onOpen, selectable, selectedDate, onSelect }: { mode:CalendarMode; date:Date; customers:Customer[]; onMode:(m:CalendarMode)=>void; onStep:(n:number)=>void; onOpen:(c:Customer)=>void; selectable?:boolean; selectedDate?:string; onSelect?:(d:string)=>void }) {
-  const start = weekStart(date);
-  const weekdayNames = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"];
-  const days = useMemo(()=> {
-    if (mode==="week") return Array.from({length:7},(_,i)=>{ const d=new Date(start); d.setDate(start.getDate()+i); return {d,current:true}; });
-    const first=new Date(date.getFullYear(),date.getMonth(),1); const offset=(first.getDay()+6)%7; const last=new Date(date.getFullYear(),date.getMonth()+1,0); const total=Math.ceil((offset+last.getDate())/7)*7;
-    return Array.from({length:total},(_,i)=>{ const d=new Date(date.getFullYear(),date.getMonth(),i-offset+1); return {d,current:d.getMonth()===date.getMonth()}; });
-  }, [mode,date,start]);
-
-  return (
-    <Card title={selectable ? "Válassz napot a naptárból" : mode==="week" ? "Heti naptár" : "Havi naptár"}>
-      <div className="mb-5 flex flex-col gap-4">
-        <div className="flex justify-end gap-2">
-          <button onClick={()=>onMode("week")} className={mode==="week"?"tab-active":"tab"}>Heti</button>
-          <button onClick={()=>onMode("month")} className={mode==="month"?"tab-active":"tab"}>Havi</button>
-        </div>
-        <div className="grid grid-cols-[46px_minmax(0,1fr)_46px] items-center gap-2 sm:grid-cols-[52px_minmax(0,1fr)_52px] sm:gap-3">
-          <button onClick={()=>onStep(-1)} className="arrow">‹</button>
-          <div className="min-w-0 rounded-2xl bg-cyan-300 px-3 py-3 text-center text-base font-black text-slate-950 sm:px-5 sm:text-lg md:text-xl">
-            {calLabel(mode,date)}
-          </div>
-          <button onClick={()=>onStep(1)} className="arrow">›</button>
-        </div>
-      </div>
-
-      {/* Telefonon lista nézetet használunk, ezért a heti fejlécet csak asztali/tablet szélességnél mutatjuk. */}
-      <div className="mb-2 hidden grid-cols-7 gap-2 text-center text-[11px] font-black text-slate-400 md:grid">
-        {weekdayNames.map(day => <div key={day}>{day}</div>)}
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-7">
-        {days.map(({d,current})=>{
-          const dayIso=iso(d);
-          const jobs=customers.filter(c=>c.date===dayIso);
-          const isSel=selectable&&selectedDate===dayIso;
-          const weekdayName = weekdayNames[(d.getDay()+6)%7];
-
-          return (
-            <div
-              key={dayIso}
-              onClick={()=>selectable&&onSelect?.(dayIso)}
-              className={`min-h-[96px] rounded-3xl border p-3 md:min-h-[125px] ${isSel?"border-emerald-300 bg-emerald-400/20":current?"border-white/10 bg-slate-900/80":"border-white/5 bg-slate-950/40 opacity-40"} ${selectable?"cursor-pointer hover:ring-2 hover:ring-emerald-300/50":""}`}
-            >
-              <div className="mb-2 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-400 md:hidden">{weekdayName}</p>
-                  <b className="text-2xl leading-none md:text-base">{d.getDate()}</b>
-                </div>
-                {jobs.length===0&&current?<span className="shrink-0 rounded-full bg-cyan-300/10 px-2 py-1 text-[11px] text-cyan-200 md:text-[10px]">üres</span>:null}
-              </div>
-              <div className="space-y-2">
-                {jobs.map(j=>(
-                  <div
-                    key={j.id}
-                    className={`w-full rounded-2xl p-3 text-left transition hover:ring-2 hover:ring-cyan-300/50 md:p-2 ${calendarStatusStyle(j.status)}`}
-                  >
-                    <button
-                      type="button"
-                      onClick={e=>{e.stopPropagation();onOpen(j)}}
-                      className="w-full text-left"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-xs font-black">{j.time}</p>
-                      </div>
-                      <p className="mt-1 truncate text-sm font-semibold md:text-xs">{j.name}</p>
-                      <p className="truncate text-xs text-cyan-100/80 md:text-[11px]">{climateSummary(j.quoteItems)}</p>
-                      <p className="truncate text-xs opacity-70 md:text-[11px]">{j.city}</p>
-                    </button>
-                    {mode === "week" && !selectable ? (
-                      <a
-                        href={googleCalendarHref(j)}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                        className="mt-2 inline-flex items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2.5 py-1 text-[10px] font-black text-amber-100 transition hover:bg-amber-300/25"
-                        title="Hozzáadás Google Naptárhoz"
-                      >
-                        + Naptár
-                      </a>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
 
 function Shell({children}:{children:React.ReactNode}){return <main className="min-h-screen bg-[#08111F] p-4 text-white print:bg-white print:p-0 print:text-black md:p-8"><div className="mx-auto max-w-7xl space-y-8 print:max-w-none print:space-y-0">{children}</div></main>}
 function Layout({children}:{children:React.ReactNode}){return <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">{children}</section>}
