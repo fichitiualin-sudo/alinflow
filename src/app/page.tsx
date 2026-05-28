@@ -82,6 +82,8 @@ import { WorkReportPanel } from "@/components/alinflow/WorkReportPanel";
 import { LoginScreen } from "@/components/alinflow/LoginScreen";
 import { Back, Btn, Card, Field, Gradient, Hero, InfoRow, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
 import { Stats } from "@/components/alinflow/StatsPanel";
+import { TaskPanel, type TaskFilter } from "@/components/alinflow/TaskPanel";
+import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
 import {
   clearCustomerDraft,
   draftForCustomer,
@@ -99,8 +101,8 @@ import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 
 export default function Home() {
   const [view,setView] = useState<View>("dashboard");
-  const [taskFilter,setTaskFilter] = useState<"today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes">("today");
-  const [returnTarget,setReturnTarget] = useState<{ view: View; taskFilter?: "today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes" } | null>(null);
+  const [taskFilter,setTaskFilter] = useState<TaskFilter>("today");
+  const [returnTarget,setReturnTarget] = useState<{ view: View; taskFilter?: TaskFilter } | null>(null);
   const [draftNotice,setDraftNotice] = useState<CustomerDraft | null>(null);
   const [mode,setMode] = useState<CalendarMode>("week");
   const [calDate,setCalDate] = useState(() => new Date());
@@ -389,7 +391,7 @@ export default function Home() {
     setView(v);
   }
 
-  function openTask(filter: "today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes") {
+  function openTask(filter: TaskFilter) {
     setTaskFilter(filter);
     setView("tasks");
   }
@@ -1538,162 +1540,37 @@ export default function Home() {
   }
 
   if (view==="tasks") {
-    const taskTitleMap: Record<string, string> = {
-      today: "Mai munkák",
-      tomorrow: "Holnapi munkák",
-      closing: "Lezárásra vár",
-      stock: "Készlethiány / raktár figyelmeztetés",
-      callback: "Visszahívandó leadek",
-      quotes: "Kiküldött árajánlatok",
-    };
-
-    const today = todayIso();
-    const tomorrow = offsetIso(1);
-    const todayList = activeCustomers.filter(c => c.date === today);
-    const tomorrowList = activeCustomers.filter(c => c.date === tomorrow);
-    const closingList = activeCustomers.filter(c => c.status === "Szerelés kész – admin folyamatban");
-    const callbackList = activeCustomers.filter(c => !c.date && c.status === "Visszahívandó");
-    const quoteSentList = activeCustomers.filter(customerHasSentQuote);
-    const stockList = products.filter((p:any) => reservedForProduct(p.id) > stockOf(p.id));
-
-    const activeList =
-      taskFilter === "today" ? todayList :
-      taskFilter === "tomorrow" ? tomorrowList :
-      taskFilter === "closing" ? closingList :
-      taskFilter === "callback" ? callbackList :
-      taskFilter === "quotes" ? quoteSentList :
-      [];
-
     return (
-      <Shell>
-        <Back onClick={()=>setView("dashboard")}/>
-        <Hero title={taskTitleMap[taskFilter]} sub="Összegyűjtött teendők és figyelmeztetések" action="Vissza a főoldalra" onAction={()=>setView("dashboard")}/>
-        <Layout>
-          <Main>
-            {taskFilter === "stock" ? (
-              <Card title="Készlethiányok">
-                <div className="space-y-3">
-                  {stockList.length === 0 ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-200">Nincs készlethiány ✅</div> : null}
-                  {stockList.map((p:any) => (
-                    <button key={p.id} onClick={()=>setView("warehouse")} className="w-full rounded-3xl border border-red-400/30 bg-red-500/15 p-4 text-left">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <p className="text-lg font-black text-red-100">{p.name}</p>
-                          <p className="text-sm text-red-200">Raktáron: {stockOf(p.id)} db · Lefoglalva: {reservedForProduct(p.id)} db</p>
-                        </div>
-                        <span className="rounded-2xl bg-red-500/30 px-4 py-3 font-black text-red-100">{reservedForProduct(p.id) - stockOf(p.id)} db hiány</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </Card>
-            ) : (
-              <Card title={taskTitleMap[taskFilter]}>
-                <div className="space-y-3">
-                  {activeList.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs ilyen teendő.</div> : null}
-                  {activeList.map((c:any) => (
-                    <button key={c.id} onClick={()=>openCustomer(c, c.date ? "work" : "lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <p className="text-lg font-black">{c.name}</p>
-                          <p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p>
-                          <p className="mt-1 text-xs text-slate-500">{c.date ? `${c.date} · ${c.time}` : "nincs időpont"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p>
-                        </div>
-                        <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </Card>
-            )}
-          </Main>
-          <Side>
-            <Card title="Gyors szűrők">
-              <div className="space-y-3">
-                <Btn onClick={()=>openTask("today")}>Mai munkák</Btn>
-                <Btn onClick={()=>openTask("tomorrow")}>Holnapi munkák</Btn>
-                <Btn onClick={()=>openTask("closing")}>Lezárásra vár</Btn>
-                <Btn onClick={()=>openTask("stock")}>Készlethiány</Btn>
-                <Btn onClick={()=>openTask("callback")}>Visszahívandó</Btn>
-                <Btn onClick={()=>openTask("quotes")}>Kiküldött árajánlatok</Btn>
-              </div>
-            </Card>
-          </Side>
-        </Layout>
-      </Shell>
+      <TaskPanel
+        taskFilter={taskFilter}
+        customers={customers}
+        products={products}
+        stockOf={stockOf}
+        reservedForProduct={reservedForProduct}
+        customerStatusLabel={customerStatusLabel}
+        customerHasSentQuote={customerHasSentQuote}
+        onBack={() => setView("dashboard")}
+        onOpenTask={openTask}
+        onOpenCustomer={openCustomer}
+        onOpenWarehouse={() => setView("warehouse")}
+      />
     );
   }
 
   if (view === "archive") {
     return (
-      <Shell>
-        <Back onClick={() => setView("dashboard")} />
-        <Hero
-          title="Lezárt / lemondott ügyfelek"
-          sub="Külön lista azoknak, akik már lezárva vagy lemondva státuszban vannak."
-          action="Vissza a főoldalra"
-          onAction={() => setView("dashboard")}
-        />
-        <Layout>
-          <Main>
-            {renderCustomerSearchPanel("Archív kereső")}
-            <Card title="Archív ügyfelek">
-              <div className="mb-4 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-                <span>{filteredArchivedCustomers.length} lezárt / lemondott ügyfél</span>
-                {!hasCustomerFilter && filteredArchivedCustomers.length > archiveVisibleCount ? <span>Első {archiveVisibleCount} megjelenítve</span> : null}
-              </div>
-              <div className="space-y-3">
-                {filteredArchivedCustomers.length === 0 ? (
-                  <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Még nincs ilyen lezárt vagy lemondott ügyfél.</div>
-                ) : null}
-                {visibleArchivedCustomers.map((customer) => (
-                  <div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="text-lg font-black">{customer.name || "Névtelen ügyfél"}</p>
-                        <p className="text-sm text-slate-400">{customer.city || "nincs település"} · {customer.phone || "nincs telefonszám"}</p>
-                        <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
-                        <p className="mt-1 text-xs text-slate-500">{customer.date ? `${customer.date} · ${customer.time || "nincs idő"}` : "nincs időpont"}</p>
-                      </div>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <span className={`rounded-2xl px-4 py-3 text-sm font-black ${customer.status === "Lezárva" ? "bg-emerald-400/20 text-emerald-200" : "bg-red-500/20 text-red-200"}`}>
-                          {customer.status}
-                        </span>
-                        <button
-                          onClick={() => openCustomer(customer, customer.date ? "work" : "lead")}
-                          className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-cyan-100"
-                        >
-                          Megnyitás
-                        </button>
-                        <button
-                          onClick={() => restoreArchivedCustomer(customer)}
-                          className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950"
-                        >
-                          Visszaállítás
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {hasMoreArchivedCustomers ? (
-                  <button
-                    onClick={() => setArchiveVisibleCount((count) => count + 30)}
-                    className="w-full rounded-2xl border border-cyan-300/30 bg-cyan-300/10 px-5 py-4 font-black text-cyan-100"
-                  >
-                    További 30 ügyfél betöltése
-                  </button>
-                ) : null}
-              </div>
-            </Card>
-          </Main>
-          <Side>
-            <Gradient title="Archív" value={`${filteredArchivedCustomers.length} ügyfél`} />
-            <Card title="Visszaállítás">
-              <p className="text-sm leading-relaxed text-slate-400">A visszaállítás gombbal az ügyfél újra aktív lesz. Időpontos ügyfélnél „Időpont foglalva”, időpont nélkülinél „Visszahívandó” státuszra kerül.</p>
-            </Card>
-          </Side>
-        </Layout>
-      </Shell>
+      <ArchivePanel
+        filteredArchivedCustomers={filteredArchivedCustomers}
+        visibleArchivedCustomers={visibleArchivedCustomers}
+        archiveVisibleCount={archiveVisibleCount}
+        hasCustomerFilter={hasCustomerFilter}
+        hasMoreArchivedCustomers={hasMoreArchivedCustomers}
+        searchPanel={renderCustomerSearchPanel("Archív kereső")}
+        onBack={() => setView("dashboard")}
+        onLoadMore={() => setArchiveVisibleCount((count) => count + 30)}
+        onOpenCustomer={openCustomer}
+        onRestoreCustomer={restoreArchivedCustomer}
+      />
     );
   }
 
