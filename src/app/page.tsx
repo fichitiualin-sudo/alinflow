@@ -76,6 +76,8 @@ import {
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
 import { AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
+import { CustomerSearchPanel, LeadImportPanel } from "@/components/alinflow/CustomerPanels";
+import { DocumentActionButtons, DocumentLibraryActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import {
   clearCustomerDraft,
   draftForCustomer,
@@ -2445,180 +2447,39 @@ export default function Home() {
     return false;
   }
 
-  function DocumentLibraryActions({ customer, row }: { customer: Customer; row: { action: string; title: string; status: string } }) {
-    const ready = documentIsReady(customer, row);
-    if (!ready) return null;
-
-    if (row.action === "MunkalapNyilatkozat") {
-      return (
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <button onClick={()=>openDocumentPreview(customer,"work_report")} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Munkalap</button>
-          <button onClick={()=>openDocumentPreview(customer,"purchase_declaration")} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Nyilatkozat</button>
-        </div>
-      );
-    }
-    if (row.action === "Munkalap") {
-      return <button onClick={()=>openDocumentPreview(customer,"work_report")} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
-    }
-    if (row.action === "Nyilatkozat") {
-      return <button onClick={()=>openDocumentPreview(customer,"purchase_declaration")} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
-    }
-    if (row.action === "Ajánlat") {
-      return <button onClick={()=>openDocumentPreview(customer,"quote_document")} className="mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100">Ajánlat megtekintése</button>;
-    }
-    if (row.action === "Időpont") {
-      return <button onClick={()=>openDocumentPreview(customer,"appointment_confirmation")} className="mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Időpont megtekintése</button>;
-    }
-
-    return null;
-  }
-
-  function DocumentActions({ customer, row }: { customer: Customer; row: { action: string; title: string; status: string } }) {
-    const baseButton = "rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-wait disabled:opacity-60";
-    const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
-    const sendButton = `${baseButton} bg-blue-400/20 text-blue-100 hover:bg-blue-400/30`;
-    const editButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
-    const helperButton = `${baseButton} bg-cyan-300/15 text-cyan-100 hover:bg-cyan-300/25`;
-    const gridClass = "mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2";
-
-    if (row.action === "MunkalapNyilatkozat") {
-      return (
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <button onClick={()=>openDocumentPreview(customer,"work_report")} className={viewButton}>Munkalap</button>
-          <button onClick={()=>openDocumentPreview(customer,"purchase_declaration")} className={viewButton}>Nyilatkozat</button>
-          <button onClick={()=>openWorkReportFor(customer)} className={`${editButton} sm:col-span-2`}>Szerkesztés / aláírás</button>
-        </div>
-      );
-    }
-    if (row.action === "Munkalap") {
-      return <div className={gridClass}><button onClick={()=>openDocumentPreview(customer,"work_report")} className={viewButton}>Megtekintés</button><button onClick={()=>openWorkReportFor(customer)} className={editButton}>Szerkesztés / aláírás</button></div>;
-    }
-    if (row.action === "Nyilatkozat") {
-      return <div className={gridClass}><button onClick={()=>openDocumentPreview(customer,"purchase_declaration")} className={viewButton}>Megtekintés</button><button onClick={()=>openWorkReportFor(customer)} className={helperButton}>Aláíráshoz</button></div>;
-    }
-    if (row.action === "Ajánlat") {
-      return <div className={gridClass}><button onClick={()=>openDocumentPreview(customer,"quote_document")} className={viewButton}>Megtekintés</button><button onClick={sendQuoteEmail} disabled={quoteEmailBusy} className={sendButton}>{quoteEmailBusy ? "Küldés..." : "Küldés"}</button></div>;
-    }
-    if (row.action === "Időpont") {
-      return <div className={gridClass}><button onClick={()=>openDocumentPreview(customer,"appointment_confirmation")} className={viewButton}>Megtekintés</button><button onClick={()=>sendAppointmentEmailFor(customer)} disabled={appointmentEmailBusy} className={helperButton}>{appointmentEmailBusy ? "Küldés..." : "Email"}</button></div>;
-    }
-    return null;
-  }
 
   function renderCustomerSearchPanel(title = "Ügyfélkereső") {
-    const results = filteredCustomers.slice(0, 8);
     return (
-      <Card title={title}>
-        <div className="space-y-3">
-          <input
-            className="input"
-            value={customerSearch}
-            onChange={(event) => setCustomerSearch(event.target.value)}
-            placeholder="Keresés név, telefon, település, cím, klíma alapján..."
-          />
-          <select
-            className="input"
-            value={customerStatusFilter}
-            onChange={(event) => setCustomerStatusFilter(event.target.value)}
-          >
-            <option value="all">Összes státusz</option>
-            {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-          </select>
-          {hasCustomerFilter ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3 text-xs font-bold text-slate-400">
-                <span>{filteredCustomers.length} találat</span>
-                <button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button>
-              </div>
-              {results.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 text-sm font-black text-slate-300">Nincs találat.</div> : null}
-              {results.map((customer) => (
-                <button
-                  key={customer.id}
-                  onClick={() => openCustomerFromSearch(customer)}
-                  className="w-full rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-left transition hover:border-cyan-300/40"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-black text-white">{customer.name || "Névtelen ügyfél"}</p>
-                      <p className="mt-1 text-xs text-slate-400">{customer.city || "nincs település"} · {customer.phone || customer.email || "nincs elérhetőség"}</p>
-                      <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black text-slate-200">{customerStatusLabel(customer)}</span>
-                  </div>
-                </button>
-              ))}
-              {filteredCustomers.length > results.length ? <p className="text-xs text-slate-500">Csak az első {results.length} találat látszik. Pontosíts a keresésen.</p> : null}
-            </div>
-          ) : null}
-        </div>
-      </Card>
+      <CustomerSearchPanel
+        title={title}
+        search={customerSearch}
+        statusFilter={customerStatusFilter}
+        filteredCustomers={filteredCustomers}
+        hasFilter={hasCustomerFilter}
+        onSearchChange={setCustomerSearch}
+        onStatusFilterChange={setCustomerStatusFilter}
+        onClearFilter={clearCustomerFilter}
+        onOpenCustomer={openCustomerFromSearch}
+        customerStatusLabel={customerStatusLabel}
+      />
     );
   }
+
 
 
   function renderLeadImportPanel() {
-    const importable = leadImportRows.filter((row) => !row.duplicate && !row.invalid);
-    const skipped = leadImportRows.filter((row) => row.duplicate || row.invalid);
-    const merged = leadImportRows.filter((row) => !row.duplicate && !row.invalid && (row.mergedRows || 1) > 1).length;
-    const previewRows = leadImportRows.slice(0, 6);
-
     return (
-      <Card title="Meta lead import">
-        <input
-          ref={leadImportInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            handleLeadCsvFile(file);
-            event.currentTarget.value = "";
-          }}
-        />
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => leadImportInputRef.current?.click()}
-            className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
-          >
-            CSV feltöltése
-          </button>
-          {leadImportMessage ? <div className="rounded-2xl bg-slate-950/60 p-3 text-sm font-bold text-slate-200">{leadImportMessage}</div> : null}
-
-          {leadImportRows.length ? (
-            <div className="space-y-2">
-              {previewRows.map((row) => (
-                <div key={row.id} className="rounded-2xl border border-white/10 bg-slate-950/60 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-black text-white">{row.name || "Névtelen sor"}</p>
-                      <p className="mt-1 text-xs text-slate-400">{row.phone || "nincs telefonszám"} · {row.email || "nincs email"}</p>
-                      {!row.duplicate && !row.invalid && (row.mergedRows || 1) > 1 ? <p className="mt-1 text-xs font-bold text-cyan-200">{row.mergedRows} azonos lead összevonva egy ügyféllé</p> : null}
-                    </div>
-                    <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${row.invalid ? "bg-red-400/20 text-red-200" : row.duplicate ? "bg-amber-400/20 text-amber-200" : "bg-emerald-400/20 text-emerald-200"}`}>
-                      {row.invalid ? "hibás" : row.duplicate ? "kihagyva" : "új"}
-                    </span>
-                  </div>
-                  {row.duplicateReason || row.invalidReason ? <p className="mt-2 text-xs font-bold text-slate-500">{row.duplicateReason || row.invalidReason}</p> : null}
-                </div>
-              ))}
-              {leadImportRows.length > previewRows.length ? <p className="text-xs text-slate-500">+ {leadImportRows.length - previewRows.length} további sor az előnézetben.</p> : null}
-              <button
-                type="button"
-                disabled={leadImportBusy || !importable.length}
-                onClick={importLeadRows}
-                className="w-full rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {leadImportBusy ? "Importálás..." : `${importable.length} új érdeklődő importálása`}
-              </button>
-              {merged ? <p className="text-xs text-cyan-200/80">A CSV-n belüli duplikációkból egy ügyfél készül, a hiányzó adatokat összevonja.</p> : null}
-              {skipped.length ? <p className="text-xs text-slate-500">A már meglévő ügyfeleket és hibás sorokat a rendszer kihagyja.</p> : null}
-            </div>
-          ) : null}
-        </div>
-      </Card>
+      <LeadImportPanel
+        inputRef={leadImportInputRef}
+        rows={leadImportRows}
+        message={leadImportMessage}
+        busy={leadImportBusy}
+        onFileSelected={handleLeadCsvFile}
+        onImport={importLeadRows}
+      />
     );
   }
+
 
 
   if (view==="documentPreview") {
@@ -2648,7 +2509,7 @@ export default function Home() {
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
                 {documentCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs találat.</div> : null}
-                {documentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p></div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${row.status.includes("Elküld") || row.status.includes("Kész") || row.status.includes("Aláírva") || row.status.includes("Elkészült") ? "bg-emerald-400/20 text-emerald-200" : row.status.includes("később") ? "bg-slate-500/20 text-slate-300" : "bg-amber-400/20 text-amber-200"}`}>{row.status}</span></div><DocumentLibraryActions customer={customer} row={row}/></div>)}</div></div>)}
+                {documentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p></div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
               </div>
             </Card>
           </Main>
@@ -2891,7 +2752,7 @@ export default function Home() {
                   </div>
 
                   {m.isExtra ? <div className="mt-3"><input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={m.unit} onChange={e=>updateMaterial(i,"unit",e.target.value)} placeholder="egység"/></div> : null}
-                </div>)}</div></Card></Main><Side><Gradient title="Munka státusz" value={selected.status || "Folyamatban"}/><Card title="Dokumentumok"><div className="space-y-3">{documentRowsFor(selected).map((row)=><div key={row.title} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${row.status.includes("Elküld") || row.status.includes("Kész") || row.status.includes("Aláírva") || row.status.includes("Elkészült") ? "bg-emerald-400/20 text-emerald-200" : row.status.includes("később") ? "bg-slate-500/20 text-slate-300" : "bg-amber-400/20 text-amber-200"}`}>{row.status}</span></div><DocumentActions customer={selected} row={row}/></div>)}</div></Card><Card title="Lezárási műveletek">
+                </div>)}</div></Card></Main><Side><Gradient title="Munka státusz" value={selected.status || "Folyamatban"}/><Card title="Dokumentumok"><div className="space-y-3">{documentRowsFor(selected).map((row)=><div key={row.title} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentActionButtons customer={selected} row={row} onPreview={openDocumentPreview} onEditWorkReport={openWorkReportFor} onSendQuote={sendQuoteEmail} onSendAppointment={sendAppointmentEmailFor} quoteEmailBusy={quoteEmailBusy} appointmentEmailBusy={appointmentEmailBusy}/></div>)}</div></Card><Card title="Lezárási műveletek">
               <div className="space-y-3">
                 <StepButton color="cyan" onClick={openWorkReport}>Munkalap és egyszerű aláírás</StepButton>
                 
