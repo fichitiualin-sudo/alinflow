@@ -79,6 +79,9 @@ import { AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocu
 import { CustomerSearchPanel, LeadImportPanel } from "@/components/alinflow/CustomerPanels";
 import { DocumentActionButtons, DocumentLibraryActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { WorkReportPanel } from "@/components/alinflow/WorkReportPanel";
+import { LoginScreen } from "@/components/alinflow/LoginScreen";
+import { Back, Btn, Card, Field, Gradient, Hero, InfoRow, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { Stats } from "@/components/alinflow/StatsPanel";
 import {
   clearCustomerDraft,
   draftForCustomer,
@@ -93,52 +96,6 @@ import {
   formatSignedAt
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
-
-function LoginScreen({
-  email,
-  password,
-  message,
-  loading,
-  onEmail,
-  onPassword,
-  onSubmit,
-}: {
-  email: string;
-  password: string;
-  message: string;
-  loading: boolean;
-  onEmail: (value: string) => void;
-  onPassword: (value: string) => void;
-  onSubmit: () => void;
-}) {
-  return (
-    <main className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100">
-      <div className="mx-auto flex min-h-[80vh] max-w-md items-center">
-        <div className="w-full rounded-[2rem] border border-white/10 bg-slate-900/90 p-6 shadow-2xl">
-          <div className="mb-6 text-center">
-            <p className="mb-3 inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm font-black text-cyan-200">AlinFlow admin</p>
-            <h1 className="text-4xl font-black">Bejelentkezés</h1>
-            <p className="mt-2 text-sm text-slate-400">Csak bejelentkezés után látható az ügyfél- és munkaadatbázis.</p>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-black text-slate-300">Email</label>
-              <input className="input" value={email} onChange={(event) => onEmail(event.target.value)} placeholder="email@pelda.hu" />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-black text-slate-300">Jelszó</label>
-              <input className="input" type="password" value={password} onChange={(event) => onPassword(event.target.value)} placeholder="••••••••" onKeyDown={(event) => { if (event.key === "Enter") onSubmit(); }} />
-            </div>
-            {message ? <div className="rounded-2xl border border-red-300/30 bg-red-400/10 p-4 text-sm font-bold text-red-100">{message}</div> : null}
-            <button onClick={onSubmit} disabled={loading} className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 shadow-xl transition hover:scale-[1.01] disabled:cursor-wait disabled:opacity-60">
-              {loading ? "Beléptetés..." : "Belépés"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </main>
-  );
-}
 
 export default function Home() {
   const [view,setView] = useState<View>("dashboard");
@@ -2645,52 +2602,6 @@ export default function Home() {
 }
 
 
-function Shell({children}:{children:React.ReactNode}){return <main className="min-h-screen bg-[#08111F] p-4 text-white print:bg-white print:p-0 print:text-black md:p-8"><div className="mx-auto max-w-7xl space-y-8 print:max-w-none print:space-y-0">{children}</div></main>}
-function Layout({children}:{children:React.ReactNode}){return <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">{children}</section>}
-function Main({children}:{children:React.ReactNode}){return <div className="space-y-6 xl:col-span-2">{children}</div>}
-function Side({children}:{children:React.ReactNode}){return <aside className="space-y-6">{children}</aside>}
-function Card({title,children}:{title:string;children:React.ReactNode}){return <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl"><h2 className="mb-5 text-2xl font-black">{title}</h2>{children}</section>}
-function Hero({title,sub,action,onAction}:{title:string;sub:string;action:string;onAction?:()=>void}){return <section className="rounded-[2.5rem] border border-cyan-300/20 bg-gradient-to-br from-slate-950 to-slate-900 p-6 shadow-2xl md:p-8"><div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between"><div><h1 className="text-4xl font-black leading-tight md:text-5xl">{title}</h1>{sub ? <p className="mt-3 text-lg text-slate-400">{sub}</p> : null}</div><Btn onClick={onAction}>{action}</Btn></div></section>}
-function Back({onClick}:{onClick:()=>void}){return <div className="sticky top-3 z-50 w-fit print:hidden"><button onClick={onClick} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur">← Vissza</button></div>}
-
-function StepButton({
-  children,
-  color = "cyan",
-  onClick,
-  href,
-}: {
-  children: React.ReactNode;
-  color?: "cyan" | "green" | "blue" | "amber" | "red";
-  onClick?: () => void;
-  href?: string;
-}) {
-  const colorClass = {
-    cyan: "from-cyan-300 to-sky-400 text-slate-950 shadow-cyan-500/20",
-    green: "from-emerald-400 to-green-500 text-slate-950 shadow-emerald-500/20",
-    blue: "from-blue-400 to-indigo-500 text-white shadow-blue-500/20",
-    amber: "from-amber-300 to-orange-400 text-slate-950 shadow-amber-500/20",
-    red: "from-red-500 to-rose-500 text-white shadow-red-500/20",
-  }[color];
-
-  const className = `group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]`;
-
-  const content = (
-    <>
-      <span>{children}</span>
-      <span className="rounded-full bg-black/10 px-3 py-1 text-sm transition group-hover:translate-x-1">→</span>
-    </>
-  );
-
-  if (href) {
-    return <a href={href} onClick={onClick} className={className}>{content}</a>;
-  }
-
-  return <button onClick={onClick} className={className}>{content}</button>;
-}
-
-function Btn({children,onClick,color="cyan"}:{children:React.ReactNode;onClick?:()=>void;color?:"cyan"|"green"|"blue"}){const c=color==="green"?"bg-emerald-400":color==="blue"?"bg-blue-400":"bg-cyan-300"; return <button onClick={onClick} className={`${c} rounded-2xl px-5 py-4 font-black text-slate-950`}>{children}</button>}
-function InfoRow({label,value}:{label:string;value:string}){return <div className="mb-3 flex justify-between gap-4 rounded-2xl bg-slate-900/80 p-4"><span>{label}</span><b>{value}</b></div>}
-function Field({label,value}:{label:string;value:string}){return <div className="rounded-2xl bg-slate-900/80 p-4"><p className="text-sm text-slate-400">{label}</p><p className="mt-1 text-lg font-black">{value}</p></div>}
 function CustomerGrid({
   c,
   editable = false,
@@ -2758,15 +2669,6 @@ function EditField({label,value,onChange}:{label:string;value:string;onChange:(v
 }
 
 
-function Gradient({title,value}:{title:string;value:string;tone?:string}) {
-  return (
-    <section className="rounded-[2rem] bg-gradient-to-br from-cyan-300 to-blue-400 p-6 text-slate-950 shadow-2xl">
-      <p className="text-sm font-black opacity-80">{title}</p>
-      <h3 className="mt-2 text-3xl font-black">{value}</h3>
-    </section>
-  );
-}
-
 function ProductSelect({products,value,onChange,disabled=false}:{products:ClimateProduct[];value:string;onChange:(v:string)=>void;disabled?:boolean}) {
   const sorted = sortProducts(products);
   const selectValue = sorted.some((product) => product.id === value) ? value : "";
@@ -2808,59 +2710,4 @@ function StatusControl({ value, onChange }: { value: string; onChange: (value: s
   );
 }
 
-
-function Stats({
-  products,
-  customers,
-  sentQuoteCount,
-  stockOf,
-  reservedForProduct,
-  onSelect,
-}: {
-  products: ClimateProduct[];
-  customers: Customer[];
-  sentQuoteCount: number;
-  stockOf: (productId: string) => number;
-  reservedForProduct: (productId: string) => number;
-  onSelect?: (filter: "today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes") => void;
-}) {
-  const today = todayIso();
-  const tomorrow = offsetIso(1);
-  const todayJobs = customers.filter(c => c.date === today).length;
-  const tomorrowJobs = customers.filter(c => c.date === tomorrow).length;
-  const closingJobs = customers.filter(c => c.status === "Szerelés kész – admin folyamatban").length;
-  const callbackLeads = customers.filter(c => !c.date && c.status === "Visszahívandó").length;
-
-  const climateShortages = products.filter((p: any) => {
-    const stock = stockOf(p.id);
-    const reserved = reservedForProduct(p.id);
-    return reserved > stock;
-  }).length;
-
-  const s = [
-    ["Mai munkák", String(todayJobs), "mai szerelés / felmérés", "bg-emerald-500", "today"],
-    ["Holnapi munkák", String(tomorrowJobs), "következő nap", "bg-cyan-500", "tomorrow"],
-    ["Lezárásra vár", String(closingJobs), "admin / dokumentum", "bg-purple-500", "closing"],
-    ["Kiküldött árajánlatok", String(sentQuoteCount), "elküldött ajánlat", "bg-violet-500", "quotes"],
-    ["Készlethiány", String(climateShortages), "raktár figyelmeztetés", "bg-red-500", "stock"],
-    ["Visszahívandó", String(callbackLeads), "leadek", "bg-amber-500", "callback"],
-  ] as const;
-
-  return (
-    <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-      {s.map(([a, b, c, color, filter]) => (
-        <button
-          key={a}
-          onClick={() => onSelect?.(filter)}
-          className="rounded-3xl border border-white/10 bg-white/5 p-4 text-left transition hover:border-cyan-300/50 hover:bg-white/10"
-        >
-          <div className={`mb-4 h-11 w-11 rounded-2xl ${color}`} />
-          <p className="text-slate-300">{a}</p>
-          <p className="text-3xl font-black">{b}</p>
-          <p className="text-xs text-slate-400">{c}</p>
-        </button>
-      ))}
-    </section>
-  );
-}
 
