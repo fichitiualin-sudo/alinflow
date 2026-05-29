@@ -143,6 +143,7 @@ export default function Home() {
   const [workChecklistsByCustomer,setWorkChecklistsByCustomer] = useState<Record<string, WorkChecklistState>>({});
   const [documentPreviewType,setDocumentPreviewType] = useState<DocumentPreviewType>("work_report");
   const [documentBackView,setDocumentBackView] = useState<"documents" | "work">("work");
+  const [quoteIssuedAt,setQuoteIssuedAt] = useState("");
   const [workReportBusy,setWorkReportBusy] = useState(false);
   const [workReportEmailBusy,setWorkReportEmailBusy] = useState(false);
   const [editCustomer,setEditCustomer] = useState(false);
@@ -1646,7 +1647,7 @@ export default function Home() {
   }
 
 
-  function quotePayload(customer: Customer = selected, items: QuoteItem[] = quoteItems) {
+  function quotePayload(customer: Customer = selected, items: QuoteItem[] = quoteItems, issuedAt = quoteIssuedAt || new Date().toISOString()) {
     const quoteTotal = total(items);
     const quoteCount = qty(items);
     const installerAmount = quoteInstallTotal(items);
@@ -1665,6 +1666,7 @@ export default function Home() {
         time: customer.time,
       },
       pricingMode: customer.quotePricingMode || "bundle",
+      quoteIssuedAt: issuedAt,
       items: items.map((item) => ({
         name: itemName(item),
         quantity: itemQuantity(item),
@@ -1687,10 +1689,13 @@ export default function Home() {
     setMessage("Ajánlat email küldése folyamatban... Telefonról is ugyanígy működik.");
 
     try {
+      const issuedAt = view === "quotePreview" && quoteIssuedAt ? quoteIssuedAt : new Date().toISOString();
+      setQuoteIssuedAt(issuedAt);
+
       const response = await fetch("/api/send-quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(quotePayload()),
+        body: JSON.stringify(quotePayload(selected, quoteItems, issuedAt)),
       });
       const result = await response.json().catch(() => ({}));
 
@@ -2018,6 +2023,9 @@ export default function Home() {
     setQuoteItems(customerForPreview.quoteItems);
     setDocumentPreviewType(type);
     setDocumentBackView(view === "documents" ? "documents" : "work");
+    if (type === "quote_document") {
+      setQuoteIssuedAt(new Date().toISOString());
+    }
     if (type === "work_report" || type === "purchase_declaration") {
       void loadWorkReportFor(customerForPreview);
     }
@@ -2184,7 +2192,7 @@ export default function Home() {
     const report = documentReportFor(selected);
     const isAppointmentPreview = documentPreviewType === "appointment_confirmation";
     const isQuotePreview = documentPreviewType === "quote_document";
-    return <Shell><style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; min-height: 297mm !important; margin: 0 !important; background: #fff !important; } body * { visibility: hidden !important; } .print-document-area, .print-document-area * { visibility: visible !important; } .print-document-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; background: #fff !important; } .doc-print-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; min-height: 297mm !important; height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: hidden !important; page-break-after: always !important; break-after: page !important; } .work-report-doc { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; } .purchase-doc { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; } .doc-print-page * { box-sizing: border-box !important; } .doc-print-page:last-child { page-break-after: auto !important; break-after: auto !important; } }`}</style><Back onClick={()=>goBack(documentBackView)}/><div className="print:hidden">{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print-document-area print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report} quoteItems={quoteItems}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems}/> : isQuotePreview ? <QuoteDocument customer={selected} quoteItems={quoteItems}/> : <WorkReportDocument customer={selected} report={report} quoteItems={quoteItems}/>}</div></Shell>;
+    return <Shell><style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; min-height: 297mm !important; margin: 0 !important; background: #fff !important; } body * { visibility: hidden !important; } .print-document-area, .print-document-area * { visibility: visible !important; } .print-document-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; background: #fff !important; } .doc-print-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; min-height: 297mm !important; height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: hidden !important; page-break-after: always !important; break-after: page !important; } .work-report-doc { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; } .purchase-doc { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; } .doc-print-page * { box-sizing: border-box !important; } .doc-print-page:last-child { page-break-after: auto !important; break-after: auto !important; } }`}</style><Back onClick={()=>goBack(documentBackView)}/><div className="print:hidden">{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print-document-area print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report} quoteItems={quoteItems}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems}/> : isQuotePreview ? <QuoteDocument customer={selected} quoteItems={quoteItems} quoteIssuedAt={quoteIssuedAt}/> : <WorkReportDocument customer={selected} report={report} quoteItems={quoteItems}/>}</div></Shell>;
   }
 
   if (view==="documents") {
@@ -2242,7 +2250,7 @@ export default function Home() {
       canEditWorkResources={canEditWorkResources}
       quotePricingMode={selected.quotePricingMode || "bundle"}
       onBack={()=>goBack()}
-      onPreview={()=>navigateToView("quotePreview")}
+      onPreview={()=>{ setQuoteIssuedAt(new Date().toISOString()); navigateToView("quotePreview"); }}
       onSendQuoteEmail={sendQuoteEmail}
       onSchedule={()=>{updateCustomerStatus("Ajánlat elküldve"); navigateToView("schedule")}}
       onQuotePricingModeChange={updateQuotePricingMode}
@@ -2265,6 +2273,7 @@ export default function Home() {
         installerAmount={installer}
         materialAmount={materialPrice}
         quoteEmailBusy={quoteEmailBusy}
+        quoteIssuedAt={quoteIssuedAt}
         onBack={() => goBack("quote")}
         onPrint={() => window.print()}
         onSendQuote={sendQuoteEmail}

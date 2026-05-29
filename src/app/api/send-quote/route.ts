@@ -58,6 +58,19 @@ function isAlternativesPricing(mode?: string) {
   return mode === "alternatives";
 }
 
+function formatQuoteIssuedAt(value?: string) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return safeText(value);
+  return date.toLocaleString("hu-HU", {
+    timeZone: "Europe/Budapest",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePricingMode = "bundle") {
   const fallback = items.length
     ? items
@@ -88,12 +101,13 @@ function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePri
     .join("");
 }
 
-function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number, pricingMode: QuotePricingMode = "bundle") {
+function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number, pricingMode: QuotePricingMode = "bundle", quoteIssuedAt = "") {
   const customerName = escapeHtml(customer.name || "Ügyfelünk");
   const address = customerLine(fullAddress(customer.city, customer.address, "nincs megadva"));
   const email = customerLine(customer.email);
   const phone = customerLine(customer.phone);
   const quoteIsAlternatives = isAlternativesPricing(pricingMode);
+  const shownQuoteIssuedAt = escapeHtml(formatQuoteIssuedAt(quoteIssuedAt));
 
   return `<!doctype html>
 <html lang="hu">
@@ -119,6 +133,7 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
           <h1 class="title" style="margin:0;font-size:32px;line-height:1.15;color:#020617;font-weight:900">KLIMAlin árajánlat</h1>
           <p style="margin:10px 0 0 0;color:#64748b;font-size:15px;line-height:1.5">Klímaberendezés alapszereléssel együtt</p>
           <div style="margin-top:24px;color:#64748b;font-size:15px;line-height:1.55">
+            <div><strong>Árajánlat időpontja:</strong> ${shownQuoteIssuedAt}</div>
             <div><strong>Ajánlat érvényessége:</strong> 7 nap</div>
             <div><strong>Kapcsolat:</strong> 06 30 700 4908</div>
             <div>klimalin.hu</div>
@@ -206,6 +221,7 @@ export async function POST(request: Request) {
     const installerAmount = Number(body.installerAmount || 0);
     const materialAmount = Number(body.materialAmount || 0);
     const pricingMode: QuotePricingMode = body.pricingMode === "alternatives" ? "alternatives" : "bundle";
+    const quoteIssuedAt = safeText(body.quoteIssuedAt) || new Date().toISOString();
     const to = safeText(customer.email);
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
@@ -224,7 +240,7 @@ export async function POST(request: Request) {
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("klimalin-quote"),
         },
-        html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount, pricingMode),
+        html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount, pricingMode, quoteIssuedAt),
       }),
     });
 

@@ -1,10 +1,8 @@
-import type { ReactNode } from "react";
-
 import type { ClimateProduct, Customer, View } from "@/lib/alinflow/types";
 import { isArchivedCustomer } from "@/lib/alinflow/constants";
 import { offsetIso, todayIso } from "@/lib/alinflow/format";
 import { climateSummary } from "@/lib/alinflow/products";
-import { Back, Btn, Card, Layout, Main, Shell, Side } from "./LayoutPrimitives";
+import { Back, Card, Layout, Shell } from "./LayoutPrimitives";
 
 export type TaskFilter = "today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes";
 
@@ -66,7 +64,7 @@ export function TaskPanel({
     <Shell>
       <Back onClick={onBack} />
       <Layout>
-        <Main>
+        <div className="space-y-6 xl:col-span-3">
           {taskFilter === "stock" ? (
             <Card title="Készlethiányok">
               <div className="space-y-3">
@@ -104,19 +102,7 @@ export function TaskPanel({
               </div>
             </Card>
           )}
-        </Main>
-        <Side>
-          <Card title="Gyors szűrők">
-            <div className="space-y-3">
-              <Btn onClick={() => onOpenTask("today")}>Mai munkák</Btn>
-              <Btn onClick={() => onOpenTask("tomorrow")}>Holnapi munkák</Btn>
-              <Btn onClick={() => onOpenTask("closing")}>Lezárásra vár</Btn>
-              <Btn onClick={() => onOpenTask("stock")}>Készlethiány</Btn>
-              <Btn onClick={() => onOpenTask("callback")}>Visszahívandó</Btn>
-              <Btn onClick={() => onOpenTask("quotes")}>Kiküldött árajánlatok</Btn>
-            </div>
-          </Card>
-        </Side>
+        </div>
       </Layout>
     </Shell>
   );

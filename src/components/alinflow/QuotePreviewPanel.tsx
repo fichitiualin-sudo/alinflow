@@ -10,12 +10,26 @@ type QuotePreviewPanelProps = {
   installerAmount: number;
   materialAmount: number;
   quoteEmailBusy: boolean;
+  quoteIssuedAt: string;
   onBack: () => void;
   onPrint: () => void;
   onSendQuote: () => void;
   onSchedule: () => void;
   onQuotePricingModeChange: (value: QuotePricingMode) => void;
 };
+
+function formatQuoteIssuedAt(value?: string) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return value || "";
+  return date.toLocaleString("hu-HU", {
+    timeZone: "Europe/Budapest",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export function QuotePreviewPanel({
   selected,
@@ -24,6 +38,7 @@ export function QuotePreviewPanel({
   installerAmount,
   materialAmount,
   quoteEmailBusy,
+  quoteIssuedAt,
   onBack,
   onPrint,
   onSendQuote,
@@ -31,6 +46,7 @@ export function QuotePreviewPanel({
   onQuotePricingModeChange,
 }: QuotePreviewPanelProps) {
   const quoteIsAlternatives = isQuoteAlternatives(selected.quotePricingMode);
+  const shownQuoteIssuedAt = formatQuoteIssuedAt(quoteIssuedAt);
 
   return (
     <Shell>
@@ -50,6 +66,7 @@ export function QuotePreviewPanel({
                   </div>
                 </div>
                 <div className="text-sm text-slate-600 md:text-right">
+                  <p>Árajánlat időpontja: {shownQuoteIssuedAt}</p>
                   <p>Ajánlat érvényessége: 7 nap</p>
                   <p>Kapcsolat: 06 30 700 4908</p>
                   <p>klimalin.hu</p>
@@ -83,37 +100,28 @@ export function QuotePreviewPanel({
 
               <div className="mt-6 space-y-3">
                 {quoteItems.map((item, index) => (
-                  <div key={index} className="quote-item flex flex-col gap-2 rounded-2xl border border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
+                  <div key={index} className="quote-item flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <p className="font-black">{quoteIsAlternatives ? `${index + 1}. lehetőség · ` : ""}{itemQuantity(item)} db · {itemName(item)}</p>
+                      {quoteIsAlternatives ? (
+                        <span className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-700">
+                          {index + 1}. lehetőség
+                        </span>
+                      ) : null}
+                      <p className="font-black">{itemQuantity(item)} db · {itemName(item)}</p>
                       <p className="text-sm text-slate-500">{itemPriceLine(item)}</p>
                     </div>
-                    <b>{ft(itemTotal(item))}</b>
+                    <b>{quoteIsAlternatives ? "Ajánlati ár: " : ""}{ft(itemTotal(item))}</b>
                   </div>
                 ))}
               </div>
-
-              {quoteIsAlternatives ? (
-                <div className="mt-6 rounded-2xl bg-slate-950 p-5 text-white">
-                  <p className="text-lg font-black">Fontos: a fenti tételek külön-külön értendők.</p>
-                  <p className="mt-1 text-sm text-slate-300">Az ügyfél a számára megfelelő klímát választhatja ki; ezek nem egy összeadott csomag árai.</p>
-                </div>
-              ) : (
-                <div className="mt-6 rounded-2xl bg-slate-950 p-5 text-white">
-                  <div className="flex justify-between gap-4 text-xl">
-                    <span className="font-black">Fizetendő bruttó végösszeg</span>
-                    <b>{ft(totalAmount)}</b>
-                  </div>
-                </div>
-              )}
 
               <div className="quote-second-page mt-6 rounded-2xl bg-slate-100 p-5">
                 <h3 className="text-xl font-black">Alapszerelés tartalma</h3>
                 <div className="mt-3 space-y-2 text-sm leading-relaxed">
                   <p>• max. 3 m szigetelt rézcső-pár / klíma</p>
                   <p>• 1 db faláttörés, tömítés és esztétikus lezárás</p>
-                  <p>• kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel (adottság szerint)</p>
-                  <p>• kültéri fali konzol vastag rezgéscsillapítókkal, elhelyezés max. 4 m szerelési magasságig (létraállással)</p>
+                  <p>• kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint</p>
+                  <p>• kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással</p>
                   <p>• kábelcsatorna és rögzítők a szükséges mértékben</p>
                   <p>• betáp kábel max. 5 m-ig</p>
                   <p>• nyomáspróba + vákuumozás + beüzemelés, működési teszt</p>
@@ -129,7 +137,7 @@ export function QuotePreviewPanel({
                   <p>• Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.</p>
                   <p>• Szakszerű faláttörés, tömítés és esztétikus lezárás.</p>
                   <p>• Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.</p>
-                  <p>• Betanítás (üzemmódok, szűrőtisztítás) + rendrakás a végén.</p>
+                  <p>• Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.</p>
                 </div>
               </div>
 

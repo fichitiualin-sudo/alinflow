@@ -14,6 +14,19 @@ function dottedLine(value?: string) {
   return <span className="inline-block min-w-[180px] border-b border-dotted border-slate-900 px-1 pb-0.5 font-bold">{value || "\u00A0"}</span>;
 }
 
+function formatQuoteIssuedAt(value?: string) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return value || "";
+  return date.toLocaleString("hu-HU", {
+    timeZone: "Europe/Budapest",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function WorkReportDocument({ customer, report, quoteItems }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[] }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
@@ -162,12 +175,14 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems }: { 
   );
 }
 
-export function QuoteDocument({ customer, quoteItems }: { customer: Customer; quoteItems: QuoteItem[] }) {
+export function QuoteDocument({ customer, quoteItems, quoteIssuedAt }: { customer: Customer; quoteItems: QuoteItem[]; quoteIssuedAt?: string }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const sum = total(items);
   const installerAmount = quoteInstallTotal(items);
   const materialAmount = Math.max(0, sum - installerAmount);
   const quoteIsAlternatives = isQuoteAlternatives(customer.quotePricingMode);
+  const shownQuoteIssuedAt = formatQuoteIssuedAt(quoteIssuedAt);
+
   return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
     <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
       <div className="flex items-start gap-4">
@@ -178,6 +193,7 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
         </div>
       </div>
       <div className="text-sm text-slate-600 md:text-right">
+        <p>Árajánlat időpontja: {shownQuoteIssuedAt}</p>
         <p>Ajánlat érvényessége: 7 nap</p>
         <p>Kapcsolat: 06 30 700 4908</p>
         <p>klimalin.hu</p>
@@ -205,27 +221,16 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
 
     <div className="mt-6 space-y-3">
       {items.map((item, index)=><div key={`${item.productId}-${index}`} className="rounded-2xl border border-slate-200 p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-lg font-black">{quoteIsAlternatives ? `${index + 1}. lehetőség · ` : ""}{itemQuantity(item)} db · {itemName(item)}</p>
+            {quoteIsAlternatives ? <span className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-700">{index + 1}. lehetőség</span> : null}
+            <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
             <p className="mt-1 text-sm text-slate-600">{ft(itemUnitPrice(item))} / db · telepítéssel együtt</p>
           </div>
-          <p className="text-xl font-black">{ft(itemTotal(item))}</p>
+          <p className="text-xl font-black">{quoteIsAlternatives ? "Ajánlati ár: " : ""}{ft(itemTotal(item))}</p>
         </div>
       </div>)}
     </div>
-
-    {quoteIsAlternatives ? (
-      <div className="mt-6 rounded-2xl bg-slate-950 p-5 text-white">
-        <p className="text-xl font-black">Fontos: a fenti tételek külön-külön értendők.</p>
-        <p className="mt-1 text-sm text-slate-300">Az ügyfél a számára megfelelő klímát választhatja ki; ezek nem egy összeadott csomag árai.</p>
-      </div>
-    ) : (
-      <div className="mt-6 flex flex-col gap-2 rounded-2xl bg-slate-950 p-5 text-white sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xl font-black">Fizetendő bruttó végösszeg</p>
-        <p className="text-2xl font-black">{ft(sum)}</p>
-      </div>
-    )}
 
     <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
       <h3 className="text-lg font-black">Alapszerelés tartalma</h3>
@@ -233,9 +238,11 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
         <li>max. 3 m szigetelt rézcső-pár / klíma</li>
         <li>1 db faláttörés, tömítés és esztétikus lezárás</li>
         <li>kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint</li>
-        <li>kültéri fali konzol vastag rezgéscsillapítókkal</li>
-        <li>nyomáspróba, vákuumozás, beüzemelés és működési teszt</li>
-        <li>felhasználói betanítás és rendrakás</li>
+        <li>kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással</li>
+        <li>kábelcsatorna és rögzítők a szükséges mértékben</li>
+        <li>betáp kábel max. 5 m-ig</li>
+        <li>nyomáspróba + vákuumozás + beüzemelés, működési teszt</li>
+        <li>felhasználói betanítás, rendrakás</li>
       </ul>
     </div>
 
@@ -247,6 +254,7 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
         <li>Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.</li>
         <li>Szakszerű faláttörés, tömítés és esztétikus lezárás.</li>
         <li>Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.</li>
+        <li>Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.</li>
       </ul>
     </div>
 
