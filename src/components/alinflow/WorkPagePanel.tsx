@@ -190,7 +190,7 @@ export function WorkPagePanel({
                     ) : (
                       <ProductSelect products={products} value={it.productId} onChange={(value) => onUpdateQuoteProduct(i, value)} disabled={!canEditWorkResources} />
                     )}
-                    <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", Math.max(1, Number(event.target.value || 1)))} />
+                    <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", numericInputValue(event.target.value))} />
                     <button className="rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(i)}>×</button>
                   </div>
                   <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
@@ -344,10 +344,7 @@ function CustomerGrid({
       <Field label="Név" value={c.name} />
       <div className="rounded-2xl bg-slate-900/80 p-4">
         <p className="text-sm text-slate-400">Telefonszám</p>
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-lg font-black">{c.phone || "nincs megadva"}</p>
-          {c.phone ? <a href={telHref(c.phone)} onClick={onExternalOpen} className="rounded-xl bg-emerald-400 px-4 py-3 text-center font-black text-slate-950">Hívás</a> : null}
-        </div>
+        <p className="mt-2 text-lg font-black">{c.phone || "nincs megadva"}</p>
       </div>
       <Field label="Email" value={c.email || "nincs megadva"} />
       <Field label="Település" value={c.city} />
@@ -382,4 +379,10 @@ function ProductSelect({ products, value, onChange, disabled = false }: { produc
       {sorted.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
     </select>
   );
+}
+
+function numericInputValue(value: string) {
+  if (value === "") return "";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
 }
