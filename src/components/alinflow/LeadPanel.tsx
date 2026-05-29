@@ -3,7 +3,7 @@
 import type { Customer } from "@/lib/alinflow/types";
 import { STATUS_OPTIONS } from "@/lib/alinflow/constants";
 import { mapsHref, telHref } from "@/lib/alinflow/format";
-import { Back, Card, Gradient, Hero, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Card, Gradient, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
 
 type LeadPanelProps = {
   selected: Customer;
@@ -64,7 +64,6 @@ export function LeadPanel({
   return (
     <Shell>
       <Back onClick={onBack} />
-      <Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={onSaveCustomerOnly} />
       <Layout>
         <Main>
           <Card title="Ügyféladatok szerkesztése">
