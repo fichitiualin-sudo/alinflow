@@ -92,7 +92,6 @@ export function LeadPanel({
         </Main>
         <Side>
           <Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"} />
-          <StatusControl value={selected.status || "Visszahívandó"} onChange={onUpdateCustomerStatus} />
           <Card title="Következő lépések">
             <div className="grid grid-cols-1 gap-3">
               <StepButton color="green" href={telHref(selected.phone)} onClick={() => onRememberExternalCustomer(selected, "lead")}>Hívás</StepButton>
@@ -103,6 +102,7 @@ export function LeadPanel({
               ) : null}
             </div>
           </Card>
+          <StatusControl value={selected.status || "Visszahívandó"} onChange={onUpdateCustomerStatus} />
         </Side>
       </Layout>
     </Shell>

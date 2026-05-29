@@ -84,12 +84,6 @@ export function QuoteBuilderPanel({
       <Layout>
         <Main>
           <Card title="Ajánlatban szereplő tételek">
-            {quoteIsAlternatives ? (
-              <div className="mb-4 rounded-2xl border border-cyan-300/20 bg-slate-950/60 p-4 text-sm font-bold text-slate-300">
-                <span className="block text-base font-black text-slate-100">Külön-külön értendő alternatívák</span>
-                <span className="mt-1 block text-slate-400">Az ügyfél választani fog a felsorolt klímák közül, ezért a tételek nem adódnak össze.</span>
-              </div>
-            ) : null}
             <div className="space-y-3">
               {quoteItems.map((item, index) => (
                 <div key={index} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
