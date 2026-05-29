@@ -4,7 +4,7 @@ import type { ClimateProduct, Customer, View } from "@/lib/alinflow/types";
 import { isArchivedCustomer } from "@/lib/alinflow/constants";
 import { offsetIso, todayIso } from "@/lib/alinflow/format";
 import { climateSummary } from "@/lib/alinflow/products";
-import { Back, Btn, Card, Hero, Layout, Main, Shell, Side } from "./LayoutPrimitives";
+import { Back, Btn, Card, Layout, Main, Shell, Side } from "./LayoutPrimitives";
 
 export type TaskFilter = "today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes";
 
@@ -65,7 +65,6 @@ export function TaskPanel({
   return (
     <Shell>
       <Back onClick={onBack} />
-      <Hero title={TASK_TITLE_MAP[taskFilter]} sub="Összegyűjtött teendők és figyelmeztetések" action="Vissza a főoldalra" onAction={onBack} />
       <Layout>
         <Main>
           {taskFilter === "stock" ? (

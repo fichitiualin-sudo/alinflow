@@ -86,7 +86,7 @@ import { LeadPanel } from "@/components/alinflow/LeadPanel";
 import { QuoteBuilderPanel } from "@/components/alinflow/QuoteBuilderPanel";
 import { WorkPagePanel } from "@/components/alinflow/WorkPagePanel";
 import { LoginScreen } from "@/components/alinflow/LoginScreen";
-import { Back, Btn, Card, Field, Gradient, Hero, InfoRow, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Btn, Card, Field, Gradient, InfoRow, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
 import { Stats } from "@/components/alinflow/StatsPanel";
 import { TaskPanel, type TaskFilter } from "@/components/alinflow/TaskPanel";
 import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
@@ -161,6 +161,33 @@ export default function Home() {
   const [showClimateProductManager,setShowClimateProductManager] = useState(false);
 
   setActiveProducts(products);
+
+  const currentViewRef = useRef<View>(view);
+  const viewHistoryRef = useRef<View[]>([]);
+
+  useEffect(() => {
+    currentViewRef.current = view;
+  }, [view]);
+
+  function navigateToView(nextView: View) {
+    const currentView = currentViewRef.current;
+    if (nextView === currentView) return;
+    viewHistoryRef.current = [...viewHistoryRef.current, currentView].slice(-25);
+    currentViewRef.current = nextView;
+    setView(nextView);
+  }
+
+  function replaceView(nextView: View) {
+    currentViewRef.current = nextView;
+    setView(nextView);
+  }
+
+  function goBack(fallbackView: View = "dashboard") {
+    const history = viewHistoryRef.current;
+    const previousView = history.pop();
+    viewHistoryRef.current = history;
+    replaceView(previousView || fallbackView);
+  }
 
   useEffect(() => {
     if (view === "dashboard" || view === "schedule") {
@@ -396,12 +423,12 @@ export default function Home() {
     setWorkChecklist(effectiveChecklistFor(customerToOpen));
     setEditCustomer(draft?.editCustomer ?? false);
     setAllowWorkResourceEdit(draft?.allowWorkResourceEdit ?? false);
-    setView(v);
+    navigateToView(v);
   }
 
   function openTask(filter: TaskFilter) {
     setTaskFilter(filter);
-    setView("tasks");
+    navigateToView("tasks");
   }
 
   function currentReturnTarget() {
@@ -414,10 +441,10 @@ export default function Home() {
     const target = returnTarget;
     if (target?.view === "tasks" && target.taskFilter) {
       setTaskFilter(target.taskFilter);
-      setView("tasks");
+      replaceView("tasks");
       return;
     }
-    setView(target?.view || "dashboard");
+    replaceView(target?.view || "dashboard");
   }
 
   function continueCustomerDraft() {
@@ -432,7 +459,7 @@ export default function Home() {
     setScheduleTime(draft.scheduleTime || draft.customer.time?.split(" ")[0] || "08:00");
     setEditCustomer(draft.editCustomer);
     setAllowWorkResourceEdit(draft.allowWorkResourceEdit);
-    setView(draft.view);
+    navigateToView(draft.view);
   }
 
   function discardCustomerDraft() {
@@ -459,7 +486,7 @@ export default function Home() {
   async function handleLogout() {
     clearCustomerDraft();
     await supabase.auth.signOut();
-    setView("dashboard");
+    replaceView("dashboard");
   }
 
 
@@ -830,7 +857,7 @@ export default function Home() {
       setScheduleTime(nextSelected.time?.split(" ")[0] || "08:00");
       setWorkReport(emptyWorkReport(nextSelected));
       setEditCustomer(false);
-      setView(returnContext.view);
+      replaceView(returnContext.view);
       if (typeof window !== "undefined") window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
     } else if (customerDraft && selectedFromDraft) {
       setScheduleDate(customerDraft.scheduleDate || nextSelected.date || todayIso());
@@ -948,7 +975,7 @@ export default function Home() {
     setScheduleTime("08:00");
     setAllowWorkResourceEdit(false);
     setReturnTarget(currentReturnTarget());
-    setView("lead");
+    navigateToView("lead");
   }
 
   function updateSelectedField(field: keyof Customer, value: string) {
@@ -1050,7 +1077,7 @@ export default function Home() {
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Ügyfél mentve ✅");
-      setView(nextView);
+      navigateToView(nextView);
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -1078,7 +1105,7 @@ export default function Home() {
       setMessage("Ügyféladatok mentve ✅");
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
-      setView("dashboard");
+      replaceView("dashboard");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -1145,7 +1172,7 @@ export default function Home() {
       if (selected.id === customer.id) {
         setSelected(EMPTY_CUSTOMER);
         setQuoteItems(EMPTY_QUOTE_ITEMS);
-        setView("dashboard");
+        replaceView("dashboard");
       }
 
       clearCustomerDraft(customer.id);
@@ -1195,7 +1222,7 @@ export default function Home() {
 
       clearCustomerDraft(updated.id);
       setDraftNotice(readCustomerDraft());
-      setView(wasExistingSchedule ? "work" : "dashboard");
+      replaceView(wasExistingSchedule ? "work" : "dashboard");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -1227,7 +1254,7 @@ export default function Home() {
       clearCustomerDraft(updated.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Időponthoz tartozó klímák és anyagok módosítva ✅");
-      setView("work");
+      replaceView("work");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -1298,7 +1325,7 @@ export default function Home() {
     const error = stockErrorMessage();
     if (error) {
       setMessage(error);
-      setView("dashboard");
+      replaceView("dashboard");
       return;
     }
 
@@ -1318,7 +1345,7 @@ export default function Home() {
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
       setMessage("Szerelés kész ✅ A klímák és az anyagok zárolva, admin még folyamatban.");
-      setView("work");
+      replaceView("work");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -1328,7 +1355,7 @@ export default function Home() {
     const error = stockErrorMessage();
     if (error) {
       setMessage(error);
-      setView("dashboard");
+      replaceView("dashboard");
       return;
     }
 
@@ -1353,7 +1380,7 @@ export default function Home() {
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
       setMessage("Munka teljesen lezárva ✅ A naptárban sötétzöld lezárt munkaként megmarad.");
-      setView("dashboard");
+      replaceView("dashboard");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -1373,7 +1400,7 @@ export default function Home() {
       setSelected(updated);
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setMessage("Időpont törölve / lemondva ✅ A foglalás felszabadult.");
-      setView("dashboard");
+      replaceView("dashboard");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -1390,7 +1417,7 @@ export default function Home() {
       setCustomers((prev) => prev.map((item) => item.id === restored.id ? restored : item));
       setSelected(restored);
       setMessage(`${restored.name || "Ügyfél"} visszaállítva ✅`);
-      setView(restored.date ? "work" : "lead");
+      navigateToView(restored.date ? "work" : "lead");
     } catch (error: any) {
       setMessage(`Visszaállítási hiba: ${error.message}`);
     }
@@ -1563,10 +1590,10 @@ export default function Home() {
         reservedForProduct={reservedForProduct}
         customerStatusLabel={customerStatusLabel}
         customerHasSentQuote={customerHasSentQuote}
-        onBack={() => setView("dashboard")}
+        onBack={() => goBack()}
         onOpenTask={openTask}
         onOpenCustomer={openCustomer}
-        onOpenWarehouse={() => setView("warehouse")}
+        onOpenWarehouse={() => navigateToView("warehouse")}
       />
     );
   }
@@ -1580,7 +1607,7 @@ export default function Home() {
         hasCustomerFilter={hasCustomerFilter}
         hasMoreArchivedCustomers={hasMoreArchivedCustomers}
         searchPanel={renderCustomerSearchPanel("Archív kereső")}
-        onBack={() => setView("dashboard")}
+        onBack={() => goBack()}
         onLoadMore={() => setArchiveVisibleCount((count) => count + 30)}
         onOpenCustomer={openCustomer}
         onRestoreCustomer={restoreArchivedCustomer}
@@ -1591,7 +1618,7 @@ export default function Home() {
   if (view === "warehouse") {
     return (
       <WarehousePanel
-        onBack={() => setView("dashboard")}
+        onBack={() => goBack()}
         products={products}
         materialInventory={materialInventory}
         showClimateProductManager={showClimateProductManager}
@@ -1978,7 +2005,7 @@ export default function Home() {
     setSelected(customerForReport);
     setQuoteItems(customerForReport.quoteItems);
     void loadWorkReportFor(customerForReport);
-    setView("workReport");
+    navigateToView("workReport");
   }
 
   function openWorkReport() {
@@ -1994,7 +2021,7 @@ export default function Home() {
     if (type === "work_report" || type === "purchase_declaration") {
       void loadWorkReportFor(customerForPreview);
     }
-    setView("documentPreview");
+    navigateToView("documentPreview");
   }
 
   function updateWorkReportField(field: keyof WorkReport, value: string) {
@@ -2093,7 +2120,7 @@ export default function Home() {
       setWorkReportsByCustomer((prev) => ({ ...prev, [selected.id]: savedReportForState }));
       setWorkReport(savedReportForState);
       setMessage(sendEmail ? "Munkalap mentve és emailben elküldve ✅" : "Munkalap mentve ✅");
-      setView("work");
+      replaceView("work");
     } catch (error: any) {
       setMessage(`Munkalap hiba: ${error.message}`);
     } finally {
@@ -2157,25 +2184,24 @@ export default function Home() {
     const report = documentReportFor(selected);
     const isAppointmentPreview = documentPreviewType === "appointment_confirmation";
     const isQuotePreview = documentPreviewType === "quote_document";
-    const title = documentPreviewType === "purchase_declaration" ? "Vásárlási nyilatkozat" : isAppointmentPreview ? "Időpont-visszaigazolás" : isQuotePreview ? "Árajánlat" : "Klímaszerelési munkalap";
-    return <Shell><style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; min-height: 297mm !important; margin: 0 !important; background: #fff !important; } body * { visibility: hidden !important; } .print-document-area, .print-document-area * { visibility: visible !important; } .print-document-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; background: #fff !important; } .doc-print-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; min-height: 297mm !important; height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: hidden !important; page-break-after: always !important; break-after: page !important; } .work-report-doc { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; } .purchase-doc { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; } .doc-print-page * { box-sizing: border-box !important; } .doc-print-page:last-child { page-break-after: auto !important; break-after: auto !important; } }`}</style><Back onClick={()=>setView(documentBackView)}/><div className="print:hidden"><Hero title={title} sub={`${selected.name || "Ügyfél"} · ${fullCustomerAddress(selected)}`} action="Nyomtatás" onAction={()=>window.print()}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print-document-area print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report} quoteItems={quoteItems}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems}/> : isQuotePreview ? <QuoteDocument customer={selected} quoteItems={quoteItems}/> : <WorkReportDocument customer={selected} report={report} quoteItems={quoteItems}/>}</div></Shell>;
+    return <Shell><style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; min-height: 297mm !important; margin: 0 !important; background: #fff !important; } body * { visibility: hidden !important; } .print-document-area, .print-document-area * { visibility: visible !important; } .print-document-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; background: #fff !important; } .doc-print-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; min-height: 297mm !important; height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: hidden !important; page-break-after: always !important; break-after: page !important; } .work-report-doc { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; } .purchase-doc { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; } .doc-print-page * { box-sizing: border-box !important; } .doc-print-page:last-child { page-break-after: auto !important; break-after: auto !important; } }`}</style><Back onClick={()=>goBack(documentBackView)}/><div className="print:hidden">{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print-document-area print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report} quoteItems={quoteItems}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems}/> : isQuotePreview ? <QuoteDocument customer={selected} quoteItems={quoteItems}/> : <WorkReportDocument customer={selected} report={report} quoteItems={quoteItems}/>}</div></Shell>;
   }
 
   if (view==="documents") {
     const documentCustomers = filteredCustomers;
     return (
       <Shell>
-        <Back onClick={()=>setView("dashboard")}/>
-        <Hero title="Dokumentumtár" sub="" action="Frissítés" onAction={loadCustomersFromDb}/>
+        <Back onClick={()=>goBack()}/>
         <Layout>
           <Main>
             <Card title="Dokumentumok ügyfelenként">
-              <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px]">
+              <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto]">
                 <input className="input" value={customerSearch} onChange={(event)=>setCustomerSearch(event.target.value)} placeholder="Keresés név, telefon, település, cím vagy klíma alapján..." />
                 <select className="input" value={customerStatusFilter} onChange={(event)=>setCustomerStatusFilter(event.target.value)}>
                   <option value="all">Összes státusz</option>
                   {STATUS_OPTIONS.map((status)=><option key={status} value={status}>{status}</option>)}
                 </select>
+                <button onClick={loadCustomersFromDb} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100">Frissítés</button>
               </div>
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
@@ -2194,7 +2220,7 @@ export default function Home() {
     <LeadPanel
       selected={selected}
       customers={customers}
-      onBack={()=>setView("dashboard")}
+      onBack={()=>goBack()}
       onSaveCustomerOnly={saveCustomerOnly}
       onSaveCustomerAndQuote={()=>saveCustomer("quote")}
       onDeleteCustomer={deleteCustomer}
@@ -2215,10 +2241,10 @@ export default function Home() {
       quoteEmailBusy={quoteEmailBusy}
       canEditWorkResources={canEditWorkResources}
       quotePricingMode={selected.quotePricingMode || "bundle"}
-      onBack={()=>setView("dashboard")}
-      onPreview={()=>setView("quotePreview")}
+      onBack={()=>goBack()}
+      onPreview={()=>navigateToView("quotePreview")}
       onSendQuoteEmail={sendQuoteEmail}
-      onSchedule={()=>{updateCustomerStatus("Ajánlat elküldve"); setView("schedule")}}
+      onSchedule={()=>{updateCustomerStatus("Ajánlat elküldve"); navigateToView("schedule")}}
       onQuotePricingModeChange={updateQuotePricingMode}
       onUpdateQuoteItem={updateQuoteItem}
       onUpdateQuoteProduct={updateQuoteProduct}
@@ -2239,10 +2265,10 @@ export default function Home() {
         installerAmount={installer}
         materialAmount={materialPrice}
         quoteEmailBusy={quoteEmailBusy}
-        onBack={() => setView("quote")}
+        onBack={() => goBack("quote")}
         onPrint={() => window.print()}
         onSendQuote={sendQuoteEmail}
-        onSchedule={() => setView("schedule")}
+        onSchedule={() => navigateToView("schedule")}
         onQuotePricingModeChange={updateQuotePricingMode}
       />
     );
@@ -2269,7 +2295,7 @@ export default function Home() {
         totalQuantity={q}
         sendAppointmentNotice={sendAppointmentNotice}
         appointmentEmailBusy={appointmentEmailBusy}
-        onBack={()=>setView(isExistingSchedule ? "work" : "quote")}
+        onBack={()=>goBack(isExistingSchedule ? "work" : "quote")}
         onSaveSchedule={saveSchedule}
         onSelectDate={setScheduleDate}
         onMode={setMode}
@@ -2294,7 +2320,7 @@ export default function Home() {
       workReportBusy={workReportBusy}
       workReportEmailBusy={workReportEmailBusy}
       message={message}
-      onBack={()=>setView("work")}
+      onBack={()=>goBack("work")}
       onSave={(sendEmail)=>saveWorkReport(sendEmail)}
       onUpdateWorkReportField={updateWorkReportField}
       onSignatureChange={(value)=>setWorkReport((prev)=>({ ...prev, signatureDataUrl: value, signedAt: value ? new Date().toISOString() : undefined }))}
@@ -2323,7 +2349,7 @@ export default function Home() {
         checklistReady={checklistReady}
         missingChecklist={missingChecklist}
         documentRows={documentRowsFor(selected)}
-        onBack={()=>setView("dashboard")}
+        onBack={()=>goBack()}
         onCloseWork={closeWork}
         onRememberExternalCustomer={rememberExternalCustomer}
         onSaveCustomerData={saveCustomerData}
@@ -2331,7 +2357,7 @@ export default function Home() {
         onUpdateSelectedField={updateSelectedField}
         onSetScheduleDate={setScheduleDate}
         onSetScheduleTime={setScheduleTime}
-        onSetView={setView}
+        onSetView={navigateToView}
         onUpdateQuoteItem={updateQuoteItem}
         onUpdateQuoteProduct={updateQuoteProduct}
         onRemoveQuoteItem={removeQuoteItem}
@@ -2357,7 +2383,7 @@ export default function Home() {
     </Shell>
   );
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span></div></div></div>)}</div></Card></Main><Side>{draftNotice ? <Card title="Folyamatban lévő szerkesztés"><div className="space-y-3"><p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p><div className="rounded-2xl bg-slate-950/60 p-3"><p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p><p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || draftNotice.customer.city || "nincs adat"}</p></div><div className="grid grid-cols-1 gap-2"><button onClick={continueCustomerDraft} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Szerkesztés folytatása</button><button onClick={discardCustomerDraft} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-slate-200">Helyi piszkozat elvetése</button></div></div></Card> : null}{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
+  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => navigateToView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => navigateToView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => navigateToView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span></div></div></div>)}</div></Card></Main><Side>{draftNotice ? <Card title="Folyamatban lévő szerkesztés"><div className="space-y-3"><p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p><div className="rounded-2xl bg-slate-950/60 p-3"><p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p><p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || draftNotice.customer.city || "nincs adat"}</p></div><div className="grid grid-cols-1 gap-2"><button onClick={continueCustomerDraft} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Szerkesztés folytatása</button><button onClick={discardCustomerDraft} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-slate-200">Helyi piszkozat elvetése</button></div></div></Card> : null}{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {products.map((product: any) => {
                 const stock = stockOf(product.id);

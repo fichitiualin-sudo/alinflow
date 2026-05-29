@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Customer, View } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
-import { Back, Card, Gradient, Hero, Layout, Main, Shell, Side } from "./LayoutPrimitives";
+import { Back, Card, Gradient, Layout, Main, Shell, Side } from "./LayoutPrimitives";
 
 type ArchivePanelProps = {
   filteredArchivedCustomers: Customer[];
@@ -32,12 +32,6 @@ export function ArchivePanel({
   return (
     <Shell>
       <Back onClick={onBack} />
-      <Hero
-        title="Lezárt / lemondott ügyfelek"
-        sub="Külön lista azoknak, akik már lezárva vagy lemondva státuszban vannak."
-        action="Vissza a főoldalra"
-        onAction={onBack}
-      />
       <Layout>
         <Main>
           {searchPanel}

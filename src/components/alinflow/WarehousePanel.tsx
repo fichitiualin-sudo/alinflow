@@ -67,8 +67,6 @@ export function WarehousePanel({
   return (
     <Shell>
       <Back onClick={onBack} />
-      <Hero title="Raktárkészlet" sub="Készletkezelés és bevételezés." action="Készlet kezelése" />
-
       <Layout>
         <Main>
           <ClimateProductManager
@@ -340,9 +338,6 @@ function Main({ children }: { children: ReactNode }) { return <div className="sp
 function Side({ children }: { children: ReactNode }) { return <aside className="space-y-6">{children}</aside>; }
 function Card({ title, children }: { title: string; children: ReactNode }) { return <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl"><h2 className="mb-5 text-2xl font-black">{title}</h2>{children}</section>; }
 function Back({ onClick }: { onClick: () => void }) { return <div className="sticky top-3 z-50 w-fit print:hidden"><button onClick={onClick} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur">← Vissza</button></div>; }
-function Hero({ title, sub, action }: { title: string; sub: string; action: string }) {
-  return <section className="rounded-[2.5rem] border border-cyan-300/20 bg-gradient-to-br from-slate-950 to-slate-900 p-6 shadow-2xl md:p-8"><div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between"><div><h1 className="text-4xl font-black leading-tight md:text-5xl">{title}</h1>{sub ? <p className="mt-3 text-lg text-slate-400">{sub}</p> : null}</div><button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950">{action}</button></div></section>;
-}
 function InfoRow({ label, value }: { label: string; value: string }) { return <div className="mb-3 flex justify-between gap-4 rounded-2xl bg-slate-900/80 p-4"><span>{label}</span><b>{value}</b></div>; }
 function Gradient({ title, value, tone }: { title: string; value: string; tone?: string }) {
   const bg = tone === "blue" ? "from-blue-400 to-cyan-300" : "from-cyan-300 to-emerald-300";
