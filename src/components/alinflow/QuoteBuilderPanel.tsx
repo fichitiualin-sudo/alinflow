@@ -2,8 +2,8 @@
 
 import type { ClimateProduct, Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
-import { hasCustomProductPrice, isCustomQuoteItem, isQuoteAlternatives, itemName, itemPriceLine, itemQuantity, itemTotal, itemUnitPrice, prod, sortProducts } from "@/lib/alinflow/products";
-import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { hasCustomProductPrice, isCustomQuoteItem, isQuoteAlternatives, itemPriceLine, itemTotal, itemUnitPrice, prod, sortProducts } from "@/lib/alinflow/products";
+import { Back, Btn, Card, Gradient, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuoteBuilderPanelProps = {
   selected: Customer;
@@ -54,12 +54,9 @@ function priceInputValue(value: string) {
 }
 
 export function QuoteBuilderPanel({
-  selected,
   quoteItems,
   products,
   totalAmount,
-  installerAmount,
-  materialAmount,
   quoteEmailBusy,
   canEditWorkResources,
   quotePricingMode,
@@ -112,27 +109,10 @@ export function QuoteBuilderPanel({
               <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={onAddQuoteItem}>+ Klíma hozzáadása</button>
               <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={onAddManualQuoteItem}>+ Egyedi tétel</button>
             </div>
-          </Card>
-          <Card title="Ár és belső bontás">
-            {quoteItems.map((item, index) => <InfoRow key={index} label={`${itemQuantity(item)} db · ${itemName(item)}`} value={ft(itemTotal(item))} />)}
-            {quoteIsAlternatives ? (
-              <div className="mt-3 rounded-3xl bg-cyan-300 p-5 text-slate-950">
-                <b className="block text-xl">Választható ajánlatok</b>
-                <span className="mt-1 block text-sm font-bold">A tételek külön-külön értendők, nem összeadandó végösszegként.</span>
-              </div>
-            ) : (
-              <div className="mt-3 flex justify-between rounded-3xl bg-cyan-300 p-5 text-xl text-slate-950"><b>Ügyfél által fizetendő</b><b>{ft(totalAmount)}</b></div>
-            )}
-            {quoteIsAlternatives ? (
-              <div className="mt-6 rounded-[2rem] border border-amber-300/20 bg-amber-300/10 p-5 text-sm font-bold text-amber-100">
-                A belső számlázási bontás majd a kiválasztott klíma alapján lesz értelmezhető.
-              </div>
-            ) : (
-              <div className="mt-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5">
-                <InfoRow label="Adorján Alin E.V. — telepítési munkadíj" value={ft(installerAmount)} />
-                <InfoRow label="AMOVA 4U Kft. — klíma + szerelési anyagok" value={ft(materialAmount)} />
-              </div>
-            )}
+            <div className="mt-5 flex flex-col gap-2 rounded-3xl bg-cyan-300 p-5 text-slate-950 md:flex-row md:items-center md:justify-between">
+              <b className="text-xl">{quoteIsAlternatives ? "Választható ajánlatok" : "Összesen"}</b>
+              <b className="text-2xl">{quoteIsAlternatives ? `${quoteItems.length} lehetőség` : ft(totalAmount)}</b>
+            </div>
           </Card>
         </Main>
         <Side>
@@ -152,11 +132,13 @@ export function QuoteBuilderPanel({
             </div>
           </Card>
           <Card title="Gyors műveletek">
-            <Btn color="blue" onClick={onPreview}>Ajánlat előnézet</Btn>
-            <button onClick={onSendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-3xl bg-gradient-to-br from-blue-400 to-indigo-500 px-5 py-4 text-center font-black text-white shadow-xl disabled:cursor-wait disabled:opacity-60">
-              {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
-            </button>
-            <Btn color="cyan" onClick={onSchedule}>Időpont keresése</Btn>
+            <div className="space-y-3 [&>button]:w-full">
+              <Btn color="cyan" onClick={onPreview}>Ajánlat előnézet</Btn>
+              <button onClick={onSendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-gradient-to-br from-emerald-400 to-green-500 px-5 py-4 text-center font-black text-slate-950 shadow-xl disabled:cursor-wait disabled:opacity-60">
+                {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
+              </button>
+              <Btn color="blue" onClick={onSchedule}>Időpont keresése</Btn>
+            </div>
           </Card>
         </Side>
       </Layout>
