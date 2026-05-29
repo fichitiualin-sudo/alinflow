@@ -84,18 +84,16 @@ export function QuoteBuilderPanel({
       <Layout>
         <Main>
           <Card title="Ajánlatban szereplő tételek">
-            <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-cyan-300/20 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
-              <input
-                type="checkbox"
-                checked={quoteIsAlternatives}
-                onChange={(event) => onQuotePricingModeChange(event.target.checked ? "alternatives" : "bundle")}
-                className="mt-1 h-5 w-5 accent-cyan-300"
-              />
-              <span>
-                <span className="block text-base font-black text-slate-100">Tételek külön-külön értendők</span>
-                <span className="mt-1 block text-slate-400">Kapcsold be, ha több klímát csak ár-összehasonlításként küldesz. Ilyenkor az emailben/PDF-ben nem adódnak össze a tételek.</span>
+            <div className="mb-4 rounded-2xl border border-cyan-300/20 bg-slate-950/60 p-4 text-sm font-bold text-slate-300">
+              <span className="block text-base font-black text-slate-100">
+                {quoteIsAlternatives ? "Külön-külön értendő alternatívák" : "Egyben értendő ajánlat"}
               </span>
-            </label>
+              <span className="mt-1 block text-slate-400">
+                {quoteIsAlternatives
+                  ? "Az ügyfél választani fog a felsorolt klímák közül, ezért a tételek nem adódnak össze."
+                  : "A felsorolt tételek egy közös ajánlat részei, ezért a rendszer végösszeget számol."}
+              </span>
+            </div>
             <div className="space-y-3">
               {quoteItems.map((item, index) => (
                 <div key={index} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
@@ -150,6 +148,23 @@ export function QuoteBuilderPanel({
         </Main>
         <Side>
           <Gradient title="Ajánlat státusz" value="Küldésre kész" />
+          <Card title="Árajánlat értelmezése">
+            <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
+              <input
+                type="checkbox"
+                checked={quoteIsAlternatives}
+                onChange={(event) => onQuotePricingModeChange(event.target.checked ? "alternatives" : "bundle")}
+                className="mt-1 h-5 w-5 accent-cyan-300"
+              />
+              <span>
+                <span className="block text-base font-black text-slate-100">Ne adja össze a tételeket</span>
+                <span className="mt-1 block text-slate-400">Pipáld be, ha több klímát csak ár-összehasonlításként küldesz.</span>
+              </span>
+            </label>
+            <div className={`mt-3 rounded-2xl p-4 text-sm font-black ${quoteIsAlternatives ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-200"}`}>
+              {quoteIsAlternatives ? "Külön ajánlatokként megy ki" : "Egy ajánlatként, végösszeggel megy ki"}
+            </div>
+          </Card>
           <Card title="Gyors műveletek">
             <button onClick={onSendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-3xl bg-gradient-to-br from-blue-400 to-indigo-500 px-5 py-4 text-center font-black text-white shadow-xl disabled:cursor-wait disabled:opacity-60">
               {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}

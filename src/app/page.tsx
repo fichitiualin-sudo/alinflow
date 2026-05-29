@@ -2243,6 +2243,7 @@ export default function Home() {
         onPrint={() => window.print()}
         onSendQuote={sendQuoteEmail}
         onSchedule={() => setView("schedule")}
+        onQuotePricingModeChange={updateQuotePricingMode}
       />
     );
   }

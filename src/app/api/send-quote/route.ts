@@ -16,6 +16,8 @@ type QuoteItem = {
   totalPrice?: number;
 };
 
+type QuotePricingMode = "bundle" | "alternatives";
+
 function ft(value: number) {
   return `${Number(value || 0).toLocaleString("hu-HU")} Ft`;
 }
@@ -52,32 +54,43 @@ function customerLine(value?: string) {
   return text ? `<div style="margin:3px 0;line-height:1.45">${text}</div>` : "";
 }
 
-function itemRows(items: QuoteItem[], totalAmount: number) {
+function isAlternativesPricing(mode?: string) {
+  return mode === "alternatives";
+}
+
+function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePricingMode = "bundle") {
   const fallback = items.length
     ? items
     : [{ name: "Klímaberendezés", quantity: 1, totalPrice: totalAmount }];
+  const quoteIsAlternatives = isAlternativesPricing(pricingMode);
 
   return fallback
-    .map((item) => {
-      const qty = Number(item.quantity || 1);
+    .map((item, index) => {
+      const qty = Math.max(1, Number(item.quantity || 1));
       const name = escapeHtml(item.name || "Klímaberendezés");
-      const price = Number(item.totalPrice || item.unitPrice || 0);
+      const unitPrice = Number(item.unitPrice || 0);
+      const totalPrice = Number(item.totalPrice || (unitPrice * qty) || totalAmount || 0);
+      const priceLine = qty > 1
+        ? `${ft(unitPrice || Math.round(totalPrice / qty))} / db <span style="white-space:nowrap">(szereléssel együtt)</span>`
+        : `${ft(totalPrice)} <span style="white-space:nowrap">(szereléssel együtt)</span>`;
+      const titlePrefix = quoteIsAlternatives ? `${index + 1}. lehetőség · ` : "";
       return `
         <div style="border:1px solid #e5e7eb;border-radius:18px;padding:16px 18px;margin:12px 0;background:#ffffff">
-          <div style="font-size:17px;line-height:1.35;font-weight:800;color:#020617">${qty} db · ${name}</div>
-          <div style="margin-top:5px;font-size:14px;color:#64748b">${ft(price)} <span style="white-space:nowrap">(szereléssel együtt)</span></div>
-          <div style="margin-top:12px;font-size:18px;font-weight:900;color:#020617">${ft(price)}</div>
+          <div style="font-size:17px;line-height:1.35;font-weight:800;color:#020617">${titlePrefix}${qty} db · ${name}</div>
+          <div style="margin-top:5px;font-size:14px;color:#64748b">${priceLine}</div>
+          <div style="margin-top:12px;font-size:18px;font-weight:900;color:#020617">${quoteIsAlternatives ? "Ajánlati ár: " : ""}${ft(totalPrice)}</div>
         </div>
       `;
     })
     .join("");
 }
 
-function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number) {
+function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number, pricingMode: QuotePricingMode = "bundle") {
   const customerName = escapeHtml(customer.name || "Ügyfelünk");
   const address = customerLine(fullAddress(customer.city, customer.address, "nincs megadva"));
   const email = customerLine(customer.email);
   const phone = customerLine(customer.phone);
+  const quoteIsAlternatives = isAlternativesPricing(pricingMode);
 
   return `<!doctype html>
 <html lang="hu">
@@ -111,7 +124,7 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
 
         <div class="section" style="padding:26px 32px">
           <p style="margin:0 0 18px 0;font-size:16px;line-height:1.6">Tisztelt ${customerName}!</p>
-          <p style="margin:0 0 24px 0;font-size:16px;line-height:1.6;color:#334155">A telefonos / online egyeztetés alapján az alábbi klímás ajánlatot küldjük. Az árak bruttó összegek, és alapszereléssel együtt értendők.</p>
+          <p style="margin:0 0 24px 0;font-size:16px;line-height:1.6;color:#334155">${quoteIsAlternatives ? "A telefonos / online egyeztetés alapján az alábbi választható klímás ajánlatokat küldjük. Az árak bruttó összegek, alapszereléssel együtt, és külön-külön értendők." : "A telefonos / online egyeztetés alapján az alábbi klímás ajánlatot küldjük. Az árak bruttó összegek, és alapszereléssel együtt értendők."}</p>
 
           <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin:0 0 18px 0">
             <div style="font-size:14px;color:#64748b;margin-bottom:7px">Ügyfél</div>
@@ -121,16 +134,23 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
 
           <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin:0 0 20px 0">
             <div style="font-size:14px;color:#64748b;margin-bottom:7px">Ajánlat összesítő</div>
-            <div style="font-size:26px;font-weight:900;color:#020617">${ft(totalAmount)}</div>
-            <div style="font-size:14px;color:#64748b;margin-top:4px">Bruttó végösszeg alapszereléssel</div>
+            <div style="font-size:26px;font-weight:900;color:#020617">${quoteIsAlternatives ? "Választható ajánlatok" : ft(totalAmount)}</div>
+            <div style="font-size:14px;color:#64748b;margin-top:4px">${quoteIsAlternatives ? "A tételek külön-külön értendők, nem összeadandóak." : "Bruttó végösszeg alapszereléssel"}</div>
           </div>
 
-          ${itemRows(items, totalAmount)}
+          ${itemRows(items, totalAmount, pricingMode)}
 
-          <div class="total-row" style="margin:22px 0 8px 0;background:#050816;border-radius:18px;padding:18px 20px;color:#ffffff;font-size:19px;font-weight:900;display:flex;justify-content:space-between;gap:16px">
-            <div>Fizetendő bruttó végösszeg</div>
-            <span style="text-align:right;white-space:nowrap">${ft(totalAmount)}</span>
-          </div>
+          ${quoteIsAlternatives ? `
+            <div style="margin:22px 0 8px 0;background:#050816;border-radius:18px;padding:18px 20px;color:#ffffff;font-size:16px;line-height:1.55">
+              <div style="font-size:19px;font-weight:900;margin-bottom:6px">Fontos: a fenti tételek külön-külön értendők.</div>
+              <div style="color:#cbd5e1">Az ügyfél a számára megfelelő klímát választhatja ki; ezek nem egy összeadott csomag árai.</div>
+            </div>
+          ` : `
+            <div class="total-row" style="margin:22px 0 8px 0;background:#050816;border-radius:18px;padding:18px 20px;color:#ffffff;font-size:19px;font-weight:900;display:flex;justify-content:space-between;gap:16px">
+              <div>Fizetendő bruttó végösszeg</div>
+              <span style="text-align:right;white-space:nowrap">${ft(totalAmount)}</span>
+            </div>
+          `}
         </div>
 
         <div class="section" style="padding:0 32px 28px 32px">
@@ -160,12 +180,14 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
             </ul>
           </div>
 
-          <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:22px;color:#334155;font-size:15px;line-height:1.55">
-            <div style="font-weight:900;margin-bottom:8px">Belső számlázási bontás</div>
-            <div>Adorján Alin E.V. – klímatelepítési munkadíj: ${ft(installerAmount)}</div>
-            <div>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: ${ft(materialAmount)}</div>
-            <div style="margin-top:8px;color:#64748b">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</div>
-          </div>
+          ${quoteIsAlternatives ? "" : `
+            <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:22px;color:#334155;font-size:15px;line-height:1.55">
+              <div style="font-weight:900;margin-bottom:8px">Belső számlázási bontás</div>
+              <div>Adorján Alin E.V. – klímatelepítési munkadíj: ${ft(installerAmount)}</div>
+              <div>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: ${ft(materialAmount)}</div>
+              <div style="margin-top:8px;color:#64748b">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</div>
+            </div>
+          `}
 
           <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">Amennyiben megfelel Önnek az ajánlat, válasz emailben vagy telefonon tudunk időpontot egyeztetni.</p>
           <p style="margin:18px 0 0 0;font-size:15px;line-height:1.6;color:#334155">Üdvözlettel,<br><strong style="color:#020617">Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
@@ -190,6 +212,7 @@ export async function POST(request: Request) {
     const totalAmount = Number(body.totalAmount || 0);
     const installerAmount = Number(body.installerAmount || 0);
     const materialAmount = Number(body.materialAmount || 0);
+    const pricingMode: QuotePricingMode = body.pricingMode === "alternatives" ? "alternatives" : "bundle";
     const to = safeText(customer.email);
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
@@ -204,11 +227,11 @@ export async function POST(request: Request) {
         from,
         to: [to],
         reply_to: replyTo,
-        subject: "Klíma ajánlat – KLIMAlin",
+        subject: pricingMode === "alternatives" ? "Klíma ajánlat – választható lehetőségek – KLIMAlin" : "Klíma ajánlat – KLIMAlin",
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("klimalin-quote"),
         },
-        html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount),
+        html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount, pricingMode),
       }),
     });
 

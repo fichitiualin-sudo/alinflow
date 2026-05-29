@@ -207,7 +207,7 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
       {items.map((item, index)=><div key={`${item.productId}-${index}`} className="rounded-2xl border border-slate-200 p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
+            <p className="text-lg font-black">{quoteIsAlternatives ? `${index + 1}. lehetőség · ` : ""}{itemQuantity(item)} db · {itemName(item)}</p>
             <p className="mt-1 text-sm text-slate-600">{ft(itemUnitPrice(item))} / db · telepítéssel együtt</p>
           </div>
           <p className="text-xl font-black">{ft(itemTotal(item))}</p>

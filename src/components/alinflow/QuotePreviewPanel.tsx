@@ -1,6 +1,6 @@
-import type { Customer, QuoteItem } from "@/lib/alinflow/types";
+import type { Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types";
 import { displayAddress, ft } from "@/lib/alinflow/format";
-import { itemName, itemPriceLine, itemTotal } from "@/lib/alinflow/products";
+import { isQuoteAlternatives, itemName, itemPriceLine, itemQuantity, itemTotal } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Hero, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuotePreviewPanelProps = {
@@ -14,6 +14,7 @@ type QuotePreviewPanelProps = {
   onPrint: () => void;
   onSendQuote: () => void;
   onSchedule: () => void;
+  onQuotePricingModeChange: (value: QuotePricingMode) => void;
 };
 
 export function QuotePreviewPanel({
@@ -27,7 +28,10 @@ export function QuotePreviewPanel({
   onPrint,
   onSendQuote,
   onSchedule,
+  onQuotePricingModeChange,
 }: QuotePreviewPanelProps) {
+  const quoteIsAlternatives = isQuoteAlternatives(selected.quotePricingMode);
+
   return (
     <Shell>
       <div className="no-print">
@@ -64,8 +68,17 @@ export function QuotePreviewPanel({
                 </div>
                 <div className="rounded-2xl bg-slate-100 p-4">
                   <p className="text-sm text-slate-500">Ajánlat összesítő</p>
-                  <p className="mt-1 text-xl font-black">{ft(totalAmount)}</p>
-                  <p className="mt-1 text-sm text-slate-600">Bruttó végösszeg alapszereléssel</p>
+                  {quoteIsAlternatives ? (
+                    <>
+                      <p className="mt-1 text-xl font-black">Választható ajánlatok</p>
+                      <p className="mt-1 text-sm text-slate-600">A tételek külön-külön értendők, nem összeadandóak.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-xl font-black">{ft(totalAmount)}</p>
+                      <p className="mt-1 text-sm text-slate-600">Bruttó végösszeg alapszereléssel</p>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -73,7 +86,7 @@ export function QuotePreviewPanel({
                 {quoteItems.map((item, index) => (
                   <div key={index} className="quote-item flex flex-col gap-2 rounded-2xl border border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <p className="font-black">{item.quantity} db · {itemName(item)}</p>
+                      <p className="font-black">{quoteIsAlternatives ? `${index + 1}. lehetőség · ` : ""}{itemQuantity(item)} db · {itemName(item)}</p>
                       <p className="text-sm text-slate-500">{itemPriceLine(item)}</p>
                     </div>
                     <b>{ft(itemTotal(item))}</b>
@@ -81,12 +94,19 @@ export function QuotePreviewPanel({
                 ))}
               </div>
 
-              <div className="mt-6 rounded-2xl bg-slate-950 p-5 text-white">
-                <div className="flex justify-between gap-4 text-xl">
-                  <span className="font-black">Fizetendő bruttó végösszeg</span>
-                  <b>{ft(totalAmount)}</b>
+              {quoteIsAlternatives ? (
+                <div className="mt-6 rounded-2xl bg-slate-950 p-5 text-white">
+                  <p className="text-lg font-black">Fontos: a fenti tételek külön-külön értendők.</p>
+                  <p className="mt-1 text-sm text-slate-300">Az ügyfél a számára megfelelő klímát választhatja ki; ezek nem egy összeadott csomag árai.</p>
                 </div>
-              </div>
+              ) : (
+                <div className="mt-6 rounded-2xl bg-slate-950 p-5 text-white">
+                  <div className="flex justify-between gap-4 text-xl">
+                    <span className="font-black">Fizetendő bruttó végösszeg</span>
+                    <b>{ft(totalAmount)}</b>
+                  </div>
+                </div>
+              )}
 
               <div className="quote-second-page mt-6 rounded-2xl bg-slate-100 p-5">
                 <h3 className="text-xl font-black">Alapszerelés tartalma</h3>
@@ -114,12 +134,14 @@ export function QuotePreviewPanel({
                 </div>
               </div>
 
-              <div className="mt-6 rounded-2xl bg-amber-50 p-5 text-sm text-slate-800">
-                <h3 className="font-black">Belső számlázási bontás</h3>
-                <p className="mt-2">Adorján Alin E.V. – klímatelepítési munkadíj: {ft(installerAmount)}</p>
-                <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: {ft(materialAmount)}</p>
-                <p className="mt-2 text-slate-600">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</p>
-              </div>
+              {quoteIsAlternatives ? null : (
+                <div className="mt-6 rounded-2xl bg-amber-50 p-5 text-sm text-slate-800">
+                  <h3 className="font-black">Belső számlázási bontás</h3>
+                  <p className="mt-2">Adorján Alin E.V. – klímatelepítési munkadíj: {ft(installerAmount)}</p>
+                  <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: {ft(materialAmount)}</p>
+                  <p className="mt-2 text-slate-600">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</p>
+                </div>
+              )}
 
               <div className="mt-6 text-sm text-slate-600">
                 <p>Üdvözlettel,</p>
@@ -133,7 +155,23 @@ export function QuotePreviewPanel({
           <div className="no-print">
             <Card title="Ajánlat műveletek">
               <div className="space-y-3">
-                <p className="rounded-2xl bg-slate-950/60 p-4 text-sm leading-relaxed text-slate-300">Az ajánlatot szépen formázott emailben küldi el. Telefonon is ugyanígy működik.</p>
+                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={quoteIsAlternatives}
+                    onChange={(event) => onQuotePricingModeChange(event.target.checked ? "alternatives" : "bundle")}
+                    className="mt-1 h-5 w-5 accent-cyan-300"
+                  />
+                  <span>
+                    <span className="block text-base font-black text-slate-100">Ne adja össze a tételeket</span>
+                    <span className="mt-1 block text-slate-400">Bekapcsolva a klímák külön választható ajánlatként mennek ki.</span>
+                  </span>
+                </label>
+                <p className="rounded-2xl bg-slate-950/60 p-4 text-sm leading-relaxed text-slate-300">
+                  {quoteIsAlternatives
+                    ? "Küldéskor az email/PDF kiemeli, hogy ezek alternatívák, nem összeadott csomag."
+                    : "Küldéskor az email/PDF egy közös végösszeget fog mutatni."}
+                </p>
                 <button onClick={onSendQuote} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
                   {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
                 </button>
