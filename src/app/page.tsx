@@ -85,6 +85,7 @@ import { Stats } from "@/components/alinflow/StatsPanel";
 import { TaskPanel, type TaskFilter } from "@/components/alinflow/TaskPanel";
 import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
 import { QuotePreviewPanel } from "@/components/alinflow/QuotePreviewPanel";
+import { SchedulePanel } from "@/components/alinflow/SchedulePanel";
 import {
   clearCustomerDraft,
   draftForCustomer,
@@ -2240,7 +2241,36 @@ export default function Home() {
     const booked = customers.filter(c=>c.id!==selected.id && c.date===scheduleDate).flatMap(c=>occupiedSlots(c));
     const free = BASE_SLOTS.filter(s=>!booked.includes(s));
     const isExistingSchedule = Boolean(selected.date);
-    return <Shell><Back onClick={()=>setView(isExistingSchedule ? "work" : "quote")}/><Hero title={isExistingSchedule ? "Időpont módosítása" : "Időpont választása"} sub={`${selected.name} · ${selected.city}`} action={isExistingSchedule ? "Időpont frissítése" : "Időpont mentése"} onAction={saveSchedule}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} selectable selectedDate={scheduleDate} onSelect={setScheduleDate} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Választható időpontok">{isMultiDayJob ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{free.length===0 ? <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div> : free.map(s=><button key={s} className={scheduleTime===s ? "slot-active" : "slot"} onClick={()=>setScheduleTime(s)}>{s==="16:00" ? "+1 extra" : s}</button>)}</div>}</Card></Main><Side><Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-",".")} · ${shownTime}`}/><Card title="Időpontba kerülő klímák"><p className="mb-4 text-sm leading-relaxed text-slate-400">Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. Telefonról is ugyanígy működik.</p>{quoteItems.map((it,i)=><div key={i} className="mb-3 rounded-2xl bg-slate-900/80 p-4"><p className="font-black">{itemName(it)}</p><div className="mt-3 grid grid-cols-[1fr_90px] gap-3">{isCustomQuoteItem(it) ? <input className="input" value={it.customName || ""} onChange={e=>updateQuoteItem(i,"customName",e.target.value)} placeholder="Klíma megnevezése" /> : <ProductSelect products={products} value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/>}<input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/></div></div>)}<button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button><InfoRow label="Összes klíma" value={`${q} db`}/><label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200"><input type="checkbox" checked={sendAppointmentNotice} onChange={e=>setSendAppointmentNotice(e.target.checked)} className="mt-1 h-5 w-5 accent-cyan-300"/><span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span></label><Btn color="green" onClick={saveSchedule}>{appointmentEmailBusy ? "Mentés és email küldés..." : (isExistingSchedule ? "Időpont frissítése" : "Időpont mentése")}</Btn></Card></Side></Layout></Shell>;
+    return (
+      <SchedulePanel
+        selected={selected}
+        isExistingSchedule={isExistingSchedule}
+        mode={mode}
+        calDate={calDate}
+        calendarCustomers={calendarCustomers}
+        scheduleDate={scheduleDate}
+        scheduleTime={scheduleTime}
+        shownTime={shownTime}
+        isMultiDayJob={isMultiDayJob}
+        freeSlots={free}
+        quoteItems={quoteItems}
+        products={products}
+        totalQuantity={q}
+        sendAppointmentNotice={sendAppointmentNotice}
+        appointmentEmailBusy={appointmentEmailBusy}
+        onBack={()=>setView(isExistingSchedule ? "work" : "quote")}
+        onSaveSchedule={saveSchedule}
+        onSelectDate={setScheduleDate}
+        onMode={setMode}
+        onStep={step}
+        onOpenCustomer={(customer)=>openCustomer(customer,"work")}
+        onSetScheduleTime={setScheduleTime}
+        onUpdateQuoteItem={updateQuoteItem}
+        onUpdateQuoteProduct={updateQuoteProduct}
+        onAddQuoteItem={addQuoteItem}
+        onSetSendAppointmentNotice={setSendAppointmentNotice}
+      />
+    );
   }
 
   if (view==="workReport") return (
