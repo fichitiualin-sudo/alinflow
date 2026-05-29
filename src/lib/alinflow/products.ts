@@ -1,4 +1,4 @@
-import type { ClimateProduct, Customer, QuoteItem } from "./types";
+import type { ClimateProduct, Customer, QuoteItem, QuotePricingMode } from "./types";
 import { DEFAULT_INSTALL_PRICE, EMPTY_PRODUCT, PRODUCTS } from "./constants";
 import { ft } from "./format";
 
@@ -13,6 +13,22 @@ export function productSlug(value: string) {
 
 export function productPriceText(product: Pick<ClimateProduct, "price">) {
   return `${Number(product.price || 0).toLocaleString("hu-HU")} Ft (telepítéssel együtt)`;
+}
+
+export function normalizeQuotePricingMode(value?: string | null): QuotePricingMode {
+  return value === "alternatives" || value === "quote_pricing_mode:alternatives" ? "alternatives" : "bundle";
+}
+
+export function quotePricingModeFromNotes(notes?: string | null): QuotePricingMode {
+  return normalizeQuotePricingMode(notes);
+}
+
+export function quotePricingModeToNotes(mode?: QuotePricingMode) {
+  return `quote_pricing_mode:${normalizeQuotePricingMode(mode)}`;
+}
+
+export function isQuoteAlternatives(mode?: QuotePricingMode) {
+  return normalizeQuotePricingMode(mode) === "alternatives";
 }
 
 export function normalizeProduct(product: any): ClimateProduct {
@@ -57,8 +73,10 @@ export function isQuoteItemFilled(item: QuoteItem) {
 export function cleanQuoteItems(items?: QuoteItem[]) {
   return (items || []).filter(isQuoteItemFilled).map((item) => ({
     ...item,
+    quantity: itemQuantity(item),
     productId: isKnownProductId(item.productId) ? item.productId : "",
     customName: item.customName?.trim() || undefined,
+    customPrice: item.customPrice === "" ? undefined : item.customPrice,
     isManual: item.isManual || !isKnownProductId(item.productId),
   }));
 }
@@ -68,7 +86,7 @@ export function prod(id: string) {
 }
 
 export function qty(items: QuoteItem[]) {
-  return cleanQuoteItems(items).reduce((s, i) => s + i.quantity, 0);
+  return cleanQuoteItems(items).reduce((s, i) => s + itemQuantity(i), 0);
 }
 
 export function itemName(item: QuoteItem) {
@@ -78,8 +96,14 @@ export function itemName(item: QuoteItem) {
   return item.isManual ? "Egyedi klíma" : "Válassz klímát";
 }
 
+export function itemQuantity(item: QuoteItem) {
+  const quantity = Number(item.quantity);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
 export function itemUnitPrice(item: QuoteItem) {
-  return typeof item.customPrice === "number" && !Number.isNaN(item.customPrice) ? item.customPrice : prod(item.productId).price;
+  const customPrice = Number(item.customPrice);
+  return item.customPrice !== undefined && item.customPrice !== "" && Number.isFinite(customPrice) ? customPrice : prod(item.productId).price;
 }
 
 export function itemInstallPrice(item: QuoteItem) {
@@ -89,11 +113,11 @@ export function itemInstallPrice(item: QuoteItem) {
 }
 
 export function itemTotal(item: QuoteItem) {
-  return itemUnitPrice(item) * item.quantity;
+  return itemUnitPrice(item) * itemQuantity(item);
 }
 
 export function itemInstallTotal(item: QuoteItem) {
-  return itemInstallPrice(item) * item.quantity;
+  return itemInstallPrice(item) * itemQuantity(item);
 }
 
 export function total(items: QuoteItem[]) {
@@ -140,14 +164,14 @@ export function quoteItemToRow(item: QuoteItem, quoteId: string) {
     quote_id: quoteId,
     product_name: itemName(item),
     description: item.productId,
-    quantity: item.quantity,
+    quantity: itemQuantity(item),
     unit_price: itemUnitPrice(item),
     total_price: itemTotal(item),
   };
 }
 
 export function climateSummary(items?: QuoteItem[]) {
-  const activeItems = cleanQuoteItems(items).filter((item) => item.quantity > 0);
+  const activeItems = cleanQuoteItems(items).filter((item) => itemQuantity(item) > 0);
   if (!activeItems.length) return "Nincs klíma megadva";
-  return activeItems.map((item) => `${item.quantity} db ${itemName(item)}`).join(" + ");
+  return activeItems.map((item) => `${itemQuantity(item)} db ${itemName(item)}`).join(" + ");
 }

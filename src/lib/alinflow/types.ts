@@ -14,11 +14,12 @@ export type View =
 
 export type CalendarMode = "week" | "month";
 export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document";
+export type QuotePricingMode = "bundle" | "alternatives";
 
 export type QuoteItem = {
   productId: string;
-  quantity: number;
-  customPrice?: number;
+  quantity: number | "";
+  customPrice?: number | "";
   customName?: string;
   isManual?: boolean;
 };
@@ -52,6 +53,7 @@ export type Customer = {
   time?: string;
   quoteItems: QuoteItem[];
   productId?: string;
+  quotePricingMode?: QuotePricingMode;
   isFresh?: boolean;
   stockDeducted?: boolean;
 };
