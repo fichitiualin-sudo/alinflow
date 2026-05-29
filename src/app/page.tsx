@@ -79,6 +79,7 @@ import { AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocu
 import { CustomerSearchPanel, LeadImportPanel } from "@/components/alinflow/CustomerPanels";
 import { DocumentActionButtons, DocumentLibraryActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { WorkReportPanel } from "@/components/alinflow/WorkReportPanel";
+import { WorkPagePanel } from "@/components/alinflow/WorkPagePanel";
 import { LoginScreen } from "@/components/alinflow/LoginScreen";
 import { Back, Btn, Card, Field, Gradient, Hero, InfoRow, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
 import { Stats } from "@/components/alinflow/StatsPanel";
@@ -2290,100 +2291,61 @@ export default function Home() {
     />
   );
 
-  if (view==="work") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={`${selected.name} — Munkaoldal`} sub={`${selected.city} · ${selected.date || scheduleDate} · ${selected.time || shownTime}`} action="Teljes lezárás ellenőrzése" onAction={closeWork}/>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Layout><Main><Card title="Ügyféladatok"><div className="mb-4 flex flex-wrap gap-3">{selected.phone ? <a href={telHref(selected.phone)} onClick={()=>rememberExternalCustomer(selected,"work")} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Hívás</a> : null}{editCustomer ? <Btn color="green" onClick={saveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={()=>setEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}{editCustomer ? <button onClick={()=>setEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}</div><CustomerGrid c={selected} editable={editCustomer} onChange={updateSelectedField} onExternalOpen={()=>rememberExternalCustomer(selected,"work")}/>{selected.date ? <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-400">Időpont</p><p className="text-base font-black text-slate-100">{selected.date.replaceAll("-", ".")} · {selected.time || shownTime}</p></div><button type="button" onClick={()=>{setScheduleDate(selected.date || todayIso()); setScheduleTime(selected.time?.split(" ")[0] || "08:00"); setView("schedule");}} className="shrink-0 rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100 ring-1 ring-cyan-200/20">Időpont módosítása</button></div></div> : null}</Card><Card title="Időponthoz tartozó klímák">
-              {workResourceEditLocked && !allowWorkResourceEdit ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">A szerelés készre jelölése után a klímák és a szerelési anyagok zárolva vannak. Szerkesztéshez nyomd meg a Módosítás engedélyezése gombot.</div> : null}
-              <div className="space-y-3">
-                {quoteItems.map((it,i)=>
-                  <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-[1fr_110px_44px] gap-3">
-                      {isCustomQuoteItem(it) ? <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={e=>updateQuoteItem(i,"customName",e.target.value)} placeholder="Klíma megnevezése" /> : <ProductSelect products={products} value={it.productId} onChange={v=>updateQuoteProduct(i,v)} disabled={!canEditWorkResources} />}
-                      <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))} />
-                      <button className="rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={()=>removeQuoteItem(i)}>×</button>
-                    </div>
-                    <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
-                      <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
-                      <b>{ft(itemTotal(it))}</b>
-                    </div>
-                    {hasCustomProductPrice(it) ? (
-                      <button type="button" disabled={!canEditWorkResources} onClick={()=>syncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
-                        Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-              <div className="mt-4 flex flex-col md:flex-row gap-3">
-                <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={addQuoteItem}>+ Klíma hozzáadása</button>
-                {workResourceEditLocked && !allowWorkResourceEdit ? <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={()=>setAllowWorkResourceEdit(true)}>Módosítás engedélyezése</button> : null}
-                {canEditWorkResources ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={saveWorkChanges}>Módosítás mentése az időpontra</button> : null}
-              </div>
-              <div className="mt-4 rounded-2xl bg-slate-950/60 p-4">
-                <InfoRow label="Összesen" value={ft(total(quoteItems))} />
-                <InfoRow label="Klímák száma" value={`${qty(quoteItems)} db`} />
-                <InfoRow label="Idősáv logika" value={qty(quoteItems) >= 2 ? "08:00 + 12:00" : (selected.time || scheduleTime || "08:00")} />
-              </div>
-            </Card><Card title="Felhasznált anyagok"><div className="mb-4 flex justify-end"><button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={addExtraMaterial}>+ Egyéb anyag</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{materials.map((m,i)=><div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {m.isExtra ? <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={m.name} onChange={e=>updateMaterial(i,"name",e.target.value)}/> : <p className="font-black">{m.name}</p>}
-                      {m.isExtra ? <p className="mt-1 text-xs text-slate-400">Egyéb anyag</p> : null}
-                    </div>
-                    {!m.isExtra ? <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-xs font-black text-cyan-200">x{climateCountForMaterials()}</span> : null}
-                  </div>
-
-                  <div className="mt-4">
-                    {m.name==="Konzol" ? (
-                      <select className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={m.qty} onChange={e=>updateMaterial(i,"qty",e.target.value)}>
-                        <option>450-es konzol</option>
-                        <option>550-es konzol</option>
-                        <option>Egyedi konzol</option>
-                      </select>
-                    ) : (
-                      <input
-                        className="input disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={!canEditWorkResources}
-                        value={finalMaterialQty(m)}
-                        onChange={e=>updateFinalMaterialQty(m.name,e.target.value)}
-                      />
-                    )}
-                  </div>
-
-                  <div className="mt-3 rounded-2xl bg-white/5 p-3 text-sm">
-                    <span className="text-slate-400">Egység / mennyiség:</span>
-                    <b className="ml-2">{materialDisplayUnit(m)}</b>
-                  </div>
-
-                  {m.isExtra ? <div className="mt-3"><input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={m.unit} onChange={e=>updateMaterial(i,"unit",e.target.value)} placeholder="egység"/></div> : null}
-                </div>)}</div></Card></Main><Side><Gradient title="Munka státusz" value={selected.status || "Folyamatban"}/><Card title="Dokumentumok"><div className="space-y-3">{documentRowsFor(selected).map((row)=><div key={row.title} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentActionButtons customer={selected} row={row} onPreview={openDocumentPreview} onEditWorkReport={openWorkReportFor} onSendQuote={sendQuoteEmail} onSendAppointment={sendAppointmentEmailFor} quoteEmailBusy={quoteEmailBusy} appointmentEmailBusy={appointmentEmailBusy}/></div>)}</div></Card><Card title="Lezárási műveletek">
-              <div className="space-y-3">
-                <StepButton color="cyan" onClick={openWorkReport}>Munkalap és egyszerű aláírás</StepButton>
-                
-                <StepButton color="blue" onClick={()=>sendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
-                <StepButton color="amber" onClick={markInstallationDone}>Szerelés kész – admin folyamatban</StepButton>
-                <StepButton color="green" onClick={closeWork}>Teljes lezárás</StepButton>
-                <button onClick={cancelAppointment} className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-red-500 to-rose-500 px-5 py-4 text-left font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
-                  <span>Időpont törlése / lemondva</span>
-                  <span className="rounded-full bg-black/10 px-3 py-1 text-sm">×</span>
-                </button>
-              </div>
-            </Card><Card title="Lezárási ellenőrzőlista">
-              <div className="space-y-3">
-                {checklistItems.map((item) => (
-                  <button
-                    key={item.key}
-                    onClick={() => toggleChecklist(item.key)}
-                    className={`w-full rounded-2xl p-4 text-left font-black transition ${currentWorkChecklist[item.key] ? "bg-emerald-400/20 text-emerald-200 border border-emerald-300/30" : "bg-slate-900/80 text-slate-200 border border-white/10"}`}
-                  >
-                    <span className="mr-3">{currentWorkChecklist[item.key] ? "✓" : "○"}</span>
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-              <div className={`mt-4 rounded-2xl p-4 font-black ${checklistReady ? "bg-emerald-400/20 text-emerald-200" : "bg-amber-400/20 text-amber-200"}`}>
-                {checklistReady ? "Teljes lezárás engedélyezve ✅" : `Admin hiányos: ${missingChecklist.length} tétel`}
-              </div>
-            </Card>
-            </Side></Layout></Shell>;
+  if (view==="work") return (
+    <Shell>
+      <WorkPagePanel
+        selected={selected}
+        scheduleDate={scheduleDate}
+        scheduleTime={scheduleTime}
+        shownTime={shownTime}
+        message={message}
+        editCustomer={editCustomer}
+        quoteItems={quoteItems}
+        products={products}
+        materials={materials}
+        workResourceEditLocked={workResourceEditLocked}
+        allowWorkResourceEdit={allowWorkResourceEdit}
+        canEditWorkResources={canEditWorkResources}
+        quoteEmailBusy={quoteEmailBusy}
+        appointmentEmailBusy={appointmentEmailBusy}
+        checklistItems={checklistItems}
+        currentWorkChecklist={currentWorkChecklist}
+        checklistReady={checklistReady}
+        missingChecklist={missingChecklist}
+        documentRows={documentRowsFor(selected)}
+        onBack={()=>setView("dashboard")}
+        onCloseWork={closeWork}
+        onRememberExternalCustomer={rememberExternalCustomer}
+        onSaveCustomerData={saveCustomerData}
+        onSetEditCustomer={setEditCustomer}
+        onUpdateSelectedField={updateSelectedField}
+        onSetScheduleDate={setScheduleDate}
+        onSetScheduleTime={setScheduleTime}
+        onSetView={setView}
+        onUpdateQuoteItem={updateQuoteItem}
+        onUpdateQuoteProduct={updateQuoteProduct}
+        onRemoveQuoteItem={removeQuoteItem}
+        onSyncQuoteItemPrice={syncQuoteItemPrice}
+        onAddQuoteItem={addQuoteItem}
+        onSetAllowWorkResourceEdit={setAllowWorkResourceEdit}
+        onSaveWorkChanges={saveWorkChanges}
+        onAddExtraMaterial={addExtraMaterial}
+        onUpdateMaterial={updateMaterial}
+        onFinalMaterialQty={finalMaterialQty}
+        onUpdateFinalMaterialQty={updateFinalMaterialQty}
+        onMaterialDisplayUnit={materialDisplayUnit}
+        onClimateCountForMaterials={climateCountForMaterials}
+        onOpenDocumentPreview={openDocumentPreview}
+        onOpenWorkReportFor={openWorkReportFor}
+        onSendQuoteEmail={sendQuoteEmail}
+        onSendAppointmentEmailFor={sendAppointmentEmailFor}
+        onOpenWorkReport={openWorkReport}
+        onMarkInstallationDone={markInstallationDone}
+        onCancelAppointment={cancelAppointment}
+        onToggleChecklist={toggleChecklist}
+      />
+    </Shell>
+  );
 
   return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => setView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => setView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => setView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span></div></div></div>)}</div></Card></Main><Side>{draftNotice ? <Card title="Folyamatban lévő szerkesztés"><div className="space-y-3"><p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p><div className="rounded-2xl bg-slate-950/60 p-3"><p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p><p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || draftNotice.customer.city || "nincs adat"}</p></div><div className="grid grid-cols-1 gap-2"><button onClick={continueCustomerDraft} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Szerkesztés folytatása</button><button onClick={discardCustomerDraft} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-slate-200">Helyi piszkozat elvetése</button></div></div></Card> : null}{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
             <div className="space-y-3">
