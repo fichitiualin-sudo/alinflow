@@ -14,6 +14,7 @@ import type {
   InventoryItem,
   LeadImportCandidate,
   QuoteItem,
+  QuotePricingMode,
   View,
   WorkChecklistState,
   WorkReport,
@@ -49,6 +50,7 @@ import {
   itemInstallTotal,
   itemName,
   itemPriceLine,
+  itemQuantity,
   itemTotal,
   itemUnitPrice,
   normalizeProduct,
@@ -58,6 +60,8 @@ import {
   productSlug,
   quoteInstallTotal,
   quoteItemFromRow,
+  quotePricingModeFromNotes,
+  quotePricingModeToNotes,
   quoteItemToRow,
   qty,
   setActiveProducts,
@@ -70,7 +74,6 @@ import {
   fullCustomerAddress,
   mapsHref,
   offsetIso,
-  telHref,
   todayIso,
 } from "@/lib/alinflow/format";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
@@ -786,6 +789,7 @@ export default function Home() {
         time: job?.scheduled_time || undefined,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
+        quotePricingMode: quotePricingModeFromNotes(quote?.notes),
         stockDeducted: Boolean(row.stock_deducted),
       };
     });
@@ -871,7 +875,7 @@ export default function Home() {
       customer_id: customer.id,
       status: normalizeStatus(customer.status || "Ajánlat elküldve"),
       total_amount: total(customer.quoteItems || []),
-      notes: null,
+      notes: quotePricingModeToNotes(customer.quotePricingMode),
       created_by: user.id,
     };
 
@@ -935,6 +939,7 @@ export default function Home() {
       need: "",
       notes: "",
       quoteItems: EMPTY_QUOTE_ITEMS,
+      quotePricingMode: "bundle",
     };
 
     setSelected(fresh);
@@ -965,6 +970,10 @@ export default function Home() {
 
   function updateCustomerStatus(value: string) {
     setSelected((prev) => ({ ...prev, status: normalizeStatus(value) }));
+  }
+
+  function updateQuotePricingMode(value: QuotePricingMode) {
+    setSelected((prev) => ({ ...prev, quotePricingMode: value }));
   }
 
   async function persistWorkChecklist(customer: Customer, checklist: WorkChecklistState) {
@@ -1260,7 +1269,7 @@ export default function Home() {
     const nextInventory = inventory.map(item => {
       const used = quoteItems
         .filter(q => q.productId === item.productId)
-        .reduce((sum, q) => sum + q.quantity, 0);
+        .reduce((sum, q) => sum + itemQuantity(q), 0);
       if (used <= 0) return item;
       const nextItem = { ...item, stock: Math.max(0, item.stock - used) };
       changedInventory.push(nextItem);
@@ -1400,7 +1409,7 @@ export default function Home() {
         const items = customer.quoteItems ?? [];
         return sum + items
           .filter((item) => item.productId === productId)
-          .reduce((itemSum, item) => itemSum + item.quantity, 0);
+          .reduce((itemSum, item) => itemSum + itemQuantity(item), 0);
       }, 0);
   }
 
@@ -1452,7 +1461,7 @@ export default function Home() {
 
     return Math.round(activeJobs.reduce((sum: number, customer: any) => {
       const items = customer.quoteItems ?? [];
-      const climateCount = Math.max(1, items.reduce((s: number, item: any) => s + (item.quantity ?? 1), 0));
+      const climateCount = Math.max(1, items.reduce((s: number, item: any) => s + itemQuantity(item), 0));
 
       // Ha az aktuálisan megnyitott munkán módosítod az anyagmennyiséget,
       // akkor a raktár lefoglalás és a készlethiány figyelmeztetés már ezt vegye figyelembe.
@@ -1628,9 +1637,10 @@ export default function Home() {
         date: customer.date,
         time: customer.time,
       },
+      pricingMode: customer.quotePricingMode || "bundle",
       items: items.map((item) => ({
         name: itemName(item),
-        quantity: item.quantity,
+        quantity: itemQuantity(item),
         unitPrice: itemUnitPrice(item),
         totalPrice: itemTotal(item),
       })),
@@ -1665,6 +1675,7 @@ export default function Home() {
         ...selected,
         status: "Ajánlat elküldve",
         quoteItems,
+        quotePricingMode: selected.quotePricingMode || "bundle",
       };
 
       await persistCustomerToDb(updated);
@@ -1728,9 +1739,10 @@ export default function Home() {
         date: customer.date,
         time: customer.time,
       },
+      pricingMode: customer.quotePricingMode || "bundle",
       items: items.map((item) => ({
         name: itemName(item),
-        quantity: item.quantity,
+        quantity: itemQuantity(item),
         unitPrice: itemUnitPrice(item),
         totalPrice: itemTotal(item),
       })),
@@ -2202,10 +2214,12 @@ export default function Home() {
       materialAmount={materialPrice}
       quoteEmailBusy={quoteEmailBusy}
       canEditWorkResources={canEditWorkResources}
+      quotePricingMode={selected.quotePricingMode || "bundle"}
       onBack={()=>setView("dashboard")}
       onPreview={()=>setView("quotePreview")}
       onSendQuoteEmail={sendQuoteEmail}
       onSchedule={()=>{updateCustomerStatus("Ajánlat elküldve"); setView("schedule")}}
+      onQuotePricingModeChange={updateQuotePricingMode}
       onUpdateQuoteItem={updateQuoteItem}
       onUpdateQuoteProduct={updateQuoteProduct}
       onRemoveQuoteItem={removeQuoteItem}
@@ -2406,10 +2420,7 @@ function CustomerGrid({
       <Field label="Név" value={c.name} />
       <div className="rounded-2xl bg-slate-900/80 p-4">
         <p className="text-sm text-slate-400">Telefonszám</p>
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-lg font-black">{c.phone || "nincs megadva"}</p>
-          {c.phone ? <a href={telHref(c.phone)} onClick={onExternalOpen} className="rounded-xl bg-emerald-400 px-4 py-3 text-center font-black text-slate-950">Hívás</a> : null}
-        </div>
+        <p className="mt-2 text-lg font-black">{c.phone || "nincs megadva"}</p>
       </div>
       <Field label="Email" value={c.email || "nincs megadva"} />
       <Field label="Település" value={c.city} />
