@@ -79,6 +79,8 @@ import { AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocu
 import { CustomerSearchPanel, LeadImportPanel } from "@/components/alinflow/CustomerPanels";
 import { DocumentActionButtons, DocumentLibraryActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { WorkReportPanel } from "@/components/alinflow/WorkReportPanel";
+import { LeadPanel } from "@/components/alinflow/LeadPanel";
+import { QuoteBuilderPanel } from "@/components/alinflow/QuoteBuilderPanel";
 import { WorkPagePanel } from "@/components/alinflow/WorkPagePanel";
 import { LoginScreen } from "@/components/alinflow/LoginScreen";
 import { Back, Btn, Card, Field, Gradient, Hero, InfoRow, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
@@ -2176,49 +2178,42 @@ export default function Home() {
     );
   }
 
-  if (view==="lead") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title={selected.name || "Új ügyfél"} sub={`Státusz: ${selected.status || "Visszahívandó"}`} action="Mentés" onAction={saveCustomerOnly}/><Layout><Main><Card title="Ügyféladatok szerkesztése">{selected.phone ? <a href={telHref(selected.phone)} onClick={()=>rememberExternalCustomer(selected,"lead")} className="mb-4 block rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950">Hívás</a> : null}<div className="grid grid-cols-1 gap-4 md:grid-cols-2"><EditField label="Név" value={selected.name} onChange={v=>updateSelectedField("name",v)}/><EditField label="Telefonszám" value={selected.phone} onChange={v=>updateSelectedField("phone",v)}/><EditField label="Email" value={selected.email} onChange={v=>updateSelectedField("email",v)}/><EditField label="Település" value={selected.city} onChange={v=>updateSelectedField("city",v)}/><EditField label="Cím" value={selected.address} onChange={v=>updateSelectedField("address",v)}/></div>{selected.address || selected.city ? <a href={mapsHref(selected)} target="_blank" rel="noreferrer" onClick={()=>rememberExternalCustomer(selected,"lead")} className="mt-4 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">Útvonal tervezése Google Térképpel</a> : null}</Card><Card title="Telefonos jegyzet"><textarea className="input min-h-32" value={selected.notes || ""} onChange={e=>updateSelectedField("notes", e.target.value)} placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."/></Card></Main><Side><Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"}/><StatusControl value={selected.status || "Visszahívandó"} onChange={updateCustomerStatus}/><Card title="Következő lépések">
-              <div className="grid grid-cols-1 gap-3">
-                <StepButton color="green" href={telHref(selected.phone)} onClick={()=>rememberExternalCustomer(selected,"lead")}>Hívás</StepButton>
-                <StepButton color="amber" onClick={saveCustomerOnly}>Mentés</StepButton>
-                <StepButton color="blue" onClick={()=>saveCustomer("quote")}>Mentés és ajánlat</StepButton>
-                {selected.id && customers.some((customer) => customer.id === selected.id) ? (
-                  <StepButton color="red" onClick={()=>deleteCustomer(selected)}>Ügyfél törlése</StepButton>
-                ) : null}
-              </div>
-            </Card></Side></Layout></Shell>;
+  if (view==="lead") return (
+    <LeadPanel
+      selected={selected}
+      customers={customers}
+      onBack={()=>setView("dashboard")}
+      onSaveCustomerOnly={saveCustomerOnly}
+      onSaveCustomerAndQuote={()=>saveCustomer("quote")}
+      onDeleteCustomer={deleteCustomer}
+      onRememberExternalCustomer={rememberExternalCustomer}
+      onUpdateSelectedField={updateSelectedField}
+      onUpdateCustomerStatus={updateCustomerStatus}
+    />
+  );
 
-  if (view==="quote") return <Shell><Back onClick={()=>setView("dashboard")}/><Hero title="Klíma ajánlat összeállítása" sub={`${selected.name} · ${selected.city}`} action="Ajánlat előnézet" onAction={()=>setView("quotePreview")}/><Layout><Main><Card title="Ajánlatban szereplő tételek">
-              <p className="mb-4 text-sm text-slate-400">Az ár automatikusan jön a klímából, de kézzel módosítható. Külön egyedi tételt is hozzáadhatsz.</p>
-              <div className="space-y-3">
-                {quoteItems.map((it,i)=>
-                  <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_120px_150px_44px]">
-                      {isCustomQuoteItem(it) ? (
-                        <input className="input" value={it.customName || ""} onChange={e=>updateQuoteItem(i,"customName",e.target.value)} placeholder="Klíma/tétel megnevezése" />
-                      ) : (
-                        <ProductSelect products={products} value={it.productId} onChange={v=>updateQuoteProduct(i,v)}/>
-                      )}
-                      <input className="input" type="number" min={1} value={it.quantity} onChange={e=>updateQuoteItem(i,"quantity",Math.max(1,Number(e.target.value||1)))}/>
-                      <input className="input" type="number" min={0} value={itemUnitPrice(it)} onChange={e=>updateQuoteItem(i,"customPrice",Math.max(0,Number(e.target.value||0)))}/>
-                      <button className="rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={()=>removeQuoteItem(i)}>×</button>
-                    </div>
-                    <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
-                      <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
-                      <b>{ft(itemTotal(it))}</b>
-                    </div>
-                    {hasCustomProductPrice(it) ? (
-                      <button type="button" disabled={!canEditWorkResources} onClick={()=>syncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
-                        Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-              <div className="mt-4 flex flex-col gap-3 md:flex-row">
-                <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={addQuoteItem}>+ Klíma hozzáadása</button>
-                <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={addManualQuoteItem}>+ Egyedi tétel</button>
-              </div>
-            </Card><Card title="Ár és belső bontás">{quoteItems.map((it,i)=><InfoRow key={i} label={`${it.quantity} db · ${itemName(it)}`} value={ft(itemTotal(it))} />)}<div className="mt-3 flex justify-between rounded-3xl bg-cyan-300 p-5 text-xl text-slate-950"><b>Ügyfél által fizetendő</b><b>{ft(t)}</b></div><div className="mt-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5"><InfoRow label="Adorján Alin E.V. — telepítési munkadíj" value={ft(installer)}/><InfoRow label="AMOVA 4U Kft. — klíma + szerelési anyagok" value={ft(materialPrice)}/></div></Card></Main><Side><Gradient title="Ajánlat státusz" value="Küldésre kész"/><Card title="Gyors műveletek"><p className="mb-3 text-sm leading-relaxed text-slate-400">Az ajánlat email telefonról is ugyanígy küldhető, nem kell külön levelezőappot megnyitni.</p><button onClick={sendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-3xl bg-gradient-to-br from-blue-400 to-indigo-500 px-5 py-4 text-center font-black text-white shadow-xl disabled:cursor-wait disabled:opacity-60">{quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}</button><Btn color="cyan" onClick={()=>{updateCustomerStatus("Ajánlat elküldve"); setView("schedule")}}>Időpont keresése</Btn></Card></Side></Layout></Shell>;
+  if (view==="quote") return (
+    <QuoteBuilderPanel
+      selected={selected}
+      quoteItems={quoteItems}
+      products={products}
+      totalAmount={t}
+      installerAmount={installer}
+      materialAmount={materialPrice}
+      quoteEmailBusy={quoteEmailBusy}
+      canEditWorkResources={canEditWorkResources}
+      onBack={()=>setView("dashboard")}
+      onPreview={()=>setView("quotePreview")}
+      onSendQuoteEmail={sendQuoteEmail}
+      onSchedule={()=>{updateCustomerStatus("Ajánlat elküldve"); setView("schedule")}}
+      onUpdateQuoteItem={updateQuoteItem}
+      onUpdateQuoteProduct={updateQuoteProduct}
+      onRemoveQuoteItem={removeQuoteItem}
+      onSyncQuoteItemPrice={syncQuoteItemPrice}
+      onAddQuoteItem={addQuoteItem}
+      onAddManualQuoteItem={addManualQuoteItem}
+    />
+  );
 
 
   if (view==="quotePreview") {
