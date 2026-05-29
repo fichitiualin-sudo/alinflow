@@ -3,7 +3,7 @@
 import type { Customer } from "@/lib/alinflow/types";
 import { STATUS_OPTIONS } from "@/lib/alinflow/constants";
 import { mapsHref, telHref } from "@/lib/alinflow/format";
-import { Back, Card, Gradient, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Card, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
 
 type LeadPanelProps = {
   selected: Customer;
@@ -23,6 +23,32 @@ function EditField({ label, value, onChange }: { label: string; value: string; o
       <span className="text-sm text-slate-400">{label}</span>
       <input className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={value || ""} onChange={(event) => onChange(event.target.value)} />
     </label>
+  );
+}
+
+function PhoneEditField({
+  value,
+  onChange,
+  onCall,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCall: () => void;
+}) {
+  const hasPhone = value.trim().length > 0;
+
+  return (
+    <div className="rounded-2xl bg-slate-900/80 p-4">
+      <span className="text-sm text-slate-400">Telefonszám</span>
+      <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <input className="w-full min-w-0 bg-transparent text-lg font-black outline-none" value={value || ""} onChange={(event) => onChange(event.target.value)} />
+        {hasPhone ? (
+          <a href={telHref(value)} onClick={onCall} className="shrink-0 rounded-xl bg-emerald-400 px-4 py-3 text-center text-sm font-black text-slate-950">
+            Hívás
+          </a>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -69,7 +95,7 @@ export function LeadPanel({
           <Card title="Ügyféladatok szerkesztése">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <EditField label="Név" value={selected.name} onChange={(value) => onUpdateSelectedField("name", value)} />
-              <EditField label="Telefonszám" value={selected.phone} onChange={(value) => onUpdateSelectedField("phone", value)} />
+              <PhoneEditField value={selected.phone} onChange={(value) => onUpdateSelectedField("phone", value)} onCall={() => onRememberExternalCustomer(selected, "lead")} />
               <EditField label="Email" value={selected.email} onChange={(value) => onUpdateSelectedField("email", value)} />
               <EditField label="Település" value={selected.city} onChange={(value) => onUpdateSelectedField("city", value)} />
               <EditField label="Cím" value={selected.address} onChange={(value) => onUpdateSelectedField("address", value)} />
@@ -90,12 +116,10 @@ export function LeadPanel({
           </Card>
         </Main>
         <Side>
-          <Gradient title="Aktuális státusz" value={selected.status || "Visszahívandó"} />
           <Card title="Következő lépések">
             <div className="grid grid-cols-1 gap-3">
-              <StepButton color="green" href={telHref(selected.phone)} onClick={() => onRememberExternalCustomer(selected, "lead")}>Hívás</StepButton>
               <StepButton color="amber" onClick={onSaveCustomerOnly}>Mentés</StepButton>
-              <StepButton color="blue" onClick={onSaveCustomerAndQuote}>Mentés és ajánlat</StepButton>
+              <StepButton color="blue" onClick={onSaveCustomerAndQuote}>Ajánlat / Időpont</StepButton>
               {isExistingCustomer ? (
                 <StepButton color="red" onClick={() => onDeleteCustomer(selected)}>Ügyfél törlése</StepButton>
               ) : null}
