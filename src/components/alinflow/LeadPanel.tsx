@@ -68,11 +68,6 @@ export function LeadPanel({
       <Layout>
         <Main>
           <Card title="Ügyféladatok szerkesztése">
-            {selected.phone ? (
-              <a href={telHref(selected.phone)} onClick={() => onRememberExternalCustomer(selected, "lead")} className="mb-4 block rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950">
-                Hívás
-              </a>
-            ) : null}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <EditField label="Név" value={selected.name} onChange={(value) => onUpdateSelectedField("name", value)} />
               <EditField label="Telefonszám" value={selected.phone} onChange={(value) => onUpdateSelectedField("phone", value)} />
