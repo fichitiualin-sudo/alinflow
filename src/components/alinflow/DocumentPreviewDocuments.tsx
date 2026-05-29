@@ -1,6 +1,6 @@
 import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
-import { itemName, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
+import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
 import { defaultWorkDescription, formatSignedAt, workAcceptanceText } from "@/lib/alinflow/work-report";
 
 function formatDocumentDate(value?: string) {
@@ -56,7 +56,7 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
             <tbody>
               {shownItems.map((item, index)=><tr key={`${item.productId}-${index}`}>
                 <td className="border border-slate-900 p-1.5 print:p-1">{itemName(item)}</td>
-                <td className="border border-slate-900 p-1.5 text-center font-bold print:p-1">{item.quantity}</td>
+                <td className="border border-slate-900 p-1.5 text-center font-bold print:p-1">{itemQuantity(item)}</td>
                 <td className="border border-slate-900 p-1.5 print:p-1">szereléssel együtt</td>
               </tr>)}
             </tbody>
@@ -139,7 +139,7 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems }: { 
           <tbody>
             {shownItems.map((item, index)=><tr key={`${item.productId}-${index}`}>
               <td className="border border-slate-900 p-1.5 print:p-1">{itemName(item)}</td>
-              <td className="border border-slate-900 p-1.5 text-center font-bold print:p-1">{item.quantity}</td>
+              <td className="border border-slate-900 p-1.5 text-center font-bold print:p-1">{itemQuantity(item)}</td>
             </tr>)}
           </tbody>
         </table>
@@ -167,6 +167,7 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
   const sum = total(items);
   const installerAmount = quoteInstallTotal(items);
   const materialAmount = Math.max(0, sum - installerAmount);
+  const quoteIsAlternatives = isQuoteAlternatives(customer.quotePricingMode);
   return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
     <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
       <div className="flex items-start gap-4">
@@ -193,15 +194,20 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
 
     <div className="mt-4 rounded-2xl bg-slate-100 p-5">
       <p className="text-sm text-slate-500">Ajánlat összesítő</p>
-      <p className="mt-1 text-3xl font-black">{ft(sum)}</p>
-      <p className="mt-1 text-sm text-slate-600">Bruttó végösszeg alapszereléssel</p>
+      {quoteIsAlternatives ? <>
+        <p className="mt-1 text-3xl font-black">Választható ajánlatok</p>
+        <p className="mt-1 text-sm text-slate-600">A tételek külön-külön értendők, nem összeadandóak.</p>
+      </> : <>
+        <p className="mt-1 text-3xl font-black">{ft(sum)}</p>
+        <p className="mt-1 text-sm text-slate-600">Bruttó végösszeg alapszereléssel</p>
+      </>}
     </div>
 
     <div className="mt-6 space-y-3">
       {items.map((item, index)=><div key={`${item.productId}-${index}`} className="rounded-2xl border border-slate-200 p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-lg font-black">{item.quantity} db · {itemName(item)}</p>
+            <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
             <p className="mt-1 text-sm text-slate-600">{ft(itemUnitPrice(item))} / db · telepítéssel együtt</p>
           </div>
           <p className="text-xl font-black">{ft(itemTotal(item))}</p>
@@ -209,10 +215,17 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
       </div>)}
     </div>
 
-    <div className="mt-6 flex flex-col gap-2 rounded-2xl bg-slate-950 p-5 text-white sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-xl font-black">Fizetendő bruttó végösszeg</p>
-      <p className="text-2xl font-black">{ft(sum)}</p>
-    </div>
+    {quoteIsAlternatives ? (
+      <div className="mt-6 rounded-2xl bg-slate-950 p-5 text-white">
+        <p className="text-xl font-black">Fontos: a fenti tételek külön-külön értendők.</p>
+        <p className="mt-1 text-sm text-slate-300">Az ügyfél a számára megfelelő klímát választhatja ki; ezek nem egy összeadott csomag árai.</p>
+      </div>
+    ) : (
+      <div className="mt-6 flex flex-col gap-2 rounded-2xl bg-slate-950 p-5 text-white sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xl font-black">Fizetendő bruttó végösszeg</p>
+        <p className="text-2xl font-black">{ft(sum)}</p>
+      </div>
+    )}
 
     <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
       <h3 className="text-lg font-black">Alapszerelés tartalma</h3>
@@ -237,12 +250,14 @@ export function QuoteDocument({ customer, quoteItems }: { customer: Customer; qu
       </ul>
     </div>
 
-    <div className="mt-4 rounded-2xl bg-amber-50 p-5 text-sm leading-relaxed text-slate-800">
-      <h3 className="font-black">Belső számlázási bontás</h3>
-      <p className="mt-3">Adorján Alin E.V. – klímatelepítési munkadíj: <strong>{ft(installerAmount)}</strong></p>
-      <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: <strong>{ft(materialAmount)}</strong></p>
-      <p className="mt-2 text-xs">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</p>
-    </div>
+    {quoteIsAlternatives ? null : (
+      <div className="mt-4 rounded-2xl bg-amber-50 p-5 text-sm leading-relaxed text-slate-800">
+        <h3 className="font-black">Belső számlázási bontás</h3>
+        <p className="mt-3">Adorján Alin E.V. – klímatelepítési munkadíj: <strong>{ft(installerAmount)}</strong></p>
+        <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: <strong>{ft(materialAmount)}</strong></p>
+        <p className="mt-2 text-xs">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</p>
+      </div>
+    )}
 
     <div className="mt-8 text-sm text-slate-700">
       <p>Üdvözlettel,</p>
@@ -296,7 +311,7 @@ export function AppointmentConfirmationDocument({ customer, quoteItems }: { cust
     <div className="mt-6 space-y-3">
       {items.map((item, i)=><div key={`${item.productId}-${i}`} className="rounded-2xl border border-slate-200 p-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-lg font-black">{item.quantity} db · {itemName(item)}</p>
+          <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
           <p className="text-sm text-slate-600">szereléssel együtt</p>
         </div>
       </div>)}
