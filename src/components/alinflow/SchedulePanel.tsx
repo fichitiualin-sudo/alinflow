@@ -2,7 +2,7 @@
 
 import type { CalendarMode, ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
 import { isCustomQuoteItem, itemName, sortProducts } from "@/lib/alinflow/products";
-import { Back, Btn, Card, Gradient, Hero, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 
 type SchedulePanelProps = {
@@ -49,6 +49,12 @@ function ProductSelect({ products, value, onChange, disabled = false }: { produc
   );
 }
 
+function numericInputValue(value: string) {
+  if (value === "") return "";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
+}
+
 export function SchedulePanel({
   selected,
   isExistingSchedule,
@@ -80,12 +86,6 @@ export function SchedulePanel({
   return (
     <Shell>
       <Back onClick={onBack} />
-      <Hero
-        title={isExistingSchedule ? "Időpont módosítása" : "Időpont választása"}
-        sub={`${selected.name} · ${selected.city}`}
-        action={isExistingSchedule ? "Időpont frissítése" : "Időpont mentése"}
-        onAction={onSaveSchedule}
-      />
       <Layout>
         <Main>
           <Calendar
@@ -144,7 +144,7 @@ export function SchedulePanel({
                     type="number"
                     min={1}
                     value={item.quantity}
-                    onChange={(event) => onUpdateQuoteItem(index, "quantity", Math.max(1, Number(event.target.value || 1)))}
+                    onChange={(event) => onUpdateQuoteItem(index, "quantity", numericInputValue(event.target.value))}
                   />
                 </div>
               </div>

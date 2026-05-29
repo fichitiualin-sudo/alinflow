@@ -38,12 +38,6 @@ export function WorkReportPanel({
   return (
     <Shell>
       <Back onClick={onBack}/>
-      <Hero
-        title="Klímás munkalap"
-        sub={`${selected.name} · ${selected.city} · ${selected.date || scheduleDate}`}
-        action={workReportBusy ? "Mentés..." : "Munkalap mentése"}
-        onAction={()=>onSave(false)}
-      />
       {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
       <Layout>
         <Main>
@@ -113,8 +107,6 @@ function Layout({children}:{children:React.ReactNode}){return <section className
 function Main({children}:{children:React.ReactNode}){return <div className="space-y-6 xl:col-span-2">{children}</div>}
 function Side({children}:{children:React.ReactNode}){return <aside className="space-y-6">{children}</aside>}
 function Card({title,children}:{title:string;children:React.ReactNode}){return <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl"><h2 className="mb-5 text-2xl font-black">{title}</h2>{children}</section>}
-function Btn({children,onClick,color="cyan"}:{children:React.ReactNode;onClick?:()=>void;color?:string}){const cls = color === "green" ? "bg-emerald-400" : color === "blue" ? "bg-blue-400" : "bg-cyan-300"; return <button onClick={onClick} className={`${cls} rounded-2xl px-5 py-4 font-black text-slate-950 shadow-xl`}>{children}</button>}
-function Hero({title,sub,action,onAction}:{title:string;sub:string;action:string;onAction?:()=>void}){return <section className="rounded-[2.5rem] border border-cyan-300/20 bg-gradient-to-br from-slate-950 to-slate-900 p-6 shadow-2xl md:p-8"><div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between"><div><h1 className="text-4xl font-black leading-tight md:text-5xl">{title}</h1>{sub ? <p className="mt-3 text-lg text-slate-400">{sub}</p> : null}</div><Btn onClick={onAction}>{action}</Btn></div></section>}
 function Back({onClick}:{onClick:()=>void}){return <div className="sticky top-3 z-50 w-fit print:hidden"><button onClick={onClick} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur">← Vissza</button></div>}
 function Field({label,value}:{label:string;value:string}){return <div className="rounded-2xl bg-slate-900/80 p-4"><p className="text-sm text-slate-400">{label}</p><p className="mt-1 text-lg font-black">{value}</p></div>}
 function EditField({label,value,onChange}:{label:string;value:string;onChange:(value:string)=>void}) {return <label className="rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">{label}</span><input className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={value || ""} onChange={(event) => onChange(event.target.value)} /></label>}

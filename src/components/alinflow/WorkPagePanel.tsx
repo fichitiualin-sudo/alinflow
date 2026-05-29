@@ -1,7 +1,7 @@
 "use client";
 
 import type { Customer, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistState } from "@/lib/alinflow/types";
-import { Btn, Card, Field, Gradient, Hero, Layout, Main, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { Btn, Card, Field, Gradient,  Layout, Main, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
@@ -135,12 +135,6 @@ export function WorkPagePanel({
           ← Vissza
         </button>
       </div>
-      <Hero
-        title={`${selected.name} — Munkaoldal`}
-        sub={`${selected.city} · ${selected.date || scheduleDate} · ${selected.time || shownTime}`}
-        action="Teljes lezárás ellenőrzése"
-        onAction={onCloseWork}
-      />
       {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
       <Layout>
         <Main>

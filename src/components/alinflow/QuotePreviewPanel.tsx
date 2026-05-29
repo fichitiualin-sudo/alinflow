@@ -1,7 +1,7 @@
 import type { Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types";
 import { displayAddress, ft } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemPriceLine, itemQuantity, itemTotal } from "@/lib/alinflow/products";
-import { Back, Btn, Card, Hero, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuotePreviewPanelProps = {
   selected: Customer;
@@ -36,7 +36,6 @@ export function QuotePreviewPanel({
     <Shell>
       <div className="no-print">
         <Back onClick={onBack} />
-        <Hero title="Ajánlat előnézet" sub={`${selected.name} · ${selected.city}`} action="Nyomtatás / mentés PDF-be" onAction={onPrint} />
       </div>
       <Layout>
         <Main>
@@ -155,6 +154,7 @@ export function QuotePreviewPanel({
           <div className="no-print">
             <Card title="Ajánlat műveletek">
               <div className="space-y-3">
+                <Btn color="blue" onClick={onPrint}>Nyomtatás / mentés PDF-be</Btn>
                 <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
                   <input
                     type="checkbox"

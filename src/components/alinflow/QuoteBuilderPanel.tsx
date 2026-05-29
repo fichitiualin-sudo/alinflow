@@ -3,7 +3,7 @@
 import type { ClimateProduct, Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
 import { hasCustomProductPrice, isCustomQuoteItem, isQuoteAlternatives, itemName, itemPriceLine, itemQuantity, itemTotal, itemUnitPrice, prod, sortProducts } from "@/lib/alinflow/products";
-import { Back, Btn, Card, Gradient, Hero, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuoteBuilderPanelProps = {
   selected: Customer;
@@ -80,7 +80,6 @@ export function QuoteBuilderPanel({
   return (
     <Shell>
       <Back onClick={onBack} />
-      <Hero title="Klíma ajánlat összeállítása" sub={`${selected.name} · ${selected.city}`} action="Ajánlat előnézet" onAction={onPreview} />
       <Layout>
         <Main>
           <Card title="Ajánlatban szereplő tételek">
@@ -153,6 +152,7 @@ export function QuoteBuilderPanel({
             </div>
           </Card>
           <Card title="Gyors műveletek">
+            <Btn color="blue" onClick={onPreview}>Ajánlat előnézet</Btn>
             <button onClick={onSendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-3xl bg-gradient-to-br from-blue-400 to-indigo-500 px-5 py-4 text-center font-black text-white shadow-xl disabled:cursor-wait disabled:opacity-60">
               {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
             </button>
