@@ -1,8 +1,8 @@
 "use client";
 
-import type { ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
+import type { ClimateProduct, Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
-import { hasCustomProductPrice, isCustomQuoteItem, itemName, itemPriceLine, itemTotal, itemUnitPrice, prod, sortProducts } from "@/lib/alinflow/products";
+import { hasCustomProductPrice, isCustomQuoteItem, isQuoteAlternatives, itemName, itemPriceLine, itemQuantity, itemTotal, itemUnitPrice, prod, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, Hero, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuoteBuilderPanelProps = {
@@ -14,10 +14,12 @@ type QuoteBuilderPanelProps = {
   materialAmount: number;
   quoteEmailBusy: boolean;
   canEditWorkResources: boolean;
+  quotePricingMode: QuotePricingMode;
   onBack: () => void;
   onPreview: () => void;
   onSendQuoteEmail: () => void;
   onSchedule: () => void;
+  onQuotePricingModeChange: (value: QuotePricingMode) => void;
   onUpdateQuoteItem: (index: number, key: keyof QuoteItem, value: string | number | boolean) => void;
   onUpdateQuoteProduct: (index: number, productId: string) => void;
   onRemoveQuoteItem: (index: number) => void;
@@ -39,6 +41,18 @@ function ProductSelect({ products, value, onChange, disabled = false }: { produc
   );
 }
 
+function numericInputValue(value: string) {
+  if (value === "") return "";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
+}
+
+function priceInputValue(value: string) {
+  if (value === "") return "";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : "";
+}
+
 export function QuoteBuilderPanel({
   selected,
   quoteItems,
@@ -48,10 +62,12 @@ export function QuoteBuilderPanel({
   materialAmount,
   quoteEmailBusy,
   canEditWorkResources,
+  quotePricingMode,
   onBack,
   onPreview,
   onSendQuoteEmail,
   onSchedule,
+  onQuotePricingModeChange,
   onUpdateQuoteItem,
   onUpdateQuoteProduct,
   onRemoveQuoteItem,
@@ -59,6 +75,8 @@ export function QuoteBuilderPanel({
   onAddQuoteItem,
   onAddManualQuoteItem,
 }: QuoteBuilderPanelProps) {
+  const quoteIsAlternatives = isQuoteAlternatives(quotePricingMode);
+
   return (
     <Shell>
       <Back onClick={onBack} />
@@ -66,6 +84,18 @@ export function QuoteBuilderPanel({
       <Layout>
         <Main>
           <Card title="Ajánlatban szereplő tételek">
+            <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-cyan-300/20 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
+              <input
+                type="checkbox"
+                checked={quoteIsAlternatives}
+                onChange={(event) => onQuotePricingModeChange(event.target.checked ? "alternatives" : "bundle")}
+                className="mt-1 h-5 w-5 accent-cyan-300"
+              />
+              <span>
+                <span className="block text-base font-black text-slate-100">Tételek külön-külön értendők</span>
+                <span className="mt-1 block text-slate-400">Kapcsold be, ha több klímát csak ár-összehasonlításként küldesz. Ilyenkor az emailben/PDF-ben nem adódnak össze a tételek.</span>
+              </span>
+            </label>
             <div className="space-y-3">
               {quoteItems.map((item, index) => (
                 <div key={index} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
@@ -75,8 +105,8 @@ export function QuoteBuilderPanel({
                     ) : (
                       <ProductSelect products={products} value={item.productId} onChange={(value) => onUpdateQuoteProduct(index, value)} />
                     )}
-                    <input className="input" type="number" min={1} value={item.quantity} onChange={(event) => onUpdateQuoteItem(index, "quantity", Math.max(1, Number(event.target.value || 1)))} />
-                    <input className="input" type="number" min={0} value={itemUnitPrice(item)} onChange={(event) => onUpdateQuoteItem(index, "customPrice", Math.max(0, Number(event.target.value || 0)))} />
+                    <input className="input" type="number" min={1} value={item.quantity} onChange={(event) => onUpdateQuoteItem(index, "quantity", numericInputValue(event.target.value))} />
+                    <input className="input" type="number" min={0} value={item.customPrice ?? itemUnitPrice(item)} onChange={(event) => onUpdateQuoteItem(index, "customPrice", priceInputValue(event.target.value))} />
                     <button className="rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(index)}>×</button>
                   </div>
                   <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
@@ -97,12 +127,25 @@ export function QuoteBuilderPanel({
             </div>
           </Card>
           <Card title="Ár és belső bontás">
-            {quoteItems.map((item, index) => <InfoRow key={index} label={`${item.quantity} db · ${itemName(item)}`} value={ft(itemTotal(item))} />)}
-            <div className="mt-3 flex justify-between rounded-3xl bg-cyan-300 p-5 text-xl text-slate-950"><b>Ügyfél által fizetendő</b><b>{ft(totalAmount)}</b></div>
-            <div className="mt-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5">
-              <InfoRow label="Adorján Alin E.V. — telepítési munkadíj" value={ft(installerAmount)} />
-              <InfoRow label="AMOVA 4U Kft. — klíma + szerelési anyagok" value={ft(materialAmount)} />
-            </div>
+            {quoteItems.map((item, index) => <InfoRow key={index} label={`${itemQuantity(item)} db · ${itemName(item)}`} value={ft(itemTotal(item))} />)}
+            {quoteIsAlternatives ? (
+              <div className="mt-3 rounded-3xl bg-cyan-300 p-5 text-slate-950">
+                <b className="block text-xl">Választható ajánlatok</b>
+                <span className="mt-1 block text-sm font-bold">A tételek külön-külön értendők, nem összeadandó végösszegként.</span>
+              </div>
+            ) : (
+              <div className="mt-3 flex justify-between rounded-3xl bg-cyan-300 p-5 text-xl text-slate-950"><b>Ügyfél által fizetendő</b><b>{ft(totalAmount)}</b></div>
+            )}
+            {quoteIsAlternatives ? (
+              <div className="mt-6 rounded-[2rem] border border-amber-300/20 bg-amber-300/10 p-5 text-sm font-bold text-amber-100">
+                A belső számlázási bontás majd a kiválasztott klíma alapján lesz értelmezhető.
+              </div>
+            ) : (
+              <div className="mt-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5">
+                <InfoRow label="Adorján Alin E.V. — telepítési munkadíj" value={ft(installerAmount)} />
+                <InfoRow label="AMOVA 4U Kft. — klíma + szerelési anyagok" value={ft(materialAmount)} />
+              </div>
+            )}
           </Card>
         </Main>
         <Side>
