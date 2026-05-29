@@ -73,12 +73,15 @@ function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePri
       const priceLine = qty > 1
         ? `${ft(unitPrice || Math.round(totalPrice / qty))} / db <span style="white-space:nowrap">(szereléssel együtt)</span>`
         : `${ft(totalPrice)} <span style="white-space:nowrap">(szereléssel együtt)</span>`;
-      const titlePrefix = quoteIsAlternatives ? `${index + 1}. lehetőség · ` : "";
+      const optionBadge = quoteIsAlternatives
+        ? `<div style="display:inline-block;background:#e0f2fe;border:1px solid #bae6fd;color:#0369a1;border-radius:999px;padding:5px 11px;margin-bottom:11px;font-size:12px;line-height:1;font-weight:900;letter-spacing:.02em">${index + 1}. lehetőség</div>`
+        : "";
       return `
-        <div style="border:1px solid #e5e7eb;border-radius:18px;padding:16px 18px;margin:12px 0;background:#ffffff">
-          <div style="font-size:17px;line-height:1.35;font-weight:800;color:#020617">${titlePrefix}${qty} db · ${name}</div>
-          <div style="margin-top:5px;font-size:14px;color:#64748b">${priceLine}</div>
-          <div style="margin-top:12px;font-size:18px;font-weight:900;color:#020617">${quoteIsAlternatives ? "Ajánlati ár: " : ""}${ft(totalPrice)}</div>
+        <div style="border:1px solid #e5e7eb;border-radius:18px;padding:18px 20px;margin:14px 0;background:${quoteIsAlternatives ? "#f8fafc" : "#ffffff"}">
+          ${optionBadge}
+          <div style="font-size:18px;line-height:1.35;font-weight:900;color:#020617">${qty} db · ${name}</div>
+          <div style="margin-top:7px;font-size:14px;color:#64748b;line-height:1.45">${priceLine}</div>
+          <div style="margin-top:13px;padding-top:13px;border-top:1px solid #e5e7eb;font-size:19px;font-weight:900;color:#020617">${quoteIsAlternatives ? "Ajánlati ár: " : ""}${ft(totalPrice)}</div>
         </div>
       `;
     })
@@ -140,17 +143,7 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
 
           ${itemRows(items, totalAmount, pricingMode)}
 
-          ${quoteIsAlternatives ? `
-            <div style="margin:22px 0 8px 0;background:#050816;border-radius:18px;padding:18px 20px;color:#ffffff;font-size:16px;line-height:1.55">
-              <div style="font-size:19px;font-weight:900;margin-bottom:6px">Fontos: a fenti tételek külön-külön értendők.</div>
-              <div style="color:#cbd5e1">Az ügyfél a számára megfelelő klímát választhatja ki; ezek nem egy összeadott csomag árai.</div>
-            </div>
-          ` : `
-            <div class="total-row" style="margin:22px 0 8px 0;background:#050816;border-radius:18px;padding:18px 20px;color:#ffffff;font-size:19px;font-weight:900;display:flex;justify-content:space-between;gap:16px">
-              <div>Fizetendő bruttó végösszeg</div>
-              <span style="text-align:right;white-space:nowrap">${ft(totalAmount)}</span>
-            </div>
-          `}
+
         </div>
 
         <div class="section" style="padding:0 32px 28px 32px">
