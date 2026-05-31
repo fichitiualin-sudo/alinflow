@@ -14,6 +14,22 @@ function PanelCard({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
+const PANEL_PAGE_SIZE = 20;
+
+function formatCustomerCreatedAt(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function customerCreatedLabel(customer: Customer) {
+  const created = formatCustomerCreatedAt(customer.createdAt);
+  if (!created) return "";
+  const source = (customer.source || "").toLocaleLowerCase("hu-HU");
+  return source.includes("csv") || source.includes("import") ? `CSV import · bekerült: ${created}` : `Bekerült: ${created}`;
+}
+
 export function CustomerSearchPanel({
   title = "Ügyfélkereső",
   search,
@@ -37,7 +53,7 @@ export function CustomerSearchPanel({
   onOpenCustomer: (customer: Customer) => void;
   customerStatusLabel: (customer: Customer) => string;
 }) {
-  const results = filteredCustomers.slice(0, 8);
+  const results = filteredCustomers.slice(0, PANEL_PAGE_SIZE);
 
   return (
     <PanelCard title={title}>
@@ -74,6 +90,7 @@ export function CustomerSearchPanel({
                     <p className="font-black text-white">{customer.name || "Névtelen ügyfél"}</p>
                     <p className="mt-1 text-xs text-slate-400">{customer.city || "nincs település"} · {customer.phone || customer.email || "nincs elérhetőség"}</p>
                     <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
+                    {customerCreatedLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerCreatedLabel(customer)}</p> : null}
                   </div>
                   <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black text-slate-200">{customerStatusLabel(customer)}</span>
                 </div>
@@ -105,7 +122,7 @@ export function LeadImportPanel({
   const importable = rows.filter((row) => !row.duplicate && !row.invalid);
   const skipped = rows.filter((row) => row.duplicate || row.invalid);
   const merged = rows.filter((row) => !row.duplicate && !row.invalid && (row.mergedRows || 1) > 1).length;
-  const previewRows = rows.slice(0, 6);
+  const previewRows = rows.slice(0, PANEL_PAGE_SIZE);
 
   return (
     <PanelCard title="Meta lead import">

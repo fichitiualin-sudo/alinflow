@@ -7,12 +7,13 @@ import { Back, Card, Gradient, Layout, Main, Shell, Side } from "./LayoutPrimiti
 type ArchivePanelProps = {
   filteredArchivedCustomers: Customer[];
   visibleArchivedCustomers: Customer[];
-  archiveVisibleCount: number;
+  currentPage: number;
+  pageCount: number;
+  pageSize: number;
   hasCustomerFilter: boolean;
-  hasMoreArchivedCustomers: boolean;
   searchPanel: ReactNode;
   onBack: () => void;
-  onLoadMore: () => void;
+  onPageChange: (page: number) => void;
   onOpenCustomer: (customer: Customer, view: View) => void;
   onRestoreCustomer: (customer: Customer) => void;
 };
@@ -20,12 +21,13 @@ type ArchivePanelProps = {
 export function ArchivePanel({
   filteredArchivedCustomers,
   visibleArchivedCustomers,
-  archiveVisibleCount,
+  currentPage,
+  pageCount,
+  pageSize,
   hasCustomerFilter,
-  hasMoreArchivedCustomers,
   searchPanel,
   onBack,
-  onLoadMore,
+  onPageChange,
   onOpenCustomer,
   onRestoreCustomer,
 }: ArchivePanelProps) {
@@ -38,7 +40,7 @@ export function ArchivePanel({
           <Card title="Archív ügyfelek">
             <div className="mb-4 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
               <span>{filteredArchivedCustomers.length} lezárt / lemondott ügyfél</span>
-              {!hasCustomerFilter && filteredArchivedCustomers.length > archiveVisibleCount ? <span>Első {archiveVisibleCount} megjelenítve</span> : null}
+              {filteredArchivedCustomers.length > pageSize ? <span>{currentPage}. oldal / {pageCount} · max. {pageSize} ügyfél oldalanként</span> : null}
             </div>
             <div className="space-y-3">
               {filteredArchivedCustomers.length === 0 ? (
@@ -73,13 +75,28 @@ export function ArchivePanel({
                   </div>
                 </div>
               ))}
-              {hasMoreArchivedCustomers ? (
-                <button
-                  onClick={onLoadMore}
-                  className="w-full rounded-2xl border border-cyan-300/30 bg-cyan-300/10 px-5 py-4 font-black text-cyan-100"
-                >
-                  További 30 ügyfél betöltése
-                </button>
+              {filteredArchivedCustomers.length > pageSize ? (
+                <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-bold text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+                  <span>Maximum {pageSize} ügyfél jelenik meg egy oldalon.</span>
+                  <div className="grid grid-cols-2 gap-2 sm:flex">
+                    <button
+                      type="button"
+                      disabled={currentPage <= 1}
+                      onClick={() => onPageChange(currentPage - 1)}
+                      className="rounded-xl bg-white/10 px-4 py-2 font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Előző
+                    </button>
+                    <button
+                      type="button"
+                      disabled={currentPage >= pageCount}
+                      onClick={() => onPageChange(currentPage + 1)}
+                      className="rounded-xl bg-cyan-300 px-4 py-2 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Következő
+                    </button>
+                  </div>
+                </div>
               ) : null}
             </div>
           </Card>

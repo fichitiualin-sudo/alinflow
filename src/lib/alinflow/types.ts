@@ -51,6 +51,8 @@ export type Customer = {
   notes?: string;
   date?: string;
   time?: string;
+  createdAt?: string;
+  updatedAt?: string;
   quoteItems: QuoteItem[];
   productId?: string;
   quotePricingMode?: QuotePricingMode;

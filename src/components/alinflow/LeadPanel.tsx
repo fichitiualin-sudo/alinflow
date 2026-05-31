@@ -17,6 +17,20 @@ type LeadPanelProps = {
   onUpdateCustomerStatus: (status: string) => void;
 };
 
+function formatCustomerCreatedAt(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function customerCreatedLabel(customer: Customer) {
+  const created = formatCustomerCreatedAt(customer.createdAt);
+  if (!created) return "";
+  const source = (customer.source || "").toLocaleLowerCase("hu-HU");
+  return source.includes("csv") || source.includes("import") ? `CSV import · bekerült az AlinFlow-ba: ${created}` : `Bekerült az AlinFlow-ba: ${created}`;
+}
+
 function EditField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="rounded-2xl bg-slate-900/80 p-4">
@@ -100,6 +114,11 @@ export function LeadPanel({
               <EditField label="Település" value={selected.city} onChange={(value) => onUpdateSelectedField("city", value)} />
               <EditField label="Cím" value={selected.address} onChange={(value) => onUpdateSelectedField("address", value)} />
             </div>
+            {customerCreatedLabel(selected) ? (
+              <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-100">
+                {customerCreatedLabel(selected)}
+              </div>
+            ) : null}
             {selected.address || selected.city ? (
               <a href={mapsHref(selected)} target="_blank" rel="noreferrer" onClick={() => onRememberExternalCustomer(selected, "lead")} className="mt-4 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">
                 Útvonal tervezése Google Térképpel

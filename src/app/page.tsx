@@ -107,6 +107,87 @@ import {
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 
+const LIST_PAGE_SIZE = 20;
+
+function customerCreatedAtMs(customer: Pick<Customer, "createdAt">) {
+  if (!customer.createdAt) return 0;
+  const date = new Date(customer.createdAt);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function sortCustomersByCreatedAtDesc(list: Customer[]) {
+  return [...list].sort((a, b) => customerCreatedAtMs(b) - customerCreatedAtMs(a));
+}
+
+function paginateItems<T>(items: T[], page: number) {
+  const pageCount = Math.max(1, Math.ceil(items.length / LIST_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, page), pageCount);
+  const start = (currentPage - 1) * LIST_PAGE_SIZE;
+  return {
+    currentPage,
+    pageCount,
+    items: items.slice(start, start + LIST_PAGE_SIZE),
+  };
+}
+
+function formatCustomerCreatedAt(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function isCsvImportedCustomer(customer: Customer) {
+  const source = (customer.source || "").toLocaleLowerCase("hu-HU");
+  return source.includes("csv") || source.includes("import");
+}
+
+function customerCreatedLabel(customer: Customer) {
+  const created = formatCustomerCreatedAt(customer.createdAt);
+  if (!created) return "";
+  return isCsvImportedCustomer(customer) ? `CSV import · bekerült: ${created}` : `Bekerült: ${created}`;
+}
+
+function PaginationControls({
+  currentPage,
+  pageCount,
+  totalCount,
+  label = "elem",
+  onPageChange,
+}: {
+  currentPage: number;
+  pageCount: number;
+  totalCount: number;
+  label?: string;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalCount <= LIST_PAGE_SIZE) return null;
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-bold text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+      <span>{currentPage}. oldal / {pageCount} · maximum {LIST_PAGE_SIZE} {label} oldalanként</span>
+      <div className="grid grid-cols-2 gap-2 sm:flex">
+        <button
+          type="button"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="rounded-xl bg-white/10 px-4 py-2 font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Előző
+        </button>
+        <button
+          type="button"
+          disabled={currentPage >= pageCount}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="rounded-xl bg-cyan-300 px-4 py-2 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Következő
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [view,setView] = useState<View>("dashboard");
   const [taskFilter,setTaskFilter] = useState<TaskFilter>("today");
@@ -117,7 +198,9 @@ export default function Home() {
   const [customers,setCustomers] = useState<Customer[]>([]);
   const [customerSearch,setCustomerSearch] = useState("");
   const [customerStatusFilter,setCustomerStatusFilter] = useState("all");
-  const [archiveVisibleCount,setArchiveVisibleCount] = useState(30);
+  const [leadPage,setLeadPage] = useState(1);
+  const [archivePage,setArchivePage] = useState(1);
+  const [documentPage,setDocumentPage] = useState(1);
   const [selected,setSelected] = useState<Customer>(EMPTY_CUSTOMER);
   const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(EMPTY_CUSTOMER.quoteItems);
   const [scheduleDate,setScheduleDate] = useState(() => todayIso());
@@ -198,7 +281,9 @@ export default function Home() {
   }, [view]);
 
   useEffect(() => {
-    setArchiveVisibleCount(30);
+    setLeadPage(1);
+    setArchivePage(1);
+    setDocumentPage(1);
   }, [customerSearch, customerStatusFilter, view]);
 
   const q = qty(quoteItems);
@@ -207,17 +292,21 @@ export default function Home() {
   const materialPrice = Math.max(0, t-installer);
   const isMultiDayJob = q >= 2;
   const shownTime = isMultiDayJob ? "08:00 + 12:00" : scheduleTime;
-  const activeCustomers = customers.filter((customer) => !isArchivedCustomer(customer));
-  const archivedCustomers = customers.filter(isArchivedCustomer);
-  const calendarCustomers = customers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva");
+  const sortedCustomers = sortCustomersByCreatedAtDesc(customers);
+  const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
+  const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
+  const calendarCustomers = sortedCustomers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva");
   const workResourceEditLocked = selected.status === "Szerelés kész – admin folyamatban" || selected.status === "Lezárva";
   const canEditWorkResources = !workResourceEditLocked || allowWorkResourceEdit;
   const hasCustomerFilter = customerSearch.trim().length > 0 || customerStatusFilter !== "all";
-  const filteredCustomers = customers.filter((customer) => customerMatchesSearch(customer));
+  const filteredCustomers = sortedCustomers.filter((customer) => customerMatchesSearch(customer));
   const filteredActiveCustomers = activeCustomers.filter((customer) => customerMatchesSearch(customer));
   const filteredArchivedCustomers = archivedCustomers.filter((customer) => customerMatchesSearch(customer));
-  const visibleArchivedCustomers = filteredArchivedCustomers.slice(0, archiveVisibleCount);
-  const hasMoreArchivedCustomers = filteredArchivedCustomers.length > visibleArchivedCustomers.length;
+  const dashboardLeadCustomers = filteredActiveCustomers.filter((customer) => !customer.date);
+  const dashboardLeadPagination = paginateItems(dashboardLeadCustomers, leadPage);
+  const archivePagination = paginateItems(filteredArchivedCustomers, archivePage);
+  const visibleLeadCustomers = dashboardLeadPagination.items;
+  const visibleArchivedCustomers = archivePagination.items;
 
   function normalizeSearch(value?: string) {
     return String(value || "")
@@ -253,7 +342,9 @@ export default function Home() {
   function clearCustomerFilter() {
     setCustomerSearch("");
     setCustomerStatusFilter("all");
-    setArchiveVisibleCount(30);
+    setLeadPage(1);
+    setArchivePage(1);
+    setDocumentPage(1);
   }
 
   async function handleLeadCsvFile(file?: File | null) {
@@ -292,7 +383,7 @@ export default function Home() {
         email: lead.email || null,
         city: null,
         address: null,
-        source: "Kézi rögzítés",
+        source: "CSV import",
         status: "Visszahívandó",
         need: null,
         notes: null,
@@ -311,14 +402,16 @@ export default function Home() {
         phone: row.phone || "",
         email: row.email || "",
         address: row.address || "",
-        source: row.source || "Kézi rögzítés",
+        source: row.source || "CSV import",
         status: normalizeStatus(row.status || "Visszahívandó"),
         need: row.need || "",
         notes: row.notes || "",
+        createdAt: row.created_at || now,
+        updatedAt: row.updated_at || now,
         quoteItems: EMPTY_QUOTE_ITEMS,
       })) as Customer[];
 
-      setCustomers((prev) => [...newCustomers, ...prev]);
+      setCustomers((prev) => sortCustomersByCreatedAtDesc([...newCustomers, ...prev]));
       setLeadImportRows([]);
       setLeadImportMessage(`${newCustomers.length} új érdeklődő importálva ✅ A fájlon belüli duplikációkból egy ügyfél készült, a meglévő ügyfeleket kihagytam.`);
     } catch (error: any) {
@@ -797,7 +890,7 @@ export default function Home() {
       checklistsMap[row.customer_id] = workChecklistFromRow(row);
     });
 
-    const loadedCustomers: Customer[] = (customerRows || []).map((row: any) => {
+    const loadedCustomers: Customer[] = sortCustomersByCreatedAtDesc((customerRows || []).map((row: any) => {
       const quote = quotesByCustomer.get(row.id);
       const job = jobsByCustomer.get(row.id);
       const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
@@ -815,12 +908,14 @@ export default function Home() {
         notes: row.notes || "",
         date: job?.scheduled_date || undefined,
         time: job?.scheduled_time || undefined,
+        createdAt: row.created_at || undefined,
+        updatedAt: row.updated_at || undefined,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
         stockDeducted: Boolean(row.stock_deducted),
       };
-    });
+    }));
 
     const returnContext = readReturnContext();
     const customerDraft = readCustomerDraft();
@@ -966,6 +1061,7 @@ export default function Home() {
       status: "Visszahívandó",
       need: "",
       notes: "",
+      createdAt: new Date().toISOString(),
       quoteItems: EMPTY_QUOTE_ITEMS,
       quotePricingMode: "bundle",
     };
@@ -986,7 +1082,7 @@ export default function Home() {
   async function saveCustomerData() {
     try {
       await persistCustomerToDb(selected);
-      setCustomers((prev) => prev.map((customer) => customer.id === selected.id ? selected : customer));
+      setCustomers((prev) => sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === selected.id ? selected : customer)));
       setEditCustomer(false);
       clearCustomerDraft(selected.id);
       setDraftNotice(readCustomerDraft());
@@ -1050,6 +1146,7 @@ export default function Home() {
   }
 
   async function saveCustomer(nextView: View = "quote") {
+    const now = new Date().toISOString();
     const autoStatus =
       nextView === "quote"
         ? "Ajánlat elküldve"
@@ -1061,6 +1158,8 @@ export default function Home() {
       ...selected,
       source: selected.source || "Kézi rögzítés",
       status: autoStatus,
+      createdAt: selected.createdAt || now,
+      updatedAt: now,
       quoteItems: quoteItems.length ? quoteItems : EMPTY_QUOTE_ITEMS,
     };
 
@@ -1068,9 +1167,9 @@ export default function Home() {
     setCustomers((prev) => {
       const exists = prev.some((customer) => customer.id === customerToSave.id);
       if (exists) {
-        return prev.map((customer) => customer.id === customerToSave.id ? customerToSave : customer);
+        return sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === customerToSave.id ? customerToSave : customer));
       }
-      return [customerToSave, ...prev];
+      return sortCustomersByCreatedAtDesc([customerToSave, ...prev]);
     });
 
     try {
@@ -1085,10 +1184,13 @@ export default function Home() {
   }
 
   async function saveCustomerOnly() {
+    const now = new Date().toISOString();
     const customerToSave: Customer = {
       ...selected,
       source: selected.source || "Kézi rögzítés",
       status: normalizeStatus(selected.status || "Visszahívandó"),
+      createdAt: selected.createdAt || now,
+      updatedAt: now,
       quoteItems: quoteItems.length ? quoteItems : EMPTY_QUOTE_ITEMS,
     };
 
@@ -1096,9 +1198,9 @@ export default function Home() {
     setCustomers((prev) => {
       const exists = prev.some((customer) => customer.id === customerToSave.id);
       if (exists) {
-        return prev.map((customer) => customer.id === customerToSave.id ? customerToSave : customer);
+        return sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === customerToSave.id ? customerToSave : customer));
       }
-      return [customerToSave, ...prev];
+      return sortCustomersByCreatedAtDesc([customerToSave, ...prev]);
     });
 
     try {
@@ -1604,12 +1706,13 @@ export default function Home() {
       <ArchivePanel
         filteredArchivedCustomers={filteredArchivedCustomers}
         visibleArchivedCustomers={visibleArchivedCustomers}
-        archiveVisibleCount={archiveVisibleCount}
+        currentPage={archivePagination.currentPage}
+        pageCount={archivePagination.pageCount}
+        pageSize={LIST_PAGE_SIZE}
         hasCustomerFilter={hasCustomerFilter}
-        hasMoreArchivedCustomers={hasMoreArchivedCustomers}
         searchPanel={renderCustomerSearchPanel("Archív kereső")}
         onBack={() => goBack()}
-        onLoadMore={() => setArchiveVisibleCount((count) => count + 30)}
+        onPageChange={setArchivePage}
         onOpenCustomer={openCustomer}
         onRestoreCustomer={restoreArchivedCustomer}
       />
@@ -1901,7 +2004,7 @@ export default function Home() {
   }
 
   function customerHasSentQuote(customer: Customer) {
-    return Boolean(docFor(customer, "quote_email") || customer.status === "Ajánlat elküldve");
+    return normalizeStatus(customer.status) === "Ajánlat elküldve";
   }
 
   function customerStatusLabel(customer: Customer) {
@@ -2197,6 +2300,8 @@ export default function Home() {
 
   if (view==="documents") {
     const documentCustomers = filteredCustomers;
+    const documentPagination = paginateItems(documentCustomers, documentPage);
+    const visibleDocumentCustomers = documentPagination.items;
     return (
       <Shell>
         <Back onClick={()=>goBack()}/>
@@ -2214,8 +2319,9 @@ export default function Home() {
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
                 {documentCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs találat.</div> : null}
-                {documentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p></div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
+                {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerCreatedLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerCreatedLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
               </div>
+              <PaginationControls currentPage={documentPagination.currentPage} pageCount={documentPagination.pageCount} totalCount={documentCustomers.length} label="ügyfél" onPageChange={setDocumentPage} />
             </Card>
           </Main>
           <Side><Gradient title="Dokumentum állapot" value={`${documentCustomers.length} ügyfél`}/>{renderCustomerSearchPanel("Gyors kereső")}</Side>
@@ -2392,9 +2498,80 @@ export default function Home() {
     </Shell>
   );
 
-  return <Shell><header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p><h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1></div><div className="flex flex-wrap gap-3"><Btn onClick={startNewCustomer}>+ Új ügyfél</Btn><Btn color="blue" onClick={() => navigateToView("documents")}>Dokumentumok</Btn><Btn color="green" onClick={() => navigateToView("warehouse")}>Raktár / klímák</Btn><Btn color="blue" onClick={() => navigateToView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn><button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button></div></header>{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}<Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/><Layout><Main><Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/><Card title="Új érdeklődők"><div className="space-y-3">{filteredActiveCustomers.filter(c=>!c.date).map(c=><div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left"><p className="text-lg font-black">{c.name}</p><p className="text-sm text-slate-400">{c.city} · {c.email || "nincs email"}</p><p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p></button><div className="flex flex-wrap items-center gap-2 md:justify-end"><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span></div></div></div>)}</div></Card></Main><Side>{draftNotice ? <Card title="Folyamatban lévő szerkesztés"><div className="space-y-3"><p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p><div className="rounded-2xl bg-slate-950/60 p-3"><p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p><p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || draftNotice.customer.city || "nincs adat"}</p></div><div className="grid grid-cols-1 gap-2"><button onClick={continueCustomerDraft} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Szerkesztés folytatása</button><button onClick={discardCustomerDraft} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-slate-200">Helyi piszkozat elvetése</button></div></div></Card> : null}{renderCustomerSearchPanel()}{renderLeadImportPanel()}<Card title="Raktár gyorsnézet">
+  return (
+    <Shell>
+      <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p>
+          <h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Btn onClick={startNewCustomer}>+ Új ügyfél</Btn>
+          <Btn color="blue" onClick={() => navigateToView("documents")}>Dokumentumok</Btn>
+          <Btn color="green" onClick={() => navigateToView("warehouse")}>Raktár / klímák</Btn>
+          <Btn color="blue" onClick={() => navigateToView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn>
+          <button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button>
+        </div>
+      </header>
+
+      {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
+
+      <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="order-2 space-y-6 xl:order-1 xl:col-span-2">
+          <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/>
+
+          <Card title="Új érdeklődők">
+            <div className="mb-4 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+              <span>{dashboardLeadCustomers.length} aktív érdeklődő</span>
+              {dashboardLeadCustomers.length > LIST_PAGE_SIZE ? <span>Maximum {LIST_PAGE_SIZE} ügyfél oldalanként</span> : null}
+            </div>
             <div className="space-y-3">
-              {products.map((product: any) => {
+              {dashboardLeadCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs ilyen érdeklődő.</div> : null}
+              {visibleLeadCustomers.map((c)=>(
+                <div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left">
+                      <p className="text-lg font-black">{c.name}</p>
+                      <p className="text-sm text-slate-400">{c.city || "nincs település"} · {c.email || c.phone || "nincs elérhetőség"}</p>
+                      <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p>
+                      {customerCreatedLabel(c) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerCreatedLabel(c)}</p> : null}
+                    </button>
+                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                      <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <PaginationControls currentPage={dashboardLeadPagination.currentPage} pageCount={dashboardLeadPagination.pageCount} totalCount={dashboardLeadCustomers.length} label="ügyfél" onPageChange={setLeadPage} />
+          </Card>
+        </div>
+
+        <aside className="order-1 space-y-6 xl:order-2">
+          {draftNotice ? (
+            <Card title="Folyamatban lévő szerkesztés">
+              <div className="space-y-3">
+                <p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p>
+                <div className="rounded-2xl bg-slate-950/60 p-3">
+                  <p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p>
+                  <p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || draftNotice.customer.city || "nincs adat"}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  <button onClick={continueCustomerDraft} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Szerkesztés folytatása</button>
+                  <button onClick={discardCustomerDraft} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-slate-200">Helyi piszkozat elvetése</button>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
+          {renderCustomerSearchPanel()}
+          {renderLeadImportPanel()}
+
+          <Card title="Raktár gyorsnézet">
+            <div className="space-y-3">
+              {products.slice(0, LIST_PAGE_SIZE).map((product: any) => {
                 const stock = stockOf(product.id);
                 const reserved = reservedForProduct(product.id);
                 const free = stock - reserved;
@@ -2415,7 +2592,10 @@ export default function Home() {
               })}
             </div>
           </Card>
-        </Side></Layout></Shell>;
+        </aside>
+      </section>
+    </Shell>
+  );
 }
 
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ClimateProduct } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
 
@@ -39,6 +39,33 @@ function productDevicePrice(product: ClimateProduct) {
   return Math.max(0, Number(product.price || 0) - Number(product.installPrice || 0));
 }
 
+const WAREHOUSE_PAGE_SIZE = 20;
+
+function paginate<T>(items: T[], page: number) {
+  const pageCount = Math.max(1, Math.ceil(items.length / WAREHOUSE_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, page), pageCount);
+  const start = (currentPage - 1) * WAREHOUSE_PAGE_SIZE;
+  return {
+    currentPage,
+    pageCount,
+    items: items.slice(start, start + WAREHOUSE_PAGE_SIZE),
+  };
+}
+
+function PaginationControls({ currentPage, pageCount, totalCount, onPageChange }: { currentPage: number; pageCount: number; totalCount: number; onPageChange: (page: number) => void }) {
+  if (totalCount <= WAREHOUSE_PAGE_SIZE) return null;
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-bold text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+      <span>{currentPage}. oldal / {pageCount} · maximum {WAREHOUSE_PAGE_SIZE} tétel oldalanként</span>
+      <div className="grid grid-cols-2 gap-2 sm:flex">
+        <button type="button" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)} className="rounded-xl bg-white/10 px-4 py-2 font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40">Előző</button>
+        <button type="button" disabled={currentPage >= pageCount} onClick={() => onPageChange(currentPage + 1)} className="rounded-xl bg-cyan-300 px-4 py-2 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Következő</button>
+      </div>
+    </div>
+  );
+}
+
 export function WarehousePanel({
   onBack,
   products,
@@ -64,6 +91,19 @@ export function WarehousePanel({
   materialReserved,
   addMaterialStock,
 }: WarehousePanelProps) {
+  const [productPage, setProductPage] = useState(1);
+  const [materialPage, setMaterialPage] = useState(1);
+  const productPagination = paginate(products, productPage);
+  const materialPagination = paginate(materialInventory, materialPage);
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [products.length]);
+
+  useEffect(() => {
+    setMaterialPage(1);
+  }, [materialInventory.length]);
+
   return (
     <Shell>
       <Back onClick={onBack} />
@@ -90,7 +130,7 @@ export function WarehousePanel({
 
           <Card title="Klíma készlet">
             <div className="space-y-3">
-              {products.map((product) => {
+              {productPagination.items.map((product) => {
                 const stock = stockOf(product.id);
                 const reserved = reservedForProduct(product.id);
                 const free = stock - reserved;
@@ -131,11 +171,12 @@ export function WarehousePanel({
                 );
               })}
             </div>
+            <PaginationControls currentPage={productPagination.currentPage} pageCount={productPagination.pageCount} totalCount={products.length} onPageChange={setProductPage} />
           </Card>
 
           <Card title="Szerelési anyagok">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {materialInventory.map((item) => {
+              {materialPagination.items.map((item) => {
                 const reserved = materialReserved(item.name);
                 const free = item.stock - reserved;
                 const status = free <= 0 ? "hiány" : free <= item.lowAt ? "alacsony" : "rendben";
@@ -178,6 +219,7 @@ export function WarehousePanel({
                 );
               })}
             </div>
+            <PaginationControls currentPage={materialPagination.currentPage} pageCount={materialPagination.pageCount} totalCount={materialInventory.length} onPageChange={setMaterialPage} />
           </Card>
         </Main>
 
@@ -231,6 +273,13 @@ function ClimateProductManager({
   onUpdateProductInstallPrice,
   onSaveClimateProduct,
 }: ClimateProductManagerProps) {
+  const [managerPage, setManagerPage] = useState(1);
+  const managerPagination = paginate(products, managerPage);
+
+  useEffect(() => {
+    setManagerPage(1);
+  }, [products.length, showClimateProductManager]);
+
   return (
     <Card title="Klímatípusok és árak">
       <button
@@ -269,7 +318,7 @@ function ClimateProductManager({
           </div>
 
           <div className="space-y-3">
-            {products.map((product) => {
+            {managerPagination.items.map((product) => {
               const devicePrice = productDevicePrice(product);
               const customerPrice = Math.max(0, devicePrice + Number(product.installPrice || 0));
               return (
@@ -296,6 +345,7 @@ function ClimateProductManager({
               );
             })}
           </div>
+          <PaginationControls currentPage={managerPagination.currentPage} pageCount={managerPagination.pageCount} totalCount={products.length} onPageChange={setManagerPage} />
 
           {productMessage ? <div className="rounded-2xl bg-slate-950/70 p-4 text-sm font-bold text-slate-100">{productMessage}</div> : null}
         </div>

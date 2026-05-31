@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import type { ClimateProduct, Customer, View } from "@/lib/alinflow/types";
 import { isArchivedCustomer } from "@/lib/alinflow/constants";
 import { offsetIso, todayIso } from "@/lib/alinflow/format";
@@ -5,6 +8,8 @@ import { climateSummary } from "@/lib/alinflow/products";
 import { Back, Card, Layout, Shell } from "./LayoutPrimitives";
 
 export type TaskFilter = "today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes";
+
+const TASK_PAGE_SIZE = 20;
 
 const TASK_TITLE_MAP: Record<TaskFilter, string> = {
   today: "Mai munkák",
@@ -29,6 +34,45 @@ type TaskPanelProps = {
   onOpenWarehouse: () => void;
 };
 
+function paginate<T>(items: T[], page: number) {
+  const pageCount = Math.max(1, Math.ceil(items.length / TASK_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, page), pageCount);
+  const start = (currentPage - 1) * TASK_PAGE_SIZE;
+  return {
+    currentPage,
+    pageCount,
+    items: items.slice(start, start + TASK_PAGE_SIZE),
+  };
+}
+
+function Pagination({ currentPage, pageCount, totalCount, onPageChange }: { currentPage: number; pageCount: number; totalCount: number; onPageChange: (page: number) => void }) {
+  if (totalCount <= TASK_PAGE_SIZE) return null;
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-bold text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+      <span>{currentPage}. oldal / {pageCount} · maximum {TASK_PAGE_SIZE} tétel oldalanként</span>
+      <div className="grid grid-cols-2 gap-2 sm:flex">
+        <button
+          type="button"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="rounded-xl bg-white/10 px-4 py-2 font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Előző
+        </button>
+        <button
+          type="button"
+          disabled={currentPage >= pageCount}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="rounded-xl bg-cyan-300 px-4 py-2 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Következő
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function TaskPanel({
   taskFilter,
   customers,
@@ -42,6 +86,12 @@ export function TaskPanel({
   onOpenCustomer,
   onOpenWarehouse,
 }: TaskPanelProps) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [taskFilter]);
+
   const activeCustomers = customers.filter((customer) => !isArchivedCustomer(customer));
   const today = todayIso();
   const tomorrow = offsetIso(1);
@@ -60,6 +110,9 @@ export function TaskPanel({
     taskFilter === "quotes" ? quoteSentList :
     [];
 
+  const activePagination = paginate(activeList, page);
+  const stockPagination = paginate(stockList, page);
+
   return (
     <Shell>
       <Back onClick={onBack} />
@@ -67,9 +120,12 @@ export function TaskPanel({
         <div className="space-y-6 xl:col-span-3">
           {taskFilter === "stock" ? (
             <Card title="Készlethiányok">
+              <div className="mb-4 text-sm font-bold text-slate-400">
+                {stockList.length} tétel · max. {TASK_PAGE_SIZE} tétel oldalanként
+              </div>
               <div className="space-y-3">
                 {stockList.length === 0 ? <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-200">Nincs készlethiány ✅</div> : null}
-                {stockList.map((product) => (
+                {stockPagination.items.map((product) => (
                   <button key={product.id} onClick={onOpenWarehouse} className="w-full rounded-3xl border border-red-400/30 bg-red-500/15 p-4 text-left">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
@@ -81,12 +137,16 @@ export function TaskPanel({
                   </button>
                 ))}
               </div>
+              <Pagination currentPage={stockPagination.currentPage} pageCount={stockPagination.pageCount} totalCount={stockList.length} onPageChange={setPage} />
             </Card>
           ) : (
             <Card title={TASK_TITLE_MAP[taskFilter]}>
+              <div className="mb-4 text-sm font-bold text-slate-400">
+                {activeList.length} tétel · max. {TASK_PAGE_SIZE} tétel oldalanként
+              </div>
               <div className="space-y-3">
                 {activeList.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs ilyen teendő.</div> : null}
-                {activeList.map((customer) => (
+                {activePagination.items.map((customer) => (
                   <button key={customer.id} onClick={() => onOpenCustomer(customer, customer.date ? "work" : "lead")} className="w-full rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
@@ -100,6 +160,7 @@ export function TaskPanel({
                   </button>
                 ))}
               </div>
+              <Pagination currentPage={activePagination.currentPage} pageCount={activePagination.pageCount} totalCount={activeList.length} onPageChange={setPage} />
             </Card>
           )}
         </div>
