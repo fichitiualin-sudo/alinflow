@@ -84,6 +84,56 @@ function findCsvIndex(headers: string[], variants: string[]) {
   return normalizedHeaders.findIndex((header) => normalizedVariants.includes(header));
 }
 
+function datePartsToIso(year: number, month: number, day: number, hour = 0, minute = 0, second = 0) {
+  const date = new Date(year, month - 1, day, hour, minute, second);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return undefined;
+  }
+  return date.toISOString();
+}
+
+function parseLeadCreatedAt(value?: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return undefined;
+
+  const cleaned = raw
+    .replace(/\u00a0/g, " ")
+    .replace(/,/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/([+-]\d{2})(\d{2})$/, "$1:$2")
+    .trim();
+
+  const ymd = cleaned.match(/^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})(?:[ T](\d{1,2})[:.](\d{2})(?::(\d{2}))?)?$/);
+  if (ymd) {
+    const [, year, month, day, hour = "0", minute = "0", second = "0"] = ymd;
+    const parsed = datePartsToIso(Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second));
+    if (parsed) return parsed;
+  }
+
+  const dmy = cleaned.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})(?:[ T](\d{1,2})[:.](\d{2})(?::(\d{2}))?)?$/);
+  if (dmy) {
+    const [, day, month, year, hour = "0", minute = "0", second = "0"] = dmy;
+    const parsed = datePartsToIso(Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second));
+    if (parsed) return parsed;
+  }
+
+  const direct = new Date(cleaned);
+  if (!Number.isNaN(direct.getTime())) return direct.toISOString();
+
+  return undefined;
+}
+
+function dateMs(value?: string) {
+  if (!value) return 0;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
 export function buildLeadImportPreview(text: string, existingCustomers: Customer[]): LeadImportCandidate[] {
   const rows = parseCsvText(text.replace(/^\uFEFF/, ""));
   if (rows.length < 2) return [];
@@ -92,6 +142,35 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
   const nameIndex = findCsvIndex(headers, ["Név", "Nev", "Name", "Full name", "Teljes név"]);
   const emailIndex = findCsvIndex(headers, ["E-mail-cím", "Email", "E-mail", "Email cím", "E-mail cím"]);
   const phoneIndex = findCsvIndex(headers, ["Telefon", "Phone", "Telefonszám", "Phone number", "Mobile"]);
+  const createdAtIndex = findCsvIndex(headers, [
+    "Érdeklődés ideje",
+    "Erdeklodes ideje",
+    "Érdeklődött",
+    "Erdeklodott",
+    "Lead időpontja",
+    "Lead idopontja",
+    "Lead dátuma",
+    "Lead datuma",
+    "Beküldés ideje",
+    "Bekuldes ideje",
+    "Dátum",
+    "Datum",
+    "Létrehozás ideje",
+    "Letrehozas ideje",
+    "Létrehozva",
+    "Letrehozva",
+    "Created time",
+    "Created Time",
+    "created_time",
+    "Created at",
+    "Created At",
+    "Time created",
+    "Date created",
+    "Submitted at",
+    "Submitted At",
+    "Submission time",
+    "Lead created time",
+  ]);
 
   const existingPhones = new Set(existingCustomers.map((customer) => normalizePhoneForCompare(customer.phone)).filter(Boolean));
   const existingEmails = new Set(existingCustomers.map((customer) => normalizeEmailForCompare(customer.email)).filter(Boolean));
@@ -104,6 +183,7 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
     const name = nameIndex >= 0 ? String(cells[nameIndex] || "").trim() : "";
     const email = emailIndex >= 0 ? normalizeEmailForCompare(cells[emailIndex]) : "";
     const phone = phoneIndex >= 0 ? normalizePhoneForStorage(cells[phoneIndex]) : "";
+    const createdAt = createdAtIndex >= 0 ? parseLeadCreatedAt(cells[createdAtIndex]) : undefined;
     const phoneKey = normalizePhoneForCompare(phone);
     const emailKey = normalizeEmailForCompare(email);
 
@@ -128,6 +208,7 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
         name,
         phone,
         email,
+        createdAt,
         duplicate: false,
         invalid: true,
         invalidReason,
@@ -142,6 +223,7 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
         name,
         phone,
         email,
+        createdAt,
         duplicate: true,
         duplicateReason: "már létező telefonszám",
       });
@@ -155,6 +237,7 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
         name,
         phone,
         email,
+        createdAt,
         duplicate: true,
         duplicateReason: "már létező email",
       });
@@ -169,6 +252,9 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
       kept.name = kept.name || name;
       kept.phone = kept.phone || phone;
       kept.email = kept.email || email;
+      if (createdAt && (!kept.createdAt || dateMs(createdAt) > dateMs(kept.createdAt))) {
+        kept.createdAt = createdAt;
+      }
       kept.mergedRows = (kept.mergedRows || 1) + 1;
       keys.forEach((key) => keptByKey.set(key, kept));
       return;
@@ -180,6 +266,7 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
       name,
       phone,
       email,
+      createdAt,
       duplicate: false,
       mergedRows: 1,
     };

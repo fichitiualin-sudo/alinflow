@@ -88,6 +88,7 @@ export type LeadImportCandidate = {
   name: string;
   phone: string;
   email: string;
+  createdAt?: string;
   duplicate: boolean;
   duplicateReason?: string;
   invalid?: boolean;

@@ -28,7 +28,7 @@ function customerCreatedLabel(customer: Customer) {
   const created = formatCustomerCreatedAt(customer.createdAt);
   if (!created) return "";
   const source = (customer.source || "").toLocaleLowerCase("hu-HU");
-  return source.includes("csv") || source.includes("import") ? `CSV import · bekerült az AlinFlow-ba: ${created}` : `Bekerült az AlinFlow-ba: ${created}`;
+  return source.includes("csv") || source.includes("import") ? `CSV import · Érdeklődött: ${created}` : `Érdeklődött: ${created}`;
 }
 
 function EditField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {

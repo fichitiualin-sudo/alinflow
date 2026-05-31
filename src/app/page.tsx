@@ -145,7 +145,7 @@ function isCsvImportedCustomer(customer: Customer) {
 function customerCreatedLabel(customer: Customer) {
   const created = formatCustomerCreatedAt(customer.createdAt);
   if (!created) return "";
-  return isCsvImportedCustomer(customer) ? `CSV import · bekerült: ${created}` : `Bekerült: ${created}`;
+  return isCsvImportedCustomer(customer) ? `CSV import · Érdeklődött: ${created}` : `Érdeklődött: ${created}`;
 }
 
 function PaginationControls({
@@ -388,7 +388,7 @@ export default function Home() {
         need: null,
         notes: null,
         created_by: user?.id || null,
-        created_at: now,
+        created_at: lead.createdAt || now,
         updated_at: now,
       }));
 

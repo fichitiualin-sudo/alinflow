@@ -27,7 +27,7 @@ function customerCreatedLabel(customer: Customer) {
   const created = formatCustomerCreatedAt(customer.createdAt);
   if (!created) return "";
   const source = (customer.source || "").toLocaleLowerCase("hu-HU");
-  return source.includes("csv") || source.includes("import") ? `CSV import · bekerült: ${created}` : `Bekerült: ${created}`;
+  return source.includes("csv") || source.includes("import") ? `CSV import · Érdeklődött: ${created}` : `Érdeklődött: ${created}`;
 }
 
 export function CustomerSearchPanel({
@@ -155,6 +155,7 @@ export function LeadImportPanel({
                   <div>
                     <p className="font-black text-white">{row.name || "Névtelen sor"}</p>
                     <p className="mt-1 text-xs text-slate-400">{row.phone || "nincs telefonszám"} · {row.email || "nincs email"}</p>
+                    {row.createdAt ? <p className="mt-1 text-xs font-bold text-emerald-200/80">Érdeklődött: {formatCustomerCreatedAt(row.createdAt)}</p> : null}
                     {!row.duplicate && !row.invalid && (row.mergedRows || 1) > 1 ? <p className="mt-1 text-xs font-bold text-cyan-200">{row.mergedRows} azonos lead összevonva egy ügyféllé</p> : null}
                   </div>
                   <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${row.invalid ? "bg-red-400/20 text-red-200" : row.duplicate ? "bg-amber-400/20 text-amber-200" : "bg-emerald-400/20 text-emerald-200"}`}>
