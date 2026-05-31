@@ -59,69 +59,65 @@ function formatTimelineValue(value?: string) {
   });
 }
 
-function timelineDotClass(item: CustomerTimelineItem) {
-  if (item.muted) return "bg-slate-600/70 ring-slate-500/20";
-  switch (item.tone) {
-    case "emerald":
-      return "bg-emerald-300 ring-emerald-300/20";
-    case "cyan":
-      return "bg-cyan-300 ring-cyan-300/20";
-    case "violet":
-      return "bg-violet-300 ring-violet-300/20";
-    case "blue":
-      return "bg-blue-300 ring-blue-300/20";
-    case "amber":
-      return "bg-amber-300 ring-amber-300/20";
+function statusMetaItems(status: string, timelineItems: CustomerTimelineItem[]) {
+  const findItem = (label: string) => timelineItems.find((item) => item.label === label && item.value);
+  const inquired = findItem("Érdeklődött");
+  const called = findItem("Hívva");
+  const quote = findItem("Ajánlat küldve");
+  const appointment = findItem("Időpont rögzítve");
+  const updated = findItem("Utolsó módosítás");
+
+  switch (status) {
+    case "Visszahívandó":
+      return [
+        inquired ? `Érdeklődött: ${formatTimelineValue(inquired.value)}` : undefined,
+        called ? `Hívva: ${formatTimelineValue(called.value)}` : undefined,
+      ].filter(Boolean) as string[];
+    case "Ajánlat elküldve":
+      return quote ? [`Küldve: ${formatTimelineValue(quote.value)}`] : [];
+    case "Időpont foglalva":
+      return [
+        appointment ? `Rögzítve: ${formatTimelineValue(appointment.value)}` : undefined,
+        appointment?.hint,
+      ].filter(Boolean) as string[];
+    case "Szerelés kész – admin folyamatban":
+    case "Lezárva":
+    case "Lemondva":
+      return updated ? [`Módosítva: ${formatTimelineValue(updated.value)}`] : [];
     default:
-      return "bg-slate-300 ring-slate-300/20";
+      return [];
   }
-}
-
-function StatusTimeline({ items }: { items: CustomerTimelineItem[] }) {
-  if (!items.length) return null;
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-wide text-slate-400">Ügyfél folyamat</p>
-        <p className="text-[10px] font-bold text-slate-500">idővonal</p>
-      </div>
-      <div className="space-y-2">
-        {items.map((item) => (
-          <div key={item.label} className={`flex gap-3 rounded-2xl px-3 py-2 ${item.muted ? "bg-white/[0.02]" : "bg-white/[0.04]"}`}>
-            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ${timelineDotClass(item)}`} />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-                <p className={`text-[11px] font-black uppercase tracking-wide ${item.muted ? "text-slate-500" : "text-slate-300"}`}>{item.label}</p>
-                <p className={`text-xs font-black leading-snug ${item.muted ? "text-slate-500" : "text-slate-100"}`}>{formatTimelineValue(item.value)}</p>
-              </div>
-              {item.hint ? <p className="mt-1 text-[10px] font-bold leading-snug text-slate-500">{item.hint}</p> : null}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function StatusControl({ value, timelineItems, onChange }: { value: string; timelineItems: CustomerTimelineItem[]; onChange: (value: string) => void }) {
   return (
     <Card title="Státusz kezelése">
-      <StatusTimeline items={timelineItems} />
-      <div className="mt-4 grid grid-cols-1 gap-2">
-        {STATUS_OPTIONS.map((status) => (
-          <button
-            key={status}
-            onClick={() => onChange(status)}
-            className={`rounded-2xl px-4 py-3 text-left font-black transition ${
-              value === status
-                ? "bg-cyan-300 text-slate-950"
-                : "bg-slate-900/80 text-slate-200 border border-white/10 hover:border-cyan-300/40"
-            }`}
-          >
-            {status}
-          </button>
-        ))}
+      <div className="grid grid-cols-1 gap-2">
+        {STATUS_OPTIONS.map((status) => {
+          const metaItems = statusMetaItems(status, timelineItems);
+          const isSelected = value === status;
+
+          return (
+            <button
+              key={status}
+              onClick={() => onChange(status)}
+              className={`rounded-2xl px-4 py-3 text-left transition ${
+                isSelected
+                  ? "bg-cyan-300 text-slate-950"
+                  : "bg-slate-900/80 text-slate-200 border border-white/10 hover:border-cyan-300/40"
+              }`}
+            >
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                <span className="font-black leading-snug">{status}</span>
+                {metaItems.length ? (
+                  <span className={`text-xs font-bold leading-snug sm:max-w-[52%] sm:text-right ${isSelected ? "text-slate-700" : "text-slate-400"}`}>
+                    {metaItems.join(" · ")}
+                  </span>
+                ) : null}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </Card>
   );
