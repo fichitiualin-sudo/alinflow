@@ -4,7 +4,6 @@ import type { Customer, CustomerTimelineItem, View } from "@/lib/alinflow/types"
 import { STATUS_OPTIONS } from "@/lib/alinflow/constants";
 import { mapsHref, telHref } from "@/lib/alinflow/format";
 import { Back, Card, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
-import { CustomerTimeline } from "@/components/alinflow/CustomerTimeline";
 
 type LeadPanelProps = {
   selected: Customer;
@@ -47,10 +46,69 @@ function PhoneEditField({ value, onChange, onCall }: { value: string; onChange: 
   );
 }
 
-function StatusControl({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function formatTimelineValue(value?: string) {
+  if (!value) return "Még nincs";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("hu-HU", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function timelineDotClass(item: CustomerTimelineItem) {
+  if (item.muted) return "bg-slate-600/70 ring-slate-500/20";
+  switch (item.tone) {
+    case "emerald":
+      return "bg-emerald-300 ring-emerald-300/20";
+    case "cyan":
+      return "bg-cyan-300 ring-cyan-300/20";
+    case "violet":
+      return "bg-violet-300 ring-violet-300/20";
+    case "blue":
+      return "bg-blue-300 ring-blue-300/20";
+    case "amber":
+      return "bg-amber-300 ring-amber-300/20";
+    default:
+      return "bg-slate-300 ring-slate-300/20";
+  }
+}
+
+function StatusTimeline({ items }: { items: CustomerTimelineItem[] }) {
+  if (!items.length) return null;
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-xs font-black uppercase tracking-wide text-slate-400">Ügyfél folyamat</p>
+        <p className="text-[10px] font-bold text-slate-500">idővonal</p>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.label} className={`flex gap-3 rounded-2xl px-3 py-2 ${item.muted ? "bg-white/[0.02]" : "bg-white/[0.04]"}`}>
+            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ${timelineDotClass(item)}`} />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+                <p className={`text-[11px] font-black uppercase tracking-wide ${item.muted ? "text-slate-500" : "text-slate-300"}`}>{item.label}</p>
+                <p className={`text-xs font-black leading-snug ${item.muted ? "text-slate-500" : "text-slate-100"}`}>{formatTimelineValue(item.value)}</p>
+              </div>
+              {item.hint ? <p className="mt-1 text-[10px] font-bold leading-snug text-slate-500">{item.hint}</p> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatusControl({ value, timelineItems, onChange }: { value: string; timelineItems: CustomerTimelineItem[]; onChange: (value: string) => void }) {
   return (
     <Card title="Státusz kezelése">
-      <div className="grid grid-cols-1 gap-2">
+      <StatusTimeline items={timelineItems} />
+      <div className="mt-4 grid grid-cols-1 gap-2">
         {STATUS_OPTIONS.map((status) => (
           <button
             key={status}
@@ -97,7 +155,6 @@ export function LeadPanel({
               <EditField label="Település" value={selected.city} onChange={(value) => onUpdateSelectedField("city", value)} />
               <EditField label="Cím" value={selected.address} onChange={(value) => onUpdateSelectedField("address", value)} />
             </div>
-            <CustomerTimeline items={timelineItems} />
             {selected.address || selected.city ? (
               <a href={mapsHref(selected)} target="_blank" rel="noreferrer" onClick={() => onRememberExternalCustomer(selected, "lead")} className="mt-4 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">
                 Útvonal tervezése Google Térképpel
@@ -123,7 +180,7 @@ export function LeadPanel({
               ) : null}
             </div>
           </Card>
-          <StatusControl value={selected.status || "Visszahívandó"} onChange={onUpdateCustomerStatus} />
+          <StatusControl value={selected.status || "Visszahívandó"} timelineItems={timelineItems} onChange={onUpdateCustomerStatus} />
         </Side>
       </Layout>
     </Shell>
