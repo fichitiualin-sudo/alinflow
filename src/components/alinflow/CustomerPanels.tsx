@@ -30,6 +30,11 @@ function customerCreatedLabel(customer: Customer) {
   return source.includes("csv") || source.includes("import") ? `CSV import · Érdeklődött: ${created}` : `Érdeklődött: ${created}`;
 }
 
+function importCandidateInquiredAt(row: LeadImportCandidate) {
+  const candidate = row as LeadImportCandidate & { inquiredAt?: string; createdAt?: string };
+  return candidate.inquiredAt || candidate.createdAt || "";
+}
+
 export function CustomerSearchPanel({
   title = "Ügyfélkereső",
   search,
@@ -149,22 +154,26 @@ export function LeadImportPanel({
 
         {rows.length ? (
           <div className="space-y-2">
-            {previewRows.map((row) => (
-              <div key={row.id} className="rounded-2xl border border-white/10 bg-slate-950/60 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-black text-white">{row.name || "Névtelen sor"}</p>
-                    <p className="mt-1 text-xs text-slate-400">{row.phone || "nincs telefonszám"} · {row.email || "nincs email"}</p>
-                    {row.createdAt ? <p className="mt-1 text-xs font-bold text-emerald-200/80">Érdeklődött: {formatCustomerCreatedAt(row.createdAt)}</p> : null}
-                    {!row.duplicate && !row.invalid && (row.mergedRows || 1) > 1 ? <p className="mt-1 text-xs font-bold text-cyan-200">{row.mergedRows} azonos lead összevonva egy ügyféllé</p> : null}
+            {previewRows.map((row) => {
+              const inquiredAt = importCandidateInquiredAt(row);
+
+              return (
+                <div key={row.id} className="rounded-2xl border border-white/10 bg-slate-950/60 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black text-white">{row.name || "Névtelen sor"}</p>
+                      <p className="mt-1 text-xs text-slate-400">{row.phone || "nincs telefonszám"} · {row.email || "nincs email"}</p>
+                      {inquiredAt ? <p className="mt-1 text-xs font-bold text-emerald-200/80">Érdeklődött: {formatCustomerCreatedAt(inquiredAt)}</p> : null}
+                      {!row.duplicate && !row.invalid && (row.mergedRows || 1) > 1 ? <p className="mt-1 text-xs font-bold text-cyan-200">{row.mergedRows} azonos lead összevonva egy ügyféllé</p> : null}
+                    </div>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${row.invalid ? "bg-red-400/20 text-red-200" : row.duplicate ? "bg-amber-400/20 text-amber-200" : "bg-emerald-400/20 text-emerald-200"}`}>
+                      {row.invalid ? "hibás" : row.duplicate ? "kihagyva" : "új"}
+                    </span>
                   </div>
-                  <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${row.invalid ? "bg-red-400/20 text-red-200" : row.duplicate ? "bg-amber-400/20 text-amber-200" : "bg-emerald-400/20 text-emerald-200"}`}>
-                    {row.invalid ? "hibás" : row.duplicate ? "kihagyva" : "új"}
-                  </span>
+                  {row.duplicateReason || row.invalidReason ? <p className="mt-2 text-xs font-bold text-slate-500">{row.duplicateReason || row.invalidReason}</p> : null}
                 </div>
-                {row.duplicateReason || row.invalidReason ? <p className="mt-2 text-xs font-bold text-slate-500">{row.duplicateReason || row.invalidReason}</p> : null}
-              </div>
-            ))}
+              );
+            })}
             {rows.length > previewRows.length ? <p className="text-xs text-slate-500">+ {rows.length - previewRows.length} további sor az előnézetben.</p> : null}
             <button
               type="button"
