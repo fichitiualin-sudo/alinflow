@@ -1,8 +1,9 @@
 "use client";
 
-import type { Customer, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistState } from "@/lib/alinflow/types";
+import type { Customer, CustomerTimelineItem, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistState } from "@/lib/alinflow/types";
 import { Btn, Card, Field, Gradient,  Layout, Main, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
+import { CustomerTimeline } from "@/components/alinflow/CustomerTimeline";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
   hasCustomProductPrice,
@@ -45,9 +46,11 @@ type WorkPagePanelProps = {
   checklistReady: boolean;
   missingChecklist: string[];
   documentRows: DocumentRow[];
+  timelineItems: CustomerTimelineItem[];
   onBack: () => void;
   onCloseWork: () => void;
   onRememberExternalCustomer: (customer: Customer, returnView?: View) => void;
+  onRecordCustomerPhoneCall: (customer: Customer, returnView?: View) => void;
   onSaveCustomerData: () => void;
   onSetEditCustomer: (value: boolean) => void;
   onUpdateSelectedField: (field: keyof Customer, value: string) => void;
@@ -97,9 +100,11 @@ export function WorkPagePanel({
   checklistReady,
   missingChecklist,
   documentRows,
+  timelineItems,
   onBack,
   onCloseWork,
   onRememberExternalCustomer,
+  onRecordCustomerPhoneCall,
   onSaveCustomerData,
   onSetEditCustomer,
   onUpdateSelectedField,
@@ -140,7 +145,7 @@ export function WorkPagePanel({
         <Main>
           <Card title="Ügyféladatok">
             <div className="mb-4 flex flex-wrap gap-3">
-              {selected.phone ? <a href={telHref(selected.phone)} onClick={() => onRememberExternalCustomer(selected, "work")} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Hívás</a> : null}
+              {selected.phone ? <a href={telHref(selected.phone)} onClick={() => onRecordCustomerPhoneCall(selected, "work")} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Hívás</a> : null}
               {editCustomer ? <Btn color="green" onClick={onSaveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={() => onSetEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}
               {editCustomer ? <button onClick={() => onSetEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}
             </div>
@@ -150,6 +155,7 @@ export function WorkPagePanel({
               onChange={onUpdateSelectedField}
               onExternalOpen={() => onRememberExternalCustomer(selected, "work")}
             />
+            <CustomerTimeline items={timelineItems} />
             {selected.date ? (
               <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

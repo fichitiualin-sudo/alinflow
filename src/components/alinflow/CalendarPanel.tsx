@@ -18,6 +18,21 @@ type CalendarProps = {
   onSelect?: (date: string) => void;
 };
 
+
+function timeToMinutes(value?: string) {
+  const match = String(value || "").match(/(\d{1,2}):(\d{2})/);
+  if (!match) return 24 * 60 + 1;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function sortJobsByTime(jobs: Customer[]) {
+  return [...jobs].sort((a, b) => {
+    const byTime = timeToMinutes(a.time) - timeToMinutes(b.time);
+    if (byTime !== 0) return byTime;
+    return (a.name || "").localeCompare(b.name || "", "hu");
+  });
+}
+
 function calendarStatusStyle(status: string) {
   if (status === "Lezárva") return "border border-emerald-700/70 bg-emerald-950/90 text-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.12)]";
   if (status === "Szerelés kész – admin folyamatban") return "border border-amber-300/45 bg-amber-400/20 text-amber-50 shadow-[0_0_0_1px_rgba(251,191,36,0.10)]";
@@ -25,6 +40,7 @@ function calendarStatusStyle(status: string) {
   if (status === "Ajánlat elküldve") return "border border-violet-300/40 bg-violet-400/15 text-violet-50";
   return "border border-white/10 bg-white/10 text-white";
 }
+
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -91,7 +107,7 @@ export function Calendar({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-7">
         {days.map(({ d, current }) => {
           const dayIso = iso(d);
-          const jobs = customers.filter((customer) => customer.date === dayIso);
+          const jobs = sortJobsByTime(customers.filter((customer) => customer.date === dayIso));
           const isSelected = selectable && selectedDate === dayIso;
           const weekdayName = weekdayNames[(d.getDay() + 6) % 7];
 

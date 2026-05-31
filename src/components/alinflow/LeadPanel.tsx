@@ -1,9 +1,10 @@
 "use client";
 
-import type { Customer } from "@/lib/alinflow/types";
+import type { Customer, CustomerTimelineItem, View } from "@/lib/alinflow/types";
 import { STATUS_OPTIONS } from "@/lib/alinflow/constants";
 import { mapsHref, telHref } from "@/lib/alinflow/format";
 import { Back, Card, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { CustomerTimeline } from "@/components/alinflow/CustomerTimeline";
 
 type LeadPanelProps = {
   selected: Customer;
@@ -12,24 +13,12 @@ type LeadPanelProps = {
   onSaveCustomerOnly: () => void;
   onSaveCustomerAndQuote: () => void;
   onDeleteCustomer: (customer: Customer) => void;
-  onRememberExternalCustomer: (customer: Customer, returnView?: any) => void;
+  timelineItems: CustomerTimelineItem[];
+  onRememberExternalCustomer: (customer: Customer, returnView?: View) => void;
+  onRecordCustomerPhoneCall: (customer: Customer, returnView?: View) => void;
   onUpdateSelectedField: (field: keyof Customer, value: string) => void;
   onUpdateCustomerStatus: (status: string) => void;
 };
-
-function formatCustomerCreatedAt(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function customerCreatedLabel(customer: Customer) {
-  const created = formatCustomerCreatedAt(customer.createdAt);
-  if (!created) return "";
-  const source = (customer.source || "").toLocaleLowerCase("hu-HU");
-  return source.includes("csv") || source.includes("import") ? `CSV import · Érdeklődött: ${created}` : `Érdeklődött: ${created}`;
-}
 
 function EditField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
@@ -40,15 +29,7 @@ function EditField({ label, value, onChange }: { label: string; value: string; o
   );
 }
 
-function PhoneEditField({
-  value,
-  onChange,
-  onCall,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onCall: () => void;
-}) {
+function PhoneEditField({ value, onChange, onCall }: { value: string; onChange: (value: string) => void; onCall: () => void }) {
   const hasPhone = value.trim().length > 0;
 
   return (
@@ -95,7 +76,9 @@ export function LeadPanel({
   onSaveCustomerOnly,
   onSaveCustomerAndQuote,
   onDeleteCustomer,
+  timelineItems,
   onRememberExternalCustomer,
+  onRecordCustomerPhoneCall,
   onUpdateSelectedField,
   onUpdateCustomerStatus,
 }: LeadPanelProps) {
@@ -109,16 +92,12 @@ export function LeadPanel({
           <Card title="Ügyféladatok szerkesztése">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <EditField label="Név" value={selected.name} onChange={(value) => onUpdateSelectedField("name", value)} />
-              <PhoneEditField value={selected.phone} onChange={(value) => onUpdateSelectedField("phone", value)} onCall={() => onRememberExternalCustomer(selected, "lead")} />
+              <PhoneEditField value={selected.phone} onChange={(value) => onUpdateSelectedField("phone", value)} onCall={() => onRecordCustomerPhoneCall(selected, "lead")} />
               <EditField label="Email" value={selected.email} onChange={(value) => onUpdateSelectedField("email", value)} />
               <EditField label="Település" value={selected.city} onChange={(value) => onUpdateSelectedField("city", value)} />
               <EditField label="Cím" value={selected.address} onChange={(value) => onUpdateSelectedField("address", value)} />
             </div>
-            {customerCreatedLabel(selected) ? (
-              <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-100">
-                {customerCreatedLabel(selected)}
-              </div>
-            ) : null}
+            <CustomerTimeline items={timelineItems} />
             {selected.address || selected.city ? (
               <a href={mapsHref(selected)} target="_blank" rel="noreferrer" onClick={() => onRememberExternalCustomer(selected, "lead")} className="mt-4 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">
                 Útvonal tervezése Google Térképpel

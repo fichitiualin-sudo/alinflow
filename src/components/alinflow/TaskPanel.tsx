@@ -34,6 +34,21 @@ type TaskPanelProps = {
   onOpenWarehouse: () => void;
 };
 
+
+function timeToMinutes(value?: string) {
+  const match = String(value || "").match(/(\d{1,2}):(\d{2})/);
+  if (!match) return 24 * 60 + 1;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function sortCustomersByTime(list: Customer[]) {
+  return [...list].sort((a, b) => {
+    const byTime = timeToMinutes(a.time) - timeToMinutes(b.time);
+    if (byTime !== 0) return byTime;
+    return (a.name || "").localeCompare(b.name || "", "hu");
+  });
+}
+
 function paginate<T>(items: T[], page: number) {
   const pageCount = Math.max(1, Math.ceil(items.length / TASK_PAGE_SIZE));
   const currentPage = Math.min(Math.max(1, page), pageCount);
@@ -95,8 +110,8 @@ export function TaskPanel({
   const activeCustomers = customers.filter((customer) => !isArchivedCustomer(customer));
   const today = todayIso();
   const tomorrow = offsetIso(1);
-  const todayList = activeCustomers.filter((customer) => customer.date === today);
-  const tomorrowList = activeCustomers.filter((customer) => customer.date === tomorrow);
+  const todayList = sortCustomersByTime(activeCustomers.filter((customer) => customer.date === today));
+  const tomorrowList = sortCustomersByTime(activeCustomers.filter((customer) => customer.date === tomorrow));
   const closingList = activeCustomers.filter((customer) => customer.status === "Szerelés kész – admin folyamatban");
   const callbackList = activeCustomers.filter((customer) => !customer.date && customer.status === "Visszahívandó");
   const quoteSentList = activeCustomers.filter(customerHasSentQuote);

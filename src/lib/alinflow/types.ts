@@ -15,6 +15,24 @@ export type View =
 export type CalendarMode = "week" | "month";
 export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document";
 export type QuotePricingMode = "bundle" | "alternatives";
+export type CustomerTimelineTone = "emerald" | "cyan" | "violet" | "blue" | "amber" | "slate";
+
+export type CustomerTimelineItem = {
+  label: string;
+  value?: string;
+  hint?: string;
+  tone?: CustomerTimelineTone;
+  muted?: boolean;
+};
+
+export type CustomerTimelineState = {
+  inquiredAt?: string;
+  calledAt?: string;
+  quoteSentAt?: string;
+  appointmentBookedAt?: string;
+  appointmentUpdatedAt?: string;
+  updatedAt?: string;
+};
 
 export type QuoteItem = {
   productId: string;
@@ -53,12 +71,18 @@ export type Customer = {
   time?: string;
   createdAt?: string;
   updatedAt?: string;
+  lastCalledAt?: string;
+  quoteSentAt?: string;
+  appointmentBookedAt?: string;
+  appointmentUpdatedAt?: string;
+  timeline?: CustomerTimelineState;
   quoteItems: QuoteItem[];
   productId?: string;
   quotePricingMode?: QuotePricingMode;
   isFresh?: boolean;
   stockDeducted?: boolean;
 };
+
 
 export type WorkReport = {
   id?: string;
@@ -88,7 +112,7 @@ export type LeadImportCandidate = {
   name: string;
   phone: string;
   email: string;
-  createdAt?: string;
+  inquiredAt?: string;
   duplicate: boolean;
   duplicateReason?: string;
   invalid?: boolean;

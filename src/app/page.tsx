@@ -9,6 +9,7 @@ import type {
   ClimateProduct,
   Customer,
   CustomerDraft,
+  CustomerTimelineItem,
   DocumentPreviewType,
   DocumentRecord,
   InventoryItem,
@@ -137,15 +138,80 @@ function formatCustomerCreatedAt(value?: string) {
   return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-function isCsvImportedCustomer(customer: Customer) {
-  const source = (customer.source || "").toLocaleLowerCase("hu-HU");
-  return source.includes("csv") || source.includes("import");
+function customerInquiryLabel(customer: Customer) {
+  const created = formatCustomerCreatedAt(customer.createdAt);
+  return created ? `Érdeklődött: ${created}` : "";
 }
 
-function customerCreatedLabel(customer: Customer) {
-  const created = formatCustomerCreatedAt(customer.createdAt);
-  if (!created) return "";
-  return isCsvImportedCustomer(customer) ? `CSV import · Érdeklődött: ${created}` : `Érdeklődött: ${created}`;
+function documentTimestamp(docs: DocumentRecord[], type: string) {
+  const doc = docs.find((item) => item.type === type);
+  return doc?.sentAt || doc?.updatedAt || doc?.createdAt || undefined;
+}
+
+function timeValue(value?: string) {
+  if (!value) return 0;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function differentEnough(a?: string, b?: string) {
+  const first = timeValue(a);
+  const second = timeValue(b);
+  if (!first || !second) return Boolean(a || b);
+  return Math.abs(first - second) > 60_000;
+}
+
+function scheduledTimeValue(value?: string) {
+  const match = String(value || "").match(/(\d{1,2}):(\d{2})/);
+  if (!match) return 24 * 60 + 1;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function sortCustomersBySchedule(list: Customer[]) {
+  return [...list].sort((a, b) => {
+    const byDate = String(a.date || "").localeCompare(String(b.date || ""));
+    if (byDate !== 0) return byDate;
+    const byTime = scheduledTimeValue(a.time) - scheduledTimeValue(b.time);
+    if (byTime !== 0) return byTime;
+    return (a.name || "").localeCompare(b.name || "", "hu");
+  });
+}
+
+function appointmentSummary(customer: Customer) {
+  if (!customer.date) return "";
+  return `${customer.date.replaceAll("-", ".")} · ${customer.time || "idő nélkül"}`;
+}
+
+function customerTimelineItems(customer: Customer): CustomerTimelineItem[] {
+  const inquiredAt = customer.createdAt || customer.timeline?.inquiredAt;
+  const calledAt = customer.lastCalledAt || customer.timeline?.calledAt;
+  const quoteSentAt = customer.quoteSentAt || customer.timeline?.quoteSentAt;
+  const appointmentRecordedAt =
+    customer.appointmentUpdatedAt ||
+    customer.timeline?.appointmentUpdatedAt ||
+    customer.appointmentBookedAt ||
+    customer.timeline?.appointmentBookedAt;
+  const updatedAtCandidate = customer.updatedAt || customer.timeline?.updatedAt;
+  const activityTimes = [calledAt, quoteSentAt, appointmentRecordedAt].filter(Boolean) as string[];
+  const hasSeparateUpdate =
+    Boolean(updatedAtCandidate) &&
+    differentEnough(updatedAtCandidate, inquiredAt) &&
+    activityTimes.every((time) => differentEnough(updatedAtCandidate, time));
+  const appointment = appointmentSummary(customer);
+
+  return [
+    { label: "Érdeklődött", value: inquiredAt, tone: inquiredAt ? "emerald" : "slate", muted: !inquiredAt },
+    { label: "Hívva", value: calledAt, tone: calledAt ? "cyan" : "slate", muted: !calledAt },
+    { label: "Ajánlat küldve", value: quoteSentAt, tone: quoteSentAt ? "blue" : "slate", muted: !quoteSentAt },
+    {
+      label: "Időpont rögzítve",
+      value: appointmentRecordedAt,
+      hint: appointment ? `Szerelés: ${appointment}` : undefined,
+      tone: appointmentRecordedAt || appointment ? "amber" : "slate",
+      muted: !appointmentRecordedAt && !appointment,
+    },
+    { label: "Utolsó módosítás", value: hasSeparateUpdate ? updatedAtCandidate : undefined, tone: hasSeparateUpdate ? "violet" : "slate", muted: !hasSeparateUpdate },
+  ];
 }
 
 function PaginationControls({
@@ -295,7 +361,7 @@ export default function Home() {
   const sortedCustomers = sortCustomersByCreatedAtDesc(customers);
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
-  const calendarCustomers = sortedCustomers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva");
+  const calendarCustomers = sortCustomersBySchedule(sortedCustomers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva"));
   const workResourceEditLocked = selected.status === "Szerelés kész – admin folyamatban" || selected.status === "Lezárva";
   const canEditWorkResources = !workResourceEditLocked || allowWorkResourceEdit;
   const hasCustomerFilter = customerSearch.trim().length > 0 || customerStatusFilter !== "all";
@@ -376,21 +442,24 @@ export default function Home() {
 
     try {
       const now = new Date().toISOString();
-      const rows = importable.map((lead) => ({
-        id: crypto.randomUUID(),
-        name: lead.name,
-        phone: lead.phone || null,
-        email: lead.email || null,
-        city: null,
-        address: null,
-        source: "CSV import",
-        status: "Visszahívandó",
-        need: null,
-        notes: null,
-        created_by: user?.id || null,
-        created_at: lead.createdAt || now,
-        updated_at: now,
-      }));
+      const rows = importable.map((lead) => {
+        const inquiryTime = lead.inquiredAt || now;
+        return {
+          id: crypto.randomUUID(),
+          name: lead.name,
+          phone: lead.phone || null,
+          email: lead.email || null,
+          city: null,
+          address: null,
+          source: "CSV import",
+          status: "Visszahívandó",
+          need: null,
+          notes: null,
+          created_by: user?.id || null,
+          created_at: inquiryTime,
+          updated_at: now,
+        };
+      });
 
       const { data, error } = await supabase.from("customers").insert(rows).select("*");
       if (error) throw error;
@@ -431,6 +500,21 @@ export default function Home() {
       RETURN_CONTEXT_KEY,
       JSON.stringify({ customerId: customer.id, view: safeReturnView(returnView), at: Date.now() })
     );
+  }
+
+  function updateCustomerActivityInState(customerId: string, patch: Partial<Customer>) {
+    setSelected((prev) => prev.id === customerId ? { ...prev, ...patch } : prev);
+    setCustomers((prev) => prev.map((customer) => customer.id === customerId ? { ...customer, ...patch } : customer));
+  }
+
+  async function recordCustomerPhoneCall(customer: Customer, returnView: View = view) {
+    rememberExternalCustomer(customer, returnView);
+    if (!customer.id) return;
+
+    const calledAt = new Date().toISOString();
+    updateCustomerActivityInState(customer.id, { lastCalledAt: calledAt, updatedAt: calledAt });
+    await supabase.from("customers").update({ updated_at: calledAt }).eq("id", customer.id);
+    await logDocument(customer, "phone_call", "Telefonhívás", "Felhívva", calledAt);
   }
 
   useEffect(() => {
@@ -893,6 +977,9 @@ export default function Home() {
     const loadedCustomers: Customer[] = sortCustomersByCreatedAtDesc((customerRows || []).map((row: any) => {
       const quote = quotesByCustomer.get(row.id);
       const job = jobsByCustomer.get(row.id);
+      const docs = documentsMap[row.id] || [];
+      const quoteSentAt = documentTimestamp(docs, "quote_email") || quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
+      const appointmentEmailAt = documentTimestamp(docs, "appointment_email");
       const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
 
       return {
@@ -910,6 +997,10 @@ export default function Home() {
         time: job?.scheduled_time || undefined,
         createdAt: row.created_at || undefined,
         updatedAt: row.updated_at || undefined,
+        lastCalledAt: documentTimestamp(docs, "phone_call"),
+        quoteSentAt,
+        appointmentBookedAt: documentTimestamp(docs, "appointment_booked") || job?.created_at || appointmentEmailAt,
+        appointmentUpdatedAt: job?.updated_at || appointmentEmailAt,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
@@ -982,6 +1073,8 @@ export default function Home() {
       need: customer.need || null,
       notes: customer.notes || null,
       stock_deducted: Boolean(customer.stockDeducted),
+      created_at: customer.createdAt || undefined,
+      updated_at: customer.updatedAt || new Date().toISOString(),
       created_by: user.id,
     });
 
@@ -1050,6 +1143,7 @@ export default function Home() {
   }
 
   function startNewCustomer() {
+    const now = new Date().toISOString();
     const fresh: Customer = {
       id: crypto.randomUUID(),
       name: "",
@@ -1061,7 +1155,8 @@ export default function Home() {
       status: "Visszahívandó",
       need: "",
       notes: "",
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       quoteItems: EMPTY_QUOTE_ITEMS,
       quotePricingMode: "bundle",
     };
@@ -1080,11 +1175,14 @@ export default function Home() {
   }
 
   async function saveCustomerData() {
+    const now = new Date().toISOString();
+    const updated: Customer = { ...selected, updatedAt: now };
     try {
-      await persistCustomerToDb(selected);
-      setCustomers((prev) => sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === selected.id ? selected : customer)));
+      await persistCustomerToDb(updated);
+      setSelected(updated);
+      setCustomers((prev) => sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === updated.id ? updated : customer)));
       setEditCustomer(false);
-      clearCustomerDraft(selected.id);
+      clearCustomerDraft(updated.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Ügyféladatok mentve ✅");
     } catch (error: any) {
@@ -1136,6 +1234,10 @@ export default function Home() {
 
   async function toggleChecklist(key: keyof WorkChecklistState) {
     const base = selected.id ? effectiveChecklistFor(selected) : workChecklist;
+    if ((key === "worksheet" || key === "purchaseDeclaration") && !base.signature) {
+      setMessage("A munkalap és a vásárlási nyilatkozat csak ügyfélaláírás után jelölhető elkészültként.");
+      return;
+    }
     const next: WorkChecklistState = { ...base, [key]: !base[key] };
     setWorkChecklist(next);
 
@@ -1309,10 +1411,23 @@ export default function Home() {
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
     const wasExistingSchedule = Boolean(selected.date);
+    const appointmentBookedAt = new Date().toISOString();
     const scheduledQuoteItems = cleanQuoteItems(quoteItems);
-    const updated:Customer = {...selected, date:scheduleDate, time:shownTime, status:"Időpont foglalva", quoteItems: scheduledQuoteItems, productId: scheduledQuoteItems[0]?.productId || undefined, isFresh:true};
+    const updated:Customer = {
+      ...selected,
+      date:scheduleDate,
+      time:shownTime,
+      status:"Időpont foglalva",
+      quoteItems: scheduledQuoteItems,
+      productId: scheduledQuoteItems[0]?.productId || undefined,
+      isFresh:true,
+      appointmentBookedAt: selected.appointmentBookedAt || appointmentBookedAt,
+      appointmentUpdatedAt: appointmentBookedAt,
+      updatedAt: appointmentBookedAt,
+    };
     try {
       await persistCustomerToDb(updated);
+      await logDocument(updated, "appointment_booked", "Időpont rögzítése", "Rögzítve", appointmentBookedAt);
       setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
       setSelected(updated);
 
@@ -1340,6 +1455,7 @@ export default function Home() {
     const updatedQuoteItems = cleanQuoteItems(quoteItems);
     const newQty = qty(updatedQuoteItems);
     const updatedTime = newQty >= 2 ? "08:00 + 12:00" : (selected.time || scheduleTime || "08:00");
+    const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
       quoteItems: updatedQuoteItems,
@@ -1347,6 +1463,7 @@ export default function Home() {
       time: updatedTime,
       status: selected.status || "Időpont foglalva",
       isFresh: true,
+      updatedAt: changedAt,
     };
 
     try {
@@ -1434,12 +1551,14 @@ export default function Home() {
 
     await deductStockIfNeeded();
 
+    const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
       quoteItems,
       status: "Szerelés kész – admin folyamatban",
       isFresh: false,
       stockDeducted: true,
+      updatedAt: changedAt,
     };
 
     try {
@@ -1469,12 +1588,14 @@ export default function Home() {
 
     await deductStockIfNeeded();
 
+    const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
       quoteItems,
       status: "Lezárva",
       isFresh: false,
       stockDeducted: true,
+      updatedAt: changedAt,
     };
 
     try {
@@ -1490,12 +1611,14 @@ export default function Home() {
   }
 
   async function cancelAppointment() {
+    const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
       date: undefined,
       time: undefined,
       status: "Lemondva",
       isFresh: false,
+      updatedAt: changedAt,
     };
 
     try {
@@ -1509,10 +1632,12 @@ export default function Home() {
     }
   }
   async function restoreArchivedCustomer(customer: Customer) {
+    const changedAt = new Date().toISOString();
     const restored: Customer = {
       ...customer,
       status: customer.date ? "Időpont foglalva" : "Visszahívandó",
       isFresh: true,
+      updatedAt: changedAt,
     };
 
     try {
@@ -1806,15 +1931,18 @@ export default function Home() {
         throw new Error(result?.error || "Nem sikerült elküldeni az ajánlat emailt.");
       }
 
+      const quoteSentAt = new Date().toISOString();
       const updated: Customer = {
         ...selected,
         status: "Ajánlat elküldve",
         quoteItems,
         quotePricingMode: selected.quotePricingMode || "bundle",
+        quoteSentAt,
+        updatedAt: quoteSentAt,
       };
 
       await persistCustomerToDb(updated);
-      await logDocument(updated, "quote_email", "Ajánlat email", "Elküldve");
+      await logDocument(updated, "quote_email", "Ajánlat email", "Elküldve", quoteSentAt);
       setSelected(updated);
       setCustomers((prev) => prev.map((customer) => customer.id === updated.id ? updated : customer));
       clearCustomerDraft(updated.id);
@@ -1848,7 +1976,8 @@ export default function Home() {
         throw new Error(result?.error || "Nem sikerült elküldeni az időpont emailt.");
       }
 
-      await logDocument(customer, "appointment_email", "Időpont-visszaigazolás", "Elküldve");
+      const appointmentEmailSentAt = new Date().toISOString();
+      await logDocument(customer, "appointment_email", "Időpont-visszaigazolás", "Elküldve", appointmentEmailSentAt);
       setMessage("Időpont tájékoztató email elküldve ✅");
       return true;
     } catch (error: any) {
@@ -1929,9 +2058,10 @@ export default function Home() {
     };
   }
 
-  function statusMeansDone(status?: string) {
+  function statusMeansSignedOrSent(status?: string) {
     const text = (status || "").toLowerCase();
-    return text.includes("elküld") || text.includes("kész") || text.includes("aláír") || text.includes("elkészült") || text.includes("mentve");
+    if (!text || text.includes("nincs kész") || text.includes("aláírásra vár")) return false;
+    return text.includes("elküld") || text.includes("aláír");
   }
 
   function statusMeansSent(status?: string) {
@@ -1952,22 +2082,24 @@ export default function Home() {
     const workDoc = docs.find((doc) => doc.type === "work_report");
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
 
-    const hasSignature = Boolean(report?.signatureDataUrl || saved.signature);
-    const workReportReady = Boolean(report?.id || report?.signatureDataUrl || statusMeansDone(workDoc?.status));
-    const purchaseReady = Boolean(purchaseDoc || hasSignature || report?.emailSentAt || saved.purchaseDeclaration);
-    const documentsSent = Boolean(
-      saved.docsSent ||
+    const workAndDeclarationReady = Boolean(
+      report?.signatureDataUrl ||
+      report?.signedAt ||
       report?.emailSentAt ||
-      statusMeansSent(workDoc?.status) ||
-      statusMeansSent(purchaseDoc?.status)
+      statusMeansSignedOrSent(workDoc?.status) ||
+      statusMeansSignedOrSent(purchaseDoc?.status)
+    );
+    const documentsSent = Boolean(
+      workAndDeclarationReady &&
+      (saved.docsSent || report?.emailSentAt || statusMeansSent(workDoc?.status) || statusMeansSent(purchaseDoc?.status))
     );
 
     return {
       ...EMPTY_WORK_CHECKLIST,
       ...saved,
-      worksheet: Boolean(saved.worksheet || workReportReady),
-      signature: Boolean(saved.signature || hasSignature),
-      purchaseDeclaration: Boolean(saved.purchaseDeclaration || purchaseReady),
+      worksheet: workAndDeclarationReady,
+      signature: workAndDeclarationReady,
+      purchaseDeclaration: workAndDeclarationReady,
       docsSent: documentsSent,
     };
   }
@@ -2000,7 +2132,7 @@ export default function Home() {
 
   function quoteSentAtFor(customer: Customer) {
     const doc = docFor(customer, "quote_email");
-    return doc?.sentAt || doc?.createdAt || doc?.updatedAt;
+    return doc?.sentAt || doc?.updatedAt || doc?.createdAt || customer.quoteSentAt;
   }
 
   function customerHasSentQuote(customer: Customer) {
@@ -2014,15 +2146,17 @@ export default function Home() {
     return sentAt ? `${status} · ${formatQuoteSentAt(sentAt)}` : status;
   }
 
-  async function logDocument(customer: Customer, type: string, title: string, status = "Elküldve") {
+  async function logDocument(customer: Customer, type: string, title: string, status = "Elküldve", eventAt?: string) {
     if (!customer.id || !user) return;
 
+    const timestamp = eventAt || new Date().toISOString();
+    const shouldStoreTimestamp = Boolean(eventAt) || status.toLowerCase().includes("elküld");
     const payload = {
       customer_id: customer.id,
       document_type: type,
       title,
       status,
-      sent_at: status.toLowerCase().includes("elküld") ? new Date().toISOString() : null,
+      sent_at: shouldStoreTimestamp ? timestamp : null,
       created_by: user.id,
     };
 
@@ -2032,7 +2166,7 @@ export default function Home() {
       .select("*")
       .single();
 
-    if (error) return;
+    if (error) return undefined;
 
     const saved = documentFromRow(data);
     setDocumentsByCustomer((prev) => {
@@ -2040,32 +2174,44 @@ export default function Home() {
       const withoutCurrent = current.filter((doc) => doc.type !== saved.type);
       return { ...prev, [customer.id]: [saved, ...withoutCurrent] };
     });
+    return saved;
+  }
+
+  function hasCustomerSignature(customer: Customer) {
+    const report = savedReportFor(customer);
+    const docs = docsFor(customer);
+    const workDoc = docs.find((doc) => doc.type === "work_report");
+    const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
+    return Boolean(
+      report?.signatureDataUrl ||
+      report?.signedAt ||
+      report?.emailSentAt ||
+      statusMeansSignedOrSent(workDoc?.status) ||
+      statusMeansSignedOrSent(purchaseDoc?.status)
+    );
   }
 
   function workReportDocumentStatus(customer: Customer) {
     const report = savedReportFor(customer);
     if (report?.emailSentAt) return "Elküldve";
-    if (report?.signatureDataUrl) return "Aláírva, mentve";
-    if (report?.id) return "Mentve";
+    if (hasCustomerSignature(customer)) return "Aláírva, elkészült";
+    if (report?.id) return "Mentve, aláírásra vár";
     return "Nincs kész";
   }
 
   function purchaseDeclarationStatus(customer: Customer) {
     const report = savedReportFor(customer);
-    if (docFor(customer, "purchase_declaration")?.status) return docFor(customer, "purchase_declaration")!.status;
     if (report?.emailSentAt) return "Elküldve";
-    if (report?.signatureDataUrl) return "Elkészült";
+    if (hasCustomerSignature(customer)) return "Elkészült";
+    if (report?.id) return "Aláírásra vár";
     return "Aláírásra vár";
   }
 
   function workAndDeclarationStatus(customer: Customer) {
     const report = savedReportFor(customer);
-    const workStatus = workReportDocumentStatus(customer);
-    const declarationStatus = purchaseDeclarationStatus(customer);
-
-    if (report?.emailSentAt || workStatus.includes("Elküld") || declarationStatus.includes("Elküld")) return "Elküldve";
-    if (report?.signatureDataUrl || declarationStatus.includes("Elkészült") || declarationStatus.includes("Aláír")) return "Elkészült";
-    if (report?.id || workStatus.includes("Mentve")) return "Mentve";
+    if (report?.emailSentAt) return "Elküldve";
+    if (hasCustomerSignature(customer)) return "Elkészült";
+    if (report?.id) return "Mentve, aláírásra vár";
     return "Nincs kész";
   }
 
@@ -2206,16 +2352,18 @@ export default function Home() {
         await supabase.from("work_reports").update({ email_sent_at: emailSentAt }).eq("id", data.id);
       }
 
-      await logDocument(selected, "work_report", "Klímaszerelési munkalap", sendEmail ? "Elküldve" : "Mentve");
-      if (reportToSave.signatureDataUrl || sendEmail) {
-        await logDocument(selected, "purchase_declaration", "Vásárlási nyilatkozat", sendEmail ? "Elküldve" : "Elkészült");
+      const hasSignedReport = Boolean(reportToSave.signatureDataUrl || signedAt);
+      const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
+      await logDocument(selected, "work_report", "Klímaszerelési munkalap", sendEmail ? "Elküldve" : hasSignedReport ? "Aláírva, mentve" : "Mentve, aláírásra vár", documentEventAt);
+      if (hasSignedReport) {
+        await logDocument(selected, "purchase_declaration", "Vásárlási nyilatkozat", sendEmail ? "Elküldve" : "Elkészült", documentEventAt);
       }
 
       await updateChecklistForCustomer(selected, {
-        worksheet: true,
-        purchaseDeclaration: Boolean(reportToSave.signatureDataUrl) || sendEmail,
-        signature: Boolean(reportToSave.signatureDataUrl),
-        docsSent: sendEmail,
+        worksheet: hasSignedReport,
+        purchaseDeclaration: hasSignedReport,
+        signature: hasSignedReport,
+        docsSent: Boolean(sendEmail && hasSignedReport),
       });
 
       const savedReportForState: WorkReport = {
@@ -2247,9 +2395,10 @@ export default function Home() {
 
   function documentIsReady(customer: Customer, row: { action: string; title: string; status: string }) {
     const report = savedReportFor(customer);
-    if (row.action === "Munkalap") return Boolean(report?.id || report?.signatureDataUrl || report?.emailSentAt);
-    if (row.action === "Nyilatkozat") return Boolean(report?.signatureDataUrl || report?.emailSentAt || docFor(customer, "purchase_declaration"));
-    if (row.action === "MunkalapNyilatkozat") return Boolean(report?.id || report?.signatureDataUrl || report?.emailSentAt || docFor(customer, "work_report") || docFor(customer, "purchase_declaration"));
+    const signed = hasCustomerSignature(customer);
+    if (row.action === "Munkalap") return signed;
+    if (row.action === "Nyilatkozat") return signed;
+    if (row.action === "MunkalapNyilatkozat") return signed;
     if (row.action === "Ajánlat") return row.status.includes("Elküld") || customer.status === "Ajánlat elküldve";
     if (row.action === "Időpont") return Boolean(customer.date || row.status.includes("Elküld"));
     if (row.action === "Számla") return row.status.includes("Kész") || row.status.includes("Kiállít");
@@ -2289,6 +2438,34 @@ export default function Home() {
     );
   }
 
+  function renderWarehouseQuickView() {
+    return (
+      <Card title="Raktár gyorsnézet">
+        <div className="space-y-3">
+          {products.slice(0, LIST_PAGE_SIZE).map((product: any) => {
+            const stock = stockOf(product.id);
+            const reserved = reservedForProduct(product.id);
+            const free = stock - reserved;
+            if (stock <= 0 && reserved <= 0) return null;
+
+            return (
+              <div key={product.id} className="rounded-2xl bg-slate-900/80 p-4">
+                <div className="flex justify-between gap-3">
+                  <span className="font-black">{product.name}</span>
+                  <b className={free >= 0 ? "text-emerald-300" : "text-red-300"}>{free >= 0 ? `${free} szabad` : `${Math.abs(free)} db hiány`}</b>
+                </div>
+                <div className="mt-2 text-xs text-slate-400">
+                  raktáron: {stock} db · lefoglalva: {reserved} db
+                  {reserved > stock ? <span className="mt-2 block font-black text-red-300">Figyelem: több van lefoglalva, mint készleten.</span> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    );
+  }
+
 
 
   if (view==="documentPreview") {
@@ -2319,7 +2496,7 @@ export default function Home() {
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
                 {documentCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs találat.</div> : null}
-                {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerCreatedLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerCreatedLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
+                {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerInquiryLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
               </div>
               <PaginationControls currentPage={documentPagination.currentPage} pageCount={documentPagination.pageCount} totalCount={documentCustomers.length} label="ügyfél" onPageChange={setDocumentPage} />
             </Card>
@@ -2334,11 +2511,13 @@ export default function Home() {
     <LeadPanel
       selected={selected}
       customers={customers}
+      timelineItems={customerTimelineItems(selected)}
       onBack={()=>goBack()}
       onSaveCustomerOnly={saveCustomerOnly}
       onSaveCustomerAndQuote={()=>saveCustomer("quote")}
       onDeleteCustomer={deleteCustomer}
       onRememberExternalCustomer={rememberExternalCustomer}
+      onRecordCustomerPhoneCall={recordCustomerPhoneCall}
       onUpdateSelectedField={updateSelectedField}
       onUpdateCustomerStatus={updateCustomerStatus}
     />
@@ -2464,9 +2643,11 @@ export default function Home() {
         checklistReady={checklistReady}
         missingChecklist={missingChecklist}
         documentRows={documentRowsFor(selected)}
+        timelineItems={customerTimelineItems(selected)}
         onBack={()=>goBack()}
         onCloseWork={closeWork}
         onRememberExternalCustomer={rememberExternalCustomer}
+        onRecordCustomerPhoneCall={recordCustomerPhoneCall}
         onSaveCustomerData={saveCustomerData}
         onSetEditCustomer={setEditCustomer}
         onUpdateSelectedField={updateSelectedField}
@@ -2519,37 +2700,12 @@ export default function Home() {
       <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="order-2 space-y-6 xl:order-1 xl:col-span-2">
+        <div className="order-1 space-y-6 xl:order-1 xl:col-span-2">
           <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/>
-
-          <Card title="Új érdeklődők">
-            <div className="mb-4 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-              <span>{dashboardLeadCustomers.length} aktív érdeklődő</span>
-              {dashboardLeadCustomers.length > LIST_PAGE_SIZE ? <span>Maximum {LIST_PAGE_SIZE} ügyfél oldalanként</span> : null}
-            </div>
-            <div className="space-y-3">
-              {dashboardLeadCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs ilyen érdeklődő.</div> : null}
-              {visibleLeadCustomers.map((c)=>(
-                <div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left">
-                      <p className="text-lg font-black">{c.name}</p>
-                      <p className="text-sm text-slate-400">{c.city || "nincs település"} · {c.email || c.phone || "nincs elérhetőség"}</p>
-                      <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p>
-                      {customerCreatedLabel(c) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerCreatedLabel(c)}</p> : null}
-                    </button>
-                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                      <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <PaginationControls currentPage={dashboardLeadPagination.currentPage} pageCount={dashboardLeadPagination.pageCount} totalCount={dashboardLeadCustomers.length} label="ügyfél" onPageChange={setLeadPage} />
-          </Card>
         </div>
 
-        <aside className="order-1 space-y-6 xl:order-2">
+        <aside className="order-2 space-y-6 xl:order-2">
+          {renderCustomerSearchPanel()}
           {draftNotice ? (
             <Card title="Folyamatban lévő szerkesztés">
               <div className="space-y-3">
@@ -2566,9 +2722,37 @@ export default function Home() {
             </Card>
           ) : null}
 
-          {renderCustomerSearchPanel()}
-          {renderLeadImportPanel()}
+        </aside>
 
+        <div className="order-3 space-y-6 xl:order-3 xl:col-span-2">
+          <Card title="Új érdeklődők">
+            <div className="mb-4 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+              <span>{dashboardLeadCustomers.length} aktív érdeklődő</span>
+              {dashboardLeadCustomers.length > LIST_PAGE_SIZE ? <span>Maximum {LIST_PAGE_SIZE} ügyfél oldalanként</span> : null}
+            </div>
+            <div className="space-y-3">
+              {dashboardLeadCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs ilyen érdeklődő.</div> : null}
+              {visibleLeadCustomers.map((c)=>(
+                <div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left">
+                      <p className="text-lg font-black">{c.name}</p>
+                      <p className="text-sm text-slate-400">{c.city || "nincs település"} · {c.email || c.phone || "nincs elérhetőség"}</p>
+                      <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p>
+                      {customerInquiryLabel(c) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(c)}</p> : null}
+                    </button>
+                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                      <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <PaginationControls currentPage={dashboardLeadPagination.currentPage} pageCount={dashboardLeadPagination.pageCount} totalCount={dashboardLeadCustomers.length} label="ügyfél" onPageChange={setLeadPage} />
+          </Card>
+        </div>
+
+        <aside className="order-4 space-y-6 xl:order-4">
           <Card title="Raktár gyorsnézet">
             <div className="space-y-3">
               {products.slice(0, LIST_PAGE_SIZE).map((product: any) => {
@@ -2592,6 +2776,8 @@ export default function Home() {
               })}
             </div>
           </Card>
+
+          {renderLeadImportPanel()}
         </aside>
       </section>
     </Shell>
