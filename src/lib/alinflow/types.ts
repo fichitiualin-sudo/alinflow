@@ -15,6 +15,7 @@ export type View =
 export type CalendarMode = "week" | "month";
 export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document";
 export type QuotePricingMode = "bundle" | "alternatives";
+export type AppointmentType = "installation" | "survey" | "maintenance";
 export type CustomerTimelineTone = "emerald" | "cyan" | "violet" | "blue" | "amber" | "slate";
 
 export type CustomerTimelineItem = {
@@ -31,6 +32,8 @@ export type CustomerTimelineState = {
   quoteSentAt?: string;
   appointmentBookedAt?: string;
   appointmentUpdatedAt?: string;
+  surveyBookedAt?: string;
+  maintenanceBookedAt?: string;
   updatedAt?: string;
 };
 
@@ -70,6 +73,7 @@ export type Customer = {
   notes?: string;
   date?: string;
   time?: string;
+  appointmentType?: AppointmentType;
   createdAt?: string;
   updatedAt?: string;
   lastCalledAt?: string;
@@ -144,6 +148,7 @@ export type CustomerDraft = {
   quoteItems: QuoteItem[];
   scheduleDate: string;
   scheduleTime: string;
+  scheduleAppointmentType?: AppointmentType;
   view: View;
   editCustomer: boolean;
   allowWorkResourceEdit: boolean;
