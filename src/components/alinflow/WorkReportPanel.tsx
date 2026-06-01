@@ -5,7 +5,6 @@ import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
 import { formatSignedAt } from "@/lib/alinflow/work-report";
-import { appointmentSummaryLabel } from "@/lib/alinflow/appointments";
 
 type WorkReportPanelProps = {
   selected: Customer;
@@ -46,7 +45,7 @@ export function WorkReportPanel({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Ügyfél" value={selected.name || "nincs megadva"}/>
               <Field label="Telepítési cím" value={fullCustomerAddress(selected)}/>
-              <Field label="Időpont" value={selected.date ? appointmentSummaryLabel(selected) : `${scheduleDate} · ${shownTime}`}/>
+              <Field label="Időpont" value={`${selected.date || scheduleDate} · ${selected.time || shownTime}`}/>
               <Field label="Klíma" value={climateSummary(quoteItems)}/>
             </div>
             <label className="mt-5 block rounded-2xl bg-slate-900/80 p-4">

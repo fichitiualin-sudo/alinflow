@@ -5,7 +5,6 @@ import type { CalendarMode, Customer } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { iso } from "@/lib/alinflow/format";
 import { calLabel, googleCalendarHref, weekStart } from "@/lib/alinflow/calendar";
-import { appointmentTimeRangeLabel, appointmentTypeLabel, isInstallationAppointment } from "@/lib/alinflow/appointments";
 
 type CalendarProps = {
   mode: CalendarMode;
@@ -42,10 +41,6 @@ function calendarStatusStyle(status: string) {
   return "border border-white/10 bg-white/10 text-white";
 }
 
-function calendarJobSummary(job: Customer) {
-  if (isInstallationAppointment(job.appointmentType)) return climateSummary(job.quoteItems);
-  return `${appointmentTypeLabel(job.appointmentType)} · 1 óra`;
-}
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -141,10 +136,10 @@ export function Calendar({
                       className="w-full text-left"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-xs font-black">{appointmentTypeLabel(job.appointmentType)} · {appointmentTimeRangeLabel(job)}</p>
+                        <p className="text-xs font-black">{job.time}</p>
                       </div>
                       <p className="mt-1 truncate text-sm font-semibold md:text-xs">{job.name}</p>
-                      <p className="truncate text-xs text-cyan-100/80 md:text-[11px]">{calendarJobSummary(job)}</p>
+                      <p className="truncate text-xs text-cyan-100/80 md:text-[11px]">{climateSummary(job.quoteItems)}</p>
                       <p className="truncate text-xs opacity-70 md:text-[11px]">{job.city}</p>
                     </button>
                     {mode === "week" && !selectable ? (

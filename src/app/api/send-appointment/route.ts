@@ -1,13 +1,3 @@
-import {
-  appointmentEmailIntro,
-  appointmentEmailSubject,
-  appointmentTimeRangeLabel,
-  appointmentTypeLabel,
-  appointmentWorkLabel,
-  isInstallationAppointment,
-  normalizeAppointmentType,
-} from "@/lib/alinflow/appointments";
-
 export const runtime = "nodejs";
 
 type Customer = {
@@ -19,7 +9,6 @@ type Customer = {
   address?: string;
   date?: string;
   time?: string;
-  appointmentType?: string;
 };
 
 type QuoteItem = {
@@ -55,6 +44,7 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, "&#039;");
 }
 
+
 function uniqueEmailRef(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -66,16 +56,9 @@ function formatDate(value?: string) {
   return date.toLocaleDateString("hu-HU", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
 }
 
-function itemLines(items: QuoteItem[], appointmentType?: string) {
-  const workLabel = appointmentWorkLabel(appointmentType);
-  const isInstall = isInstallationAppointment(appointmentType);
-
-  if (!isInstall) {
-    return `<li style="margin:8px 0"><strong>${escapeHtml(workLabel)}</strong> <span style="color:#64748b">– 1 órás időpont</span></li>`;
-  }
-
+function itemLines(items: QuoteItem[]) {
   if (!items.length) {
-    return `<li style="margin:8px 0"><strong>${escapeHtml(workLabel)}</strong> <span style="color:#64748b">– egyeztetett munka</span></li>`;
+    return `<li style="margin:8px 0">Klímatelepítés / felmérés <span style="color:#64748b">– szereléssel együtt egyeztetett munka</span></li>`;
   }
 
   return items
@@ -83,35 +66,10 @@ function itemLines(items: QuoteItem[], appointmentType?: string) {
     .join("");
 }
 
-function importantNotesHtml(appointmentType?: string) {
-  const type = normalizeAppointmentType(appointmentType);
-  const notes = type === "survey"
-    ? [
-        "Kérjük, a felmérendő helyiségek és a kültéri egység lehetséges helye legyen hozzáférhető.",
-        "A felmérés várható időtartama 1 óra.",
-        "Amennyiben bármi változna, kérjük, jelezze válasz emailben vagy telefonon.",
-      ]
-    : type === "maintenance"
-    ? [
-        "Kérjük, a karbantartandó beltéri és kültéri egység legyen hozzáférhető.",
-        "A karbantartás várható időtartama 1 óra.",
-        "Amennyiben bármi változna, kérjük, jelezze válasz emailben vagy telefonon.",
-      ]
-    : [
-        "Kérjük, az időpont előtt legyen hozzáférhető a beltéri és kültéri egység tervezett helye.",
-        "Az ajánlatban szereplő klíma szereléssel együtt értendő, az előzetesen egyeztetett feltételek szerint.",
-        "Amennyiben bármi változna, kérjük, jelezze válasz emailben vagy telefonon.",
-      ];
-
-  return notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("");
-}
-
 function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
-  const type = normalizeAppointmentType(customer.appointmentType);
-  const appointmentLabel = appointmentTypeLabel(type);
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const date = escapeHtml(formatDate(customer.date));
-  const time = escapeHtml(appointmentTimeRangeLabel({ time: customer.time, appointmentType: type }));
+  const time = escapeHtml(customer.time || "egyeztetés szerint");
   const address = escapeHtml(fullAddress(customer.city, customer.address, "egyeztetés szerint", customer.postalCode));
   const phone = escapeHtml(customer.phone || "");
 
@@ -135,14 +93,14 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
     <div class="outer" style="background:#f6f7fb;padding:28px 14px">
       <div class="card" style="max-width:680px;width:100%;margin:0 auto;background:#ffffff;border-radius:28px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 18px 45px rgba(15,23,42,.10)">
         <div class="section" style="padding:30px 32px 22px 32px;background:#050816;color:#ffffff">
-          <div style="font-size:14px;font-weight:800;color:#67e8f9;margin-bottom:8px">KLIMAlin ${escapeHtml(appointmentLabel)} időpont visszaigazolás</div>
+          <div style="font-size:14px;font-weight:800;color:#67e8f9;margin-bottom:8px">KLIMAlin időpont visszaigazolás</div>
           <h1 class="title" style="margin:0;font-size:30px;line-height:1.15;font-weight:900">Sikeres időpont-egyeztetés</h1>
-          <p style="margin:12px 0 0 0;color:#cbd5e1;font-size:15px;line-height:1.55">Köszönjük a bizalmat, az alábbi ${escapeHtml(appointmentLabel.toLowerCase())} időpontot rögzítettük.</p>
+          <p style="margin:12px 0 0 0;color:#cbd5e1;font-size:15px;line-height:1.55">Köszönjük a bizalmat, az alábbi időpontot rögzítettük.</p>
         </div>
 
         <div class="section" style="padding:26px 32px">
           <p style="margin:0 0 18px 0;font-size:16px;line-height:1.6">Tisztelt ${name}!</p>
-          <p style="margin:0 0 20px 0;font-size:16px;line-height:1.6;color:#334155">${escapeHtml(appointmentEmailIntro(type))}</p>
+          <p style="margin:0 0 20px 0;font-size:16px;line-height:1.6;color:#334155">Ezúton visszaigazoljuk az egyeztetett klímás időpontot és a szereléssel együtt értendő klíma telepítését.</p>
 
           <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin-bottom:18px">
             <div class="info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -150,7 +108,6 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
                 <div style="font-size:13px;color:#64748b;margin-bottom:5px">Időpont</div>
                 <div style="font-size:17px;font-weight:900;color:#020617;line-height:1.35">${date}</div>
                 <div style="margin-top:4px;font-size:15px;color:#334155">${time}</div>
-                <div style="margin-top:4px;font-size:13px;font-weight:800;color:#0891b2">${escapeHtml(appointmentLabel)}</div>
               </div>
               <div class="info-cell">
                 <div style="font-size:13px;color:#64748b;margin-bottom:5px">Helyszín</div>
@@ -163,14 +120,16 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
           <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;padding:18px 20px;margin-bottom:18px">
             <div style="font-size:14px;color:#64748b;margin-bottom:8px">Érintett készülék / munka</div>
             <ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.6;color:#111827">
-              ${itemLines(items, type)}
+              ${itemLines(items)}
             </ul>
           </div>
 
           <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:20px;color:#334155;font-size:15px;line-height:1.6">
             <strong style="color:#020617">Fontos tudnivalók</strong>
             <ul style="margin:10px 0 0 0;padding-left:20px">
-              ${importantNotesHtml(type)}
+              <li>Kérjük, az időpont előtt legyen hozzáférhető a beltéri és kültéri egység tervezett helye.</li>
+              <li>Az ajánlatban szereplő klíma szereléssel együtt értendő, az előzetesen egyeztetett feltételek szerint.</li>
+              <li>Amennyiben bármi változna, kérjük, jelezze válasz emailben vagy telefonon.</li>
             </ul>
           </div>
 
@@ -207,7 +166,7 @@ export async function POST(request: Request) {
         from,
         to: [to],
         reply_to: replyTo,
-        subject: appointmentEmailSubject(customer.appointmentType),
+        subject: "Időpont visszaigazolás – KLIMAlin",
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("klimalin-appointment"),
         },

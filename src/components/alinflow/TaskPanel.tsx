@@ -5,7 +5,6 @@ import type { ClimateProduct, Customer, View } from "@/lib/alinflow/types";
 import { isArchivedCustomer } from "@/lib/alinflow/constants";
 import { offsetIso, todayIso } from "@/lib/alinflow/format";
 import { climateSummary } from "@/lib/alinflow/products";
-import { appointmentSummaryLabel } from "@/lib/alinflow/appointments";
 import { formatPostalCity } from "@/lib/alinflow/postal-codes";
 import { Back, Card, Layout, Shell } from "./LayoutPrimitives";
 
@@ -169,7 +168,7 @@ export function TaskPanel({
                       <div>
                         <p className="text-lg font-black">{customer.name}</p>
                         <p className="text-sm text-slate-400">{formatPostalCity(customer.postalCode, customer.city)} · {customer.email || "nincs email"}</p>
-                        <p className="mt-1 text-xs text-slate-500">{customer.date ? appointmentSummaryLabel(customer) : "nincs időpont"}</p>
+                        <p className="mt-1 text-xs text-slate-500">{customer.date ? `${customer.date} · ${customer.time}` : "nincs időpont"}</p>
                         <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
                       </div>
                       <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(customer)}</span>

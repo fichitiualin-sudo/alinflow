@@ -5,7 +5,6 @@ import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
 import type {
-  AppointmentType,
   CalendarMode,
   ClimateProduct,
   Customer,
@@ -23,6 +22,8 @@ import type {
 } from "@/lib/alinflow/types";
 import {
   ARCHIVED_STATUSES,
+  BASE_SLOTS,
+  CUSTOMER_DRAFT_KEY,
   RETURN_CONTEXT_KEY,
   RESTORABLE_VIEWS,
   DEFAULT_INSTALL_PRICE,
@@ -54,6 +55,7 @@ import {
   itemTotal,
   itemUnitPrice,
   normalizeProduct,
+  occupiedSlots,
   prod,
   productPriceText,
   productSlug,
@@ -106,10 +108,8 @@ import {
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { normalizePostalCodeInput, uniqueSettlementByCity } from "@/lib/alinflow/postal-codes";
-import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, intervalsOverlap, isInstallationAppointment, normalizeAppointmentType, slotInterval } from "@/lib/alinflow/appointments";
 
 const LIST_PAGE_SIZE = 20;
-const DASHBOARD_WAREHOUSE_LIMIT = 6;
 
 function customerCreatedAtMs(customer: Pick<Customer, "createdAt">) {
   if (!customer.createdAt) return 0;
@@ -164,43 +164,9 @@ function isMissingPostalCodeColumnError(error: any) {
   return text.includes("postal_code") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
 }
 
-function isMissingAppointmentTypeColumnError(error: any) {
-  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
-  return text.includes("appointment_type") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
-}
-
 function withoutPostalCode<T extends Record<string, any>>(row: T) {
   const { postal_code, ...rest } = row;
   return rest;
-}
-
-function withoutAppointmentType<T extends Record<string, any>>(row: T) {
-  const { appointment_type, ...rest } = row;
-  return rest;
-}
-
-function availableAppointmentSlots({
-  customers,
-  date,
-  appointmentType,
-  items,
-  selectedCustomerId,
-}: {
-  customers: Customer[];
-  date: string;
-  appointmentType: AppointmentType;
-  items: QuoteItem[];
-  selectedCustomerId?: string;
-}) {
-  const dayCustomers = customers.filter((customer) => customer.id !== selectedCustomerId && customer.date === date && customer.status !== "Lemondva");
-  const intervals = dayCustomers.map((customer) => appointmentInterval(customer)).filter(Boolean) as { start: number; end: number }[];
-
-  const slots = isInstallationAppointment(appointmentType) && qty(items) >= 2 ? ["08:00 + 12:00"] : appointmentSlotOptions(appointmentType, items);
-  return slots.filter((slot) => {
-    const candidate = slotInterval(slot, appointmentType, items);
-    if (!candidate) return false;
-    return intervals.every((interval) => !intervalsOverlap(candidate, interval));
-  });
 }
 
 function timeValue(value?: string) {
@@ -252,7 +218,7 @@ function customerTimelineItems(customer: Customer): CustomerTimelineItem[] {
     Boolean(updatedAtCandidate) &&
     differentEnough(updatedAtCandidate, inquiredAt) &&
     activityTimes.every((time) => differentEnough(updatedAtCandidate, time));
-  const appointment = customer.date ? appointmentSummaryLabel(customer) : "";
+  const appointment = appointmentSummary(customer);
 
   return [
     { label: "Érdeklődött", value: inquiredAt, tone: inquiredAt ? "emerald" : "slate", muted: !inquiredAt },
@@ -261,7 +227,7 @@ function customerTimelineItems(customer: Customer): CustomerTimelineItem[] {
     {
       label: "Időpont rögzítve",
       value: appointmentRecordedAt,
-      hint: appointment || undefined,
+      hint: appointment ? `Szerelés: ${appointment}` : undefined,
       tone: appointmentRecordedAt || appointment ? "amber" : "slate",
       muted: !appointmentRecordedAt && !appointment,
     },
@@ -326,7 +292,6 @@ export default function Home() {
   const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(EMPTY_CUSTOMER.quoteItems);
   const [scheduleDate,setScheduleDate] = useState(() => todayIso());
   const [scheduleTime,setScheduleTime] = useState("08:00");
-  const [scheduleAppointmentType,setScheduleAppointmentType] = useState<AppointmentType>("installation");
   const [materials,setMaterials] = useState(DEFAULT_MATERIALS);
   const [materialOverrides,setMaterialOverrides] = useState<Record<string,string>>({});
   const [inventory,setInventory] = useState<InventoryItem[]>(DEFAULT_INVENTORY);
@@ -412,10 +377,8 @@ export default function Home() {
   const t = total(quoteItems);
   const installer = quoteInstallTotal(quoteItems);
   const materialPrice = Math.max(0, t-installer);
-  const normalizedScheduleAppointmentType = normalizeAppointmentType(scheduleAppointmentType);
-  const isMultiDayJob = isInstallationAppointment(normalizedScheduleAppointmentType) && q >= 2;
-  const scheduleStoredTime = isMultiDayJob ? "08:00 + 12:00" : scheduleTime;
-  const shownTime = appointmentTimeRangeLabel({ appointmentType: normalizedScheduleAppointmentType, time: scheduleStoredTime, quoteItems }, scheduleTime);
+  const isMultiDayJob = q >= 2;
+  const shownTime = isMultiDayJob ? "08:00 + 12:00" : scheduleTime;
   const sortedCustomers = sortCustomersByCreatedAtDesc(customers);
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
@@ -589,7 +552,6 @@ export default function Home() {
       quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || EMPTY_QUOTE_ITEMS,
       scheduleDate,
       scheduleTime,
-      scheduleAppointmentType,
       view,
       editCustomer,
       allowWorkResourceEdit,
@@ -597,7 +559,7 @@ export default function Home() {
     };
     writeCustomerDraft(draft);
     setDraftNotice(draft);
-  }, [selected, quoteItems, scheduleDate, scheduleTime, scheduleAppointmentType, view, editCustomer, allowWorkResourceEdit]);
+  }, [selected, quoteItems, scheduleDate, scheduleTime, view, editCustomer, allowWorkResourceEdit]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -662,8 +624,7 @@ export default function Home() {
     setSelected(customerToOpen);
     setQuoteItems(itemsToOpen);
     setScheduleDate(draft?.scheduleDate || customerToOpen.date || todayIso());
-    setScheduleTime(draft?.scheduleTime || firstAppointmentTime(customerToOpen.time));
-    setScheduleAppointmentType(normalizeAppointmentType(draft?.scheduleAppointmentType || customerToOpen.appointmentType));
+    setScheduleTime(draft?.scheduleTime || customerToOpen.time?.split(" ")[0] || "08:00");
     setWorkReport(emptyWorkReport(customerToOpen));
     setWorkChecklist(effectiveChecklistFor(customerToOpen));
     setEditCustomer(draft?.editCustomer ?? false);
@@ -701,8 +662,7 @@ export default function Home() {
     setSelected(draft.customer);
     setQuoteItems(draft.quoteItems.length ? draft.quoteItems : draft.customer.quoteItems || EMPTY_QUOTE_ITEMS);
     setScheduleDate(draft.scheduleDate || draft.customer.date || todayIso());
-    setScheduleTime(draft.scheduleTime || firstAppointmentTime(draft.customer.time));
-    setScheduleAppointmentType(normalizeAppointmentType(draft.scheduleAppointmentType || draft.customer.appointmentType));
+    setScheduleTime(draft.scheduleTime || draft.customer.time?.split(" ")[0] || "08:00");
     setEditCustomer(draft.editCustomer);
     setAllowWorkResourceEdit(draft.allowWorkResourceEdit);
     navigateToView(draft.view);
@@ -1070,7 +1030,6 @@ export default function Home() {
         quoteSentAt,
         appointmentBookedAt: documentTimestamp(docs, "appointment_booked") || job?.created_at || appointmentEmailAt,
         appointmentUpdatedAt: job?.updated_at || appointmentEmailAt,
-        appointmentType: normalizeAppointmentType(job?.appointment_type),
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
@@ -1111,16 +1070,14 @@ export default function Home() {
 
     if (selectedFromReturn && returnContext) {
       setScheduleDate(nextSelected.date || todayIso());
-      setScheduleTime(firstAppointmentTime(nextSelected.time));
-      setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
+      setScheduleTime(nextSelected.time?.split(" ")[0] || "08:00");
       setWorkReport(emptyWorkReport(nextSelected));
       setEditCustomer(false);
       replaceView(returnContext.view);
       if (typeof window !== "undefined") window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
     } else if (customerDraft && selectedFromDraft) {
       setScheduleDate(customerDraft.scheduleDate || nextSelected.date || todayIso());
-      setScheduleTime(customerDraft.scheduleTime || firstAppointmentTime(nextSelected.time));
-      setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
+      setScheduleTime(customerDraft.scheduleTime || nextSelected.time?.split(" ")[0] || "08:00");
       setEditCustomer(customerDraft.editCustomer);
       setAllowWorkResourceEdit(customerDraft.allowWorkResourceEdit);
       // Frissítés / újratöltés után ne vigyen vissza automatikusan egy belső oldalra.
@@ -1204,7 +1161,6 @@ export default function Home() {
         title: customer.name,
         scheduled_date: customer.date,
         scheduled_time: customer.time || "08:00",
-        appointment_type: normalizeAppointmentType(customer.appointmentType),
         status: normalizeStatus(customer.status || "Időpont foglalva"),
         address: customer.address || null,
         notes: customer.notes || customer.need || null,
@@ -1212,16 +1168,10 @@ export default function Home() {
       };
 
       const jobId = existingJobs?.[0]?.id as string | undefined;
-      let jobResult = jobId
+      const { error } = jobId
         ? await supabase.from("jobs").update(jobPayload).eq("id", jobId)
         : await supabase.from("jobs").insert(jobPayload);
-      if (jobResult.error && isMissingAppointmentTypeColumnError(jobResult.error)) {
-        const fallbackPayload = withoutAppointmentType(jobPayload);
-        jobResult = jobId
-          ? await supabase.from("jobs").update(fallbackPayload).eq("id", jobId)
-          : await supabase.from("jobs").insert(fallbackPayload);
-      }
-      if (jobResult.error) throw jobResult.error;
+      if (error) throw error;
     } else if (customer.status === "Lemondva") {
       await supabase.from("jobs").delete().eq("customer_id", customer.id);
     }
@@ -1245,14 +1195,12 @@ export default function Home() {
       updatedAt: now,
       quoteItems: EMPTY_QUOTE_ITEMS,
       quotePricingMode: "bundle",
-      appointmentType: "installation",
     };
 
     setSelected(fresh);
     setQuoteItems(fresh.quoteItems);
     setScheduleDate(todayIso());
     setScheduleTime("08:00");
-    setScheduleAppointmentType("installation");
     setAllowWorkResourceEdit(false);
     setReturnTarget(currentReturnTarget());
     navigateToView("lead");
@@ -1260,13 +1208,6 @@ export default function Home() {
 
   function updateSelectedField(field: keyof Customer, value: string) {
     setSelected((prev) => ({ ...prev, [field]: value }));
-  }
-
-  function updateScheduleAppointmentType(value: AppointmentType) {
-    const nextType = normalizeAppointmentType(value);
-    setScheduleAppointmentType(nextType);
-    const slots = isInstallationAppointment(nextType) && qty(quoteItems) >= 2 ? ["08:00"] : appointmentSlotOptions(nextType, quoteItems);
-    setScheduleTime((previous) => slots.includes(previous) ? previous : slots[0] || "08:00");
   }
 
   async function saveCustomerData() {
@@ -1292,7 +1233,6 @@ export default function Home() {
   function updateQuotePricingMode(value: QuotePricingMode) {
     setSelected((prev) => ({ ...prev, quotePricingMode: value }));
   }
-
 
   async function persistWorkChecklist(customer: Customer, checklist: WorkChecklistState) {
     if (!customer.id || !user) return;
@@ -1507,26 +1447,12 @@ export default function Home() {
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
     const wasExistingSchedule = Boolean(selected.date);
-    const availableSlots = availableAppointmentSlots({
-      customers,
-      date: scheduleDate,
-      appointmentType: normalizedScheduleAppointmentType,
-      items: quoteItems,
-      selectedCustomerId: selected.id,
-    });
-    const slotToValidate = isMultiDayJob ? scheduleStoredTime : scheduleTime;
-    if (!availableSlots.includes(slotToValidate)) {
-      setMessage("Ez az idősáv közben foglalt lett. Válassz másik időpontot a naptárból.");
-      return;
-    }
-
     const appointmentBookedAt = new Date().toISOString();
     const scheduledQuoteItems = cleanQuoteItems(quoteItems);
     const updated:Customer = {
       ...selected,
       date:scheduleDate,
-      time:scheduleStoredTime,
-      appointmentType: normalizedScheduleAppointmentType,
+      time:shownTime,
       status:"Időpont foglalva",
       quoteItems: scheduledQuoteItems,
       productId: scheduledQuoteItems[0]?.productId || undefined,
@@ -1537,7 +1463,7 @@ export default function Home() {
     };
     try {
       await persistCustomerToDb(updated);
-      await logDocument(updated, "appointment_booked", `${appointmentTypeLabel(updated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
+      await logDocument(updated, "appointment_booked", "Időpont rögzítése", "Rögzítve", appointmentBookedAt);
       setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
       setSelected(updated);
 
@@ -1564,7 +1490,7 @@ export default function Home() {
 
     const updatedQuoteItems = cleanQuoteItems(quoteItems);
     const newQty = qty(updatedQuoteItems);
-    const updatedTime = isInstallationAppointment(selected.appointmentType) && newQty >= 2 ? "08:00 + 12:00" : firstAppointmentTime(selected.time || scheduleTime || "08:00");
+    const updatedTime = newQty >= 2 ? "08:00 + 12:00" : (selected.time || scheduleTime || "08:00");
     const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
@@ -1652,15 +1578,14 @@ export default function Home() {
   }
 
   async function markInstallationDone() {
-    const isInstallation = isInstallationAppointment(selected.appointmentType);
-    const error = isInstallation ? stockErrorMessage() : "";
+    const error = stockErrorMessage();
     if (error) {
       setMessage(error);
       replaceView("dashboard");
       return;
     }
 
-    if (isInstallation) await deductStockIfNeeded();
+    await deductStockIfNeeded();
 
     const changedAt = new Date().toISOString();
     const updated: Customer = {
@@ -1668,7 +1593,7 @@ export default function Home() {
       quoteItems,
       status: "Szerelés kész – admin folyamatban",
       isFresh: false,
-      stockDeducted: isInstallation ? true : selected.stockDeducted,
+      stockDeducted: true,
       updatedAt: changedAt,
     };
 
@@ -1677,7 +1602,7 @@ export default function Home() {
       setSelected(updated);
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
-      setMessage(`${appointmentTypeLabel(updated.appointmentType)} kész ✅ Admin még folyamatban.`);
+      setMessage("Szerelés kész ✅ A klímák és az anyagok zárolva, admin még folyamatban.");
       replaceView("work");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
@@ -1685,8 +1610,7 @@ export default function Home() {
   }
 
   async function closeWork() {
-    const isInstallation = isInstallationAppointment(selected.appointmentType);
-    const error = isInstallation ? stockErrorMessage() : "";
+    const error = stockErrorMessage();
     if (error) {
       setMessage(error);
       replaceView("dashboard");
@@ -1698,7 +1622,7 @@ export default function Home() {
       return;
     }
 
-    if (isInstallation) await deductStockIfNeeded();
+    await deductStockIfNeeded();
 
     const changedAt = new Date().toISOString();
     const updated: Customer = {
@@ -1706,7 +1630,7 @@ export default function Home() {
       quoteItems,
       status: "Lezárva",
       isFresh: false,
-      stockDeducted: isInstallation ? true : selected.stockDeducted,
+      stockDeducted: true,
       updatedAt: changedAt,
     };
 
@@ -1728,7 +1652,6 @@ export default function Home() {
       ...selected,
       date: undefined,
       time: undefined,
-      appointmentType: selected.appointmentType,
       status: "Lemondva",
       isFresh: false,
       updatedAt: changedAt,
@@ -1772,7 +1695,7 @@ export default function Home() {
 
   function reservedForProduct(productId: string) {
     return customers
-      .filter((customer) => Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva")
+      .filter((customer) => Boolean(customer.date) && customer.status !== "Lezárva" && customer.status !== "Lemondva")
       .reduce((sum, customer) => {
         const items = customer.quoteItems ?? [];
         return sum + items
@@ -1825,7 +1748,7 @@ export default function Home() {
   }
 
   function materialReserved(materialName: string) {
-    const activeJobs = customers.filter((customer: any) => Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva");
+    const activeJobs = customers.filter((customer: any) => Boolean(customer.date) && customer.status !== "Lezárva" && customer.status !== "Lemondva");
 
     return Math.round(activeJobs.reduce((sum: number, customer: any) => {
       const items = customer.quoteItems ?? [];
@@ -2006,7 +1929,6 @@ export default function Home() {
         need: customer.need,
         date: customer.date,
         time: customer.time,
-        appointmentType: normalizeAppointmentType(customer.appointmentType),
       },
       pricingMode: customer.quotePricingMode || "bundle",
       quoteIssuedAt: issuedAt,
@@ -2092,7 +2014,7 @@ export default function Home() {
       }
 
       const appointmentEmailSentAt = new Date().toISOString();
-      await logDocument(customer, "appointment_email", appointmentDocumentTitle(customer.appointmentType), "Elküldve", appointmentEmailSentAt);
+      await logDocument(customer, "appointment_email", "Időpont-visszaigazolás", "Elküldve", appointmentEmailSentAt);
       setMessage("Időpont tájékoztató email elküldve ✅");
       return true;
     } catch (error: any) {
@@ -2118,7 +2040,6 @@ export default function Home() {
         need: customer.need,
         date: customer.date,
         time: customer.time,
-        appointmentType: normalizeAppointmentType(customer.appointmentType),
       },
       pricingMode: customer.quotePricingMode || "bundle",
       items: items.map((item) => ({
@@ -2258,7 +2179,6 @@ export default function Home() {
 
   function customerStatusLabel(customer: Customer) {
     const status = customer.status || "nincs státusz";
-    if (status === "Időpont foglalva" && customer.date) return `${status} · ${appointmentSummaryLabel(customer)}`;
     if (status !== "Ajánlat elküldve") return status;
     const sentAt = quoteSentAtFor(customer);
     return sentAt ? `${status} · ${formatQuoteSentAt(sentAt)}` : status;
@@ -2341,7 +2261,7 @@ export default function Home() {
 
     return [
       { title: "Ajánlat email", status: quoteDisplayStatus, action: "Ajánlat" },
-      { title: `${appointmentTypeLabel(customer.appointmentType)} visszaigazolás`, status: docStatus(customer, "appointment_email", customer.date ? "Időpont rögzítve" : "Nincs időpont"), action: "Időpont" },
+      { title: "Időpont-visszaigazolás", status: docStatus(customer, "appointment_email", customer.date ? "Időpont rögzítve" : "Nincs időpont"), action: "Időpont" },
       { title: "Munkalap és vásárlási nyilatkozat", status: workAndDeclarationStatus(customer), action: "MunkalapNyilatkozat" },
       { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla" },
       { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla" },
@@ -2557,92 +2477,29 @@ export default function Home() {
   }
 
   function renderWarehouseQuickView() {
-    const warehouseRows = products
-      .map((product: any) => {
-        const stock = stockOf(product.id);
-        const reserved = reservedForProduct(product.id);
-        return { product, stock, reserved, free: stock - reserved };
-      })
-      .filter((row) => row.stock > 0 || row.reserved > 0);
-    const visibleWarehouseRows = warehouseRows.slice(0, DASHBOARD_WAREHOUSE_LIMIT);
-    const hiddenWarehouseCount = Math.max(0, warehouseRows.length - visibleWarehouseRows.length);
-
     return (
       <Card title="Raktár gyorsnézet">
         <div className="space-y-3">
-          {visibleWarehouseRows.length === 0 ? <div className="rounded-2xl bg-slate-900/80 p-4 font-black text-slate-300">Nincs megjeleníthető készlet.</div> : null}
-          {visibleWarehouseRows.map(({ product, stock, reserved, free }) => (
-            <div key={product.id} className="rounded-2xl bg-slate-900/80 p-4">
-              <div className="flex justify-between gap-3">
-                <span className="font-black">{product.name}</span>
-                <b className={free >= 0 ? "text-emerald-300" : "text-red-300"}>{free >= 0 ? `${free} szabad` : `${Math.abs(free)} db hiány`}</b>
-              </div>
-              <div className="mt-2 text-xs text-slate-400">
-                raktáron: {stock} db · lefoglalva: {reserved} db
-                {reserved > stock ? <span className="mt-2 block font-black text-red-300">Figyelem: több van lefoglalva, mint készleten.</span> : null}
-              </div>
-            </div>
-          ))}
-        </div>
-        {hiddenWarehouseCount > 0 ? (
-          <button
-            onClick={() => navigateToView("warehouse")}
-            className="mt-4 w-full rounded-2xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-black text-cyan-100 transition hover:border-cyan-300/50 hover:bg-cyan-300/20"
-          >
-            További {hiddenWarehouseCount} tétel a Raktár / klímák oldalon
-          </button>
-        ) : null}
-      </Card>
-    );
-  }
+          {products.slice(0, LIST_PAGE_SIZE).map((product: any) => {
+            const stock = stockOf(product.id);
+            const reserved = reservedForProduct(product.id);
+            const free = stock - reserved;
+            if (stock <= 0 && reserved <= 0) return null;
 
-
-  function renderDraftNoticePanel() {
-    if (!draftNotice) return null;
-
-    return (
-      <Card title="Folyamatban lévő szerkesztés">
-        <div className="space-y-3">
-          <p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p>
-          <div className="rounded-2xl bg-slate-950/60 p-3">
-            <p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p>
-            <p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || [draftNotice.customer.postalCode, draftNotice.customer.city].filter(Boolean).join(" ") || "nincs adat"}</p>
-          </div>
-          <div className="grid grid-cols-1 gap-2">
-            <button onClick={continueCustomerDraft} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Szerkesztés folytatása</button>
-            <button onClick={discardCustomerDraft} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-slate-200">Helyi piszkozat elvetése</button>
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
-  function renderDashboardLeadsPanel() {
-    return (
-      <Card title="Új érdeklődők">
-        <div className="mb-4 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-          <span>{dashboardLeadCustomers.length} aktív érdeklődő</span>
-          {dashboardLeadCustomers.length > LIST_PAGE_SIZE ? <span>Maximum {LIST_PAGE_SIZE} ügyfél oldalanként</span> : null}
-        </div>
-        <div className="space-y-3">
-          {dashboardLeadCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs ilyen érdeklődő.</div> : null}
-          {visibleLeadCustomers.map((c)=>(
-            <div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left">
-                  <p className="text-lg font-black">{c.name}</p>
-                  <p className="text-sm text-slate-400">{c.city || "nincs település"} · {c.email || c.phone || "nincs elérhetőség"}</p>
-                  <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p>
-                  {customerInquiryLabel(c) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(c)}</p> : null}
-                </button>
-                <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                  <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span>
+            return (
+              <div key={product.id} className="rounded-2xl bg-slate-900/80 p-4">
+                <div className="flex justify-between gap-3">
+                  <span className="font-black">{product.name}</span>
+                  <b className={free >= 0 ? "text-emerald-300" : "text-red-300"}>{free >= 0 ? `${free} szabad` : `${Math.abs(free)} db hiány`}</b>
+                </div>
+                <div className="mt-2 text-xs text-slate-400">
+                  raktáron: {stock} db · lefoglalva: {reserved} db
+                  {reserved > stock ? <span className="mt-2 block font-black text-red-300">Figyelem: több van lefoglalva, mint készleten.</span> : null}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        <PaginationControls currentPage={dashboardLeadPagination.currentPage} pageCount={dashboardLeadPagination.pageCount} totalCount={dashboardLeadCustomers.length} label="ügyfél" onPageChange={setLeadPage} />
       </Card>
     );
   }
@@ -2750,13 +2607,8 @@ export default function Home() {
   }
 
   if (view==="schedule") {
-    const free = availableAppointmentSlots({
-      customers,
-      date: scheduleDate,
-      selectedCustomerId: selected.id,
-      appointmentType: normalizedScheduleAppointmentType,
-      items: quoteItems,
-    });
+    const booked = customers.filter(c=>c.id!==selected.id && c.date===scheduleDate).flatMap(c=>occupiedSlots(c));
+    const free = BASE_SLOTS.filter(s=>!booked.includes(s));
     const isExistingSchedule = Boolean(selected.date);
     return (
       <SchedulePanel
@@ -2768,7 +2620,6 @@ export default function Home() {
         scheduleDate={scheduleDate}
         scheduleTime={scheduleTime}
         shownTime={shownTime}
-        appointmentType={normalizedScheduleAppointmentType}
         isMultiDayJob={isMultiDayJob}
         freeSlots={free}
         quoteItems={quoteItems}
@@ -2783,7 +2634,6 @@ export default function Home() {
         onStep={step}
         onOpenCustomer={(customer)=>openCustomer(customer,"work")}
         onSetScheduleTime={setScheduleTime}
-        onSetAppointmentType={updateScheduleAppointmentType}
         onUpdateQuoteItem={updateQuoteItem}
         onUpdateQuoteProduct={updateQuoteProduct}
         onAddQuoteItem={addQuoteItem}
@@ -2841,7 +2691,6 @@ export default function Home() {
         onUpdateSelectedField={updateSelectedField}
         onSetScheduleDate={setScheduleDate}
         onSetScheduleTime={setScheduleTime}
-        onSetScheduleAppointmentType={setScheduleAppointmentType}
         onSetView={navigateToView}
         onUpdateQuoteItem={updateQuoteItem}
         onUpdateQuoteProduct={updateQuoteProduct}
@@ -2888,25 +2737,67 @@ export default function Home() {
 
       <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
 
-      <section className="space-y-6 xl:hidden">
-        <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/>
-        {renderCustomerSearchPanel()}
-        {renderDraftNoticePanel()}
-        {renderDashboardLeadsPanel()}
-        {renderWarehouseQuickView()}
-        {renderLeadImportPanel()}
-      </section>
-
-      <section className="hidden gap-6 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] xl:items-start 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
-        <div className="space-y-6">
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="order-1 space-y-6 xl:order-1 xl:col-span-2">
           <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/>
-          {renderDashboardLeadsPanel()}
         </div>
 
-        <aside className="space-y-6 xl:sticky xl:top-6">
+        <aside className="order-2 space-y-6 xl:order-2">
           {renderCustomerSearchPanel()}
-          {renderDraftNoticePanel()}
-          {renderWarehouseQuickView()}
+          {draftNotice ? (
+            <Card title="Folyamatban lévő szerkesztés">
+              <div className="space-y-3">
+                <p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p>
+                <div className="rounded-2xl bg-slate-950/60 p-3">
+                  <p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p>
+                  <p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || [draftNotice.customer.postalCode, draftNotice.customer.city].filter(Boolean).join(" ") || "nincs adat"}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  <button onClick={continueCustomerDraft} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Szerkesztés folytatása</button>
+                  <button onClick={discardCustomerDraft} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-slate-200">Helyi piszkozat elvetése</button>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+          <div className="hidden xl:block">
+            {renderWarehouseQuickView()}
+          </div>
+
+        </aside>
+
+        <div className="order-3 space-y-6 xl:order-3 xl:col-span-2">
+          <Card title="Új érdeklődők">
+            <div className="mb-4 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+              <span>{dashboardLeadCustomers.length} aktív érdeklődő</span>
+              {dashboardLeadCustomers.length > LIST_PAGE_SIZE ? <span>Maximum {LIST_PAGE_SIZE} ügyfél oldalanként</span> : null}
+            </div>
+            <div className="space-y-3">
+              {dashboardLeadCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs ilyen érdeklődő.</div> : null}
+              {visibleLeadCustomers.map((c)=>(
+                <div key={c.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 transition hover:border-cyan-300/40">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left">
+                      <p className="text-lg font-black">{c.name}</p>
+                      <p className="text-sm text-slate-400">{c.city || "nincs település"} · {c.email || c.phone || "nincs elérhetőség"}</p>
+                      <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p>
+                      {customerInquiryLabel(c) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(c)}</p> : null}
+                    </button>
+                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                      <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold">{customerStatusLabel(c)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <PaginationControls currentPage={dashboardLeadPagination.currentPage} pageCount={dashboardLeadPagination.pageCount} totalCount={dashboardLeadCustomers.length} label="ügyfél" onPageChange={setLeadPage} />
+          </Card>
+        </div>
+
+        <aside className="order-4 space-y-6 xl:order-4">
+          <div className="xl:hidden">
+            {renderWarehouseQuickView()}
+          </div>
+
           {renderLeadImportPanel()}
         </aside>
       </section>
