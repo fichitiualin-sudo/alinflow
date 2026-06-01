@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 export function Shell({ children }: { children: ReactNode }) {
   return (
     <main className="min-h-screen bg-[#08111F] p-4 text-white print:bg-white print:p-0 print:text-black md:p-8">
-      <div className="mx-auto max-w-7xl space-y-8 print:max-w-none print:space-y-0">{children}</div>
+      <div className="mx-auto w-full max-w-[1500px] space-y-8 print:max-w-none print:space-y-0 2xl:max-w-[1680px]">{children}</div>
     </main>
   );
 }

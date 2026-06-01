@@ -109,6 +109,7 @@ import { normalizePostalCodeInput, uniqueSettlementByCity } from "@/lib/alinflow
 import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, intervalsOverlap, isInstallationAppointment, normalizeAppointmentType, slotInterval } from "@/lib/alinflow/appointments";
 
 const LIST_PAGE_SIZE = 20;
+const DASHBOARD_WAREHOUSE_LIMIT = 6;
 
 function customerCreatedAtMs(customer: Pick<Customer, "createdAt">) {
   if (!customer.createdAt) return 0;
@@ -2556,29 +2557,41 @@ export default function Home() {
   }
 
   function renderWarehouseQuickView() {
+    const warehouseRows = products
+      .map((product: any) => {
+        const stock = stockOf(product.id);
+        const reserved = reservedForProduct(product.id);
+        return { product, stock, reserved, free: stock - reserved };
+      })
+      .filter((row) => row.stock > 0 || row.reserved > 0);
+    const visibleWarehouseRows = warehouseRows.slice(0, DASHBOARD_WAREHOUSE_LIMIT);
+    const hiddenWarehouseCount = Math.max(0, warehouseRows.length - visibleWarehouseRows.length);
+
     return (
       <Card title="Raktár gyorsnézet">
         <div className="space-y-3">
-          {products.slice(0, LIST_PAGE_SIZE).map((product: any) => {
-            const stock = stockOf(product.id);
-            const reserved = reservedForProduct(product.id);
-            const free = stock - reserved;
-            if (stock <= 0 && reserved <= 0) return null;
-
-            return (
-              <div key={product.id} className="rounded-2xl bg-slate-900/80 p-4">
-                <div className="flex justify-between gap-3">
-                  <span className="font-black">{product.name}</span>
-                  <b className={free >= 0 ? "text-emerald-300" : "text-red-300"}>{free >= 0 ? `${free} szabad` : `${Math.abs(free)} db hiány`}</b>
-                </div>
-                <div className="mt-2 text-xs text-slate-400">
-                  raktáron: {stock} db · lefoglalva: {reserved} db
-                  {reserved > stock ? <span className="mt-2 block font-black text-red-300">Figyelem: több van lefoglalva, mint készleten.</span> : null}
-                </div>
+          {visibleWarehouseRows.length === 0 ? <div className="rounded-2xl bg-slate-900/80 p-4 font-black text-slate-300">Nincs megjeleníthető készlet.</div> : null}
+          {visibleWarehouseRows.map(({ product, stock, reserved, free }) => (
+            <div key={product.id} className="rounded-2xl bg-slate-900/80 p-4">
+              <div className="flex justify-between gap-3">
+                <span className="font-black">{product.name}</span>
+                <b className={free >= 0 ? "text-emerald-300" : "text-red-300"}>{free >= 0 ? `${free} szabad` : `${Math.abs(free)} db hiány`}</b>
               </div>
-            );
-          })}
+              <div className="mt-2 text-xs text-slate-400">
+                raktáron: {stock} db · lefoglalva: {reserved} db
+                {reserved > stock ? <span className="mt-2 block font-black text-red-300">Figyelem: több van lefoglalva, mint készleten.</span> : null}
+              </div>
+            </div>
+          ))}
         </div>
+        {hiddenWarehouseCount > 0 ? (
+          <button
+            onClick={() => navigateToView("warehouse")}
+            className="mt-4 w-full rounded-2xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-black text-cyan-100 transition hover:border-cyan-300/50 hover:bg-cyan-300/20"
+          >
+            További {hiddenWarehouseCount} tétel a Raktár / klímák oldalon
+          </button>
+        ) : null}
       </Card>
     );
   }
@@ -2884,13 +2897,13 @@ export default function Home() {
         {renderLeadImportPanel()}
       </section>
 
-      <section className="hidden gap-6 xl:grid xl:grid-cols-3 xl:items-start">
-        <div className="space-y-6 xl:col-span-2">
+      <section className="hidden gap-6 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] xl:items-start 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
+        <div className="space-y-6">
           <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/>
           {renderDashboardLeadsPanel()}
         </div>
 
-        <aside className="space-y-6">
+        <aside className="space-y-6 xl:sticky xl:top-6">
           {renderCustomerSearchPanel()}
           {renderDraftNoticePanel()}
           {renderWarehouseQuickView()}
