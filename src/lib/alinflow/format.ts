@@ -22,22 +22,38 @@ export function offsetIso(days: number) {
   return iso(d);
 }
 
-export function fullCustomerAddress(customer: Pick<Customer, "city" | "address">) {
+function customerLocationLine(customer: Pick<Customer, "city" | "address" | "postalCode">) {
+  const postalCode = (customer.postalCode || "").trim();
   const city = (customer.city || "").trim();
-  const address = (customer.address || "").trim();
-  if (city && address) {
-    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
-  }
-  return address || city || "nincs megadva";
+  return [postalCode, city].filter(Boolean).join(" ");
 }
 
-export function displayAddress(customer: Pick<Customer, "city" | "address">) {
-  const city = (customer.city || "").trim();
+function addressAlreadyContainsLocation(address: string, location: string) {
+  const normalizedAddress = address.toLocaleLowerCase("hu-HU");
+  const normalizedLocation = location.toLocaleLowerCase("hu-HU");
+  return Boolean(location && normalizedAddress.includes(normalizedLocation));
+}
+
+export function fullCustomerAddress(customer: Pick<Customer, "city" | "address" | "postalCode">) {
+  const location = customerLocationLine(customer);
   const address = (customer.address || "").trim();
-  if (city && address) {
-    return address.toLocaleLowerCase("hu-HU").includes(city.toLocaleLowerCase("hu-HU")) ? address : `${city}, ${address}`;
+  if (location && address) {
+    return addressAlreadyContainsLocation(address, location) || (customer.city && addressAlreadyContainsLocation(address, customer.city))
+      ? address
+      : `${location}, ${address}`;
   }
-  return address || city || "";
+  return address || location || "nincs megadva";
+}
+
+export function displayAddress(customer: Pick<Customer, "city" | "address" | "postalCode">) {
+  const location = customerLocationLine(customer);
+  const address = (customer.address || "").trim();
+  if (location && address) {
+    return addressAlreadyContainsLocation(address, location) || (customer.city && addressAlreadyContainsLocation(address, customer.city))
+      ? address
+      : `${location}, ${address}`;
+  }
+  return address || location || "";
 }
 
 export function telHref(phone: string) {

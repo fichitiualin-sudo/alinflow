@@ -2,6 +2,7 @@
 
 import type { Customer, CustomerTimelineItem, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistState } from "@/lib/alinflow/types";
 import { Btn, Card, Field, Gradient,  Layout, Main, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { CustomerTimeline } from "@/components/alinflow/CustomerTimeline";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
@@ -329,7 +330,11 @@ function CustomerGrid({
         <EditField label="Név" value={c.name} onChange={(value) => onChange?.("name", value)} />
         <EditField label="Telefonszám" value={c.phone} onChange={(value) => onChange?.("phone", value)} />
         <EditField label="Email" value={c.email || ""} onChange={(value) => onChange?.("email", value)} />
-        <EditField label="Település" value={c.city} onChange={(value) => onChange?.("city", value)} />
+        <PostalCodeCityFields
+          postalCode={c.postalCode || ""}
+          city={c.city}
+          onChange={(field, value) => onChange?.(field, value)}
+        />
         <EditField label="Cím" value={c.address} onChange={(value) => onChange?.("address", value)} />
         <label className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">
           <span className="text-sm text-slate-400">Telefonos jegyzet</span>
@@ -347,11 +352,11 @@ function CustomerGrid({
         <p className="mt-2 text-lg font-black">{c.phone || "nincs megadva"}</p>
       </div>
       <Field label="Email" value={c.email || "nincs megadva"} />
-      <Field label="Település" value={c.city} />
+      <Field label="Település" value={[c.postalCode, c.city].filter(Boolean).join(" ") || "nincs megadva"} />
       <div className="rounded-2xl bg-slate-900/80 p-4">
         <p className="text-sm text-slate-400">Cím</p>
         <p className="mt-1 text-lg font-black">{displayAddress(c) || "nincs megadva"}</p>
-        {c.address || c.city ? <a href={mapsHref(c)} target="_blank" rel="noreferrer" onClick={onExternalOpen} className="mt-3 block rounded-xl bg-cyan-300 px-4 py-3 text-center font-black text-slate-950">Útvonal tervezése</a> : null}
+        {c.address || c.city || c.postalCode ? <a href={mapsHref(c)} target="_blank" rel="noreferrer" onClick={onExternalOpen} className="mt-3 block rounded-xl bg-cyan-300 px-4 py-3 text-center font-black text-slate-950">Útvonal tervezése</a> : null}
       </div>
       <div className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">
         <p className="text-sm text-slate-400">Telefonos jegyzet</p>

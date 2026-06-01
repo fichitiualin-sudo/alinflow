@@ -60,6 +60,7 @@ export type Customer = {
   id: string;
   name: string;
   city: string;
+  postalCode?: string;
   phone: string;
   email: string;
   address: string;
@@ -112,6 +113,8 @@ export type LeadImportCandidate = {
   name: string;
   phone: string;
   email: string;
+  city?: string;
+  postalCode?: string;
   inquiredAt?: string;
   duplicate: boolean;
   duplicateReason?: string;

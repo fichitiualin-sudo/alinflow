@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 type QuoteCustomer = {
   name?: string;
   city?: string;
+  postalCode?: string;
   phone?: string;
   email?: string;
   address?: string;
@@ -26,13 +27,18 @@ function safeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
-function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva") {
+function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva", postalCodeValue?: string) {
+  const postalCode = safeText(postalCodeValue);
   const city = safeText(cityValue);
+  const location = [postalCode, city].filter(Boolean).join(" ");
   const address = safeText(addressValue);
-  if (city && address) {
-    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
+  if (location && address) {
+    const lowerAddress = address.toLocaleLowerCase("hu-HU");
+    const lowerLocation = location.toLocaleLowerCase("hu-HU");
+    const lowerCity = city.toLocaleLowerCase("hu-HU");
+    return lowerAddress.includes(lowerLocation) || (city && lowerAddress.includes(lowerCity)) ? address : `${location}, ${address}`;
   }
-  return address || city || fallback;
+  return address || location || fallback;
 }
 
 function escapeHtml(value: unknown) {
@@ -103,7 +109,7 @@ function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePri
 
 function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number, pricingMode: QuotePricingMode = "bundle", quoteIssuedAt = "") {
   const customerName = escapeHtml(customer.name || "Ügyfelünk");
-  const address = customerLine(fullAddress(customer.city, customer.address, "nincs megadva"));
+  const address = customerLine(fullAddress(customer.city, customer.address, "nincs megadva", customer.postalCode));
   const email = customerLine(customer.email);
   const phone = customerLine(customer.phone);
   const quoteIsAlternatives = isAlternativesPricing(pricingMode);

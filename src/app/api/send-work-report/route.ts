@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 type Customer = {
   name?: string;
   city?: string;
+  postalCode?: string;
   phone?: string;
   email?: string;
   address?: string;
@@ -29,13 +30,18 @@ function safeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
-function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva") {
+function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva", postalCodeValue?: string) {
+  const postalCode = safeText(postalCodeValue);
   const city = safeText(cityValue);
+  const location = [postalCode, city].filter(Boolean).join(" ");
   const address = safeText(addressValue);
-  if (city && address) {
-    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
+  if (location && address) {
+    const lowerAddress = address.toLocaleLowerCase("hu-HU");
+    const lowerLocation = location.toLocaleLowerCase("hu-HU");
+    const lowerCity = city.toLocaleLowerCase("hu-HU");
+    return lowerAddress.includes(lowerLocation) || (city && lowerAddress.includes(lowerCity)) ? address : `${location}, ${address}`;
   }
-  return address || city || fallback;
+  return address || location || fallback;
 }
 
 function escapeHtml(value: unknown) {
@@ -107,7 +113,7 @@ function declarationItemsRows(items: QuoteItem[]) {
 
 function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report: WorkReport) {
   const customerName = customer.name || report.signerName || "";
-  const customerAddress = fullAddress(customer.city, customer.address, "");
+  const customerAddress = fullAddress(customer.city, customer.address, "", customer.postalCode);
   const kelt = formatKelt(report.signedAt);
   const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
 
@@ -187,7 +193,7 @@ function itemsHtml(items: QuoteItem[]) {
 function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: WorkReport) {
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const rawName = customer.name || report.signerName || "";
-  const address = escapeHtml(fullAddress(customer.city, customer.address, "nincs megadva"));
+  const address = escapeHtml(fullAddress(customer.city, customer.address, "nincs megadva", customer.postalCode));
   const phone = escapeHtml(customer.phone || "");
   const email = escapeHtml(customer.email || "");
   const date = escapeHtml(formatDate(customer.date));
@@ -242,7 +248,7 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
         <p style="margin:0 0 5px 0;font-size:11px;font-weight:900">Ügyfél adatai:</p>
         <div style="margin-left:14px;margin-bottom:8px;font-size:10.5px;line-height:1.25">
           neve: ${dottedValue(rawName)}<br>
-          címe: ${dottedValue(fullAddress(customer.city, customer.address, ""))}<br>
+          címe: ${dottedValue(fullAddress(customer.city, customer.address, "", customer.postalCode))}<br>
           telefonszáma: ${dottedValue(customer.phone || "")}<br>
           email címe: ${dottedValue(customer.email || "")}
         </div>
@@ -251,7 +257,7 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
         <div style="margin-left:14px;margin-bottom:8px;font-size:10.5px;line-height:1.25">
           szerelés dátuma: ${dottedValue(date)}<br>
           idősáv: ${dottedValue(time)}<br>
-          helyszín: ${dottedValue(fullAddress(customer.city, customer.address, ""))}
+          helyszín: ${dottedValue(fullAddress(customer.city, customer.address, "", customer.postalCode))}
         </div>
 
         <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin:5px 0 6px 0">

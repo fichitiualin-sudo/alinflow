@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Customer, View } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
+import { formatPostalCity } from "@/lib/alinflow/postal-codes";
 import { Back, Card, Gradient, Layout, Main, Shell, Side } from "./LayoutPrimitives";
 
 type ArchivePanelProps = {
@@ -51,7 +52,7 @@ export function ArchivePanel({
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <p className="text-lg font-black">{customer.name || "Névtelen ügyfél"}</p>
-                      <p className="text-sm text-slate-400">{customer.city || "nincs település"} · {customer.phone || "nincs telefonszám"}</p>
+                      <p className="text-sm text-slate-400">{formatPostalCity(customer.postalCode, customer.city)} · {customer.phone || "nincs telefonszám"}</p>
                       <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
                       <p className="mt-1 text-xs text-slate-500">{customer.date ? `${customer.date} · ${customer.time || "nincs idő"}` : "nincs időpont"}</p>
                     </div>

@@ -1,4 +1,5 @@
 import type { Customer, LeadImportCandidate } from "./types";
+import { normalizePostalCodeInput, uniqueSettlementByCity, uniqueSettlementByPostalCode } from "./postal-codes";
 
 function normalizeTextForSearch(value?: string) {
   return String(value || "")
@@ -84,6 +85,27 @@ function findCsvIndex(headers: string[], variants: string[]) {
   return normalizedHeaders.findIndex((header) => normalizedVariants.includes(header));
 }
 
+function normalizeCity(value?: string) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function inferPostalCity(postalCodeValue?: string, cityValue?: string) {
+  const postalCode = normalizePostalCodeInput(postalCodeValue);
+  const city = normalizeCity(cityValue);
+
+  if (postalCode && !city) {
+    const settlement = uniqueSettlementByPostalCode(postalCode);
+    return { postalCode, city: settlement?.city || "" };
+  }
+
+  if (!postalCode && city) {
+    const settlement = uniqueSettlementByCity(city);
+    return { postalCode: settlement?.postalCode || "", city };
+  }
+
+  return { postalCode, city };
+}
+
 function datePartsToIso(year: number, month: number, day: number, hour = 0, minute = 0, second = 0) {
   const date = new Date(year, month - 1, day, hour, minute, second);
   if (
@@ -142,6 +164,8 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
   const nameIndex = findCsvIndex(headers, ["Név", "Nev", "Name", "Full name", "Teljes név"]);
   const emailIndex = findCsvIndex(headers, ["E-mail-cím", "Email", "E-mail", "Email cím", "E-mail cím"]);
   const phoneIndex = findCsvIndex(headers, ["Telefon", "Phone", "Telefonszám", "Phone number", "Mobile"]);
+  const postalCodeIndex = findCsvIndex(headers, ["Irányítószám", "Iranyitoszam", "Irsz", "IRSZ", "Postal code", "Postcode", "Zip", "Zip code"]);
+  const cityIndex = findCsvIndex(headers, ["Település", "Telepules", "Város", "Varos", "City", "Town", "Helység", "Helyseg"]);
   const inquiredAtIndex = findCsvIndex(headers, [
     "Érdeklődés ideje",
     "Erdeklodes ideje",
@@ -183,6 +207,10 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
     const name = nameIndex >= 0 ? String(cells[nameIndex] || "").trim() : "";
     const email = emailIndex >= 0 ? normalizeEmailForCompare(cells[emailIndex]) : "";
     const phone = phoneIndex >= 0 ? normalizePhoneForStorage(cells[phoneIndex]) : "";
+    const { postalCode, city } = inferPostalCity(
+      postalCodeIndex >= 0 ? cells[postalCodeIndex] : "",
+      cityIndex >= 0 ? cells[cityIndex] : ""
+    );
     const inquiredAt = inquiredAtIndex >= 0 ? parseLeadInquiredAt(cells[inquiredAtIndex]) : undefined;
     const phoneKey = normalizePhoneForCompare(phone);
     const emailKey = normalizeEmailForCompare(email);
@@ -208,6 +236,8 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
         name,
         phone,
         email,
+        city,
+        postalCode,
         inquiredAt,
         duplicate: false,
         invalid: true,
@@ -223,6 +253,8 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
         name,
         phone,
         email,
+        city,
+        postalCode,
         inquiredAt,
         duplicate: true,
         duplicateReason: "már létező telefonszám",
@@ -237,6 +269,8 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
         name,
         phone,
         email,
+        city,
+        postalCode,
         inquiredAt,
         duplicate: true,
         duplicateReason: "már létező email",
@@ -252,6 +286,8 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
       kept.name = kept.name || name;
       kept.phone = kept.phone || phone;
       kept.email = kept.email || email;
+      kept.city = kept.city || city;
+      kept.postalCode = kept.postalCode || postalCode;
       if (inquiredAt && (!kept.inquiredAt || dateMs(inquiredAt) > dateMs(kept.inquiredAt))) {
         kept.inquiredAt = inquiredAt;
       }
@@ -266,6 +302,8 @@ export function buildLeadImportPreview(text: string, existingCustomers: Customer
       name,
       phone,
       email,
+      city,
+      postalCode,
       inquiredAt,
       duplicate: false,
       mergedRows: 1,

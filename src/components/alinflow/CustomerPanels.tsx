@@ -4,6 +4,7 @@ import type { ReactNode, RefObject } from "react";
 import type { Customer, LeadImportCandidate } from "@/lib/alinflow/types";
 import { STATUS_OPTIONS } from "@/lib/alinflow/constants";
 import { climateSummary } from "@/lib/alinflow/products";
+import { formatPostalCity } from "@/lib/alinflow/postal-codes";
 
 function PanelCard({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -67,7 +68,7 @@ export function CustomerSearchPanel({
           className="input"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Keresés név, telefon, település, cím, klíma alapján..."
+          placeholder="Keresés név, telefon, irányítószám, település, cím, klíma alapján..."
         />
         <select
           className="input"
@@ -93,7 +94,7 @@ export function CustomerSearchPanel({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-black text-white">{customer.name || "Névtelen ügyfél"}</p>
-                    <p className="mt-1 text-xs text-slate-400">{customer.city || "nincs település"} · {customer.phone || customer.email || "nincs elérhetőség"}</p>
+                    <p className="mt-1 text-xs text-slate-400">{formatPostalCity(customer.postalCode, customer.city)} · {customer.phone || customer.email || "nincs elérhetőség"}</p>
                     <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
                     {customerCreatedLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerCreatedLabel(customer)}</p> : null}
                   </div>
@@ -163,6 +164,7 @@ export function LeadImportPanel({
                     <div>
                       <p className="font-black text-white">{row.name || "Névtelen sor"}</p>
                       <p className="mt-1 text-xs text-slate-400">{row.phone || "nincs telefonszám"} · {row.email || "nincs email"}</p>
+                      {row.city || row.postalCode ? <p className="mt-1 text-xs text-slate-400">{formatPostalCity(row.postalCode, row.city)}</p> : null}
                       {inquiredAt ? <p className="mt-1 text-xs font-bold text-emerald-200/80">Érdeklődött: {formatCustomerCreatedAt(inquiredAt)}</p> : null}
                       {!row.duplicate && !row.invalid && (row.mergedRows || 1) > 1 ? <p className="mt-1 text-xs font-bold text-cyan-200">{row.mergedRows} azonos lead összevonva egy ügyféllé</p> : null}
                     </div>

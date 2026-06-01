@@ -107,6 +107,7 @@ import {
   formatSignedAt
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
+import { normalizePostalCodeInput, uniqueSettlementByCity } from "@/lib/alinflow/postal-codes";
 
 const LIST_PAGE_SIZE = 20;
 
@@ -143,9 +144,29 @@ function customerInquiryLabel(customer: Customer) {
   return created ? `Érdeklődött: ${created}` : "";
 }
 
+function postalCodeFromCustomerData(city?: string, postalCode?: string, address?: string) {
+  const direct = normalizePostalCodeInput(postalCode);
+  if (direct) return direct;
+
+  const addressMatch = String(address || "").match(/\b\d{4}\b/);
+  if (addressMatch?.[0]) return addressMatch[0];
+
+  return uniqueSettlementByCity(city)?.postalCode || "";
+}
+
 function documentTimestamp(docs: DocumentRecord[], type: string) {
   const doc = docs.find((item) => item.type === type);
   return doc?.sentAt || doc?.updatedAt || doc?.createdAt || undefined;
+}
+
+function isMissingPostalCodeColumnError(error: any) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
+  return text.includes("postal_code") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
+function withoutPostalCode<T extends Record<string, any>>(row: T) {
+  const { postal_code, ...rest } = row;
+  return rest;
 }
 
 function timeValue(value?: string) {
@@ -392,6 +413,7 @@ export default function Home() {
     const haystack = normalizeSearch([
       customer.name,
       customer.city,
+      customer.postalCode,
       customer.address,
       customer.phone,
       customer.email,
@@ -449,7 +471,8 @@ export default function Home() {
           name: lead.name,
           phone: lead.phone || null,
           email: lead.email || null,
-          city: null,
+          city: lead.city || null,
+          postal_code: lead.postalCode || null,
           address: null,
           source: "CSV import",
           status: "Visszahívandó",
@@ -461,13 +484,18 @@ export default function Home() {
         };
       });
 
-      const { data, error } = await supabase.from("customers").insert(rows).select("*");
-      if (error) throw error;
+      let insertResult = await supabase.from("customers").insert(rows).select("*");
+      if (insertResult.error && isMissingPostalCodeColumnError(insertResult.error)) {
+        insertResult = await supabase.from("customers").insert(rows.map(withoutPostalCode)).select("*");
+      }
 
-      const newCustomers = (data || []).map((row: any) => ({
+      if (insertResult.error) throw insertResult.error;
+
+      const newCustomers = (insertResult.data || []).map((row: any) => ({
         id: row.id,
         name: row.name || "",
         city: row.city || "",
+        postalCode: postalCodeFromCustomerData(row.city, row.postal_code, row.address),
         phone: row.phone || "",
         email: row.email || "",
         address: row.address || "",
@@ -986,6 +1014,7 @@ export default function Home() {
         id: row.id,
         name: row.name || "",
         city: row.city || "",
+        postalCode: postalCodeFromCustomerData(row.city, row.postal_code, row.address),
         phone: row.phone || "",
         email: row.email || "",
         address: row.address || job?.address || "",
@@ -1061,12 +1090,13 @@ export default function Home() {
   async function persistCustomerToDb(customer: Customer) {
     if (!user || !customer.id || !customer.name.trim()) return;
 
-    const { error: customerError } = await supabase.from("customers").upsert({
+    const customerPayload = {
       id: customer.id,
       name: customer.name,
       phone: customer.phone || null,
       email: customer.email || null,
       city: customer.city || null,
+      postal_code: customer.postalCode || null,
       address: customer.address || null,
       source: customer.source || "Kézi rögzítés",
       status: customer.status || "Visszahívandó",
@@ -1076,9 +1106,14 @@ export default function Home() {
       created_at: customer.createdAt || undefined,
       updated_at: customer.updatedAt || new Date().toISOString(),
       created_by: user.id,
-    });
+    };
 
-    if (customerError) throw customerError;
+    let customerResult = await supabase.from("customers").upsert(customerPayload);
+    if (customerResult.error && isMissingPostalCodeColumnError(customerResult.error)) {
+      customerResult = await supabase.from("customers").upsert(withoutPostalCode(customerPayload));
+    }
+
+    if (customerResult.error) throw customerResult.error;
 
     const { data: existingQuotes } = await supabase
       .from("quotes")
@@ -1148,6 +1183,7 @@ export default function Home() {
       id: crypto.randomUUID(),
       name: "",
       city: "",
+      postalCode: "",
       phone: "",
       email: "",
       address: "",
@@ -1886,6 +1922,7 @@ export default function Home() {
         id: customer.id,
         name: customer.name,
         city: customer.city,
+        postalCode: customer.postalCode,
         phone: customer.phone,
         email: customer.email,
         address: customer.address,
@@ -1996,6 +2033,7 @@ export default function Home() {
         id: customer.id,
         name: customer.name,
         city: customer.city,
+        postalCode: customer.postalCode,
         phone: customer.phone,
         email: customer.email,
         address: customer.address,
@@ -2712,7 +2750,7 @@ export default function Home() {
                 <p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p>
                 <div className="rounded-2xl bg-slate-950/60 p-3">
                   <p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p>
-                  <p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || draftNotice.customer.city || "nincs adat"}</p>
+                  <p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || [draftNotice.customer.postalCode, draftNotice.customer.city].filter(Boolean).join(" ") || "nincs adat"}</p>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   <button onClick={continueCustomerDraft} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Szerkesztés folytatása</button>

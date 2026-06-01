@@ -4,6 +4,7 @@ import type { Customer, CustomerTimelineItem, View } from "@/lib/alinflow/types"
 import { STATUS_OPTIONS } from "@/lib/alinflow/constants";
 import { mapsHref, telHref } from "@/lib/alinflow/format";
 import { Back, Card, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 
 type LeadPanelProps = {
   selected: Customer;
@@ -148,10 +149,14 @@ export function LeadPanel({
               <EditField label="Név" value={selected.name} onChange={(value) => onUpdateSelectedField("name", value)} />
               <PhoneEditField value={selected.phone} onChange={(value) => onUpdateSelectedField("phone", value)} onCall={() => onRecordCustomerPhoneCall(selected, "lead")} />
               <EditField label="Email" value={selected.email} onChange={(value) => onUpdateSelectedField("email", value)} />
-              <EditField label="Település" value={selected.city} onChange={(value) => onUpdateSelectedField("city", value)} />
+              <PostalCodeCityFields
+                postalCode={selected.postalCode || ""}
+                city={selected.city}
+                onChange={(field, value) => onUpdateSelectedField(field, value)}
+              />
               <EditField label="Cím" value={selected.address} onChange={(value) => onUpdateSelectedField("address", value)} />
             </div>
-            {selected.address || selected.city ? (
+            {selected.address || selected.city || selected.postalCode ? (
               <a href={mapsHref(selected)} target="_blank" rel="noreferrer" onClick={() => onRememberExternalCustomer(selected, "lead")} className="mt-4 block rounded-2xl bg-cyan-300 px-5 py-4 text-center font-black text-slate-950">
                 Útvonal tervezése Google Térképpel
               </a>

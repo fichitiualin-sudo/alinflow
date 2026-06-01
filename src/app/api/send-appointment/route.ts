@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 type Customer = {
   name?: string;
   city?: string;
+  postalCode?: string;
   phone?: string;
   email?: string;
   address?: string;
@@ -20,13 +21,18 @@ function safeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
-function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva") {
+function fullAddress(cityValue?: string, addressValue?: string, fallback = "nincs megadva", postalCodeValue?: string) {
+  const postalCode = safeText(postalCodeValue);
   const city = safeText(cityValue);
+  const location = [postalCode, city].filter(Boolean).join(" ");
   const address = safeText(addressValue);
-  if (city && address) {
-    return address.toLowerCase().includes(city.toLowerCase()) ? address : `${city}, ${address}`;
+  if (location && address) {
+    const lowerAddress = address.toLocaleLowerCase("hu-HU");
+    const lowerLocation = location.toLocaleLowerCase("hu-HU");
+    const lowerCity = city.toLocaleLowerCase("hu-HU");
+    return lowerAddress.includes(lowerLocation) || (city && lowerAddress.includes(lowerCity)) ? address : `${location}, ${address}`;
   }
-  return address || city || fallback;
+  return address || location || fallback;
 }
 
 function escapeHtml(value: unknown) {
@@ -64,7 +70,7 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const date = escapeHtml(formatDate(customer.date));
   const time = escapeHtml(customer.time || "egyeztetés szerint");
-  const address = escapeHtml(fullAddress(customer.city, customer.address, "egyeztetés szerint"));
+  const address = escapeHtml(fullAddress(customer.city, customer.address, "egyeztetés szerint", customer.postalCode));
   const phone = escapeHtml(customer.phone || "");
 
   return `<!doctype html>

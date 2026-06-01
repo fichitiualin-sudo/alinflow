@@ -77,8 +77,7 @@ export function QuotePreviewPanel({
                 <div className="rounded-2xl bg-slate-100 p-4">
                   <p className="text-sm text-slate-500">Ügyfél</p>
                   <p className="mt-1 text-xl font-black">{selected.name || "Nincs név"}</p>
-                  <p className="mt-1">{selected.city}</p>
-                  <p>{displayAddress(selected)}</p>
+                  <p className="mt-1">{displayAddress(selected)}</p>
                   <p>{selected.email}</p>
                   <p>{selected.phone}</p>
                 </div>

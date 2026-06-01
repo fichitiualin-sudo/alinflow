@@ -5,6 +5,7 @@ import type { ClimateProduct, Customer, View } from "@/lib/alinflow/types";
 import { isArchivedCustomer } from "@/lib/alinflow/constants";
 import { offsetIso, todayIso } from "@/lib/alinflow/format";
 import { climateSummary } from "@/lib/alinflow/products";
+import { formatPostalCity } from "@/lib/alinflow/postal-codes";
 import { Back, Card, Layout, Shell } from "./LayoutPrimitives";
 
 export type TaskFilter = "today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes";
@@ -166,7 +167,7 @@ export function TaskPanel({
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <p className="text-lg font-black">{customer.name}</p>
-                        <p className="text-sm text-slate-400">{customer.city} · {customer.email || "nincs email"}</p>
+                        <p className="text-sm text-slate-400">{formatPostalCity(customer.postalCode, customer.city)} · {customer.email || "nincs email"}</p>
                         <p className="mt-1 text-xs text-slate-500">{customer.date ? `${customer.date} · ${customer.time}` : "nincs időpont"}</p>
                         <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
                       </div>
