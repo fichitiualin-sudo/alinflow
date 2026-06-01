@@ -2759,6 +2759,9 @@ export default function Home() {
               </div>
             </Card>
           ) : null}
+          <div className="hidden xl:block">
+            {renderWarehouseQuickView()}
+          </div>
 
         </aside>
 
@@ -2791,29 +2794,9 @@ export default function Home() {
         </div>
 
         <aside className="order-4 space-y-6 xl:order-4">
-          <Card title="Raktár gyorsnézet">
-            <div className="space-y-3">
-              {products.slice(0, LIST_PAGE_SIZE).map((product: any) => {
-                const stock = stockOf(product.id);
-                const reserved = reservedForProduct(product.id);
-                const free = stock - reserved;
-                if (stock <= 0 && reserved <= 0) return null;
-
-                return (
-                  <div key={product.id} className="rounded-2xl bg-slate-900/80 p-4">
-                    <div className="flex justify-between gap-3">
-                      <span className="font-black">{product.name}</span>
-                      <b className={free >= 0 ? "text-emerald-300" : "text-red-300"}>{free >= 0 ? `${free} szabad` : `${Math.abs(free)} db hiány`}</b>
-                    </div>
-                    <div className="mt-2 text-xs text-slate-400">
-                      raktáron: {stock} db · lefoglalva: {reserved} db
-                      {reserved > stock ? <span className="mt-2 block font-black text-red-300">Figyelem: több van lefoglalva, mint készleten.</span> : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
+          <div className="xl:hidden">
+            {renderWarehouseQuickView()}
+          </div>
 
           {renderLeadImportPanel()}
         </aside>
