@@ -156,9 +156,11 @@ export function WorkPagePanel({
               onChange={onUpdateSelectedField}
               onExternalOpen={() => onRememberExternalCustomer(selected, "work")}
             />
-            <CustomerTimeline items={timelineItems} />
+          </Card>
+
+          <Card title="Időponthoz tartozó klímák">
             {selected.date ? (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+              <div className="mb-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Időpont</p>
@@ -178,9 +180,6 @@ export function WorkPagePanel({
                 </div>
               </div>
             ) : null}
-          </Card>
-
-          <Card title="Időponthoz tartozó klímák">
             {workResourceEditLocked && !allowWorkResourceEdit ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">A szerelés készre jelölése után a klímák és a szerelési anyagok zárolva vannak. Szerkesztéshez nyomd meg a Módosítás engedélyezése gombot.</div> : null}
             <div className="space-y-3">
               {quoteItems.map((it, i) => (
@@ -275,6 +274,7 @@ export function WorkPagePanel({
                 </div>
               ))}
             </div>
+            <CustomerTimeline items={timelineItems} />
           </Card>
 
           <Card title="Lezárási műveletek">
