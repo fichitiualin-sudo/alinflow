@@ -2,6 +2,7 @@ import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
 import { defaultWorkDescription, formatSignedAt, workAcceptanceText } from "@/lib/alinflow/work-report";
+import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 
 function formatDocumentDate(value?: string) {
   if (!value) return "nincs megadva";
@@ -27,9 +28,35 @@ function formatQuoteIssuedAt(value?: string) {
   });
 }
 
+function appointmentDocumentNotes(type?: string) {
+  const normalized = normalizeAppointmentType(type);
+  if (normalized === "survey") {
+    return [
+      "Kérjük, hogy a tervezett beltéri és kültéri egység helye legyen hozzáférhető.",
+      "A felmérés várhatóan körülbelül 1 órát vesz igénybe.",
+      "Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.",
+    ];
+  }
+  if (normalized === "maintenance") {
+    return [
+      "Kérjük, hogy a karbantartandó klíma beltéri és kültéri egysége legyen hozzáférhető.",
+      "A karbantartás várhatóan körülbelül 1 órát vesz igénybe.",
+      "Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.",
+    ];
+  }
+  return [
+    "Kérjük, hogy a szerelési helyszín legyen megközelíthető.",
+    "A beltéri és kültéri egység tervezett helye legyen hozzáférhető.",
+    "Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.",
+  ];
+}
+
 export function WorkReportDocument({ customer, report, quoteItems }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[] }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
+  const workType = appointmentTypeLabel(customer.appointmentType);
+  const workTime = appointmentTimeRangeLabel(customer);
+  const workNote = `${workType.toLowerCase()}hoz kapcsolódó munka`;
   return (
     <article className="doc-print-page work-report-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[13px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[14mm] print:text-[11.5px] print:shadow-none">
       <div className="text-center">
@@ -49,10 +76,11 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
         </section>
 
         <section>
-          <h3 className="mb-1 font-black">Szerelés adatai:</h3>
+          <h3 className="mb-1 font-black">Munka adatai:</h3>
           <div className="ml-3 space-y-0.5">
-            <p>szerelés dátuma: {dottedLine(formatDocumentDate(customer.date))}</p>
-            <p>idősáv: {dottedLine(customer.time || "egyeztetés szerint")}</p>
+            <p>munka típusa: {dottedLine(workType)}</p>
+            <p>munka dátuma: {dottedLine(formatDocumentDate(customer.date))}</p>
+            <p>idősáv: {dottedLine(workTime)}</p>
             <p>helyszín: {dottedLine(fullCustomerAddress(customer))}</p>
           </div>
         </section>
@@ -70,7 +98,7 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
               {shownItems.map((item, index)=><tr key={`${item.productId}-${index}`}>
                 <td className="border border-slate-900 p-1.5 print:p-1">{itemName(item)}</td>
                 <td className="border border-slate-900 p-1.5 text-center font-bold print:p-1">{itemQuantity(item)}</td>
-                <td className="border border-slate-900 p-1.5 print:p-1">szereléssel együtt</td>
+                <td className="border border-slate-900 p-1.5 print:p-1">{workNote}</td>
               </tr>)}
             </tbody>
           </table>
@@ -277,13 +305,18 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt }: { custome
 
 export function AppointmentConfirmationDocument({ customer, quoteItems }: { customer: Customer; quoteItems: QuoteItem[] }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
+  const appointmentTitle = appointmentDocumentTitle(customer.appointmentType);
+  const appointmentLabel = appointmentTypeLabel(customer.appointmentType);
+  const appointmentTime = appointmentTimeRangeLabel(customer);
+  const workLabel = appointmentWorkLabel(customer.appointmentType);
+  const isInstallationAppointment = normalizeAppointmentType(customer.appointmentType) === "installation";
   return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
     <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
       <div className="flex items-start gap-4">
         <img src="/alin-klima-logo.png" alt="KLIMAlin logo" className="h-16 w-auto object-contain" />
         <div>
-          <h2 className="text-3xl font-black">Időpont-visszaigazolás</h2>
-          <p className="mt-2 text-sm text-slate-600">Klímaszerelési időpont és helyszín összesítő</p>
+          <h2 className="text-3xl font-black">{appointmentTitle}</h2>
+          <p className="mt-2 text-sm text-slate-600">{appointmentLabel} időpont és helyszín összesítő</p>
         </div>
       </div>
       <div className="text-sm text-slate-600 md:text-right">
@@ -294,7 +327,7 @@ export function AppointmentConfirmationDocument({ customer, quoteItems }: { cust
 
     <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
       <p className="text-lg font-black">Tisztelt {customer.name || "Ügyfelünk"}!</p>
-      <p className="mt-3">Ezúton visszaigazoljuk az egyeztetett klímaszerelési időpontot. Kérjük, hogy a megadott időpontban a szerelési helyszín legyen hozzáférhető, és a beltéri, illetve kültéri egység tervezett helye körül legyen elegendő munkaterület.</p>
+      <p className="mt-3">{appointmentEmailIntro(customer.appointmentType)} Kérjük, hogy a megadott időpontban a helyszín legyen hozzáférhető.</p>
     </div>
 
     <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -307,30 +340,29 @@ export function AppointmentConfirmationDocument({ customer, quoteItems }: { cust
       <div className="rounded-2xl bg-slate-100 p-4">
         <p className="text-sm text-slate-500">Időpont</p>
         <p className="mt-1 text-xl font-black">{customer.date ? formatDocumentDate(customer.date) : "nincs időpont"}</p>
-        <p className="mt-1">{customer.time || "egyeztetés szerint"}</p>
+        <p className="mt-1 font-bold">{appointmentTime}</p>
+        <p className="mt-1 text-sm text-slate-600">Típus: {appointmentLabel}</p>
       </div>
     </div>
 
     <div className="mt-4 rounded-2xl bg-slate-100 p-4">
-      <p className="text-sm text-slate-500">Telepítési helyszín</p>
+      <p className="text-sm text-slate-500">Helyszín</p>
       <p className="mt-1 text-lg font-black">{fullCustomerAddress(customer) || "nincs megadva"}</p>
     </div>
 
     <div className="mt-6 space-y-3">
-      {items.map((item, i)=><div key={`${item.productId}-${i}`} className="rounded-2xl border border-slate-200 p-4">
+      {isInstallationAppointment && items.length ? items.map((item, i)=><div key={`${item.productId}-${i}`} className="rounded-2xl border border-slate-200 p-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
           <p className="text-sm text-slate-600">szereléssel együtt</p>
         </div>
-      </div>)}
+      </div>) : <div className="rounded-2xl border border-slate-200 p-4"><p className="text-lg font-black">{workLabel}</p><p className="text-sm text-slate-600">{isInstallationAppointment ? "egyeztetett klímaszerelési munka" : "1 órás időpont"}</p></div>}
     </div>
 
     <div className="mt-6 rounded-2xl border border-slate-200 p-5 text-sm leading-relaxed">
       <p className="font-black">Fontos tudnivalók</p>
       <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-700">
-        <li>Kérjük, hogy a szerelési helyszín legyen megközelíthető.</li>
-        <li>A beltéri és kültéri egység tervezett helye legyen hozzáférhető.</li>
-        <li>Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.</li>
+        {appointmentDocumentNotes(customer.appointmentType).map((note) => <li key={note}>{note}</li>)}
       </ul>
     </div>
 

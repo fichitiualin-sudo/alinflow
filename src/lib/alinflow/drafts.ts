@@ -1,5 +1,6 @@
 import type { Customer, CustomerDraft, ReturnContext, View } from "./types";
 import { CUSTOMER_DRAFT_KEY, EMPTY_QUOTE_ITEMS, RESTORABLE_VIEWS, RETURN_CONTEXT_KEY } from "./constants";
+import { firstAppointmentTime, normalizeAppointmentType } from "./appointments";
 import { todayIso } from "./format";
 
 export function safeReturnView(value: unknown): View {
@@ -43,7 +44,8 @@ export function readCustomerDraft(): CustomerDraft | null {
       customer: parsed.customer as Customer,
       quoteItems: Array.isArray(parsed.quoteItems) && parsed.quoteItems.length ? parsed.quoteItems : (parsed.customer as Customer).quoteItems || EMPTY_QUOTE_ITEMS,
       scheduleDate: typeof parsed.scheduleDate === "string" ? parsed.scheduleDate : (parsed.customer as Customer).date || todayIso(),
-      scheduleTime: typeof parsed.scheduleTime === "string" ? parsed.scheduleTime : (parsed.customer as Customer).time?.split(" ")[0] || "08:00",
+      scheduleTime: typeof parsed.scheduleTime === "string" ? firstAppointmentTime(parsed.scheduleTime) : firstAppointmentTime((parsed.customer as Customer).time),
+      scheduleAppointmentType: normalizeAppointmentType(parsed.scheduleAppointmentType || (parsed.customer as Customer).appointmentType),
       view: safeReturnView(parsed.view),
       editCustomer: Boolean(parsed.editCustomer),
       allowWorkResourceEdit: Boolean(parsed.allowWorkResourceEdit),

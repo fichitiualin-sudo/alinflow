@@ -1,3 +1,5 @@
+import { appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, isInstallationAppointment } from "@/lib/alinflow/appointments";
+
 export const runtime = "nodejs";
 
 type Customer = {
@@ -9,6 +11,7 @@ type Customer = {
   address?: string;
   date?: string;
   time?: string;
+  appointmentType?: string;
 };
 
 type QuoteItem = {
@@ -197,7 +200,10 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
   const phone = escapeHtml(customer.phone || "");
   const email = escapeHtml(customer.email || "");
   const date = escapeHtml(formatDate(customer.date));
-  const time = escapeHtml(customer.time || "egyeztetés szerint");
+  const workType = appointmentTypeLabel(customer.appointmentType);
+  const workLabel = appointmentWorkLabel(customer.appointmentType);
+  const isInstall = isInstallationAppointment(customer.appointmentType);
+  const time = escapeHtml(appointmentTimeRangeLabel({ time: customer.time, appointmentType: customer.appointmentType }));
   const workDescription = escapeHtml(report.workDescription || "Klímaberendezés telepítése, beüzemelése és átadása. Vákuumozás, működési próba és felhasználói betanítás elvégezve.").replace(/\n/g, "<br>");
   const notes = escapeHtml(report.notes || "").replace(/\n/g, "<br>");
   const signer = escapeHtml(report.signerName || customer.name || "");
@@ -211,7 +217,7 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
     return `<tr>
       <td style="border:1px solid #111;padding:5px 7px;font-size:9.7px;line-height:1.1">${itemName}</td>
       <td style="border:1px solid #111;padding:5px 7px;text-align:center;font-size:9.7px;font-weight:700;width:90px">${quantity}</td>
-      <td style="border:1px solid #111;padding:5px 7px;font-size:9.7px;line-height:1.1;width:145px">szereléssel együtt</td>
+      <td style="border:1px solid #111;padding:5px 7px;font-size:9.7px;line-height:1.1;width:145px">${isInstall ? "szereléssel együtt" : escapeHtml(workLabel)}</td>
     </tr>`;
   }).join("");
 
@@ -253,9 +259,10 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
           email címe: ${dottedValue(customer.email || "")}
         </div>
 
-        <p style="margin:0 0 5px 0;font-size:11px;font-weight:900">Szerelés adatai:</p>
+        <p style="margin:0 0 5px 0;font-size:11px;font-weight:900">Munka adatai:</p>
         <div style="margin-left:14px;margin-bottom:8px;font-size:10.5px;line-height:1.25">
-          szerelés dátuma: ${dottedValue(date)}<br>
+          munka típusa: ${dottedValue(workType)}<br>
+          munka dátuma: ${dottedValue(date)}<br>
           idősáv: ${dottedValue(time)}<br>
           helyszín: ${dottedValue(fullAddress(customer.city, customer.address, "", customer.postalCode))}
         </div>
@@ -330,7 +337,7 @@ export async function POST(request: Request) {
         from,
         to: [to],
         reply_to: replyTo,
-        subject: "Klímaszerelési munkalap és vásárlási nyilatkozat – KLIMAlin",
+        subject: `${appointmentTypeLabel(customer.appointmentType)} munkalap és vásárlási nyilatkozat – KLIMAlin`,
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("klimalin-work-report"),
         },

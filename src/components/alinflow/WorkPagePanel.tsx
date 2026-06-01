@@ -1,6 +1,6 @@
 "use client";
 
-import type { Customer, CustomerTimelineItem, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistState } from "@/lib/alinflow/types";
+import type { AppointmentType, Customer, CustomerTimelineItem, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistState } from "@/lib/alinflow/types";
 import { Btn, Card, Field, Gradient,  Layout, Main, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
@@ -16,6 +16,7 @@ import {
   sortProducts,
 } from "@/lib/alinflow/products";
 import type { View } from "@/lib/alinflow/types";
+import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 
 type MaterialItem = {
   name: string;
@@ -57,6 +58,7 @@ type WorkPagePanelProps = {
   onUpdateSelectedField: (field: keyof Customer, value: string) => void;
   onSetScheduleDate: (value: string) => void;
   onSetScheduleTime: (value: string) => void;
+  onSetScheduleAppointmentType: (value: AppointmentType) => void;
   onSetView: (view: View) => void;
   onUpdateQuoteItem: (index: number, key: keyof QuoteItem, value: string | number | boolean) => void;
   onUpdateQuoteProduct: (index: number, productId: string) => void;
@@ -111,6 +113,7 @@ export function WorkPagePanel({
   onUpdateSelectedField,
   onSetScheduleDate,
   onSetScheduleTime,
+  onSetScheduleAppointmentType,
   onSetView,
   onUpdateQuoteItem,
   onUpdateQuoteProduct,
@@ -164,13 +167,14 @@ export function WorkPagePanel({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Időpont</p>
-                    <p className="text-base font-black text-slate-100">{selected.date.replaceAll("-", ".")} · {selected.time || shownTime}</p>
+                    <p className="text-base font-black text-slate-100">{appointmentSummaryLabel(selected) || `${selected.date.replaceAll("-", ".")} · ${selected.time || shownTime}`}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
                       onSetScheduleDate(selected.date || todayIso());
-                      onSetScheduleTime(selected.time?.split(" ")[0] || "08:00");
+                      onSetScheduleTime(firstAppointmentTime(selected.time));
+                      onSetScheduleAppointmentType(normalizeAppointmentType(selected.appointmentType));
                       onSetView("schedule");
                     }}
                     className="shrink-0 rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100 ring-1 ring-cyan-200/20"
@@ -180,7 +184,7 @@ export function WorkPagePanel({
                 </div>
               </div>
             ) : null}
-            {workResourceEditLocked && !allowWorkResourceEdit ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">A szerelés készre jelölése után a klímák és a szerelési anyagok zárolva vannak. Szerkesztéshez nyomd meg a Módosítás engedélyezése gombot.</div> : null}
+            {workResourceEditLocked && !allowWorkResourceEdit ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">A munka készre jelölése után a klímák és a szerelési anyagok zárolva vannak. Szerkesztéshez nyomd meg a Módosítás engedélyezése gombot.</div> : null}
             <div className="space-y-3">
               {quoteItems.map((it, i) => (
                 <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
@@ -252,7 +256,7 @@ export function WorkPagePanel({
         </Main>
 
         <Side>
-          <Gradient title="Munka státusz" value={selected.status || "Folyamatban"} />
+          <Gradient title="Munka státusz" value={selected.status === "Szerelés kész – admin folyamatban" ? `${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban` : selected.status || "Folyamatban"} />
           <Card title="Dokumentumok">
             <div className="space-y-3">
               {documentRows.map((row) => (
@@ -281,7 +285,7 @@ export function WorkPagePanel({
             <div className="space-y-3">
               <StepButton color="cyan" onClick={onOpenWorkReport}>Munkalap és egyszerű aláírás</StepButton>
               <StepButton color="blue" onClick={() => onSendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
-              <StepButton color="amber" onClick={onMarkInstallationDone}>Szerelés kész – admin folyamatban</StepButton>
+              <StepButton color="amber" onClick={onMarkInstallationDone}>{appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban</StepButton>
               <StepButton color="green" onClick={onCloseWork}>Teljes lezárás</StepButton>
               <button onClick={onCancelAppointment} className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-red-500 to-rose-500 px-5 py-4 text-left font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
                 <span>Időpont törlése / lemondva</span>

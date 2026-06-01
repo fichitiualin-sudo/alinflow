@@ -1,9 +1,10 @@
 "use client";
 
-import type { CalendarMode, ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
+import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
 import { isCustomQuoteItem, itemName, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
+import { APPOINTMENT_TYPES, addHoursToTime, appointmentDurationLabel, appointmentTypeLabel, isOneHourAppointment } from "@/lib/alinflow/appointments";
 
 type SchedulePanelProps = {
   selected: Customer;
@@ -14,6 +15,7 @@ type SchedulePanelProps = {
   scheduleDate: string;
   scheduleTime: string;
   shownTime: string;
+  appointmentType: AppointmentType;
   isMultiDayJob: boolean;
   freeSlots: string[];
   quoteItems: QuoteItem[];
@@ -28,6 +30,7 @@ type SchedulePanelProps = {
   onStep: (value: number) => void;
   onOpenCustomer: (customer: Customer) => void;
   onSetScheduleTime: (value: string) => void;
+  onSetAppointmentType: (value: AppointmentType) => void;
   onUpdateQuoteItem: (index: number, key: keyof QuoteItem, value: string | number | boolean) => void;
   onUpdateQuoteProduct: (index: number, productId: string) => void;
   onAddQuoteItem: () => void;
@@ -55,6 +58,11 @@ function numericInputValue(value: string) {
   return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
 }
 
+function slotLabel(slot: string, appointmentType: AppointmentType) {
+  if (isOneHourAppointment(appointmentType)) return `${slot}–${addHoursToTime(slot, 1)}`;
+  return slot === "16:00" ? "+1 extra" : slot;
+}
+
 export function SchedulePanel({
   selected,
   isExistingSchedule,
@@ -64,6 +72,7 @@ export function SchedulePanel({
   scheduleDate,
   scheduleTime,
   shownTime,
+  appointmentType,
   isMultiDayJob,
   freeSlots,
   quoteItems,
@@ -78,6 +87,7 @@ export function SchedulePanel({
   onStep,
   onOpenCustomer,
   onSetScheduleTime,
+  onSetAppointmentType,
   onUpdateQuoteItem,
   onUpdateQuoteProduct,
   onAddQuoteItem,
@@ -99,19 +109,41 @@ export function SchedulePanel({
             onStep={onStep}
             onOpen={onOpenCustomer}
           />
+          <Card title="Időpont típusa">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              {APPOINTMENT_TYPES.map((type) => {
+                const isSelected = appointmentType === type.value;
+                return (
+                  <button
+                    key={type.value}
+                    type="button"
+                    onClick={() => onSetAppointmentType(type.value)}
+                    className={`rounded-2xl border p-4 text-left transition ${isSelected ? "border-cyan-200 bg-cyan-300 text-slate-950" : "border-white/10 bg-slate-900/80 text-slate-100 hover:border-cyan-300/40"}`}
+                  >
+                    <span className="block text-lg font-black">{type.label}</span>
+                    <span className={`mt-1 block text-sm font-bold ${isSelected ? "text-slate-700" : "text-slate-400"}`}>{type.durationLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
           <Card title="Választható időpontok">
             {isMultiDayJob ? (
-              <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">
-                2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.
-              </div>
+              freeSlots.length ? (
+                <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">
+                  Szerelésnél 2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra a 08:00 + 12:00 idősáv már foglalt.</div>
+              )
             ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className={`grid grid-cols-1 gap-3 ${isOneHourAppointment(appointmentType) ? "md:grid-cols-5" : "md:grid-cols-3"}`}>
                 {freeSlots.length === 0 ? (
                   <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div>
                 ) : (
                   freeSlots.map((slot) => (
                     <button key={slot} className={scheduleTime === slot ? "slot-active" : "slot"} onClick={() => onSetScheduleTime(slot)}>
-                      {slot === "16:00" ? "+1 extra" : slot}
+                      {slotLabel(slot, appointmentType)}
                     </button>
                   ))
                 )}
@@ -120,10 +152,10 @@ export function SchedulePanel({
           </Card>
         </Main>
         <Side>
-          <Gradient title="Kiválasztott időpont" value={`${scheduleDate.replaceAll("-", ".")} · ${shownTime}`} />
+          <Gradient title="Kiválasztott időpont" value={`${appointmentTypeLabel(appointmentType)} · ${scheduleDate.replaceAll("-", ".")} · ${shownTime}`} />
           <Card title="Időpontba kerülő klímák">
             <p className="mb-4 text-sm leading-relaxed text-slate-400">
-              Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. Telefonról is ugyanígy működik.
+              Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. A felmérés és a karbantartás fixen 1 órás időpontként jelenik meg.
             </p>
             {quoteItems.map((item, index) => (
               <div key={index} className="mb-3 rounded-2xl bg-slate-900/80 p-4">
@@ -152,6 +184,7 @@ export function SchedulePanel({
             <button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={onAddQuoteItem}>
               + Klíma hozzáadása
             </button>
+            <InfoRow label="Időpont típusa" value={`${appointmentTypeLabel(appointmentType)} · ${appointmentDurationLabel(appointmentType)}`} />
             <InfoRow label="Összes klíma" value={`${totalQuantity} db`} />
             <label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
               <input
@@ -163,7 +196,7 @@ export function SchedulePanel({
               <span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span>
             </label>
             <Btn color="green" onClick={onSaveSchedule}>
-              {appointmentEmailBusy ? "Mentés és email küldés..." : isExistingSchedule ? "Időpont frissítése" : "Időpont mentése"}
+              {appointmentEmailBusy ? "Mentés és email küldés..." : isExistingSchedule ? `${appointmentTypeLabel(appointmentType)} időpont frissítése` : `${appointmentTypeLabel(appointmentType)} időpont mentése`}
             </Btn>
           </Card>
         </Side>

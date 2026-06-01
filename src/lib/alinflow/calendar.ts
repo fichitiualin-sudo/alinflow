@@ -1,6 +1,7 @@
 import type { CalendarMode, Customer } from "./types";
 import { displayAddress, pad, todayIso } from "./format";
-import { climateSummary, qty } from "./products";
+import { climateSummary } from "./products";
+import { appointmentDurationMinutes, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkSummary, firstAppointmentTime, isInstallationAppointment } from "./appointments";
 
 export function weekStart(d: Date) {
   const x = new Date(d);
@@ -26,7 +27,7 @@ function compactCalendarDate(date: Date) {
 }
 
 function parseCalendarTime(value?: string) {
-  const firstTime = (value || "08:00").match(/\d{1,2}:\d{2}/)?.[0] || "08:00";
+  const firstTime = firstAppointmentTime(value);
   const [hour, minute] = firstTime.split(":").map(Number);
   return { hour: Number.isFinite(hour) ? hour : 8, minute: Number.isFinite(minute) ? minute : 0 };
 }
@@ -37,23 +38,22 @@ export function googleCalendarHref(customer: Customer) {
   const start = new Date(`${dateIso}T00:00:00`);
   start.setHours(hour, minute, 0, 0);
   const end = new Date(start);
-  const isLongSlot = Number(qty(customer.quoteItems)) >= 2 || String(customer.time || "").includes("+");
-  if (isLongSlot) {
-    end.setHours(16, 0, 0, 0);
-  } else if (hour >= 16) {
-    end.setHours(hour + 2, minute, 0, 0);
-  } else {
-    end.setHours(hour + 4, minute, 0, 0);
-  }
+  const durationMinutes = appointmentDurationMinutes(customer.appointmentType, customer.quoteItems, customer.time);
+  end.setMinutes(end.getMinutes() + durationMinutes);
 
-  const title = `Klímaszerelés – ${customer.name || "ügyfél"}`;
+  const workLabel = appointmentTypeLabel(customer.appointmentType);
+  const isInstallation = isInstallationAppointment(customer.appointmentType);
+  const workSummary = isInstallation ? climateSummary(customer.quoteItems) : appointmentWorkSummary(customer);
+  const title = `${workLabel} – ${customer.name || "ügyfél"}`;
   const details = [
     customer.name ? `Ügyfél: ${customer.name}` : "",
     customer.phone ? `Telefon: ${customer.phone}` : "",
     customer.email ? `Email: ${customer.email}` : "",
-    climateSummary(customer.quoteItems) ? `Klíma: ${climateSummary(customer.quoteItems)} – szereléssel együtt` : "",
+    isInstallation ? `Klíma: ${workSummary} – szereléssel együtt` : `Munka: ${workSummary}`,
     customer.need ? `Igény: ${customer.need}` : "",
     customer.notes ? `Megjegyzés: ${customer.notes}` : "",
+    `Időpont típusa: ${workLabel}`,
+    `Idősáv: ${appointmentTimeRangeLabel(customer)}`,
     customer.status ? `Státusz: ${customer.status}` : "",
   ].filter(Boolean).join("\n");
 

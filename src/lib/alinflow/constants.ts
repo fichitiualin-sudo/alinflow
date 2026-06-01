@@ -1,4 +1,4 @@
-import type { ClimateProduct, Customer, InventoryItem, QuoteItem, View, WorkChecklistState } from "./types";
+import type { AppointmentType, ClimateProduct, Customer, InventoryItem, QuoteItem, View, WorkChecklistState } from "./types";
 
 export const RETURN_CONTEXT_KEY = "alinflow:returnContext";
 export const CUSTOMER_DRAFT_KEY = "alinflow:customerDraft";
@@ -13,6 +13,9 @@ export const EMPTY_WORK_CHECKLIST: WorkChecklistState = {
   nkvh: false,
   docsSent: false,
 };
+
+
+export const DEFAULT_APPOINTMENT_TYPE: AppointmentType = "installation";
 
 export const STATUS_OPTIONS = [
   "Visszahívandó",
@@ -52,7 +55,7 @@ export const EMPTY_QUOTE_ITEMS: QuoteItem[] = [];
 export const INITIAL_CUSTOMERS: Customer[] = [
   { id:"c1", name:"Kovács Réka", city:"Hévízgyörk", postalCode:"2192", phone:"+36 30 123 4567", email:"reka@email.hu", address:"2192 Hévízgyörk, Minta utca 12.", source:"Facebook hirdetés", status:"Időpont foglalva", need:"Hűtés · 35 m² nappali", date:"2026-05-12", time:"08:00", quoteItems:[{ productId: PRODUCTS[6]?.id || PRODUCTS[0].id, quantity:1 }] },
   { id:"c2", name:"Kovács Béla", city:"Gödöllő", postalCode:"2100", phone:"+36 30 111 1111", email:"bela@email.hu", address:"2100 Gödöllő, Fő utca 4.", source:"Telefon", status:"Időpont foglalva", need:"Hűtés + fűtés · 42 m² nappali", date:"2026-05-11", time:"08:00", quoteItems:[{ productId: PRODUCTS[12]?.id || PRODUCTS[0].id, quantity:1 }] },
-  { id:"c3", name:"Nagy István", city:"Hatvan", postalCode:"3000", phone:"+36 30 222 2222", email:"istvan@email.hu", address:"3000 Hatvan, Kossuth tér 2.", source:"Weboldal", status:"Visszahívandó", need:"Felmérés · 2 helyiség", date:"2026-05-11", time:"12:00", quoteItems:[{ productId: PRODUCTS[1]?.id || PRODUCTS[0].id, quantity:1 }] },
+  { id:"c3", name:"Nagy István", city:"Hatvan", postalCode:"3000", phone:"+36 30 222 2222", email:"istvan@email.hu", address:"3000 Hatvan, Kossuth tér 2.", source:"Weboldal", status:"Visszahívandó", need:"Felmérés · 2 helyiség", date:"2026-05-11", time:"12:00", appointmentType:"survey", quoteItems:[{ productId: PRODUCTS[1]?.id || PRODUCTS[0].id, quantity:1 }] },
   { id:"l1", name:"Balogh Réka", city:"Hévízgyörk", postalCode:"2192", phone:"+36 30 222 3344", email:"balogh.reka@email.hu", address:"2192 Hévízgyörk, Dózsa György út 5.", source:"Facebook hirdetés", status:"Visszahívandó", need:"Hűtés · 35 m² nappali", quoteItems:[{ productId: PRODUCTS[6]?.id || PRODUCTS[0].id, quantity:1 }] },
   { id:"l2", name:"Molnár Gábor", city:"Kartal", postalCode:"2173", phone:"+36 30 666 6666", email:"gabor@email.hu", address:"2173 Kartal, Béke utca 9.", source:"Facebook hirdetés", status:"Ajánlat elküldve", need:"Hűtés + fűtés · 40 m² nappali", quoteItems:[{ productId: PRODUCTS[12]?.id || PRODUCTS[0].id, quantity:1 }] },
 ];
@@ -97,6 +100,7 @@ export const EMPTY_CUSTOMER: Customer = {
   notes: "",
   quoteItems: EMPTY_QUOTE_ITEMS,
   quotePricingMode: "bundle",
+  appointmentType: DEFAULT_APPOINTMENT_TYPE,
 };
 
 export function normalizeStatus(status?: string) {
