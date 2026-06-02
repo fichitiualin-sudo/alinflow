@@ -13,7 +13,7 @@ export type View =
   | "documentPreview";
 
 export type CalendarMode = "week" | "month";
-export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document";
+export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document" | "all_work_reports";
 export type QuotePricingMode = "bundle" | "alternatives";
 export type AppointmentType = "installation" | "survey" | "maintenance";
 export type CustomerTimelineTone = "emerald" | "cyan" | "violet" | "blue" | "amber" | "slate";
@@ -74,6 +74,7 @@ export type Customer = {
   date?: string;
   time?: string;
   appointmentType?: AppointmentType;
+  activeWorkReportId?: string;
   createdAt?: string;
   updatedAt?: string;
   lastCalledAt?: string;
@@ -93,12 +94,16 @@ export type WorkReport = {
   id?: string;
   customerId?: string;
   appointmentType?: AppointmentType;
+  workDate?: string;
+  workTime?: string;
   workDescription: string;
   notes: string;
   signatureDataUrl: string;
   signerName: string;
   signedAt?: string;
   emailSentAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type DocumentRecord = {

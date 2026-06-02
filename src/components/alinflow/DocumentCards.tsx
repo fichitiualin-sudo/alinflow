@@ -2,7 +2,25 @@
 
 import type { AppointmentType, Customer, DocumentPreviewType } from "@/lib/alinflow/types";
 
-type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType };
+type DocumentRow = {
+  action: string;
+  title: string;
+  status: string;
+  appointmentType?: AppointmentType;
+  reportId?: string;
+  reportDate?: string;
+  reportTime?: string;
+};
+
+function actionCustomerFor(customer: Customer, row: DocumentRow): Customer {
+  return {
+    ...customer,
+    appointmentType: row.appointmentType || customer.appointmentType,
+    date: row.reportDate || customer.date,
+    time: row.reportTime || customer.time,
+    activeWorkReportId: row.reportId,
+  };
+}
 
 export function documentStatusClass(status: string) {
   if (status.includes("Elküld") || status.includes("Kész") || status.includes("Lezár") || status.includes("Aláírva") || status.includes("Elkészült")) {
@@ -23,9 +41,9 @@ export function DocumentLibraryActionButtons({
   ready: boolean;
   onPreview: (customer: Customer, type: DocumentPreviewType) => void;
 }) {
-  if (!ready) return null;
+  if (!ready && row.action !== "MaintenanceBundle") return null;
 
-  const actionCustomer = row.appointmentType ? { ...customer, appointmentType: row.appointmentType } : customer;
+  const actionCustomer = actionCustomerFor(customer, row);
 
   if (row.action === "MunkalapNyilatkozat") {
     return (
@@ -35,7 +53,10 @@ export function DocumentLibraryActionButtons({
       </div>
     );
   }
-  if (row.action === "Munkalap") {
+  if (row.action === "MaintenanceBundle") {
+    return <button onClick={() => onPreview(actionCustomer, "all_work_reports")} className="mt-3 w-full rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100">Összes munkalap megtekintése / nyomtatása</button>;
+  }
+  if (row.action === "MaintenanceReport" || row.action === "Munkalap") {
     return <button onClick={() => onPreview(actionCustomer, "work_report")} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
   }
   if (row.action === "Nyilatkozat") {
@@ -70,7 +91,7 @@ export function DocumentActionButtons({
   quoteEmailBusy: boolean;
   appointmentEmailBusy: boolean;
 }) {
-  const actionCustomer = row.appointmentType ? { ...customer, appointmentType: row.appointmentType } : customer;
+  const actionCustomer = actionCustomerFor(customer, row);
   const baseButton = "rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-wait disabled:opacity-60";
   const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
   const sendButton = `${baseButton} bg-blue-400/20 text-blue-100 hover:bg-blue-400/30`;
@@ -84,6 +105,17 @@ export function DocumentActionButtons({
         <button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Munkalap</button>
         <button onClick={() => onPreview(actionCustomer, "purchase_declaration")} className={viewButton}>Nyilatkozat</button>
         <button onClick={() => onEditWorkReport(actionCustomer)} className={`${editButton} sm:col-span-2`}>Szerkesztés / aláírás</button>
+      </div>
+    );
+  }
+  if (row.action === "MaintenanceBundle") {
+    return <button onClick={() => onPreview(actionCustomer, "all_work_reports")} className="mt-3 w-full rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/30">Összes munkalap letöltése / nyomtatása</button>;
+  }
+  if (row.action === "MaintenanceReport") {
+    return (
+      <div className={gridClass}>
+        <button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Megtekintés</button>
+        <button onClick={() => onEditWorkReport(actionCustomer)} className={editButton}>Szerkesztés / aláírás</button>
       </div>
     );
   }

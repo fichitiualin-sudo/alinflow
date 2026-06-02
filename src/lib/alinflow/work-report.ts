@@ -28,6 +28,8 @@ export function emptyWorkReport(customer?: Customer): WorkReport {
   return {
     customerId: customer?.id,
     appointmentType: customer?.appointmentType,
+    workDate: customer?.date,
+    workTime: customer?.time,
     workDescription: defaultWorkDescription(customer?.appointmentType),
     notes: "",
     signatureDataUrl: "",

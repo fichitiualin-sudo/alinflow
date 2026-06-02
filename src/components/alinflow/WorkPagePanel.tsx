@@ -26,7 +26,7 @@ type MaterialItem = {
 };
 
 type ChecklistItem = { key: keyof WorkChecklistState; label: string };
-type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType };
+type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string };
 
 type WorkPagePanelProps = {
   selected: Customer;
@@ -48,6 +48,7 @@ type WorkPagePanelProps = {
   checklistReady: boolean;
   missingChecklist: string[];
   documentRows: DocumentRow[];
+  maintenanceRows: DocumentRow[];
   timelineItems: CustomerTimelineItem[];
   onBack: () => void;
   onCloseWork: () => void;
@@ -73,8 +74,8 @@ type WorkPagePanelProps = {
   onUpdateFinalMaterialQty: (materialName: string, value: string) => void;
   onMaterialDisplayUnit: (material: MaterialItem) => string;
   onClimateCountForMaterials: () => number;
-  onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType) => void;
-  onOpenWorkReportFor: (customer: Customer) => void;
+  onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
+  onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
   onSendQuoteEmail: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
   onOpenWorkReport: () => void;
@@ -104,6 +105,7 @@ export function WorkPagePanel({
   checklistReady,
   missingChecklist,
   documentRows,
+  maintenanceRows,
   timelineItems,
   onBack,
   onCloseWork,
@@ -293,24 +295,29 @@ export function WorkPagePanel({
           <Card title="Dokumentumok">
             <div className="space-y-3">
               {documentRows.map((row) => (
-                <div key={row.title} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div><p className="font-black">{row.title}</p></div>
-                    <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span>
-                  </div>
-                  <DocumentActionButtons
-                    customer={selected}
-                    row={row}
-                    onPreview={onOpenDocumentPreview}
-                    onEditWorkReport={onOpenWorkReportFor}
-                    onSendQuote={onSendQuoteEmail}
-                    onSendAppointment={onSendAppointmentEmailFor}
-                    quoteEmailBusy={quoteEmailBusy}
-                    appointmentEmailBusy={appointmentEmailBusy}
-                  />
-                </div>
+                <DocumentRowCard
+                  key={`${row.title}-${row.reportId || row.appointmentType || "main"}`}
+                  selected={selected}
+                  row={row}
+                  quoteEmailBusy={quoteEmailBusy}
+                  appointmentEmailBusy={appointmentEmailBusy}
+                  onOpenDocumentPreview={onOpenDocumentPreview}
+                  onOpenWorkReportFor={onOpenWorkReportFor}
+                  onSendQuoteEmail={onSendQuoteEmail}
+                  onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+                />
               ))}
             </div>
+            <MaintenanceHistory
+              selected={selected}
+              rows={maintenanceRows}
+              quoteEmailBusy={quoteEmailBusy}
+              appointmentEmailBusy={appointmentEmailBusy}
+              onOpenDocumentPreview={onOpenDocumentPreview}
+              onOpenWorkReportFor={onOpenWorkReportFor}
+              onSendQuoteEmail={onSendQuoteEmail}
+              onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+            />
             <CustomerTimeline items={timelineItems} />
           </Card>
 
@@ -354,6 +361,114 @@ export function WorkPagePanel({
         </Side>
       </Layout>
     </>
+  );
+}
+
+
+function DocumentRowCard({
+  selected,
+  row,
+  quoteEmailBusy,
+  appointmentEmailBusy,
+  onOpenDocumentPreview,
+  onOpenWorkReportFor,
+  onSendQuoteEmail,
+  onSendAppointmentEmailFor,
+}: {
+  selected: Customer;
+  row: DocumentRow;
+  quoteEmailBusy: boolean;
+  appointmentEmailBusy: boolean;
+  onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
+  onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
+  onSendQuoteEmail: () => void;
+  onSendAppointmentEmailFor: (customer: Customer) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-black">{row.title}</p>
+          {row.reportDateLabel ? <p className="mt-1 text-xs font-bold text-slate-400">{row.reportDateLabel}</p> : null}
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span>
+      </div>
+      <DocumentActionButtons
+        customer={selected}
+        row={row}
+        onPreview={onOpenDocumentPreview}
+        onEditWorkReport={onOpenWorkReportFor}
+        onSendQuote={onSendQuoteEmail}
+        onSendAppointment={onSendAppointmentEmailFor}
+        quoteEmailBusy={quoteEmailBusy}
+        appointmentEmailBusy={appointmentEmailBusy}
+      />
+    </div>
+  );
+}
+
+function MaintenanceHistory({
+  selected,
+  rows,
+  quoteEmailBusy,
+  appointmentEmailBusy,
+  onOpenDocumentPreview,
+  onOpenWorkReportFor,
+  onSendQuoteEmail,
+  onSendAppointmentEmailFor,
+}: {
+  selected: Customer;
+  rows: DocumentRow[];
+  quoteEmailBusy: boolean;
+  appointmentEmailBusy: boolean;
+  onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
+  onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
+  onSendQuoteEmail: () => void;
+  onSendAppointmentEmailFor: (customer: Customer) => void;
+}) {
+  if (!rows.length) return null;
+
+  const dates = rows.map((row) => row.reportDateLabel || row.reportDate || row.title).filter(Boolean);
+  const maintenanceCustomer = { ...selected, appointmentType: "maintenance" as AppointmentType };
+
+  return (
+    <div className="mt-4 rounded-3xl border border-emerald-300/15 bg-emerald-400/5 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-lg font-black text-emerald-100">Karbantartási napló</p>
+          <p className="mt-1 text-sm font-bold text-slate-400">Garanciához megőrzött karbantartási munkalapok, dátum szerint.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onOpenDocumentPreview(maintenanceCustomer, "all_work_reports")}
+          className="shrink-0 rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 ring-1 ring-emerald-300/20"
+        >
+          Összes munkalap
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {dates.map((date) => (
+          <span key={date} className="rounded-full bg-slate-950/60 px-3 py-1 text-xs font-black text-emerald-100 ring-1 ring-emerald-300/10">{date}</span>
+        ))}
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {rows.map((row) => (
+          <DocumentRowCard
+            key={`${row.reportId || row.title}`}
+            selected={maintenanceCustomer}
+            row={row}
+            quoteEmailBusy={quoteEmailBusy}
+            appointmentEmailBusy={appointmentEmailBusy}
+            onOpenDocumentPreview={onOpenDocumentPreview}
+            onOpenWorkReportFor={onOpenWorkReportFor}
+            onSendQuoteEmail={onSendQuoteEmail}
+            onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

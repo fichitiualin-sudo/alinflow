@@ -77,7 +77,7 @@ import {
 } from "@/lib/alinflow/format";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
-import { AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
+import { AllWorkReportsDocument, AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
 import { CustomerSearchPanel, LeadImportPanel } from "@/components/alinflow/CustomerPanels";
 import { DocumentActionButtons, DocumentLibraryActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { WorkReportPanel } from "@/components/alinflow/WorkReportPanel";
@@ -111,6 +111,17 @@ import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, 
 
 const LIST_PAGE_SIZE = 20;
 const DASHBOARD_WAREHOUSE_LIMIT = 6;
+
+type PageDocumentRow = {
+  action: string;
+  title: string;
+  status: string;
+  appointmentType?: AppointmentType;
+  reportId?: string;
+  reportDate?: string;
+  reportTime?: string;
+  reportDateLabel?: string;
+};
 
 function customerCreatedAtMs(customer: Pick<Customer, "createdAt">) {
   if (!customer.createdAt) return 0;
@@ -365,10 +376,12 @@ export default function Home() {
   const [sendAppointmentNotice,setSendAppointmentNotice] = useState(true);
   const [workReport,setWorkReport] = useState<WorkReport>(emptyWorkReport());
   const [workReportsByCustomer,setWorkReportsByCustomer] = useState<Record<string, WorkReport>>({});
+  const [maintenanceReportsByCustomer,setMaintenanceReportsByCustomer] = useState<Record<string, WorkReport[]>>({});
   const [documentsByCustomer,setDocumentsByCustomer] = useState<Record<string, DocumentRecord[]>>({});
   const [workChecklistsByCustomer,setWorkChecklistsByCustomer] = useState<Record<string, WorkChecklistState>>({});
   const [documentPreviewType,setDocumentPreviewType] = useState<DocumentPreviewType>("work_report");
   const [documentBackView,setDocumentBackView] = useState<"documents" | "work">("work");
+  const [documentPreviewReportId,setDocumentPreviewReportId] = useState<string | undefined>(undefined);
   const [quoteIssuedAt,setQuoteIssuedAt] = useState("");
   const [workReportBusy,setWorkReportBusy] = useState(false);
   const [workReportEmailBusy,setWorkReportEmailBusy] = useState(false);
@@ -1045,10 +1058,20 @@ export default function Home() {
     });
 
     const workReportsMap: Record<string, WorkReport> = {};
+    const maintenanceReportsMap: Record<string, WorkReport[]> = {};
     (workReportRows || []).forEach((row: any) => {
       if (!row.customer_id) return;
       const report = workReportFromRow(row);
-      workReportsMap[workReportMapKey(row.customer_id, report.appointmentType)] = report;
+      if (normalizeAppointmentType(report.appointmentType) === "maintenance") {
+        const current = maintenanceReportsMap[row.customer_id] || [];
+        current.push(report);
+        maintenanceReportsMap[row.customer_id] = current;
+        return;
+      }
+      workReportsMap[workReportKeyFromReport(report, row.customer_id)] = report;
+    });
+    Object.keys(maintenanceReportsMap).forEach((customerId) => {
+      maintenanceReportsMap[customerId] = maintenanceReportsMap[customerId].sort(compareWorkReportsDesc);
     });
 
     const documentsMap: Record<string, DocumentRecord[]> = {};
@@ -1128,6 +1151,7 @@ export default function Home() {
 
     setCustomers(loadedCustomers);
     setWorkReportsByCustomer(workReportsMap);
+    setMaintenanceReportsByCustomer(maintenanceReportsMap);
     setDocumentsByCustomer(documentsMap);
     setWorkChecklistsByCustomer(checklistsMap);
     setSelected(nextSelected);
@@ -1617,7 +1641,9 @@ export default function Home() {
     };
     try {
       await persistCustomerToDb(updated);
-      await logDocument(updated, appointmentBookedDocumentType(updated.appointmentType), `${appointmentTypeLabel(updated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
+      if (normalizeAppointmentType(updated.appointmentType) !== "maintenance") {
+        await logDocument(updated, appointmentBookedDocumentType(updated.appointmentType), `${appointmentTypeLabel(updated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
+      }
       setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
       setSelected(updated);
 
@@ -1760,8 +1786,9 @@ export default function Home() {
     }
 
     if (currentAppointmentType === "maintenance") {
-      if (!hasCustomerSignature(selected)) {
-        setMessage("A karbantartás lezárásához előbb készítsd el és írasd alá a karbantartási munkalapot.");
+      const maintenanceReport = savedReportFor(selected, "maintenance");
+      if (!maintenanceReport?.id || !(maintenanceReport.signatureDataUrl || maintenanceReport.signedAt || maintenanceReport.emailSentAt)) {
+        setMessage("Karbantartás lezárása előtt készítsd el és írasd alá a karbantartási munkalapot.");
         return;
       }
 
@@ -1908,6 +1935,7 @@ export default function Home() {
       date: undefined,
       time: undefined,
       appointmentType: "maintenance",
+      activeWorkReportId: undefined,
       status: "Időpont foglalva",
       isFresh: true,
       updatedAt: changedAt,
@@ -2253,7 +2281,9 @@ export default function Home() {
       }
 
       const appointmentEmailSentAt = new Date().toISOString();
-      await logDocument(customer, appointmentEmailDocumentType(customer.appointmentType), appointmentDocumentTitle(customer.appointmentType), "Elküldve", appointmentEmailSentAt);
+      if (normalizeAppointmentType(customer.appointmentType) !== "maintenance") {
+        await logDocument(customer, appointmentEmailDocumentType(customer.appointmentType), appointmentDocumentTitle(customer.appointmentType), "Elküldve", appointmentEmailSentAt);
+      }
       setMessage("Időpont tájékoztató email elküldve ✅");
       return true;
     } catch (error: any) {
@@ -2294,6 +2324,8 @@ export default function Home() {
         signatureDataUrl: report.signatureDataUrl,
         signerName: report.signerName || customer.name,
         signedAt: report.signedAt,
+        workDate: report.workDate || customer.date,
+        workTime: report.workTime || customer.time,
       },
     };
   }
@@ -2304,12 +2336,16 @@ export default function Home() {
       id: row.id,
       customerId: row.customer_id,
       appointmentType,
+      workDate: row.work_date || undefined,
+      workTime: row.work_time || undefined,
       workDescription: row.work_description || defaultWorkDescription(appointmentType),
       notes: row.notes || "",
       signatureDataUrl: row.signature_data_url || "",
       signerName: row.signer_name || row.customer_name || "",
       signedAt: row.signed_at || undefined,
       emailSentAt: row.email_sent_at || undefined,
+      createdAt: row.created_at || undefined,
+      updatedAt: row.updated_at || undefined,
     };
   }
 
@@ -2344,9 +2380,58 @@ export default function Home() {
     return normalizeAppointmentType(type) === "maintenance" ? "maintenance_work_report" : "work_report";
   }
 
-  function workReportMapKey(customerId: string, type?: string | null) {
+  function workReportMapKey(customerId: string, type?: string | null, workDate?: string, workTime?: string, reportId?: string) {
     const normalized = normalizeAppointmentType(type);
-    return normalized === "installation" ? customerId : `${customerId}:${normalized}`;
+    if (normalized === "installation") return customerId;
+    const safeDate = workDate || "nincs-datum";
+    const safeTime = firstAppointmentTime(workTime || "08:00");
+    return `${customerId}:${normalized}:${safeDate}:${safeTime}:${reportId || "uj"}`;
+  }
+
+  function workReportKeyFromReport(report: WorkReport, fallbackCustomerId?: string) {
+    const customerId = report.customerId || fallbackCustomerId || "";
+    return workReportMapKey(customerId, report.appointmentType, report.workDate, report.workTime, report.id);
+  }
+
+  function reportDateTimeMs(report: WorkReport) {
+    const dateText = report.workDate || report.createdAt || "";
+    const timeText = report.workTime || "00:00";
+    const parsed = report.workDate ? new Date(`${dateText}T${firstAppointmentTime(timeText) || "00:00"}`) : new Date(dateText);
+    const time = parsed.getTime();
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  function sortWorkReportsByDateDesc(reports: WorkReport[]) {
+    return [...reports].sort((a, b) => reportDateTimeMs(b) - reportDateTimeMs(a));
+  }
+
+  function sameReportAppointment(report: WorkReport, customer: Customer) {
+    if (!customer.date) return false;
+    return report.workDate === customer.date && firstAppointmentTime(report.workTime || "08:00") === firstAppointmentTime(customer.time || "08:00");
+  }
+
+  function workReportsForCustomer(customer: Customer, type?: AppointmentType) {
+    if (!customer.id) return [];
+    return sortWorkReportsByDateDesc(
+      Object.values(workReportsByCustomer).filter((report) => (
+        report.customerId === customer.id && (!type || normalizeAppointmentType(report.appointmentType) === type)
+      ))
+    );
+  }
+
+  function reportStatusText(report?: WorkReport) {
+    if (!report) return "Nincs kész";
+    if (report.emailSentAt) return "Elküldve";
+    if (report.signatureDataUrl || report.signedAt) return "Aláírva, elkészült";
+    if (report.id) return "Mentve, aláírásra vár";
+    return "Nincs kész";
+  }
+
+  function formatReportDateLabel(report: WorkReport | Pick<Customer, "date" | "time" | "appointmentType">) {
+    const date = (report as WorkReport).workDate || (report as Pick<Customer, "date" | "time" | "appointmentType">).date;
+    const time = (report as WorkReport).workTime || (report as Pick<Customer, "date" | "time" | "appointmentType">).time;
+    if (!date) return "nincs dátum";
+    return `${date.replaceAll("-", ".")} · ${firstAppointmentTime(time || "08:00")}`;
   }
 
   function errorMentionsWorkReportType(error: any) {
@@ -2385,7 +2470,7 @@ export default function Home() {
     if (!customer.id) return { ...workChecklist };
 
     const saved = checklistsMap[customer.id] || EMPTY_WORK_CHECKLIST;
-    const report = reportsMap[customer.id];
+    const report = reportsMap[customer.id] || reportsMap[workReportMapKey(customer.id, "installation")] || Object.values(reportsMap).find((item) => item.customerId === customer.id && normalizeAppointmentType(item.appointmentType) === "installation");
     const docs = docsMap[customer.id] || [];
     const workDoc = docs.find((doc) => doc.type === "work_report");
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
@@ -2412,11 +2497,72 @@ export default function Home() {
     };
   }
 
+  function reportDateSortValue(report: WorkReport) {
+    const date = report.workDate || report.signedAt?.slice(0, 10) || report.createdAt?.slice(0, 10) || "0000-00-00";
+    const time = firstAppointmentTime(report.workTime || "00:00") || "00:00";
+    return `${date}T${time}`;
+  }
+
+  function compareWorkReportsDesc(a: WorkReport, b: WorkReport) {
+    return reportDateSortValue(b).localeCompare(reportDateSortValue(a));
+  }
+
+  function maintenanceReportsFor(customer: Customer = selected) {
+    if (!customer.id) return [];
+    const cached = maintenanceReportsByCustomer[customer.id] || [];
+    return [...cached].sort(compareWorkReportsDesc);
+  }
+
+  function formatMaintenanceReportDate(report: WorkReport) {
+    const dateValue = report.workDate || report.signedAt?.slice(0, 10) || report.createdAt?.slice(0, 10);
+    const timeValue = firstAppointmentTime(report.workTime || "");
+    let dateText = dateValue || "dátum nélkül";
+    if (dateValue) {
+      const date = new Date(`${dateValue}T00:00:00`);
+      if (!Number.isNaN(date.getTime())) {
+        dateText = date.toLocaleDateString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit" });
+      }
+    }
+    return [dateText, timeValue].filter(Boolean).join(" · ");
+  }
+
+  function maintenanceReportStatus(report: WorkReport) {
+    if (report.emailSentAt) return "Elküldve";
+    if (report.signatureDataUrl || report.signedAt) return "Aláírva";
+    if (report.id) return "Mentve";
+    return "Nincs kész";
+  }
+
+  function currentMaintenanceReportFor(customer: Customer) {
+    if (normalizeAppointmentType(customer.appointmentType) !== "maintenance") return undefined;
+    const currentDate = customer.date || scheduleDate;
+    const currentTime = firstAppointmentTime(customer.time || scheduleTime || "");
+    return maintenanceReportsFor(customer).find((report) => {
+      const reportDate = report.workDate || report.signedAt?.slice(0, 10) || report.createdAt?.slice(0, 10);
+      const reportTime = firstAppointmentTime(report.workTime || "");
+      return Boolean(reportDate && currentDate && reportDate === currentDate && (!currentTime || !reportTime || reportTime === currentTime));
+    });
+  }
+
   function savedReportFor(customer: Customer = selected, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
     if (!customer.id) return undefined;
-    const key = workReportMapKey(customer.id, type);
-    if (workReport.customerId === customer.id && normalizeAppointmentType(workReport.appointmentType) === type) return workReport;
-    return workReportsByCustomer[key];
+    const normalizedType = normalizeAppointmentType(type);
+
+    if (normalizedType === "maintenance") {
+      const reports = maintenanceReportsFor(customer);
+      if (customer.activeWorkReportId) {
+        const exact = reports.find((report) => report.id === customer.activeWorkReportId);
+        if (exact) return exact;
+      }
+      if (workReport.customerId === customer.id && normalizeAppointmentType(workReport.appointmentType) === "maintenance") {
+        if (!customer.activeWorkReportId || workReport.id === customer.activeWorkReportId || sameReportAppointment(workReport, customer)) return workReport;
+      }
+      return currentMaintenanceReportFor(customer);
+    }
+
+    if (workReport.customerId === customer.id && normalizeAppointmentType(workReport.appointmentType) === normalizedType) return workReport;
+    const key = workReportMapKey(customer.id, normalizedType);
+    return workReportsByCustomer[key] || Object.values(workReportsByCustomer).find((report) => report.customerId === customer.id && normalizeAppointmentType(report.appointmentType) === normalizedType);
   }
 
   function docsFor(customer: Customer) {
@@ -2488,16 +2634,10 @@ export default function Home() {
   }
 
   function hasCustomerSignature(customer: Customer, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
-    const report = savedReportFor(customer, type);
+    const report = type === "maintenance" ? currentMaintenanceReportFor(customer) : savedReportFor(customer, type);
     const docs = docsFor(customer);
     if (type === "maintenance") {
-      const maintenanceDoc = docs.find((doc) => doc.type === "maintenance_work_report");
-      return Boolean(
-        report?.signatureDataUrl ||
-        report?.signedAt ||
-        report?.emailSentAt ||
-        statusMeansSignedOrSent(maintenanceDoc?.status)
-      );
+      return Boolean(report?.signatureDataUrl || report?.signedAt || report?.emailSentAt);
     }
     const workDoc = docs.find((doc) => doc.type === "work_report");
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
@@ -2537,43 +2677,67 @@ export default function Home() {
     return "Nincs kész";
   }
 
-  function documentRowsFor(customer: Customer) {
+  function documentRowsFor(customer: Customer): PageDocumentRow[] {
     const currentAppointmentType = normalizeAppointmentType(customer.appointmentType);
-    const hasMaintenanceFlow = currentAppointmentType === "maintenance"
-      || docsFor(customer).some((doc) => doc.type.startsWith("maintenance_"));
-
     const quoteDoc = docFor(customer, "quote_email");
     const quoteSentAt = quoteSentAtFor(customer);
     const quoteBaseStatus = quoteDoc?.status || (customer.status === "Ajánlat elküldve" ? "Elküldve" : "Nincs elküldve");
     const quoteDisplayStatus = quoteBaseStatus.includes("Elküld") && quoteSentAt ? `${quoteBaseStatus} · ${formatQuoteSentAt(quoteSentAt)}` : quoteBaseStatus;
 
-    const rows: { title: string; status: string; action: string; appointmentType?: AppointmentType }[] = [
-      { title: "Ajánlat email", status: quoteDisplayStatus, action: "Ajánlat", appointmentType: "installation" },
+    return [
+      { title: "Ajánlat email", status: quoteDisplayStatus, action: "Ajánlat", appointmentType: "installation" as AppointmentType },
       {
         title: "Szerelési időpont-visszaigazolás",
         status: docStatus(customer, appointmentEmailDocumentType("installation"), currentAppointmentType === "installation" && customer.date ? "Időpont rögzítve" : "Nincs időpont"),
         action: "Időpont",
-        appointmentType: "installation",
+        appointmentType: "installation" as AppointmentType,
       },
-      { title: "Munkalap és vásárlási nyilatkozat", status: workAndDeclarationStatus(customer, "installation"), action: "MunkalapNyilatkozat", appointmentType: "installation" },
-      { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" },
-      { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" },
+      { title: "Munkalap és vásárlási nyilatkozat", status: workAndDeclarationStatus(customer, "installation"), action: "MunkalapNyilatkozat", appointmentType: "installation" as AppointmentType },
+      { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
+      { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
     ];
+  }
 
-    if (hasMaintenanceFlow) {
-      const maintenanceDoneDoc = docFor(customer, "maintenance_done");
-      rows.push(
+  function maintenanceDocumentRowsFor(customer: Customer, includeBundle = false): PageDocumentRow[] {
+    const existingReports = maintenanceReportsFor(customer);
+    const rows: PageDocumentRow[] = existingReports.map((report) => ({
+      title: `Karbantartási munkalap · ${formatMaintenanceReportDate(report)}`,
+      status: maintenanceReportStatus(report),
+      action: "MaintenanceReport",
+      appointmentType: "maintenance",
+      reportId: report.id,
+      reportDate: report.workDate,
+      reportTime: report.workTime,
+      reportDateLabel: formatMaintenanceReportDate(report),
+    }));
+
+    const currentType = normalizeAppointmentType(customer.appointmentType);
+    const hasCurrentMaintenanceDate = currentType === "maintenance" && Boolean(customer.date);
+    const currentAlreadySaved = hasCurrentMaintenanceDate ? existingReports.some((report) => sameReportAppointment(report, customer)) : false;
+    if (hasCurrentMaintenanceDate && !currentAlreadySaved) {
+      rows.unshift({
+        title: `Karbantartási munkalap · ${formatReportDateLabel(customer)}`,
+        status: "Munkalap hiányzik",
+        action: "MaintenanceReport",
+        appointmentType: "maintenance",
+        reportDate: customer.date,
+        reportTime: customer.time,
+        reportDateLabel: formatReportDateLabel(customer),
+      });
+    }
+
+    const savedRows = rows.filter((row) => Boolean(row.reportId));
+    if (includeBundle && savedRows.length) {
+      return [
         {
-          title: "Karbantartási időpont-visszaigazolás",
-          status: docStatus(customer, appointmentEmailDocumentType("maintenance"), currentAppointmentType === "maintenance" && customer.date ? "Időpont rögzítve" : "Nincs időpont"),
-          action: "Időpont",
+          title: `Összes karbantartási munkalap (${savedRows.length} db)`,
+          status: "Dátum szerint",
+          action: "MaintenanceBundle",
           appointmentType: "maintenance",
+          reportDateLabel: savedRows.map((row) => row.reportDateLabel).filter(Boolean).join(" · "),
         },
-        { title: "Karbantartási munkalap", status: workReportDocumentStatus(customer, "maintenance"), action: "Munkalap", appointmentType: "maintenance" }
-      );
-      if (maintenanceDoneDoc || (currentAppointmentType === "maintenance" && customer.status === "Lezárva")) {
-        rows.push({ title: "Karbantartás lezárva", status: maintenanceDoneDoc?.status || "Lezárva", action: "KarbantartásLezárva", appointmentType: "maintenance" });
-      }
+        ...rows,
+      ];
     }
 
     return rows;
@@ -2581,11 +2745,57 @@ export default function Home() {
 
 
 
-  async function loadWorkReportFor(customer: Customer) {
+
+  async function loadWorkReportFor(customer: Customer, reportId?: string) {
+    const activeReportId = reportId || customer.activeWorkReportId;
     const targetType = normalizeAppointmentType(customer.appointmentType);
-    const emptyReport = emptyWorkReport(customer);
+    const emptyReport = {
+      ...emptyWorkReport(customer),
+      workDate: customer.date || scheduleDate,
+      workTime: customer.time || scheduleTime || shownTime,
+    };
     setWorkReport(emptyReport);
     if (!customer.id) return;
+
+    if (activeReportId) {
+      const cachedReport = maintenanceReportsFor(customer).find((report) => report.id === activeReportId);
+      if (cachedReport) {
+        setWorkReport({ ...cachedReport, signerName: cachedReport.signerName || customer.name || "" });
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("work_reports")
+        .select("*")
+        .eq("id", activeReportId)
+        .maybeSingle();
+
+      if (error) {
+        setMessage(`Munkalap betöltési hiba: ${error.message}`);
+        return;
+      }
+      if (data) {
+        const loadedReport = workReportFromRow(data);
+        setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
+        if (normalizeAppointmentType(loadedReport.appointmentType) === "maintenance") {
+          setMaintenanceReportsByCustomer((prev) => {
+            const current = prev[customer.id] || [];
+            const without = current.filter((report) => report.id !== loadedReport.id);
+            return { ...prev, [customer.id]: [loadedReport, ...without].sort(compareWorkReportsDesc) };
+          });
+        }
+      }
+      return;
+    }
+
+    if (targetType === "maintenance") {
+      const currentReport = currentMaintenanceReportFor(customer);
+      if (currentReport) {
+        setWorkReport({ ...currentReport, signerName: currentReport.signerName || customer.name || "" });
+        return;
+      }
+      return;
+    }
 
     const alreadyLoaded = savedReportFor(customer, targetType);
     if (alreadyLoaded) {
@@ -2598,6 +2808,8 @@ export default function Home() {
       .select("*")
       .eq("customer_id", customer.id)
       .eq("appointment_type", targetType)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     const { data, error } = await query;
@@ -2620,7 +2832,7 @@ export default function Home() {
         }
         return;
       }
-      setMessage("A karbantartási munkalap külön mentéséhez futtasd a SUPABASE_WORK_REPORT_TIPUS_OSZLOP.sql fájlt a Supabase-ben.");
+      setMessage("A munkalap külön mentéséhez futtasd a SUPABASE_WORK_REPORT_TIPUS_OSZLOP.sql fájlt a Supabase-ben.");
       return;
     }
 
@@ -2631,11 +2843,13 @@ export default function Home() {
     }
   }
 
-  function openWorkReportFor(customer: Customer = selected) {
-    const customerForReport = { ...customer, quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems };
+  function openWorkReportFor(customer: Customer = selected, reportId?: string) {
+    const activeReportId = reportId || customer.activeWorkReportId;
+    const customerForReport = { ...customer, activeWorkReportId: activeReportId, quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems };
+    setDocumentPreviewReportId(activeReportId);
     setSelected(customerForReport);
     setQuoteItems(customerForReport.quoteItems);
-    void loadWorkReportFor(customerForReport);
+    void loadWorkReportFor(customerForReport, activeReportId);
     navigateToView("workReport");
   }
 
@@ -2643,17 +2857,19 @@ export default function Home() {
     openWorkReportFor(selected);
   }
 
-  function openDocumentPreview(customer: Customer, type: DocumentPreviewType) {
-    const customerForPreview = { ...customer, quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems };
+  function openDocumentPreview(customer: Customer, type: DocumentPreviewType, reportId?: string) {
+    const activeReportId = reportId || customer.activeWorkReportId;
+    const customerForPreview = { ...customer, activeWorkReportId: activeReportId, quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems };
     setSelected(customerForPreview);
     setQuoteItems(customerForPreview.quoteItems);
     setDocumentPreviewType(type);
+    setDocumentPreviewReportId(activeReportId);
     setDocumentBackView(view === "documents" ? "documents" : "work");
     if (type === "quote_document") {
       setQuoteIssuedAt(new Date().toISOString());
     }
     if (type === "work_report" || type === "purchase_declaration") {
-      void loadWorkReportFor(customerForPreview);
+      void loadWorkReportFor(customerForPreview, activeReportId);
     }
     navigateToView("documentPreview");
   }
@@ -2681,6 +2897,8 @@ export default function Home() {
     const signedAt = workReport.signatureDataUrl ? (workReport.signedAt || new Date().toISOString()) : null;
     const reportToSave: WorkReport = {
       ...workReport,
+      workDate: workReport.workDate || selected.date || scheduleDate,
+      workTime: workReport.workTime || selected.time || shownTime || scheduleTime,
       signerName: workReport.signerName || selected.name,
       signedAt: signedAt || undefined,
     };
@@ -2693,8 +2911,8 @@ export default function Home() {
       const basePayload = {
         customer_id: selected.id,
         appointment_type: currentAppointmentType,
-        work_date: selected.date || scheduleDate || null,
-        work_time: selected.time || shownTime || null,
+        work_date: reportToSave.workDate || selected.date || scheduleDate || null,
+        work_time: reportToSave.workTime || selected.time || shownTime || null,
         customer_name: selected.name || null,
         customer_email: selected.email || null,
         customer_phone: selected.phone || null,
@@ -2708,11 +2926,25 @@ export default function Home() {
         created_by: user?.id || null,
       };
 
-      let { data, error } = await supabase
-        .from("work_reports")
-        .upsert(basePayload, { onConflict: "customer_id,appointment_type" })
-        .select("*")
-        .single();
+      const currentReportId = workReport.id || reportToSave.id || selected.activeWorkReportId;
+      let data: any = null;
+      let error: any = null;
+
+      if (currentAppointmentType === "maintenance") {
+        const result = currentReportId
+          ? await supabase.from("work_reports").update(basePayload).eq("id", currentReportId).select("*").single()
+          : await supabase.from("work_reports").insert(basePayload).select("*").single();
+        data = result.data;
+        error = result.error;
+      } else {
+        const existingReport = savedReportFor(selected, currentAppointmentType);
+        const existingReportId = currentReportId || existingReport?.id;
+        const result = existingReportId
+          ? await supabase.from("work_reports").update(basePayload).eq("id", existingReportId).select("*").single()
+          : await supabase.from("work_reports").insert(basePayload).select("*").single();
+        data = result.data;
+        error = result.error;
+      }
 
       if (error && currentAppointmentType === "installation" && errorMentionsWorkReportType(error)) {
         const { appointment_type, ...fallbackPayload } = basePayload;
@@ -2750,13 +2982,15 @@ export default function Home() {
       const hasSignedReport = Boolean(reportToSave.signatureDataUrl || signedAt);
       const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
       const isMaintenanceReport = currentAppointmentType === "maintenance";
-      await logDocument(
-        selected,
-        isMaintenanceReport ? "maintenance_work_report" : "work_report",
-        isMaintenanceReport ? "Karbantartási munkalap" : workReportTitle(selected.appointmentType),
-        sendEmail ? "Elküldve" : hasSignedReport ? "Aláírva, mentve" : "Mentve, aláírásra vár",
-        documentEventAt
-      );
+      if (!isMaintenanceReport) {
+        await logDocument(
+          selected,
+          "work_report",
+          workReportTitle(selected.appointmentType),
+          sendEmail ? "Elküldve" : hasSignedReport ? "Aláírva, mentve" : "Mentve, aláírásra vár",
+          documentEventAt
+        );
+      }
       if (!isMaintenanceReport && hasSignedReport) {
         await logDocument(selected, "purchase_declaration", "Vásárlási nyilatkozat", sendEmail ? "Elküldve" : "Elkészült", documentEventAt);
       }
@@ -2774,6 +3008,10 @@ export default function Home() {
         id: data.id,
         customerId: data.customer_id,
         appointmentType: currentAppointmentType,
+        workDate: data.work_date || reportToSave.workDate,
+        workTime: data.work_time || reportToSave.workTime,
+        createdAt: data.created_at || reportToSave.createdAt,
+        updatedAt: data.updated_at || reportToSave.updatedAt,
         workDescription: data.work_description || reportToSave.workDescription,
         notes: data.notes || "",
         signatureDataUrl: data.signature_data_url || reportToSave.signatureDataUrl,
@@ -2781,8 +3019,21 @@ export default function Home() {
         signedAt: data.signed_at || reportToSave.signedAt,
         emailSentAt,
       };
-      setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(selected.id, currentAppointmentType)]: savedReportForState }));
+      if (isMaintenanceReport) {
+        setMaintenanceReportsByCustomer((prev) => {
+          const current = prev[selected.id] || [];
+          const without = current.filter((report) => report.id !== savedReportForState.id);
+          return { ...prev, [selected.id]: [savedReportForState, ...without].sort(compareWorkReportsDesc) };
+        });
+      } else {
+        setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(selected.id, currentAppointmentType)]: savedReportForState }));
+      }
       setWorkReport(savedReportForState);
+      if (isMaintenanceReport) {
+        const updatedSelected = { ...selected, activeWorkReportId: savedReportForState.id };
+        setSelected(updatedSelected);
+        setCustomers((prev) => prev.map((customer) => customer.id === selected.id ? updatedSelected : customer));
+      }
       setMessage(sendEmail ? `${workReportTitle(selected.appointmentType)} mentve és emailben elküldve ✅` : `${workReportTitle(selected.appointmentType)} mentve ✅`);
       replaceView("work");
     } catch (error: any) {
@@ -2794,13 +3045,26 @@ export default function Home() {
   }
 
 
+  function allWorkReportsForPreview(customer: Customer = selected) {
+    const installationReport = savedReportFor({ ...customer, activeWorkReportId: undefined, appointmentType: "installation" }, "installation");
+    const reports = [installationReport, ...maintenanceReportsFor(customer)].filter(Boolean) as WorkReport[];
+    return reports.sort(compareWorkReportsDesc);
+  }
+
   function documentReportFor(customer: Customer = selected) {
+    const activeReportId = documentPreviewReportId || customer.activeWorkReportId;
+    if (activeReportId) {
+      const report = maintenanceReportsFor(customer).find((item) => item.id === activeReportId);
+      if (report) return report;
+    }
     return savedReportFor(customer) || emptyWorkReport(customer);
   }
 
-  function documentIsReady(customer: Customer, row: { action: string; title: string; status: string; appointmentType?: AppointmentType }) {
+  function documentIsReady(customer: Customer, row: PageDocumentRow) {
     const rowType = row.appointmentType || normalizeAppointmentType(customer.appointmentType);
     const signed = hasCustomerSignature(customer, rowType);
+    if (row.action === "MaintenanceBundle") return maintenanceReportsFor(customer).length > 0;
+    if (row.action === "MaintenanceReport") return Boolean(row.reportId);
     if (row.action === "Munkalap") return signed;
     if (row.action === "Nyilatkozat") return signed;
     if (row.action === "MunkalapNyilatkozat") return signed;
@@ -2940,8 +3204,43 @@ export default function Home() {
     const report = documentReportFor(selected);
     const isAppointmentPreview = documentPreviewType === "appointment_confirmation";
     const isQuotePreview = documentPreviewType === "quote_document";
-    return <Shell><style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; min-height: 297mm !important; margin: 0 !important; background: #fff !important; } body * { visibility: hidden !important; } .print-document-area, .print-document-area * { visibility: visible !important; } .print-document-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; background: #fff !important; } .doc-print-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; min-height: 297mm !important; height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: hidden !important; page-break-after: always !important; break-after: page !important; } .work-report-doc { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; } .purchase-doc { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; } .doc-print-page * { box-sizing: border-box !important; } .doc-print-page:last-child { page-break-after: auto !important; break-after: auto !important; } }`}</style><Back onClick={()=>goBack(documentBackView)}/><div className="print:hidden">{message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}{documentBackView === "documents" || isAppointmentPreview || isQuotePreview ? <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div> : <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><button onClick={()=>openWorkReportFor(selected)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button><button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button></div>}{!isAppointmentPreview && !isQuotePreview && !report.id && !report.signatureDataUrl ? <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div> : null}</div><div className="print-document-area print:bg-white">{documentPreviewType === "purchase_declaration" ? <PurchaseDeclarationDocument customer={selected} report={report} quoteItems={quoteItems}/> : isAppointmentPreview ? <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems}/> : isQuotePreview ? <QuoteDocument customer={selected} quoteItems={quoteItems} quoteIssuedAt={quoteIssuedAt}/> : <WorkReportDocument customer={selected} report={report} quoteItems={quoteItems}/>}</div></Shell>;
+    const isAllWorkReportsPreview = documentPreviewType === "all_work_reports";
+    const allPreviewReports = allWorkReportsForPreview(selected);
+    return (
+      <Shell>
+        <style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; min-height: 297mm !important; margin: 0 !important; background: #fff !important; } body * { visibility: hidden !important; } .print-document-area, .print-document-area * { visibility: visible !important; } .print-document-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; background: #fff !important; } .doc-print-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; min-height: 297mm !important; height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: hidden !important; page-break-after: always !important; break-after: page !important; } .work-report-doc { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; } .purchase-doc { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; } .doc-print-page * { box-sizing: border-box !important; } .doc-print-page:last-child { page-break-after: auto !important; break-after: auto !important; } }`}</style>
+        <Back onClick={()=>goBack(documentBackView)}/>
+        <div className="print:hidden">
+          {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
+          {documentBackView === "documents" || isAppointmentPreview || isQuotePreview || isAllWorkReportsPreview ? (
+            <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div>
+          ) : (
+            <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button onClick={()=>openWorkReportFor(selected, documentPreviewReportId)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button>
+              <button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button>
+            </div>
+          )}
+          {!isAppointmentPreview && !isQuotePreview && !isAllWorkReportsPreview && !report.id && !report.signatureDataUrl ? (
+            <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div>
+          ) : null}
+        </div>
+        <div className="print-document-area print:bg-white">
+          {isAllWorkReportsPreview ? (
+            <AllWorkReportsDocument customer={selected} reports={allPreviewReports} quoteItems={quoteItems}/>
+          ) : documentPreviewType === "purchase_declaration" ? (
+            <PurchaseDeclarationDocument customer={selected} report={report} quoteItems={quoteItems}/>
+          ) : isAppointmentPreview ? (
+            <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems}/>
+          ) : isQuotePreview ? (
+            <QuoteDocument customer={selected} quoteItems={quoteItems} quoteIssuedAt={quoteIssuedAt}/>
+          ) : (
+            <WorkReportDocument customer={selected} report={report} quoteItems={quoteItems}/>
+          )}
+        </div>
+      </Shell>
+    );
   }
+
 
   if (view==="documents") {
     const documentCustomers = filteredCustomers;
@@ -2964,7 +3263,7 @@ export default function Home() {
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
                 {documentCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs találat.</div> : null}
-                {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerInquiryLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{documentRowsFor(customer).map((row)=><div key={row.title} className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
+                {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerInquiryLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{[...documentRowsFor(customer), ...maintenanceDocumentRowsFor(customer, true)].map((row)=><div key={`${row.title}-${"reportId" in row ? row.reportId || row.action : row.action}` } className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
               </div>
               <PaginationControls currentPage={documentPagination.currentPage} pageCount={documentPagination.pageCount} totalCount={documentCustomers.length} label="ügyfél" onPageChange={setDocumentPage} />
             </Card>
@@ -3119,6 +3418,7 @@ export default function Home() {
         checklistReady={checklistReady}
         missingChecklist={missingChecklist}
         documentRows={documentRowsFor(selected)}
+        maintenanceRows={maintenanceDocumentRowsFor(selected)}
         timelineItems={customerTimelineItems(selected)}
         onBack={()=>goBack()}
         onCloseWork={closeWork}

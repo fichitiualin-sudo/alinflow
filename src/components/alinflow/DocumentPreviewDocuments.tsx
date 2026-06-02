@@ -2,7 +2,7 @@ import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
 import { defaultWorkDescription, formatSignedAt, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
-import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
+import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 
 function formatDocumentDate(value?: string) {
   if (!value) return "nincs megadva";
@@ -51,13 +51,24 @@ function appointmentDocumentNotes(type?: string) {
   ];
 }
 
+function customerWithReportDate(customer: Customer, report: WorkReport): Customer {
+  return {
+    ...customer,
+    appointmentType: report.appointmentType || customer.appointmentType,
+    date: report.workDate || customer.date,
+    time: report.workTime || customer.time,
+  };
+}
+
 export function WorkReportDocument({ customer, report, quoteItems }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[] }) {
+  const reportCustomer = customerWithReportDate(customer, report);
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
-  const workType = appointmentTypeLabel(customer.appointmentType);
-  const workTime = appointmentTimeRangeLabel(customer);
-  const workTitle = workReportTitle(customer.appointmentType);
-  const workNote = appointmentWorkLabel(customer.appointmentType);
+  const workType = appointmentTypeLabel(reportCustomer.appointmentType);
+  const workTime = reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, items) : appointmentTimeRangeLabel(reportCustomer);
+  const workTitle = workReportTitle(reportCustomer.appointmentType);
+  const workNote = appointmentWorkLabel(reportCustomer.appointmentType);
+  const workDate = reportCustomer.date;
   return (
     <article className="doc-print-page work-report-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[13px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[14mm] print:text-[11.5px] print:shadow-none">
       <div className="text-center">
@@ -80,7 +91,7 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
           <h3 className="mb-1 font-black">Munka adatai:</h3>
           <div className="ml-3 space-y-0.5">
             <p>munka típusa: {dottedLine(workType)}</p>
-            <p>munka dátuma: {dottedLine(formatDocumentDate(customer.date))}</p>
+            <p>munka dátuma: {dottedLine(formatDocumentDate(workDate))}</p>
             <p>idősáv: {dottedLine(workTime)}</p>
             <p>helyszín: {dottedLine(fullCustomerAddress(customer))}</p>
           </div>
@@ -107,19 +118,19 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
 
         <section>
           <h3 className="mb-1 font-black">Elvégzett munka:</h3>
-          <p className="whitespace-pre-wrap border border-slate-900 p-2.5 text-justify print:p-2">{report.workDescription || defaultWorkDescription(customer.appointmentType)}</p>
+          <p className="whitespace-pre-wrap border border-slate-900 p-2.5 text-justify print:p-2">{report.workDescription || defaultWorkDescription(reportCustomer.appointmentType)}</p>
         </section>
 
         <section>
           <h3 className="mb-1 font-black">Átadás-átvételi nyilatkozat:</h3>
-          <p className="border border-slate-900 p-2.5 text-justify print:p-2">{workAcceptanceText(customer.appointmentType)}</p>
+          <p className="border border-slate-900 p-2.5 text-justify print:p-2">{workAcceptanceText(reportCustomer.appointmentType)}</p>
         </section>
 
         {report.notes ? <section><h3 className="mb-1 font-black">Megjegyzés:</h3><p className="whitespace-pre-wrap border border-slate-900 p-2 print:p-1.5">{report.notes}</p></section> : null}
 
         <section className="mt-4 flex items-end justify-between gap-4 print:mt-3">
           <div className="min-w-0">
-            <p>Kelt: {dottedLine(formatDocumentDate(customer.date) || new Date().toLocaleDateString("hu-HU"))}</p>
+            <p>Kelt: {dottedLine(formatDocumentDate(workDate) || new Date().toLocaleDateString("hu-HU"))}</p>
           </div>
           <div className="w-[56mm] text-center">
             {report.signatureDataUrl ? <img src={report.signatureDataUrl} alt="Ügyfél aláírása" className="mx-auto mb-1 max-h-[22mm] max-w-full object-contain print:max-h-[18mm]"/> : <div className="mb-1 h-[18mm] border border-dashed border-slate-400"/>}
@@ -133,6 +144,50 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
         </div>
       </div>
     </article>
+  );
+}
+
+export function AllWorkReportsDocument({ customer, reports, quoteItems }: { customer: Customer; reports: WorkReport[]; quoteItems: QuoteItem[] }) {
+  const sortedReports = [...reports].sort((a, b) => {
+    const aDate = `${a.workDate || ""}T${a.workTime || "00:00"}`;
+    const bDate = `${b.workDate || ""}T${b.workTime || "00:00"}`;
+    return new Date(bDate).getTime() - new Date(aDate).getTime();
+  });
+
+  if (!sortedReports.length) {
+    return (
+      <article className="doc-print-page mx-auto max-w-[210mm] rounded-3xl bg-white p-8 text-slate-950 shadow-2xl print:m-0 print:min-h-[297mm] print:w-[210mm] print:rounded-none print:p-[14mm] print:shadow-none">
+        <h2 className="text-2xl font-black">Garanciális munkalapok</h2>
+        <p className="mt-4 text-slate-700">Ehhez az ügyfélhez még nincs mentett munkalap.</p>
+      </article>
+    );
+  }
+
+  return (
+    <>
+      <article className="doc-print-page mx-auto max-w-[210mm] rounded-3xl bg-white p-8 text-slate-950 shadow-2xl print:m-0 print:min-h-[297mm] print:w-[210mm] print:rounded-none print:p-[14mm] print:shadow-none">
+        <h2 className="text-2xl font-black">Garanciális munkalapok összesítő</h2>
+        <p className="mt-2 text-sm text-slate-600">Ügyfél: <strong>{customer.name || "Nincs név"}</strong></p>
+        <p className="text-sm text-slate-600">Cím: <strong>{fullCustomerAddress(customer) || "nincs megadva"}</strong></p>
+        <div className="mt-6 space-y-2">
+          {sortedReports.map((report, index) => {
+            const reportCustomer = customerWithReportDate(customer, report);
+            return (
+              <div key={report.id || `${report.workDate}-${report.workTime}-${index}`} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 p-3">
+                <div>
+                  <p className="font-black">{workReportTitle(reportCustomer.appointmentType)}</p>
+                  <p className="text-sm text-slate-600">{formatDocumentDate(reportCustomer.date)} · {reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, quoteItems) : "nincs idő"}</p>
+                </div>
+                <p className="text-sm font-bold text-slate-600">{report.signedAt ? `Aláírva: ${formatSignedAt(report.signedAt)}` : "aláírás nélkül"}</p>
+              </div>
+            );
+          })}
+        </div>
+      </article>
+      {sortedReports.map((report, index) => (
+        <WorkReportDocument key={report.id || `${report.workDate}-${report.workTime}-${index}`} customer={customer} report={report} quoteItems={quoteItems} />
+      ))}
+    </>
   );
 }
 
