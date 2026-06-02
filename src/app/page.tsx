@@ -1293,6 +1293,17 @@ export default function Home() {
     setSelected((prev) => ({ ...prev, quotePricingMode: value }));
   }
 
+  function startInstallationScheduleFromQuote() {
+    updateCustomerStatus("Ajánlat elküldve");
+    setScheduleAppointmentType("installation");
+    setScheduleDate(todayIso());
+    setScheduleTime((previous) => {
+      const slots = appointmentSlotOptions("installation", quoteItems);
+      return slots.includes(previous) ? previous : slots[0] || "08:00";
+    });
+    navigateToView("schedule");
+  }
+
 
   async function persistWorkChecklist(customer: Customer, checklist: WorkChecklistState) {
     if (!customer.id || !user) return;
@@ -1691,7 +1702,34 @@ export default function Home() {
   }
 
   async function markInstallationDone() {
-    const isInstallation = isInstallationAppointment(selected.appointmentType);
+    const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
+
+    if (currentAppointmentType === "survey") {
+      const changedAt = new Date().toISOString();
+      const updated: Customer = {
+        ...selected,
+        quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || EMPTY_QUOTE_ITEMS,
+        isFresh: true,
+        updatedAt: changedAt,
+      };
+
+      try {
+        await persistCustomerToDb(updated);
+        await logDocument(updated, "survey_done", "Felmérés megtörtént", "Kész", changedAt);
+        setSelected(updated);
+        setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+        setAllowWorkResourceEdit(false);
+        setScheduleAppointmentType("installation");
+        setScheduleTime("08:00");
+        setMessage("Felmérés kész ✅ Következhet az árajánlat.");
+        navigateToView("quote");
+      } catch (error: any) {
+        setMessage(`Mentési hiba: ${error.message}`);
+      }
+      return;
+    }
+
+    const isInstallation = isInstallationAppointment(currentAppointmentType);
     const error = isInstallation ? stockErrorMessage() : "";
     if (error) {
       setMessage(error);
@@ -2782,7 +2820,7 @@ export default function Home() {
       onBack={()=>goBack()}
       onPreview={()=>{ setQuoteIssuedAt(new Date().toISOString()); navigateToView("quotePreview"); }}
       onSendQuoteEmail={sendQuoteEmail}
-      onSchedule={()=>{updateCustomerStatus("Ajánlat elküldve"); navigateToView("schedule")}}
+      onSchedule={startInstallationScheduleFromQuote}
       onQuotePricingModeChange={updateQuotePricingMode}
       onUpdateQuoteItem={updateQuoteItem}
       onUpdateQuoteProduct={updateQuoteProduct}
@@ -2807,7 +2845,7 @@ export default function Home() {
         onBack={() => goBack("quote")}
         onPrint={() => window.print()}
         onSendQuote={sendQuoteEmail}
-        onSchedule={() => navigateToView("schedule")}
+        onSchedule={startInstallationScheduleFromQuote}
         onQuotePricingModeChange={updateQuotePricingMode}
       />
     );
@@ -2821,7 +2859,7 @@ export default function Home() {
       appointmentType: normalizedScheduleAppointmentType,
       items: quoteItems,
     });
-    const isExistingSchedule = Boolean(selected.date);
+    const isExistingSchedule = Boolean(selected.date) && normalizeAppointmentType(selected.appointmentType) === normalizedScheduleAppointmentType;
     return (
       <SchedulePanel
         selected={selected}

@@ -317,10 +317,14 @@ export function WorkPagePanel({
           <Card title="Lezárási műveletek">
             <div className="space-y-3">
               {selected.status === "Lezárva" ? <StepButton color="green" onClick={() => onStartMaintenanceForCustomer(selected)}>Karbantartási időpont</StepButton> : null}
-              <StepButton color="cyan" onClick={onOpenWorkReport}>Munkalap és egyszerű aláírás</StepButton>
+              {isSurvey ? null : <StepButton color="cyan" onClick={onOpenWorkReport}>Munkalap és egyszerű aláírás</StepButton>}
               <StepButton color="blue" onClick={() => onSendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
-              <StepButton color="amber" onClick={onMarkInstallationDone}>{appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban</StepButton>
-              <StepButton color="green" onClick={onCloseWork}>Teljes lezárás</StepButton>
+              {isSurvey ? (
+                <StepButton color="green" onClick={onMarkInstallationDone}>Felmérés kész – árajánlat készítése</StepButton>
+              ) : (
+                <StepButton color="amber" onClick={onMarkInstallationDone}>{appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban</StepButton>
+              )}
+              {isSurvey ? null : <StepButton color="green" onClick={onCloseWork}>Teljes lezárás</StepButton>}
               <button onClick={onCancelAppointment} className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-red-500 to-rose-500 px-5 py-4 text-left font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
                 <span>Időpont törlése / lemondva</span>
                 <span className="rounded-full bg-black/10 px-3 py-1 text-sm">×</span>
