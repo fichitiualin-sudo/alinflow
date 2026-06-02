@@ -1047,7 +1047,8 @@ export default function Home() {
     const workReportsMap: Record<string, WorkReport> = {};
     (workReportRows || []).forEach((row: any) => {
       if (!row.customer_id) return;
-      workReportsMap[row.customer_id] = workReportFromRow(row);
+      const report = workReportFromRow(row);
+      workReportsMap[workReportMapKey(row.customer_id, report.appointmentType)] = report;
     });
 
     const documentsMap: Record<string, DocumentRecord[]> = {};
@@ -1068,8 +1069,10 @@ export default function Home() {
       const quote = quotesByCustomer.get(row.id);
       const job = jobsByCustomer.get(row.id);
       const docs = documentsMap[row.id] || [];
+      const loadedAppointmentType = normalizeAppointmentType(job?.appointment_type);
       const quoteSentAt = documentTimestamp(docs, "quote_email") || quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
-      const appointmentEmailAt = documentTimestamp(docs, "appointment_email");
+      const appointmentEmailAt = documentTimestamp(docs, appointmentEmailDocumentType(loadedAppointmentType));
+      const appointmentBookedAt = documentTimestamp(docs, appointmentBookedDocumentType(loadedAppointmentType));
       const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
 
       return {
@@ -1090,9 +1093,9 @@ export default function Home() {
         updatedAt: row.updated_at || undefined,
         lastCalledAt: documentTimestamp(docs, "phone_call"),
         quoteSentAt,
-        appointmentBookedAt: documentTimestamp(docs, "appointment_booked") || job?.created_at || appointmentEmailAt,
+        appointmentBookedAt: appointmentBookedAt || job?.created_at || appointmentEmailAt,
         appointmentUpdatedAt: job?.updated_at || appointmentEmailAt,
-        appointmentType: normalizeAppointmentType(job?.appointment_type),
+        appointmentType: loadedAppointmentType,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
@@ -1614,7 +1617,7 @@ export default function Home() {
     };
     try {
       await persistCustomerToDb(updated);
-      await logDocument(updated, "appointment_booked", `${appointmentTypeLabel(updated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
+      await logDocument(updated, appointmentBookedDocumentType(updated.appointmentType), `${appointmentTypeLabel(updated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
       setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
       setSelected(updated);
 
@@ -2250,7 +2253,7 @@ export default function Home() {
       }
 
       const appointmentEmailSentAt = new Date().toISOString();
-      await logDocument(customer, "appointment_email", appointmentDocumentTitle(customer.appointmentType), "Elküldve", appointmentEmailSentAt);
+      await logDocument(customer, appointmentEmailDocumentType(customer.appointmentType), appointmentDocumentTitle(customer.appointmentType), "Elküldve", appointmentEmailSentAt);
       setMessage("Időpont tájékoztató email elküldve ✅");
       return true;
     } catch (error: any) {
@@ -2296,10 +2299,12 @@ export default function Home() {
   }
 
   function workReportFromRow(row: any): WorkReport {
+    const appointmentType = normalizeAppointmentType(row.appointment_type);
     return {
       id: row.id,
       customerId: row.customer_id,
-      workDescription: row.work_description || defaultWorkDescription(),
+      appointmentType,
+      workDescription: row.work_description || defaultWorkDescription(appointmentType),
       notes: row.notes || "",
       signatureDataUrl: row.signature_data_url || "",
       signerName: row.signer_name || row.customer_name || "",
@@ -2319,6 +2324,34 @@ export default function Home() {
       createdAt: row.created_at || undefined,
       updatedAt: row.updated_at || undefined,
     };
+  }
+
+  function appointmentBookedDocumentType(type?: string | null) {
+    const normalized = normalizeAppointmentType(type);
+    if (normalized === "maintenance") return "maintenance_appointment_booked";
+    if (normalized === "survey") return "survey_appointment_booked";
+    return "appointment_booked";
+  }
+
+  function appointmentEmailDocumentType(type?: string | null) {
+    const normalized = normalizeAppointmentType(type);
+    if (normalized === "maintenance") return "maintenance_appointment_email";
+    if (normalized === "survey") return "survey_appointment_email";
+    return "appointment_email";
+  }
+
+  function reportDocumentType(type?: string | null) {
+    return normalizeAppointmentType(type) === "maintenance" ? "maintenance_work_report" : "work_report";
+  }
+
+  function workReportMapKey(customerId: string, type?: string | null) {
+    const normalized = normalizeAppointmentType(type);
+    return normalized === "installation" ? customerId : `${customerId}:${normalized}`;
+  }
+
+  function errorMentionsWorkReportType(error: any) {
+    const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
+    return text.includes("appointment_type") || text.includes("work_reports_customer_appointment_type_uidx");
   }
 
   function workChecklistFromRow(row: any): WorkChecklistState {
@@ -2379,14 +2412,11 @@ export default function Home() {
     };
   }
 
-  function savedReportFor(customer: Customer = selected) {
+  function savedReportFor(customer: Customer = selected, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
     if (!customer.id) return undefined;
-    if (normalizeAppointmentType(customer.appointmentType) === "maintenance") {
-      const maintenanceDoc = docsFor(customer).find((doc) => doc.type === "maintenance_work_report");
-      if (!maintenanceDoc && workReport.customerId !== customer.id) return undefined;
-    }
-    if (workReport.customerId === customer.id || workReport.id) return workReport.customerId === customer.id ? workReport : workReportsByCustomer[customer.id];
-    return workReportsByCustomer[customer.id];
+    const key = workReportMapKey(customer.id, type);
+    if (workReport.customerId === customer.id && normalizeAppointmentType(workReport.appointmentType) === type) return workReport;
+    return workReportsByCustomer[key];
   }
 
   function docsFor(customer: Customer) {
@@ -2457,10 +2487,10 @@ export default function Home() {
     return saved;
   }
 
-  function hasCustomerSignature(customer: Customer) {
-    const report = savedReportFor(customer);
+  function hasCustomerSignature(customer: Customer, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
+    const report = savedReportFor(customer, type);
     const docs = docsFor(customer);
-    if (normalizeAppointmentType(customer.appointmentType) === "maintenance") {
+    if (type === "maintenance") {
       const maintenanceDoc = docs.find((doc) => doc.type === "maintenance_work_report");
       return Boolean(
         report?.signatureDataUrl ||
@@ -2480,80 +2510,124 @@ export default function Home() {
     );
   }
 
-  function workReportDocumentStatus(customer: Customer) {
-    const report = savedReportFor(customer);
+  function workReportDocumentStatus(customer: Customer, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
+    const report = savedReportFor(customer, type);
     if (report?.emailSentAt) return "Elküldve";
-    if (hasCustomerSignature(customer)) return "Aláírva, elkészült";
+    if (hasCustomerSignature(customer, type)) return "Aláírva, elkészült";
     if (report?.id) return "Mentve, aláírásra vár";
     return "Nincs kész";
   }
 
-  function purchaseDeclarationStatus(customer: Customer) {
-    const report = savedReportFor(customer);
+  function purchaseDeclarationStatus(customer: Customer, type: AppointmentType = "installation") {
+    const report = savedReportFor(customer, type);
     if (report?.emailSentAt) return "Elküldve";
-    if (hasCustomerSignature(customer)) return "Elkészült";
+    if (hasCustomerSignature(customer, type)) return "Elkészült";
     if (report?.id) return "Aláírásra vár";
     return "Aláírásra vár";
   }
 
-  function workAndDeclarationStatus(customer: Customer) {
-    const report = savedReportFor(customer);
+  function workAndDeclarationStatus(customer: Customer, type: AppointmentType = "installation") {
+    const report = savedReportFor(customer, type);
     if (report?.emailSentAt) return "Elküldve";
-    if (hasCustomerSignature(customer)) return "Elkészült";
+    if (hasCustomerSignature(customer, type)) return "Elkészült";
     if (report?.id) return "Mentve, aláírásra vár";
+    const workDoc = docFor(customer, "work_report");
+    const purchaseDoc = docFor(customer, "purchase_declaration");
+    if (statusMeansSignedOrSent(workDoc?.status) || statusMeansSignedOrSent(purchaseDoc?.status)) return "Elkészült";
     return "Nincs kész";
   }
 
   function documentRowsFor(customer: Customer) {
-    const appointmentType = normalizeAppointmentType(customer.appointmentType);
-    if (appointmentType === "maintenance") {
-      const maintenanceDoneDoc = docFor(customer, "maintenance_done");
-      const rows: { title: string; status: string; action: string }[] = [
-        { title: "Karbantartási időpont-visszaigazolás", status: docStatus(customer, "appointment_email", customer.date ? "Időpont rögzítve" : "Nincs időpont"), action: "Időpont" },
-        { title: "Karbantartási munkalap", status: workReportDocumentStatus(customer), action: "Munkalap" },
-      ];
-      if (maintenanceDoneDoc || customer.status === "Lezárva") {
-        rows.push({ title: "Karbantartás lezárása", status: maintenanceDoneDoc?.status || "Lezárva", action: "KarbantartásLezárva" });
-      }
-      return rows;
-    }
+    const currentAppointmentType = normalizeAppointmentType(customer.appointmentType);
+    const hasMaintenanceFlow = currentAppointmentType === "maintenance"
+      || docsFor(customer).some((doc) => doc.type.startsWith("maintenance_"));
 
     const quoteDoc = docFor(customer, "quote_email");
     const quoteSentAt = quoteSentAtFor(customer);
     const quoteBaseStatus = quoteDoc?.status || (customer.status === "Ajánlat elküldve" ? "Elküldve" : "Nincs elküldve");
     const quoteDisplayStatus = quoteBaseStatus.includes("Elküld") && quoteSentAt ? `${quoteBaseStatus} · ${formatQuoteSentAt(quoteSentAt)}` : quoteBaseStatus;
 
-    return [
-      { title: "Ajánlat email", status: quoteDisplayStatus, action: "Ajánlat" },
-      { title: `${appointmentTypeLabel(customer.appointmentType)} visszaigazolás`, status: docStatus(customer, "appointment_email", customer.date ? "Időpont rögzítve" : "Nincs időpont"), action: "Időpont" },
-      { title: "Munkalap és vásárlási nyilatkozat", status: workAndDeclarationStatus(customer), action: "MunkalapNyilatkozat" },
-      { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla" },
-      { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla" },
+    const rows: { title: string; status: string; action: string; appointmentType?: AppointmentType }[] = [
+      { title: "Ajánlat email", status: quoteDisplayStatus, action: "Ajánlat", appointmentType: "installation" },
+      {
+        title: "Szerelési időpont-visszaigazolás",
+        status: docStatus(customer, appointmentEmailDocumentType("installation"), currentAppointmentType === "installation" && customer.date ? "Időpont rögzítve" : "Nincs időpont"),
+        action: "Időpont",
+        appointmentType: "installation",
+      },
+      { title: "Munkalap és vásárlási nyilatkozat", status: workAndDeclarationStatus(customer, "installation"), action: "MunkalapNyilatkozat", appointmentType: "installation" },
+      { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" },
+      { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" },
     ];
+
+    if (hasMaintenanceFlow) {
+      const maintenanceDoneDoc = docFor(customer, "maintenance_done");
+      rows.push(
+        {
+          title: "Karbantartási időpont-visszaigazolás",
+          status: docStatus(customer, appointmentEmailDocumentType("maintenance"), currentAppointmentType === "maintenance" && customer.date ? "Időpont rögzítve" : "Nincs időpont"),
+          action: "Időpont",
+          appointmentType: "maintenance",
+        },
+        { title: "Karbantartási munkalap", status: workReportDocumentStatus(customer, "maintenance"), action: "Munkalap", appointmentType: "maintenance" }
+      );
+      if (maintenanceDoneDoc || (currentAppointmentType === "maintenance" && customer.status === "Lezárva")) {
+        rows.push({ title: "Karbantartás lezárva", status: maintenanceDoneDoc?.status || "Lezárva", action: "KarbantartásLezárva", appointmentType: "maintenance" });
+      }
+    }
+
+    return rows;
   }
 
 
 
   async function loadWorkReportFor(customer: Customer) {
-    setWorkReport(emptyWorkReport(customer));
+    const targetType = normalizeAppointmentType(customer.appointmentType);
+    const emptyReport = emptyWorkReport(customer);
+    setWorkReport(emptyReport);
     if (!customer.id) return;
-    if (normalizeAppointmentType(customer.appointmentType) === "maintenance" && !docFor(customer, "maintenance_work_report")) return;
 
-    const { data, error } = await supabase
+    const alreadyLoaded = savedReportFor(customer, targetType);
+    if (alreadyLoaded) {
+      setWorkReport({ ...alreadyLoaded, signerName: alreadyLoaded.signerName || customer.name || "" });
+      return;
+    }
+
+    const query = supabase
       .from("work_reports")
       .select("*")
       .eq("customer_id", customer.id)
+      .eq("appointment_type", targetType)
       .maybeSingle();
 
+    const { data, error } = await query;
+
     if (error) {
-      setMessage("A munkalap tábla még nincs kész vagy nem tölthető be. Futtasd a munkalap SQL-t a Supabase-ben.");
+      if (targetType === "installation" && errorMentionsWorkReportType(error)) {
+        const fallback = await supabase
+          .from("work_reports")
+          .select("*")
+          .eq("customer_id", customer.id)
+          .maybeSingle();
+        if (fallback.error) {
+          setMessage("A munkalap tábla még nincs kész vagy nem tölthető be. Futtasd a munkalap SQL-t a Supabase-ben.");
+          return;
+        }
+        if (fallback.data) {
+          const loadedReport = { ...workReportFromRow({ ...fallback.data, appointment_type: "installation" }), workDescription: fallback.data.work_description || defaultWorkDescription("installation") };
+          setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
+          setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(customer.id, "installation")]: loadedReport }));
+        }
+        return;
+      }
+      setMessage("A karbantartási munkalap külön mentéséhez futtasd a SUPABASE_WORK_REPORT_TIPUS_OSZLOP.sql fájlt a Supabase-ben.");
       return;
     }
 
     if (data) {
-      const loadedReport = { ...workReportFromRow(data), workDescription: data.work_description || defaultWorkDescription(customer.appointmentType) };
+      const loadedReport = { ...workReportFromRow(data), workDescription: data.work_description || defaultWorkDescription(targetType) };
       setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
-      setWorkReportsByCustomer((prev) => ({ ...prev, [customer.id]: loadedReport }));
+      setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(customer.id, targetType)]: loadedReport }));
     }
   }
 
@@ -2615,8 +2689,10 @@ export default function Home() {
     setMessage(sendEmail ? "Munkalap mentése és email küldése folyamatban..." : "Munkalap mentése folyamatban...");
 
     try {
+      const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
       const basePayload = {
         customer_id: selected.id,
+        appointment_type: currentAppointmentType,
         work_date: selected.date || scheduleDate || null,
         work_time: selected.time || shownTime || null,
         customer_name: selected.name || null,
@@ -2632,13 +2708,29 @@ export default function Home() {
         created_by: user?.id || null,
       };
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("work_reports")
-        .upsert(basePayload, { onConflict: "customer_id" })
+        .upsert(basePayload, { onConflict: "customer_id,appointment_type" })
         .select("*")
         .single();
 
-      if (error) throw error;
+      if (error && currentAppointmentType === "installation" && errorMentionsWorkReportType(error)) {
+        const { appointment_type, ...fallbackPayload } = basePayload;
+        const fallbackResult = await supabase
+          .from("work_reports")
+          .upsert(fallbackPayload, { onConflict: "customer_id" })
+          .select("*")
+          .single();
+        data = fallbackResult.data;
+        error = fallbackResult.error;
+      }
+
+      if (error) {
+        if (currentAppointmentType === "maintenance" && errorMentionsWorkReportType(error)) {
+          throw new Error("A karbantartási munkalap külön mentéséhez futtasd a SUPABASE_WORK_REPORT_TIPUS_OSZLOP.sql fájlt a Supabase-ben.");
+        }
+        throw error;
+      }
 
       let emailSentAt = data?.email_sent_at || undefined;
       if (sendEmail) {
@@ -2657,7 +2749,6 @@ export default function Home() {
 
       const hasSignedReport = Boolean(reportToSave.signatureDataUrl || signedAt);
       const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
-      const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
       const isMaintenanceReport = currentAppointmentType === "maintenance";
       await logDocument(
         selected,
@@ -2682,6 +2773,7 @@ export default function Home() {
       const savedReportForState: WorkReport = {
         id: data.id,
         customerId: data.customer_id,
+        appointmentType: currentAppointmentType,
         workDescription: data.work_description || reportToSave.workDescription,
         notes: data.notes || "",
         signatureDataUrl: data.signature_data_url || reportToSave.signatureDataUrl,
@@ -2689,7 +2781,7 @@ export default function Home() {
         signedAt: data.signed_at || reportToSave.signedAt,
         emailSentAt,
       };
-      setWorkReportsByCustomer((prev) => ({ ...prev, [selected.id]: savedReportForState }));
+      setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(selected.id, currentAppointmentType)]: savedReportForState }));
       setWorkReport(savedReportForState);
       setMessage(sendEmail ? `${workReportTitle(selected.appointmentType)} mentve és emailben elküldve ✅` : `${workReportTitle(selected.appointmentType)} mentve ✅`);
       replaceView("work");
@@ -2706,14 +2798,14 @@ export default function Home() {
     return savedReportFor(customer) || emptyWorkReport(customer);
   }
 
-  function documentIsReady(customer: Customer, row: { action: string; title: string; status: string }) {
-    const report = savedReportFor(customer);
-    const signed = hasCustomerSignature(customer);
+  function documentIsReady(customer: Customer, row: { action: string; title: string; status: string; appointmentType?: AppointmentType }) {
+    const rowType = row.appointmentType || normalizeAppointmentType(customer.appointmentType);
+    const signed = hasCustomerSignature(customer, rowType);
     if (row.action === "Munkalap") return signed;
     if (row.action === "Nyilatkozat") return signed;
     if (row.action === "MunkalapNyilatkozat") return signed;
     if (row.action === "Ajánlat") return row.status.includes("Elküld") || customer.status === "Ajánlat elküldve";
-    if (row.action === "Időpont") return Boolean(customer.date || row.status.includes("Elküld"));
+    if (row.action === "Időpont") return row.status.includes("Elküld") || row.status.includes("Rögzít");
     if (row.action === "Számla") return row.status.includes("Kész") || row.status.includes("Kiállít");
     return false;
   }

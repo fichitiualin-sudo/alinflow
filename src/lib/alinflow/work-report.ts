@@ -27,6 +27,7 @@ export function workReportTitle(appointmentType?: string | null) {
 export function emptyWorkReport(customer?: Customer): WorkReport {
   return {
     customerId: customer?.id,
+    appointmentType: customer?.appointmentType,
     workDescription: defaultWorkDescription(customer?.appointmentType),
     notes: "",
     signatureDataUrl: "",

@@ -92,6 +92,7 @@ export type Customer = {
 export type WorkReport = {
   id?: string;
   customerId?: string;
+  appointmentType?: AppointmentType;
   workDescription: string;
   notes: string;
   signatureDataUrl: string;

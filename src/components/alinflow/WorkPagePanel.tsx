@@ -26,7 +26,7 @@ type MaterialItem = {
 };
 
 type ChecklistItem = { key: keyof WorkChecklistState; label: string };
-type DocumentRow = { action: string; title: string; status: string };
+type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType };
 
 type WorkPagePanelProps = {
   selected: Customer;
