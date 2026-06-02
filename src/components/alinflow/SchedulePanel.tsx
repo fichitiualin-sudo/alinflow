@@ -4,7 +4,7 @@ import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem
 import { isCustomQuoteItem, itemName, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
-import { APPOINTMENT_TYPES, addHoursToTime, appointmentDurationLabel, appointmentTypeLabel, isInstallationAppointment, isOneHourAppointment } from "@/lib/alinflow/appointments";
+import { APPOINTMENT_TYPES, appointmentDurationLabel, appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
 
 type SchedulePanelProps = {
   selected: Customer;
@@ -58,9 +58,9 @@ function numericInputValue(value: string) {
   return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
 }
 
-function slotLabel(slot: string, appointmentType: AppointmentType) {
-  if (isOneHourAppointment(appointmentType)) return `${slot}–${addHoursToTime(slot, 1)}`;
-  return slot === "16:00" ? "+1 extra" : slot;
+function slotLabel(slot: string, appointmentType: AppointmentType, items: QuoteItem[]) {
+  if (slot === "16:00" && appointmentType === "installation") return `+1 · ${appointmentTimeLabel(appointmentType, slot, items)}`;
+  return appointmentTimeLabel(appointmentType, slot, items);
 }
 
 export function SchedulePanel({
@@ -101,6 +101,10 @@ export function SchedulePanel({
     : isMaintenance
     ? "Karbantartáshoz tartozó klímák"
     : "Időpontba kerülő klímák";
+  const manualTimeValue = normalizeAppointmentTimeInput(scheduleTime) || scheduleTime || "";
+  const selectedTimeLabel = normalizeAppointmentTimeInput(scheduleTime)
+    ? appointmentTimeLabel(appointmentType, scheduleTime, quoteItems)
+    : "adj meg időpontot";
 
   return (
     <Shell>
@@ -136,27 +140,44 @@ export function SchedulePanel({
               })}
             </div>
           </Card>
-          <Card title="Választható időpontok">
+          <Card title="Ajánlott időpontok">
             {isMultiDayJob ? (
               freeSlots.length ? (
                 <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">
-                  Szerelésnél 2 vagy több klíma esetén automatikusan lefoglaljuk a 08:00 és 12:00 idősávot.
+                  Szerelésnél 2 vagy több klíma esetén automatikusan a teljes délelőtti és déli sávval számolunk.
                 </div>
               ) : (
-                <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra a 08:00 + 12:00 idősáv már foglalt.</div>
+                <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra a 08:00–16:00 idősáv már foglalt.</div>
               )
             ) : (
-              <div className={`grid grid-cols-1 gap-3 ${isOneHourAppointment(appointmentType) ? "md:grid-cols-5" : "md:grid-cols-3"}`}>
-                {freeSlots.length === 0 ? (
-                  <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra nincs szabad idősáv.</div>
-                ) : (
-                  freeSlots.map((slot) => (
-                    <button key={slot} className={scheduleTime === slot ? "slot-active" : "slot"} onClick={() => onSetScheduleTime(slot)}>
-                      {slotLabel(slot, appointmentType)}
-                    </button>
-                  ))
-                )}
-              </div>
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  {freeSlots.length === 0 ? (
+                    <div className="rounded-2xl bg-amber-400/15 p-4 font-black text-amber-100 md:col-span-3">Nincs szabad ajánlott idősáv. Kézzel megadhatsz másik időpontot.</div>
+                  ) : (
+                    freeSlots.map((slot) => (
+                      <button key={slot} className={normalizeAppointmentTimeInput(scheduleTime) === normalizeAppointmentTimeInput(slot) ? "slot-active" : "slot"} onClick={() => onSetScheduleTime(slot)}>
+                        {slotLabel(slot, appointmentType, quoteItems)}
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+                  <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Egyedi időpont</label>
+                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-[180px_1fr] sm:items-center">
+                    <input
+                      type="time"
+                      step={300}
+                      className="input"
+                      value={manualTimeValue}
+                      onChange={(event) => onSetScheduleTime(event.target.value)}
+                      onBlur={(event) => onSetScheduleTime(normalizeAppointmentTimeInput(event.target.value) || event.target.value)}
+                    />
+                    <p className="text-sm font-bold text-slate-300">Kiválasztva: <span className="text-cyan-100">{selectedTimeLabel}</span></p>
+                  </div>
+                  <p className="mt-2 text-xs font-bold leading-relaxed text-slate-500">Az ajánlott idősávok maradnak, de karbantartásnál vagy két szerelés közé kézzel is beírhatsz időpontot. Mentéskor ellenőrizzük az ütközést.</p>
+                </div>
+              </>
             )}
           </Card>
         </Main>

@@ -24,8 +24,9 @@ export const APPOINTMENT_TYPES: { value: AppointmentType; label: string; shortLa
 ];
 
 export const APPOINTMENT_TYPE_OPTIONS = APPOINTMENT_TYPES;
-export const ONE_HOUR_APPOINTMENT_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
-export const INSTALLATION_APPOINTMENT_SLOTS = ["08:00", "12:00", "16:00"];
+export const RECOMMENDED_APPOINTMENT_SLOTS = ["08:00", "12:00", "16:00"];
+export const ONE_HOUR_APPOINTMENT_SLOTS = RECOMMENDED_APPOINTMENT_SLOTS;
+export const INSTALLATION_APPOINTMENT_SLOTS = RECOMMENDED_APPOINTMENT_SLOTS;
 
 export type AppointmentInterval = { start: number; end: number };
 
@@ -72,8 +73,43 @@ export function isOneHourAppointment(value?: string | null) {
   return isShortAppointment(value);
 }
 
+export function normalizeAppointmentTimeInput(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const firstPart = raw.split("+")[0]?.trim() || raw;
+  const cleaned = firstPart.replace(/[.,]/g, ":");
+
+  let hour: number | undefined;
+  let minute: number | undefined;
+
+  const colonMatch = cleaned.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (colonMatch) {
+    hour = Number(colonMatch[1]);
+    minute = Number(colonMatch[2]);
+  } else if (/^\d{1,2}$/.test(cleaned)) {
+    hour = Number(cleaned);
+    minute = 0;
+  } else if (/^\d{3,4}$/.test(cleaned)) {
+    const padded = cleaned.padStart(4, "0");
+    hour = Number(padded.slice(0, 2));
+    minute = Number(padded.slice(2, 4));
+  } else {
+    const embeddedTime = cleaned.match(/\d{1,2}:\d{1,2}/)?.[0];
+    if (embeddedTime) return normalizeAppointmentTimeInput(embeddedTime);
+  }
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return "";
+  if ((hour as number) < 0 || (hour as number) > 23 || (minute as number) < 0 || (minute as number) > 59) return "";
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+export function isValidAppointmentTimeInput(value?: string | null) {
+  return Boolean(normalizeAppointmentTimeInput(value));
+}
+
 export function firstAppointmentTime(value?: string) {
-  return String(value || "").match(/\d{1,2}:\d{2}/)?.[0] || "08:00";
+  return normalizeAppointmentTimeInput(value) || "08:00";
 }
 
 export function timeToMinutes(value?: string) {
@@ -136,15 +172,14 @@ export function appointmentTimeRangeLabel(customer: AppointmentLike, fallback = 
   const rawTime = customer.time || fallback;
   const firstTime = firstAppointmentTime(rawTime);
   if (!firstTime) return rawTime || fallback;
-  if (isOneHourAppointment(customer.appointmentType)) return `${firstTime}–${addHoursToTime(firstTime, 1)}`;
-  return rawTime;
+  const durationMinutes = appointmentDurationMinutes(customer.appointmentType, customer.quoteItems || [], rawTime);
+  return `${firstTime}–${addMinutesToTime(firstTime, durationMinutes)}`;
 }
 
 export function appointmentTimeLabel(type?: string | null, time?: string, items: QuoteItem[] = []) {
   const firstTime = firstAppointmentTime(time);
-  if (isOneHourAppointment(type)) return `${firstTime}–${addHoursToTime(firstTime, 1)}`;
-  if (quantity(items) >= 2 || String(time || "").includes("+")) return "08:00 + 12:00";
-  return firstTime;
+  const durationMinutes = appointmentDurationMinutes(type, items, time);
+  return `${firstTime}–${addMinutesToTime(firstTime, durationMinutes)}`;
 }
 
 export function appointmentWorkSummary(customer: Pick<AppointmentLike, "appointmentType" | "quoteItems">) {

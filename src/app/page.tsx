@@ -107,7 +107,7 @@ import {
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { normalizePostalCodeInput, uniqueSettlementByCity } from "@/lib/alinflow/postal-codes";
-import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, intervalsOverlap, isInstallationAppointment, normalizeAppointmentType, slotInterval } from "@/lib/alinflow/appointments";
+import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, intervalsOverlap, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType, slotInterval } from "@/lib/alinflow/appointments";
 
 const LIST_PAGE_SIZE = 20;
 const DASHBOARD_WAREHOUSE_LIMIT = 6;
@@ -180,6 +180,32 @@ function withoutAppointmentType<T extends Record<string, any>>(row: T) {
   return rest;
 }
 
+function appointmentIntervalsForDay(customers: Customer[], date: string, selectedCustomerId?: string) {
+  const dayCustomers = customers.filter((customer) => customer.id !== selectedCustomerId && customer.date === date && customer.status !== "Lemondva");
+  return dayCustomers.map((customer) => appointmentInterval(customer)).filter(Boolean) as { start: number; end: number }[];
+}
+
+function appointmentTimeAvailable({
+  customers,
+  date,
+  appointmentType,
+  items,
+  selectedCustomerId,
+  time,
+}: {
+  customers: Customer[];
+  date: string;
+  appointmentType: AppointmentType;
+  items: QuoteItem[];
+  selectedCustomerId?: string;
+  time: string;
+}) {
+  const candidate = slotInterval(time, appointmentType, items);
+  if (!candidate) return false;
+  const intervals = appointmentIntervalsForDay(customers, date, selectedCustomerId);
+  return intervals.every((interval) => !intervalsOverlap(candidate, interval));
+}
+
 function availableAppointmentSlots({
   customers,
   date,
@@ -193,15 +219,8 @@ function availableAppointmentSlots({
   items: QuoteItem[];
   selectedCustomerId?: string;
 }) {
-  const dayCustomers = customers.filter((customer) => customer.id !== selectedCustomerId && customer.date === date && customer.status !== "Lemondva");
-  const intervals = dayCustomers.map((customer) => appointmentInterval(customer)).filter(Boolean) as { start: number; end: number }[];
-
   const slots = isInstallationAppointment(appointmentType) && qty(items) >= 2 ? ["08:00 + 12:00"] : appointmentSlotOptions(appointmentType, items);
-  return slots.filter((slot) => {
-    const candidate = slotInterval(slot, appointmentType, items);
-    if (!candidate) return false;
-    return intervals.every((interval) => !intervalsOverlap(candidate, interval));
-  });
+  return slots.filter((slot) => appointmentTimeAvailable({ customers, date, appointmentType, items, selectedCustomerId, time: slot }));
 }
 
 function timeValue(value?: string) {
@@ -416,8 +435,9 @@ export default function Home() {
   const materialPrice = Math.max(0, t-installer);
   const normalizedScheduleAppointmentType = normalizeAppointmentType(scheduleAppointmentType);
   const isMultiDayJob = isInstallationAppointment(normalizedScheduleAppointmentType) && q >= 2;
-  const scheduleStoredTime = isMultiDayJob ? "08:00 + 12:00" : scheduleTime;
-  const shownTime = appointmentTimeRangeLabel({ appointmentType: normalizedScheduleAppointmentType, time: scheduleStoredTime, quoteItems }, scheduleTime);
+  const normalizedScheduleTime = normalizeAppointmentTimeInput(scheduleTime) || "08:00";
+  const scheduleStoredTime = isMultiDayJob ? "08:00 + 12:00" : normalizedScheduleTime;
+  const shownTime = appointmentTimeRangeLabel({ appointmentType: normalizedScheduleAppointmentType, time: scheduleStoredTime, quoteItems }, normalizedScheduleTime);
   const sortedCustomers = sortCustomersByCreatedAtDesc(customers);
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
@@ -1268,7 +1288,7 @@ export default function Home() {
     const nextType = normalizeAppointmentType(value);
     setScheduleAppointmentType(nextType);
     const slots = isInstallationAppointment(nextType) && qty(quoteItems) >= 2 ? ["08:00"] : appointmentSlotOptions(nextType, quoteItems);
-    setScheduleTime((previous) => slots.includes(previous) ? previous : slots[0] || "08:00");
+    setScheduleTime((previous) => normalizeAppointmentTimeInput(previous) || slots[0] || "08:00");
   }
 
   async function saveCustomerData() {
@@ -1301,7 +1321,7 @@ export default function Home() {
     setScheduleDate(todayIso());
     setScheduleTime((previous) => {
       const slots = appointmentSlotOptions("installation", quoteItems);
-      return slots.includes(previous) ? previous : slots[0] || "08:00";
+      return normalizeAppointmentTimeInput(previous) || slots[0] || "08:00";
     });
     navigateToView("schedule");
   }
@@ -1559,16 +1579,21 @@ export default function Home() {
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
     const wasExistingSchedule = Boolean(selected.date);
-    const availableSlots = availableAppointmentSlots({
+    const slotToValidate = isMultiDayJob ? scheduleStoredTime : normalizeAppointmentTimeInput(scheduleTime);
+    if (!slotToValidate) {
+      setMessage("Adj meg érvényes időpontot, például 10:00 vagy 13:30.");
+      return;
+    }
+    const slotIsAvailable = appointmentTimeAvailable({
       customers,
       date: scheduleDate,
       appointmentType: normalizedScheduleAppointmentType,
       items: quoteItems,
       selectedCustomerId: selected.id,
+      time: slotToValidate,
     });
-    const slotToValidate = isMultiDayJob ? scheduleStoredTime : scheduleTime;
-    if (!availableSlots.includes(slotToValidate)) {
-      setMessage("Ez az idősáv közben foglalt lett. Válassz másik időpontot a naptárból.");
+    if (!slotIsAvailable) {
+      setMessage("Ez az idősáv közben foglalt lett. Adj meg másik időpontot.");
       return;
     }
 
@@ -1577,7 +1602,7 @@ export default function Home() {
     const updated:Customer = {
       ...selected,
       date:scheduleDate,
-      time:scheduleStoredTime,
+      time:slotToValidate,
       appointmentType: normalizedScheduleAppointmentType,
       status:"Időpont foglalva",
       quoteItems: scheduledQuoteItems,
