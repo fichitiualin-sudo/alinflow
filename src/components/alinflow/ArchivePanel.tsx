@@ -17,6 +17,7 @@ type ArchivePanelProps = {
   onPageChange: (page: number) => void;
   onOpenCustomer: (customer: Customer, view: View) => void;
   onRestoreCustomer: (customer: Customer) => void;
+  onScheduleMaintenance: (customer: Customer) => void;
 };
 
 export function ArchivePanel({
@@ -31,6 +32,7 @@ export function ArchivePanel({
   onPageChange,
   onOpenCustomer,
   onRestoreCustomer,
+  onScheduleMaintenance,
 }: ArchivePanelProps) {
   return (
     <Shell>
@@ -66,6 +68,14 @@ export function ArchivePanel({
                       >
                         Megnyitás
                       </button>
+                      {customer.status === "Lezárva" ? (
+                        <button
+                          onClick={() => onScheduleMaintenance(customer)}
+                          className="rounded-2xl bg-emerald-400 px-4 py-3 font-black text-slate-950"
+                        >
+                          Karbantartás
+                        </button>
+                      ) : null}
                       <button
                         onClick={() => onRestoreCustomer(customer)}
                         className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950"

@@ -4,7 +4,7 @@ import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem
 import { isCustomQuoteItem, itemName, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
-import { APPOINTMENT_TYPES, addHoursToTime, appointmentDurationLabel, appointmentTypeLabel, isOneHourAppointment } from "@/lib/alinflow/appointments";
+import { APPOINTMENT_TYPES, addHoursToTime, appointmentDurationLabel, appointmentTypeLabel, isInstallationAppointment, isOneHourAppointment } from "@/lib/alinflow/appointments";
 
 type SchedulePanelProps = {
   selected: Customer;
@@ -93,6 +93,15 @@ export function SchedulePanel({
   onAddQuoteItem,
   onSetSendAppointmentNotice,
 }: SchedulePanelProps) {
+  const isInstallation = isInstallationAppointment(appointmentType);
+  const isSurvey = appointmentType === "survey";
+  const isMaintenance = appointmentType === "maintenance";
+  const appointmentDetailsTitle = isSurvey
+    ? "Felmérési időpont"
+    : isMaintenance
+    ? "Karbantartáshoz tartozó klímák"
+    : "Időpontba kerülő klímák";
+
   return (
     <Shell>
       <Back onClick={onBack} />
@@ -153,39 +162,67 @@ export function SchedulePanel({
         </Main>
         <Side>
           <Gradient title="Kiválasztott időpont" value={`${appointmentTypeLabel(appointmentType)} · ${scheduleDate.replaceAll("-", ".")} · ${shownTime}`} />
-          <Card title="Időpontba kerülő klímák">
+          <Card title={appointmentDetailsTitle}>
             <p className="mb-4 text-sm leading-relaxed text-slate-400">
-              Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk. A felmérés és a karbantartás fixen 1 órás időpontként jelenik meg.
+              {isSurvey
+                ? "A felmérés a klímaválasztás előtt történik, ezért itt nem kell klímát kiválasztani. Csak az 1 órás felmérési időpontot rögzítjük."
+                : isMaintenance
+                ? "A karbantartás a már felszerelt klímához kapcsolódik, ezért 1 órás időpontként kerül a naptárba."
+                : "Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk."}
             </p>
-            {quoteItems.map((item, index) => (
-              <div key={index} className="mb-3 rounded-2xl bg-slate-900/80 p-4">
-                <p className="font-black">{itemName(item)}</p>
-                <div className="mt-3 grid grid-cols-[1fr_90px] gap-3">
-                  {isCustomQuoteItem(item) ? (
-                    <input
-                      className="input"
-                      value={item.customName || ""}
-                      onChange={(event) => onUpdateQuoteItem(index, "customName", event.target.value)}
-                      placeholder="Klíma megnevezése"
-                    />
-                  ) : (
-                    <ProductSelect products={products} value={item.productId} onChange={(value) => onUpdateQuoteProduct(index, value)} />
-                  )}
-                  <input
-                    className="input"
-                    type="number"
-                    min={1}
-                    value={item.quantity}
-                    onChange={(event) => onUpdateQuoteItem(index, "quantity", numericInputValue(event.target.value))}
-                  />
+
+            {isInstallation ? (
+              <>
+                {quoteItems.map((item, index) => (
+                  <div key={index} className="mb-3 rounded-2xl bg-slate-900/80 p-4">
+                    <p className="font-black">{itemName(item)}</p>
+                    <div className="mt-3 grid grid-cols-[1fr_90px] gap-3">
+                      {isCustomQuoteItem(item) ? (
+                        <input
+                          className="input"
+                          value={item.customName || ""}
+                          onChange={(event) => onUpdateQuoteItem(index, "customName", event.target.value)}
+                          placeholder="Klíma megnevezése"
+                        />
+                      ) : (
+                        <ProductSelect products={products} value={item.productId} onChange={(value) => onUpdateQuoteProduct(index, value)} />
+                      )}
+                      <input
+                        className="input"
+                        type="number"
+                        min={1}
+                        value={item.quantity}
+                        onChange={(event) => onUpdateQuoteItem(index, "quantity", numericInputValue(event.target.value))}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={onAddQuoteItem}>
+                  + Klíma hozzáadása
+                </button>
+                <InfoRow label="Összes klíma" value={`${totalQuantity} db`} />
+              </>
+            ) : null}
+
+            {isMaintenance ? (
+              quoteItems.length ? (
+                <div className="mb-4 space-y-3">
+                  {quoteItems.map((item, index) => (
+                    <div key={index} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+                      <p className="font-black">{itemName(item)}</p>
+                      <p className="mt-1 text-sm text-slate-400">{Number(item.quantity) || 1} db</p>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))}
-            <button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={onAddQuoteItem}>
-              + Klíma hozzáadása
-            </button>
+              ) : (
+                <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">
+                  Ehhez az ügyfélhez még nincs rögzített klíma. A karbantartási időpont ettől függetlenül menthető.
+                </div>
+              )
+            ) : null}
+
             <InfoRow label="Időpont típusa" value={`${appointmentTypeLabel(appointmentType)} · ${appointmentDurationLabel(appointmentType)}`} />
-            <InfoRow label="Összes klíma" value={`${totalQuantity} db`} />
+            {isSurvey ? <InfoRow label="Klímaválasztás" value="felmérés után" /> : null}
             <label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
               <input
                 type="checkbox"

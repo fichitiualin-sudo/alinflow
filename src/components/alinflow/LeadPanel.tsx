@@ -12,6 +12,7 @@ type LeadPanelProps = {
   onBack: () => void;
   onSaveCustomerOnly: () => void;
   onSaveCustomerAndQuote: () => void;
+  onScheduleSurvey: () => void;
   onDeleteCustomer: (customer: Customer) => void;
   timelineItems: CustomerTimelineItem[];
   onRememberExternalCustomer: (customer: Customer, returnView?: View) => void;
@@ -130,6 +131,7 @@ export function LeadPanel({
   onBack,
   onSaveCustomerOnly,
   onSaveCustomerAndQuote,
+  onScheduleSurvey,
   onDeleteCustomer,
   timelineItems,
   onRememberExternalCustomer,
@@ -175,6 +177,7 @@ export function LeadPanel({
           <Card title="Következő lépések">
             <div className="grid grid-cols-1 gap-3">
               <StepButton color="amber" onClick={onSaveCustomerOnly}>Mentés</StepButton>
+              <StepButton color="cyan" onClick={onScheduleSurvey}>Felmérési időpont</StepButton>
               <StepButton color="blue" onClick={onSaveCustomerAndQuote}>Ajánlat / Időpont</StepButton>
               {isExistingCustomer ? (
                 <StepButton color="red" onClick={() => onDeleteCustomer(selected)}>Ügyfél törlése</StepButton>

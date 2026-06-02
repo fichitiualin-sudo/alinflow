@@ -1381,6 +1381,45 @@ export default function Home() {
     }
   }
 
+  async function saveCustomerAndScheduleSurvey() {
+    const now = new Date().toISOString();
+    const customerToSave: Customer = {
+      ...selected,
+      source: selected.source || "Kézi rögzítés",
+      status: normalizeStatus(selected.status || "Visszahívandó"),
+      createdAt: selected.createdAt || now,
+      updatedAt: now,
+      appointmentType: "survey",
+      quoteItems: EMPTY_QUOTE_ITEMS,
+      productId: undefined,
+    };
+
+    setSelected(customerToSave);
+    setQuoteItems(EMPTY_QUOTE_ITEMS);
+    setScheduleAppointmentType("survey");
+    setScheduleDate(todayIso());
+    setScheduleTime("08:00");
+    setSendAppointmentNotice(true);
+
+    setCustomers((prev) => {
+      const exists = prev.some((customer) => customer.id === customerToSave.id);
+      if (exists) {
+        return sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === customerToSave.id ? customerToSave : customer));
+      }
+      return sortCustomersByCreatedAtDesc([customerToSave, ...prev]);
+    });
+
+    try {
+      await persistCustomerToDb(customerToSave);
+      clearCustomerDraft(customerToSave.id);
+      setDraftNotice(readCustomerDraft());
+      setMessage("Felmérési időpont választható ✅");
+      navigateToView("schedule");
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
+  }
+
   async function saveCustomerOnly() {
     const now = new Date().toISOString();
     const customerToSave: Customer = {
@@ -1764,6 +1803,29 @@ export default function Home() {
     }
   }
 
+  function startMaintenanceForCustomer(customer: Customer) {
+    const changedAt = new Date().toISOString();
+    const maintenanceCustomer: Customer = {
+      ...customer,
+      date: undefined,
+      time: undefined,
+      appointmentType: "maintenance",
+      status: "Időpont foglalva",
+      isFresh: true,
+      updatedAt: changedAt,
+    };
+
+    setSelected(maintenanceCustomer);
+    setQuoteItems(customer.quoteItems || EMPTY_QUOTE_ITEMS);
+    setScheduleDate(todayIso());
+    setScheduleTime("08:00");
+    setScheduleAppointmentType("maintenance");
+    setSendAppointmentNotice(true);
+    setAllowWorkResourceEdit(false);
+    setMessage("Karbantartási időpont választható ✅");
+    navigateToView("schedule");
+  }
+
   function addExtraMaterial() { setMaterials(prev=>[...prev, { name:"Egyéb anyag", qty:"1", unit:"db", isExtra:true }]); }
   function updateMaterial(i:number, key:"name"|"qty"|"unit", value:string) {
     setMaterials(prev=>prev.map((m,idx)=>idx===i ? {...m, [key]:value} : m));
@@ -1953,6 +2015,7 @@ export default function Home() {
         onPageChange={setArchivePage}
         onOpenCustomer={openCustomer}
         onRestoreCustomer={restoreArchivedCustomer}
+        onScheduleMaintenance={startMaintenanceForCustomer}
       />
     );
   }
@@ -2696,6 +2759,7 @@ export default function Home() {
       onBack={()=>goBack()}
       onSaveCustomerOnly={saveCustomerOnly}
       onSaveCustomerAndQuote={()=>saveCustomer("quote")}
+      onScheduleSurvey={saveCustomerAndScheduleSurvey}
       onDeleteCustomer={deleteCustomer}
       onRememberExternalCustomer={rememberExternalCustomer}
       onRecordCustomerPhoneCall={recordCustomerPhoneCall}
@@ -2863,6 +2927,7 @@ export default function Home() {
         onOpenWorkReport={openWorkReport}
         onMarkInstallationDone={markInstallationDone}
         onCancelAppointment={cancelAppointment}
+        onStartMaintenanceForCustomer={startMaintenanceForCustomer}
         onToggleChecklist={toggleChecklist}
       />
     </Shell>

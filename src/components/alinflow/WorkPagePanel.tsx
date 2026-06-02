@@ -16,7 +16,7 @@ import {
   sortProducts,
 } from "@/lib/alinflow/products";
 import type { View } from "@/lib/alinflow/types";
-import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, normalizeAppointmentType } from "@/lib/alinflow/appointments";
+import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 
 type MaterialItem = {
   name: string;
@@ -80,6 +80,7 @@ type WorkPagePanelProps = {
   onOpenWorkReport: () => void;
   onMarkInstallationDone: () => void;
   onCancelAppointment: () => void;
+  onStartMaintenanceForCustomer: (customer: Customer) => void;
   onToggleChecklist: (key: keyof WorkChecklistState) => void;
 };
 
@@ -135,8 +136,19 @@ export function WorkPagePanel({
   onOpenWorkReport,
   onMarkInstallationDone,
   onCancelAppointment,
+  onStartMaintenanceForCustomer,
   onToggleChecklist,
 }: WorkPagePanelProps) {
+  const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
+  const isInstallation = isInstallationAppointment(currentAppointmentType);
+  const isSurvey = currentAppointmentType === "survey";
+  const isMaintenance = currentAppointmentType === "maintenance";
+  const workItemsTitle = isSurvey
+    ? "Felmérési időpont"
+    : isMaintenance
+    ? "Karbantartott klímák"
+    : "Időponthoz tartozó klímák";
+
   return (
     <>
       <div className="sticky top-3 z-50 w-fit print:hidden">
@@ -161,7 +173,7 @@ export function WorkPagePanel({
             />
           </Card>
 
-          <Card title="Időponthoz tartozó klímák">
+          <Card title={workItemsTitle}>
             {selected.date ? (
               <div className="mb-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -184,8 +196,29 @@ export function WorkPagePanel({
                 </div>
               </div>
             ) : null}
-            {workResourceEditLocked && !allowWorkResourceEdit ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">A munka készre jelölése után a klímák és a szerelési anyagok zárolva vannak. Szerkesztéshez nyomd meg a Módosítás engedélyezése gombot.</div> : null}
-            <div className="space-y-3">
+            {isSurvey ? (
+              <div className="mb-4 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
+                A felmérés a klímaválasztás előtt van, ezért ehhez az időponthoz nem kell klímát vagy szerelési anyagot rögzíteni.
+              </div>
+            ) : null}
+            {isMaintenance ? (
+              <div className="mb-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-100">
+                Ez karbantartási időpont. A klímák csak tájékoztató jelleggel jelennek meg, készletet és szerelési anyagot nem foglalnak.
+              </div>
+            ) : null}
+            {isInstallation && workResourceEditLocked && !allowWorkResourceEdit ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">A munka készre jelölése után a klímák és a szerelési anyagok zárolva vannak. Szerkesztéshez nyomd meg a Módosítás engedélyezése gombot.</div> : null}
+            {(isInstallation || isMaintenance) && quoteItems.length === 0 ? <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm font-bold text-slate-300">Nincs rögzített klíma.</div> : null}
+            {isMaintenance && quoteItems.length ? (
+              <div className="space-y-3">
+                {quoteItems.map((it, i) => (
+                  <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                    <p className="font-black">{isCustomQuoteItem(it) ? it.customName || "Egyedi klíma" : prod(it.productId).name || "Klíma"}</p>
+                    <p className="mt-1 text-sm text-slate-400">{Number(it.quantity) || 1} db</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {isInstallation ? <div className="space-y-3">
               {quoteItems.map((it, i) => (
                 <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_110px_44px]">
@@ -208,15 +241,15 @@ export function WorkPagePanel({
                   ) : null}
                 </div>
               ))}
-            </div>
-            <div className="mt-4 flex flex-col gap-3 md:flex-row">
+            </div> : null}
+            {isInstallation ? <div className="mt-4 flex flex-col gap-3 md:flex-row">
               <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddQuoteItem}>+ Klíma hozzáadása</button>
               {workResourceEditLocked && !allowWorkResourceEdit ? <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={() => onSetAllowWorkResourceEdit(true)}>Módosítás engedélyezése</button> : null}
-              {canEditWorkResources ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={onSaveWorkChanges}>Módosítás mentése az időpontra</button> : null}
-            </div>
+              {canEditWorkResources && isInstallation ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={onSaveWorkChanges}>Módosítás mentése az időpontra</button> : null}
+            </div> : null}
           </Card>
 
-          <Card title="Felhasznált anyagok">
+          {isInstallation ? <Card title="Felhasznált anyagok">
             <div className="mb-4 flex justify-end">
               <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddExtraMaterial}>+ Egyéb anyag</button>
             </div>
@@ -252,7 +285,7 @@ export function WorkPagePanel({
                 </div>
               ))}
             </div>
-          </Card>
+          </Card> : null}
         </Main>
 
         <Side>
@@ -283,6 +316,7 @@ export function WorkPagePanel({
 
           <Card title="Lezárási műveletek">
             <div className="space-y-3">
+              {selected.status === "Lezárva" ? <StepButton color="green" onClick={() => onStartMaintenanceForCustomer(selected)}>Karbantartási időpont</StepButton> : null}
               <StepButton color="cyan" onClick={onOpenWorkReport}>Munkalap és egyszerű aláírás</StepButton>
               <StepButton color="blue" onClick={() => onSendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
               <StepButton color="amber" onClick={onMarkInstallationDone}>{appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban</StepButton>
