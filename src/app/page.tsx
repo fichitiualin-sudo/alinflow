@@ -102,7 +102,8 @@ import {
 import {
   defaultWorkDescription,
   emptyWorkReport,
-  formatSignedAt
+  formatSignedAt,
+  workReportTitle,
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { normalizePostalCodeInput, uniqueSettlementByCity } from "@/lib/alinflow/postal-codes";
@@ -253,13 +254,14 @@ function customerTimelineItems(customer: Customer): CustomerTimelineItem[] {
     differentEnough(updatedAtCandidate, inquiredAt) &&
     activityTimes.every((time) => differentEnough(updatedAtCandidate, time));
   const appointment = customer.date ? appointmentSummaryLabel(customer) : "";
+  const appointmentLabel = customer.appointmentType ? `${appointmentTypeLabel(customer.appointmentType)} időpont` : "Időpont rögzítve";
 
   return [
     { label: "Érdeklődött", value: inquiredAt, tone: inquiredAt ? "emerald" : "slate", muted: !inquiredAt },
     { label: "Hívva", value: calledAt, tone: calledAt ? "cyan" : "slate", muted: !calledAt },
     { label: "Ajánlat küldve", value: quoteSentAt, tone: quoteSentAt ? "blue" : "slate", muted: !quoteSentAt },
     {
-      label: "Időpont rögzítve",
+      label: appointmentLabel,
       value: appointmentRecordedAt,
       hint: appointment || undefined,
       tone: appointmentRecordedAt || appointment ? "amber" : "slate",
@@ -1729,6 +1731,36 @@ export default function Home() {
       return;
     }
 
+    if (currentAppointmentType === "maintenance") {
+      if (!hasCustomerSignature(selected)) {
+        setMessage("A karbantartás lezárásához előbb készítsd el és írasd alá a karbantartási munkalapot.");
+        return;
+      }
+
+      const changedAt = new Date().toISOString();
+      const updated: Customer = {
+        ...selected,
+        quoteItems,
+        status: "Lezárva",
+        isFresh: false,
+        stockDeducted: selected.stockDeducted,
+        updatedAt: changedAt,
+      };
+
+      try {
+        await persistCustomerToDb(updated);
+        await logDocument(updated, "maintenance_done", "Karbantartás lezárva", "Kész", changedAt);
+        setSelected(updated);
+        setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+        setAllowWorkResourceEdit(false);
+        setMessage("Karbantartás lezárva ✅ Visszanézhető a Lezárt / lemondott ügyfelek között.");
+        replaceView("work");
+      } catch (error: any) {
+        setMessage(`Mentési hiba: ${error.message}`);
+      }
+      return;
+    }
+
     const isInstallation = isInstallationAppointment(currentAppointmentType);
     const error = isInstallation ? stockErrorMessage() : "";
     if (error) {
@@ -2324,6 +2356,10 @@ export default function Home() {
 
   function savedReportFor(customer: Customer = selected) {
     if (!customer.id) return undefined;
+    if (normalizeAppointmentType(customer.appointmentType) === "maintenance") {
+      const maintenanceDoc = docsFor(customer).find((doc) => doc.type === "maintenance_work_report");
+      if (!maintenanceDoc && workReport.customerId !== customer.id) return undefined;
+    }
     if (workReport.customerId === customer.id || workReport.id) return workReport.customerId === customer.id ? workReport : workReportsByCustomer[customer.id];
     return workReportsByCustomer[customer.id];
   }
@@ -2399,6 +2435,15 @@ export default function Home() {
   function hasCustomerSignature(customer: Customer) {
     const report = savedReportFor(customer);
     const docs = docsFor(customer);
+    if (normalizeAppointmentType(customer.appointmentType) === "maintenance") {
+      const maintenanceDoc = docs.find((doc) => doc.type === "maintenance_work_report");
+      return Boolean(
+        report?.signatureDataUrl ||
+        report?.signedAt ||
+        report?.emailSentAt ||
+        statusMeansSignedOrSent(maintenanceDoc?.status)
+      );
+    }
     const workDoc = docs.find((doc) => doc.type === "work_report");
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
     return Boolean(
@@ -2435,6 +2480,19 @@ export default function Home() {
   }
 
   function documentRowsFor(customer: Customer) {
+    const appointmentType = normalizeAppointmentType(customer.appointmentType);
+    if (appointmentType === "maintenance") {
+      const maintenanceDoneDoc = docFor(customer, "maintenance_done");
+      const rows: { title: string; status: string; action: string }[] = [
+        { title: "Karbantartási időpont-visszaigazolás", status: docStatus(customer, "appointment_email", customer.date ? "Időpont rögzítve" : "Nincs időpont"), action: "Időpont" },
+        { title: "Karbantartási munkalap", status: workReportDocumentStatus(customer), action: "Munkalap" },
+      ];
+      if (maintenanceDoneDoc || customer.status === "Lezárva") {
+        rows.push({ title: "Karbantartás lezárása", status: maintenanceDoneDoc?.status || "Lezárva", action: "KarbantartásLezárva" });
+      }
+      return rows;
+    }
+
     const quoteDoc = docFor(customer, "quote_email");
     const quoteSentAt = quoteSentAtFor(customer);
     const quoteBaseStatus = quoteDoc?.status || (customer.status === "Ajánlat elküldve" ? "Elküldve" : "Nincs elküldve");
@@ -2454,6 +2512,7 @@ export default function Home() {
   async function loadWorkReportFor(customer: Customer) {
     setWorkReport(emptyWorkReport(customer));
     if (!customer.id) return;
+    if (normalizeAppointmentType(customer.appointmentType) === "maintenance" && !docFor(customer, "maintenance_work_report")) return;
 
     const { data, error } = await supabase
       .from("work_reports")
@@ -2467,7 +2526,7 @@ export default function Home() {
     }
 
     if (data) {
-      const loadedReport = workReportFromRow(data);
+      const loadedReport = { ...workReportFromRow(data), workDescription: data.work_description || defaultWorkDescription(customer.appointmentType) };
       setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
       setWorkReportsByCustomer((prev) => ({ ...prev, [customer.id]: loadedReport }));
     }
@@ -2540,7 +2599,7 @@ export default function Home() {
         customer_phone: selected.phone || null,
         customer_address: fullCustomerAddress(selected) || null,
         climate_summary: climateSummary(quoteItems),
-        work_description: reportToSave.workDescription || defaultWorkDescription(),
+        work_description: reportToSave.workDescription || defaultWorkDescription(selected.appointmentType),
         notes: reportToSave.notes || null,
         signature_data_url: reportToSave.signatureDataUrl || null,
         signer_name: reportToSave.signerName || selected.name || null,
@@ -2573,17 +2632,27 @@ export default function Home() {
 
       const hasSignedReport = Boolean(reportToSave.signatureDataUrl || signedAt);
       const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
-      await logDocument(selected, "work_report", "Klímaszerelési munkalap", sendEmail ? "Elküldve" : hasSignedReport ? "Aláírva, mentve" : "Mentve, aláírásra vár", documentEventAt);
-      if (hasSignedReport) {
+      const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
+      const isMaintenanceReport = currentAppointmentType === "maintenance";
+      await logDocument(
+        selected,
+        isMaintenanceReport ? "maintenance_work_report" : "work_report",
+        isMaintenanceReport ? "Karbantartási munkalap" : workReportTitle(selected.appointmentType),
+        sendEmail ? "Elküldve" : hasSignedReport ? "Aláírva, mentve" : "Mentve, aláírásra vár",
+        documentEventAt
+      );
+      if (!isMaintenanceReport && hasSignedReport) {
         await logDocument(selected, "purchase_declaration", "Vásárlási nyilatkozat", sendEmail ? "Elküldve" : "Elkészült", documentEventAt);
       }
 
-      await updateChecklistForCustomer(selected, {
-        worksheet: hasSignedReport,
-        purchaseDeclaration: hasSignedReport,
-        signature: hasSignedReport,
-        docsSent: Boolean(sendEmail && hasSignedReport),
-      });
+      if (!isMaintenanceReport) {
+        await updateChecklistForCustomer(selected, {
+          worksheet: hasSignedReport,
+          purchaseDeclaration: hasSignedReport,
+          signature: hasSignedReport,
+          docsSent: Boolean(sendEmail && hasSignedReport),
+        });
+      }
 
       const savedReportForState: WorkReport = {
         id: data.id,
@@ -2597,7 +2666,7 @@ export default function Home() {
       };
       setWorkReportsByCustomer((prev) => ({ ...prev, [selected.id]: savedReportForState }));
       setWorkReport(savedReportForState);
-      setMessage(sendEmail ? "Munkalap mentve és emailben elküldve ✅" : "Munkalap mentve ✅");
+      setMessage(sendEmail ? `${workReportTitle(selected.appointmentType)} mentve és emailben elküldve ✅` : `${workReportTitle(selected.appointmentType)} mentve ✅`);
       replaceView("work");
     } catch (error: any) {
       setMessage(`Munkalap hiba: ${error.message}`);

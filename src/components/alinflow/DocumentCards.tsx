@@ -5,7 +5,7 @@ import type { Customer, DocumentPreviewType } from "@/lib/alinflow/types";
 type DocumentRow = { action: string; title: string; status: string };
 
 export function documentStatusClass(status: string) {
-  if (status.includes("Elküld") || status.includes("Kész") || status.includes("Aláírva") || status.includes("Elkészült")) {
+  if (status.includes("Elküld") || status.includes("Kész") || status.includes("Lezár") || status.includes("Aláírva") || status.includes("Elkészült")) {
     return "bg-emerald-400/20 text-emerald-200";
   }
   if (status.includes("később")) return "bg-slate-500/20 text-slate-300";

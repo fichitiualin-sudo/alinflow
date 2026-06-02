@@ -1,7 +1,7 @@
 import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
-import { defaultWorkDescription, formatSignedAt, workAcceptanceText } from "@/lib/alinflow/work-report";
+import { defaultWorkDescription, formatSignedAt, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 
 function formatDocumentDate(value?: string) {
@@ -56,12 +56,13 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
   const workType = appointmentTypeLabel(customer.appointmentType);
   const workTime = appointmentTimeRangeLabel(customer);
-  const workNote = `${workType.toLowerCase()}hoz kapcsolódó munka`;
+  const workTitle = workReportTitle(customer.appointmentType);
+  const workNote = appointmentWorkLabel(customer.appointmentType);
   return (
     <article className="doc-print-page work-report-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[13px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[14mm] print:text-[11.5px] print:shadow-none">
       <div className="text-center">
-        <h2 className="text-xl font-black leading-none tracking-tight print:text-[17px]">KLÍMASZERELÉSI<br />MUNKALAP</h2>
-        <p className="mt-1 text-xs font-bold print:text-[9.5px]">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p>
+        <h2 className="text-xl font-black leading-none tracking-tight print:text-[17px]">{workTitle.toUpperCase()}</h2>
+        <p className="mt-1 text-xs font-bold print:text-[9.5px]">az elvégzett munka és átadás-átvétel visszaigazolására</p>
       </div>
 
       <div className="mt-4 space-y-3 print:mt-3 print:space-y-2">
@@ -106,12 +107,12 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
 
         <section>
           <h3 className="mb-1 font-black">Elvégzett munka:</h3>
-          <p className="whitespace-pre-wrap border border-slate-900 p-2.5 text-justify print:p-2">{report.workDescription || defaultWorkDescription()}</p>
+          <p className="whitespace-pre-wrap border border-slate-900 p-2.5 text-justify print:p-2">{report.workDescription || defaultWorkDescription(customer.appointmentType)}</p>
         </section>
 
         <section>
           <h3 className="mb-1 font-black">Átadás-átvételi nyilatkozat:</h3>
-          <p className="border border-slate-900 p-2.5 text-justify print:p-2">{workAcceptanceText()}</p>
+          <p className="border border-slate-900 p-2.5 text-justify print:p-2">{workAcceptanceText(customer.appointmentType)}</p>
         </section>
 
         {report.notes ? <section><h3 className="mb-1 font-black">Megjegyzés:</h3><p className="whitespace-pre-wrap border border-slate-900 p-2 print:p-1.5">{report.notes}</p></section> : null}

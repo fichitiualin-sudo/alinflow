@@ -203,8 +203,17 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
   const workType = appointmentTypeLabel(customer.appointmentType);
   const workLabel = appointmentWorkLabel(customer.appointmentType);
   const isInstall = isInstallationAppointment(customer.appointmentType);
+  const isMaintenance = String(customer.appointmentType || "").toLowerCase().includes("maintenance") || workLabel.toLowerCase().includes("karbantart");
+  const workTitle = isMaintenance ? "KLÍMAKARBANTARTÁSI<br>MUNKALAP" : isInstall ? "KLÍMASZERELÉSI<br>MUNKALAP" : "KLÍMÁS<br>MUNKALAP";
+  const workSubtitle = isMaintenance ? "az elvégzett klímakarbantartás és átadás-átvétel visszaigazolására" : "az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására";
+  const defaultDescription = isMaintenance
+    ? "Klímaberendezés karbantartása, beltéri egység tisztítása, szűrők ellenőrzése/tisztítása, kültéri egység szemrevételezése, kondenzvíz-elvezetés ellenőrzése, működési próba és az ügyfél tájékoztatása."
+    : "Klímaberendezés telepítése, beüzemelése és átadása. Vákuumozás, működési próba és felhasználói betanítás elvégezve.";
+  const acceptanceText = isMaintenance
+    ? "Az ügyfél a munkalap aláírásával igazolja, hogy a fenti klímakarbantartás megtörtént, a munkát átvette, és az elvégzett feladatokról tájékoztatást kapott."
+    : "Az ügyfél a munkalap aláírásával igazolja, hogy a fenti munkát átvette, a készülék működését bemutatták, és az alapvető használati tudnivalókról tájékoztatást kapott.";
   const time = escapeHtml(appointmentTimeRangeLabel({ time: customer.time, appointmentType: customer.appointmentType }));
-  const workDescription = escapeHtml(report.workDescription || "Klímaberendezés telepítése, beüzemelése és átadása. Vákuumozás, működési próba és felhasználói betanítás elvégezve.").replace(/\n/g, "<br>");
+  const workDescription = escapeHtml(report.workDescription || defaultDescription).replace(/\n/g, "<br>");
   const notes = escapeHtml(report.notes || "").replace(/\n/g, "<br>");
   const signer = escapeHtml(report.signerName || customer.name || "");
   const signedAt = escapeHtml(formatDateTime(report.signedAt));
@@ -248,8 +257,8 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
   <body style="margin:0;background:#f6f7fb;padding:0;color:#111827">
     <div class="outer" style="background:#f6f7fb;padding:24px 12px">
       <div class="document work-page" style="max-width:794px;width:100%;margin:0 auto 18px auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:42px 50px 36px 50px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
-        <h1 class="doc-title" style="margin:0;text-align:center;font-size:17px;line-height:1;font-weight:900;letter-spacing:.02em">KLÍMASZERELÉSI<br>MUNKALAP</h1>
-        <p style="margin:5px 0 10px 0;text-align:center;font-size:9px;line-height:1.1;font-weight:700">az elvégzett klímaszerelési munka és átadás-átvétel visszaigazolására</p>
+        <h1 class="doc-title" style="margin:0;text-align:center;font-size:17px;line-height:1;font-weight:900;letter-spacing:.02em">${workTitle}</h1>
+        <p style="margin:5px 0 10px 0;text-align:center;font-size:9px;line-height:1.1;font-weight:700">${workSubtitle}</p>
 
         <p style="margin:0 0 5px 0;font-size:11px;font-weight:900">Ügyfél adatai:</p>
         <div style="margin-left:14px;margin-bottom:8px;font-size:10.5px;line-height:1.25">
@@ -283,7 +292,7 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
 
         ${notes ? `<p style="margin:0 0 5px 0;font-size:11px;font-weight:900">Megjegyzés:</p><div style="border:1px solid #111;padding:7px 8px;margin-bottom:8px;font-size:10.5px;line-height:1.22;min-height:28px;text-align:justify">${notes}</div>` : ""}
 
-        <p style="margin:0 0 7px 0;font-size:10.2px;line-height:1.22;text-align:justify">Az ügyfél a munkalap aláírásával igazolja, hogy a fenti munkát átvette, a készülék működését bemutatták, és az alapvető használati tudnivalókról tájékoztatást kapott.</p>
+        <p style="margin:0 0 7px 0;font-size:10.2px;line-height:1.22;text-align:justify">${acceptanceText}</p>
 
         <div class="sign-row" style="display:flex;gap:12px;align-items:flex-end;justify-content:space-between;margin-top:5px">
           <div style="font-size:10.5px;line-height:1.25">
@@ -301,7 +310,7 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
         </div>
       </div>
 
-      ${purchaseDeclarationHtml(customer, items, report)}
+      ${isInstall ? purchaseDeclarationHtml(customer, items, report) : ""}
     </div>
   </body>
 </html>`;
@@ -337,7 +346,7 @@ export async function POST(request: Request) {
         from,
         to: [to],
         reply_to: replyTo,
-        subject: `${appointmentTypeLabel(customer.appointmentType)} munkalap és vásárlási nyilatkozat – KLIMAlin`,
+        subject: isInstallationAppointment(customer.appointmentType) ? `${appointmentTypeLabel(customer.appointmentType)} munkalap és vásárlási nyilatkozat – KLIMAlin` : `${appointmentTypeLabel(customer.appointmentType)} munkalap – KLIMAlin`,
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("klimalin-work-report"),
         },

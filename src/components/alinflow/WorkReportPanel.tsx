@@ -4,8 +4,8 @@ import { useEffect, useRef } from "react";
 import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
-import { formatSignedAt } from "@/lib/alinflow/work-report";
-import { appointmentSummaryLabel } from "@/lib/alinflow/appointments";
+import { formatSignedAt, workReportTitle } from "@/lib/alinflow/work-report";
+import { appointmentSummaryLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 
 type WorkReportPanelProps = {
   selected: Customer;
@@ -36,21 +36,26 @@ export function WorkReportPanel({
   onUpdateWorkReportField,
   onSignatureChange,
 }: WorkReportPanelProps) {
+  const appointmentType = normalizeAppointmentType(selected.appointmentType);
+  const isMaintenance = appointmentType === "maintenance";
+  const reportTitle = workReportTitle(selected.appointmentType);
+  const climateLabel = isMaintenance ? "Karbantartandó klíma" : "Klíma";
+
   return (
     <Shell>
       <Back onClick={onBack}/>
       {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
       <Layout>
         <Main>
-          <Card title="Munkalap adatai">
+          <Card title={`${reportTitle} adatai`}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Ügyfél" value={selected.name || "nincs megadva"}/>
               <Field label="Telepítési cím" value={fullCustomerAddress(selected)}/>
               <Field label="Időpont" value={selected.date ? appointmentSummaryLabel(selected) : `${scheduleDate} · ${shownTime}`}/>
-              <Field label="Klíma" value={climateSummary(quoteItems)}/>
+              <Field label={climateLabel} value={climateSummary(quoteItems)}/>
             </div>
             <label className="mt-5 block rounded-2xl bg-slate-900/80 p-4">
-              <span className="text-sm text-slate-400">Elvégzett munka leírása</span>
+              <span className="text-sm text-slate-400">Elvégzett {appointmentWorkLabel(selected.appointmentType).toLowerCase()} leírása</span>
               <textarea
                 className="mt-2 min-h-32 w-full bg-transparent text-base font-bold leading-relaxed outline-none"
                 value={workReport.workDescription}
@@ -86,7 +91,7 @@ export function WorkReportPanel({
           <Card title="Műveletek">
             <div className="grid grid-cols-1 gap-3">
               <StepButton color="green" onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>
-              <StepButton color="blue" onClick={()=>onSave(true)}>{workReportEmailBusy ? "Email küldése..." : "Mentés és email küldése"}</StepButton>
+              <StepButton color="blue" onClick={()=>onSave(true)}>{workReportEmailBusy ? "Email küldése..." : isMaintenance ? "Karbantartási munkalap email" : "Mentés és email küldése"}</StepButton>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-slate-400">Az email telefonról és laptopról is ugyanazzal a Resend küldéssel megy ki. PDF nincs, így az ékezetek rendben maradnak.</p>
           </Card>

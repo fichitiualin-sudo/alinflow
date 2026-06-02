@@ -314,25 +314,27 @@ export function WorkPagePanel({
             <CustomerTimeline items={timelineItems} />
           </Card>
 
-          <Card title="Lezárási műveletek">
+          <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
             <div className="space-y-3">
-              {selected.status === "Lezárva" ? <StepButton color="green" onClick={() => onStartMaintenanceForCustomer(selected)}>Karbantartási időpont</StepButton> : null}
-              {isSurvey ? null : <StepButton color="cyan" onClick={onOpenWorkReport}>Munkalap és egyszerű aláírás</StepButton>}
+              {selected.status === "Lezárva" ? <StepButton color="green" onClick={() => onStartMaintenanceForCustomer(selected)}>{isMaintenance ? "Új karbantartási időpont" : "Karbantartási időpont"}</StepButton> : null}
+              {isSurvey ? null : <StepButton color="cyan" onClick={onOpenWorkReport}>{isMaintenance ? "Karbantartási munkalap és aláírás" : "Munkalap és egyszerű aláírás"}</StepButton>}
               <StepButton color="blue" onClick={() => onSendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
               {isSurvey ? (
                 <StepButton color="green" onClick={onMarkInstallationDone}>Felmérés kész – árajánlat készítése</StepButton>
+              ) : isMaintenance ? (
+                selected.status !== "Lezárva" ? <StepButton color="green" onClick={onMarkInstallationDone}>Karbantartás lezárása</StepButton> : null
               ) : (
                 <StepButton color="amber" onClick={onMarkInstallationDone}>{appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban</StepButton>
               )}
-              {isSurvey ? null : <StepButton color="green" onClick={onCloseWork}>Teljes lezárás</StepButton>}
-              <button onClick={onCancelAppointment} className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-red-500 to-rose-500 px-5 py-4 text-left font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
+              {isInstallation ? <StepButton color="green" onClick={onCloseWork}>Teljes lezárás</StepButton> : null}
+              {selected.status !== "Lezárva" ? <button onClick={onCancelAppointment} className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-red-500 to-rose-500 px-5 py-4 text-left font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
                 <span>Időpont törlése / lemondva</span>
                 <span className="rounded-full bg-black/10 px-3 py-1 text-sm">×</span>
-              </button>
+              </button> : null}
             </div>
           </Card>
 
-          <Card title="Lezárási ellenőrzőlista">
+          {isInstallation ? <Card title="Lezárási ellenőrzőlista">
             <div className="space-y-3">
               {checklistItems.map((item) => (
                 <button
@@ -348,7 +350,7 @@ export function WorkPagePanel({
             <div className={`mt-4 rounded-2xl p-4 font-black ${checklistReady ? "bg-emerald-400/20 text-emerald-200" : "bg-amber-400/20 text-amber-200"}`}>
               {checklistReady ? "Teljes lezárás engedélyezve ✅" : `Admin hiányos: ${missingChecklist.length} tétel`}
             </div>
-          </Card>
+          </Card> : null}
         </Side>
       </Layout>
     </>
