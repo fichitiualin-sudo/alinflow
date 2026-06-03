@@ -404,6 +404,9 @@ export default function Home() {
 
   const currentViewRef = useRef<View>(view);
   const viewHistoryRef = useRef<View[]>([]);
+  const initialDataLoadedRef = useRef(false);
+  const dataLoadInFlightRef = useRef(false);
+  const loadedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     currentViewRef.current = view;
@@ -642,28 +645,39 @@ export default function Home() {
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data }) => {
+    const handleSessionUser = (currentUser: User | null) => {
       if (!mounted) return;
-      const currentUser = data.session?.user ?? null;
       setUser(currentUser);
       setAuthLoading(false);
-      if (currentUser) void loadCustomersFromDb();
+
+      if (currentUser) {
+        if (loadedUserIdRef.current !== currentUser.id) {
+          loadedUserIdRef.current = currentUser.id;
+          void loadCustomersFromDb({ blockScreen: true });
+        }
+        return;
+      }
+
+      loadedUserIdRef.current = null;
+      initialDataLoadedRef.current = false;
+      dataLoadInFlightRef.current = false;
+      setDataLoading(false);
+      setCustomers([]);
+      setSelected(EMPTY_CUSTOMER);
+      setQuoteItems(EMPTY_CUSTOMER.quoteItems);
+      setWorkReportsByCustomer({});
+      setMaintenanceReportsByCustomer({});
+      setDocumentsByCustomer({});
+      setWorkChecklistsByCustomer({});
+      setWorkChecklist(EMPTY_WORK_CHECKLIST);
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      handleSessionUser(data.session?.user ?? null);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      setAuthLoading(false);
-      if (currentUser) void loadCustomersFromDb();
-      else {
-        setCustomers([]);
-        setSelected(EMPTY_CUSTOMER);
-        setQuoteItems(EMPTY_CUSTOMER.quoteItems);
-        setWorkReportsByCustomer({});
-        setDocumentsByCustomer({});
-        setWorkChecklistsByCustomer({});
-        setWorkChecklist(EMPTY_WORK_CHECKLIST);
-      }
+      handleSessionUser(session?.user ?? null);
     });
 
     return () => {
@@ -994,51 +1008,49 @@ export default function Home() {
     setNewProductInstallPrice(String(DEFAULT_INSTALL_PRICE));
   }
 
-  async function loadCustomersFromDb() {
-    setDataLoading(true);
+  async function loadCustomersFromDb(options: { blockScreen?: boolean } = {}) {
+    if (dataLoadInFlightRef.current) return;
+
+    dataLoadInFlightRef.current = true;
+    const shouldBlockScreen = options.blockScreen ?? !initialDataLoadedRef.current;
+
+    if (shouldBlockScreen) setDataLoading(true);
     setMessage("");
 
-    const loadedProducts = await loadProductsFromDb();
-    await loadInventoryFromDb(loadedProducts);
+    try {
+      const loadedProducts = await loadProductsFromDb();
+      const [
+        _inventoryResult,
+        customerResult,
+        quoteResult,
+        itemResult,
+        jobResult,
+        workReportResult,
+        documentResult,
+        checklistResult,
+      ] = await Promise.all([
+        loadInventoryFromDb(loadedProducts),
+        supabase.from("customers").select("*").order("created_at", { ascending: false }),
+        supabase.from("quotes").select("*").order("created_at", { ascending: false }),
+        supabase.from("quote_items").select("*"),
+        supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+        supabase.from("work_reports").select("*").order("created_at", { ascending: false }),
+        supabase.from("documents").select("*").order("created_at", { ascending: false }),
+        supabase.from("work_checklists").select("*"),
+      ]);
 
-    const { data: customerRows, error: customerError } = await supabase
-      .from("customers")
-      .select("*")
-      .order("created_at", { ascending: false });
+      const { data: customerRows, error: customerError } = customerResult;
+      const { data: quoteRows } = quoteResult;
+      const { data: itemRows } = itemResult;
+      const { data: jobRows } = jobResult;
+      const { data: workReportRows } = workReportResult;
+      const { data: documentRows } = documentResult;
+      const { data: checklistRows } = checklistResult;
 
-    if (customerError) {
-      setMessage(`Nem sikerült betölteni az ügyfeleket: ${customerError.message}`);
-      setDataLoading(false);
-      return;
-    }
-
-    const { data: quoteRows } = await supabase
-      .from("quotes")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    const { data: itemRows } = await supabase
-      .from("quote_items")
-      .select("*");
-
-    const { data: jobRows } = await supabase
-      .from("jobs")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    const { data: workReportRows } = await supabase
-      .from("work_reports")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    const { data: documentRows } = await supabase
-      .from("documents")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    const { data: checklistRows } = await supabase
-      .from("work_checklists")
-      .select("*");
+      if (customerError) {
+        setMessage(`Nem sikerült betölteni az ügyfeleket: ${customerError.message}`);
+        return;
+      }
 
     const quotesByCustomer = new Map<string, any>();
     (quoteRows || []).forEach((quote: any) => {
@@ -1158,25 +1170,28 @@ export default function Home() {
     setQuoteItems(nextQuoteItems);
     setWorkChecklist(effectiveChecklistFor(nextSelected, workReportsMap, documentsMap, checklistsMap));
 
-    if (selectedFromReturn && returnContext) {
-      setScheduleDate(nextSelected.date || todayIso());
-      setScheduleTime(firstAppointmentTime(nextSelected.time));
-      setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
-      setWorkReport(emptyWorkReport(nextSelected));
-      setEditCustomer(false);
-      replaceView(returnContext.view);
-      if (typeof window !== "undefined") window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
-    } else if (customerDraft && selectedFromDraft) {
-      setScheduleDate(customerDraft.scheduleDate || nextSelected.date || todayIso());
-      setScheduleTime(customerDraft.scheduleTime || firstAppointmentTime(nextSelected.time));
-      setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
-      setEditCustomer(customerDraft.editCustomer);
-      setAllowWorkResourceEdit(customerDraft.allowWorkResourceEdit);
-      // Frissítés / újratöltés után ne vigyen vissza automatikusan egy belső oldalra.
-      // A folyamatban lévő szerkesztés megmarad, de a kezdőlap marad a kiindulópont.
+      if (selectedFromReturn && returnContext) {
+        setScheduleDate(nextSelected.date || todayIso());
+        setScheduleTime(firstAppointmentTime(nextSelected.time));
+        setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
+        setWorkReport(emptyWorkReport(nextSelected));
+        setEditCustomer(false);
+        replaceView(returnContext.view);
+        if (typeof window !== "undefined") window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
+      } else if (customerDraft && selectedFromDraft) {
+        setScheduleDate(customerDraft.scheduleDate || nextSelected.date || todayIso());
+        setScheduleTime(customerDraft.scheduleTime || firstAppointmentTime(nextSelected.time));
+        setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
+        setEditCustomer(customerDraft.editCustomer);
+        setAllowWorkResourceEdit(customerDraft.allowWorkResourceEdit);
+        // Frissítés / újratöltés után ne vigyen vissza automatikusan egy belső oldalra.
+        // A folyamatban lévő szerkesztés megmarad, de a kezdőlap marad a kiindulópont.
+      }
+    } finally {
+      initialDataLoadedRef.current = true;
+      dataLoadInFlightRef.current = false;
+      if (shouldBlockScreen) setDataLoading(false);
     }
-
-    setDataLoading(false);
   }
 
   async function persistCustomerToDb(customer: Customer) {
@@ -3338,7 +3353,7 @@ export default function Home() {
                   <option value="all">Összes státusz</option>
                   {STATUS_OPTIONS.map((status)=><option key={status} value={status}>{status}</option>)}
                 </select>
-                <button onClick={loadCustomersFromDb} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100">Frissítés</button>
+                <button onClick={() => void loadCustomersFromDb({ blockScreen: false })} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100">Frissítés</button>
               </div>
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
