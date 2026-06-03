@@ -3235,7 +3235,6 @@ export default function Home() {
     return (
       <Card title="Folyamatban lévő szerkesztés">
         <div className="space-y-3">
-          <p className="text-sm font-bold text-slate-300">Van egy helyben megőrzött, még nem biztosan mentett szerkesztés.</p>
           <div className="rounded-2xl bg-slate-950/60 p-3">
             <p className="font-black text-slate-100">{draftNotice.customer.name || "Névtelen ügyfél"}</p>
             <p className="text-sm text-slate-400">{draftNotice.customer.phone || draftNotice.customer.email || [draftNotice.customer.postalCode, draftNotice.customer.city].filter(Boolean).join(" ") || "nincs adat"}</p>
@@ -3542,7 +3541,6 @@ export default function Home() {
     <Shell>
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <p className="mb-3 inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-cyan-200">AlinFlow v65 · klímatípus kezelés</p>
           <h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1>
         </div>
         <div className="flex flex-wrap gap-3">

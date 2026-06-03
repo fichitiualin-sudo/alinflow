@@ -127,9 +127,11 @@ export function QuoteBuilderPanel({
               />
               <span className="block text-base font-black text-slate-100">Ne adja össze a tételeket</span>
             </label>
-            <div className={`mt-3 rounded-2xl p-4 text-sm font-black ${quoteIsAlternatives ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-200"}`}>
-              {quoteIsAlternatives ? "Külön ajánlatokként megy ki" : "Egy ajánlatként, végösszeggel megy ki"}
-            </div>
+            {quoteIsAlternatives ? (
+              <div className="mt-3 rounded-2xl bg-cyan-300 p-4 text-sm font-black text-slate-950">
+                Külön ajánlatokként megy ki
+              </div>
+            ) : null}
           </Card>
           <Card title="Gyors műveletek">
             <div className="space-y-3 [&>button]:w-full">

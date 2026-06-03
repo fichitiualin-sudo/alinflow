@@ -4,7 +4,7 @@ import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem
 import { isCustomQuoteItem, itemName, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
-import { APPOINTMENT_TYPES, appointmentDurationLabel, appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
+import { APPOINTMENT_TYPES, appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
 
 type SchedulePanelProps = {
   selected: Customer;
@@ -134,7 +134,6 @@ export function SchedulePanel({
                     className={`rounded-2xl border p-4 text-left transition ${isSelected ? "border-cyan-200 bg-cyan-300 text-slate-950" : "border-white/10 bg-slate-900/80 text-slate-100 hover:border-cyan-300/40"}`}
                   >
                     <span className="block text-lg font-black">{type.label}</span>
-                    <span className={`mt-1 block text-sm font-bold ${isSelected ? "text-slate-700" : "text-slate-400"}`}>{type.durationLabel}</span>
                   </button>
                 );
               })}
@@ -175,7 +174,6 @@ export function SchedulePanel({
                     />
                     <p className="text-sm font-bold text-slate-300">Kiválasztva: <span className="text-cyan-100">{selectedTimeLabel}</span></p>
                   </div>
-                  <p className="mt-2 text-xs font-bold leading-relaxed text-slate-500">Az ajánlott idősávok maradnak, de karbantartásnál vagy két szerelés közé kézzel is beírhatsz időpontot. Mentéskor ellenőrizzük az ütközést.</p>
                 </div>
               </>
             )}
@@ -184,14 +182,6 @@ export function SchedulePanel({
         <Side>
           <Gradient title="Kiválasztott időpont" value={`${appointmentTypeLabel(appointmentType)} · ${scheduleDate.replaceAll("-", ".")} · ${shownTime}`} />
           <Card title={appointmentDetailsTitle}>
-            <p className="mb-4 text-sm leading-relaxed text-slate-400">
-              {isSurvey
-                ? "A felmérés a klímaválasztás előtt történik, ezért itt nem kell klímát kiválasztani. Csak az 1 órás felmérési időpontot rögzítjük."
-                : isMaintenance
-                ? "A karbantartás a már felszerelt klímához kapcsolódik, ezért 1 órás időpontként kerül a naptárba."
-                : "Mentéskor kérés szerint automatikus, magázódó időpont-visszaigazoló emailt küldünk."}
-            </p>
-
             {isInstallation ? (
               <>
                 {quoteItems.map((item, index) => (
@@ -242,7 +232,7 @@ export function SchedulePanel({
               )
             ) : null}
 
-            <InfoRow label="Időpont típusa" value={`${appointmentTypeLabel(appointmentType)} · ${appointmentDurationLabel(appointmentType)}`} />
+            <InfoRow label="Időpont típusa" value={appointmentTypeLabel(appointmentType)} />
             {isSurvey ? <InfoRow label="Klímaválasztás" value="felmérés után" /> : null}
             <label className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
               <input

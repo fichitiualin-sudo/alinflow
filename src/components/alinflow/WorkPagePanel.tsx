@@ -201,17 +201,11 @@ export function WorkPagePanel({
                 </div>
               </div>
             ) : null}
-            {isSurvey ? (
-              <div className="mb-4 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
-                A felmérés a klímaválasztás előtt van, ezért ehhez az időponthoz nem kell klímát vagy szerelési anyagot rögzíteni.
-              </div>
-            ) : null}
             {isMaintenance ? (
               <div className="mb-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-100">
                 Ez karbantartási időpont. A klímák csak tájékoztató jelleggel jelennek meg, készletet és szerelési anyagot nem foglalnak.
               </div>
             ) : null}
-            {isInstallation && workResourceEditLocked && !allowWorkResourceEdit ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">A munka készre jelölése után a klímák és a szerelési anyagok zárolva vannak. Szerkesztéshez nyomd meg a Módosítás engedélyezése gombot.</div> : null}
             {(isInstallation || isMaintenance) && quoteItems.length === 0 ? <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm font-bold text-slate-300">Nincs rögzített klíma.</div> : null}
             {isMaintenance && quoteItems.length ? (
               <div className="space-y-3">

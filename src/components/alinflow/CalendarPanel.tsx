@@ -44,7 +44,7 @@ function calendarStatusStyle(status: string) {
 
 function calendarJobSummary(job: Customer) {
   if (isInstallationAppointment(job.appointmentType)) return climateSummary(job.quoteItems);
-  return `${appointmentTypeLabel(job.appointmentType)} · 1 óra`;
+  return appointmentTypeLabel(job.appointmentType);
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {

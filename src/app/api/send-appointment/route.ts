@@ -71,7 +71,7 @@ function itemLines(items: QuoteItem[], appointmentType?: string) {
   const isInstall = isInstallationAppointment(appointmentType);
 
   if (!isInstall) {
-    return `<li style="margin:8px 0"><strong>${escapeHtml(workLabel)}</strong> <span style="color:#64748b">– 1 órás időpont</span></li>`;
+    return `<li style="margin:8px 0"><strong>${escapeHtml(workLabel)}</strong></li>`;
   }
 
   if (!items.length) {
@@ -88,13 +88,11 @@ function importantNotesHtml(appointmentType?: string) {
   const notes = type === "survey"
     ? [
         "Kérjük, a felmérendő helyiségek és a kültéri egység lehetséges helye legyen hozzáférhető.",
-        "A felmérés várható időtartama 1 óra.",
         "Amennyiben bármi változna, kérjük, jelezze válasz emailben vagy telefonon.",
       ]
     : type === "maintenance"
     ? [
         "Kérjük, a karbantartandó beltéri és kültéri egység legyen hozzáférhető.",
-        "A karbantartás várható időtartama 1 óra.",
         "Amennyiben bármi változna, kérjük, jelezze válasz emailben vagy telefonon.",
       ]
     : [

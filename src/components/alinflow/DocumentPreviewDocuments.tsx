@@ -33,14 +33,12 @@ function appointmentDocumentNotes(type?: string) {
   if (normalized === "survey") {
     return [
       "Kérjük, hogy a tervezett beltéri és kültéri egység helye legyen hozzáférhető.",
-      "A felmérés várhatóan körülbelül 1 órát vesz igénybe.",
       "Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.",
     ];
   }
   if (normalized === "maintenance") {
     return [
       "Kérjük, hogy a karbantartandó klíma beltéri és kültéri egysége legyen hozzáférhető.",
-      "A karbantartás várhatóan körülbelül 1 órát vesz igénybe.",
       "Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.",
     ];
   }
@@ -412,7 +410,7 @@ export function AppointmentConfirmationDocument({ customer, quoteItems }: { cust
           <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
           <p className="text-sm text-slate-600">szereléssel együtt</p>
         </div>
-      </div>) : <div className="rounded-2xl border border-slate-200 p-4"><p className="text-lg font-black">{workLabel}</p><p className="text-sm text-slate-600">{isInstallationAppointment ? "egyeztetett klímaszerelési munka" : "1 órás időpont"}</p></div>}
+      </div>) : <div className="rounded-2xl border border-slate-200 p-4"><p className="text-lg font-black">{workLabel}</p></div>}
     </div>
 
     <div className="mt-6 rounded-2xl border border-slate-200 p-5 text-sm leading-relaxed">

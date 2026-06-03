@@ -18,9 +18,9 @@ function totalQuantity(items: QuoteItem[] = []) {
 }
 
 export const APPOINTMENT_TYPES: { value: AppointmentType; label: string; shortLabel: string; durationLabel: string; description: string }[] = [
-  { value: "installation", label: "Szerelés", shortLabel: "Szerelés", durationLabel: "meglévő szerelési logika szerint", description: "Alapértelmezett klímaszerelési időpont" },
-  { value: "survey", label: "Felmérés", shortLabel: "Felmérés", durationLabel: "1 óra", description: "Opcionális, 1 órás felmérési időpont" },
-  { value: "maintenance", label: "Karbantartás", shortLabel: "Karbantartás", durationLabel: "1 óra", description: "1 órás karbantartási időpont" },
+  { value: "installation", label: "Szerelés", shortLabel: "Szerelés", durationLabel: "", description: "Klímaszerelési időpont" },
+  { value: "survey", label: "Felmérés", shortLabel: "Felmérés", durationLabel: "", description: "Felmérési időpont" },
+  { value: "maintenance", label: "Karbantartás", shortLabel: "Karbantartás", durationLabel: "", description: "Karbantartási időpont" },
 ];
 
 export const APPOINTMENT_TYPE_OPTIONS = APPOINTMENT_TYPES;
@@ -51,7 +51,7 @@ export function appointmentTypeLabel(value?: string | null) {
 
 export function appointmentDurationLabel(value?: string | null) {
   const type = normalizeAppointmentType(value);
-  return APPOINTMENT_TYPES.find((item) => item.value === type)?.durationLabel || "meglévő szerelési logika szerint";
+  return APPOINTMENT_TYPES.find((item) => item.value === type)?.durationLabel || "";
 }
 
 export function appointmentTypeEmailLabel(value?: string | null) {
@@ -184,8 +184,8 @@ export function appointmentTimeLabel(type?: string | null, time?: string, items:
 
 export function appointmentWorkSummary(customer: Pick<AppointmentLike, "appointmentType" | "quoteItems">) {
   const type = normalizeAppointmentType(customer.appointmentType);
-  if (type === "survey") return "1 órás helyszíni felmérés";
-  if (type === "maintenance") return "1 órás klíma karbantartás";
+  if (type === "survey") return "Helyszíni felmérés";
+  if (type === "maintenance") return "Klíma karbantartás";
   return "Klímaszerelés";
 }
 
