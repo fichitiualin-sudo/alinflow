@@ -1888,6 +1888,40 @@ export default function Home() {
 
   async function cancelAppointment() {
     const changedAt = new Date().toISOString();
+    const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
+
+    if (currentAppointmentType === "maintenance") {
+      const installationReport = savedReportFor({ ...selected, activeWorkReportId: undefined, appointmentType: "installation" }, "installation");
+      const restoredStatus = restoredInstallationStatusAfterMaintenance(selected);
+      const restored: Customer = {
+        ...selected,
+        date: installationReport?.workDate || undefined,
+        time: installationReport?.workTime || undefined,
+        appointmentType: "installation",
+        activeWorkReportId: undefined,
+        status: restoredStatus,
+        isFresh: restoredStatus !== "Lezárva",
+        updatedAt: changedAt,
+      };
+
+      try {
+        await logDocument(selected, maintenanceCancellationDocumentType(selected, changedAt), maintenanceCancellationTitle(selected), "Lemondva", changedAt);
+        await supabase.from("jobs").delete().eq("customer_id", selected.id);
+        await persistCustomerToDb(restored);
+        setSelected(restored);
+        setScheduleAppointmentType("installation");
+        setScheduleDate(restored.date || todayIso());
+        setScheduleTime(firstAppointmentTime(restored.time || "08:00"));
+        setAllowWorkResourceEdit(false);
+        setCustomers(prev => prev.map(c => c.id === restored.id ? restored : c));
+        setMessage("Karbantartási időpont lemondva ✅ A klímaszerelés és a korábbi dokumentumok megmaradtak.");
+        replaceView("work");
+      } catch (error: any) {
+        setMessage(`Mentési hiba: ${error.message}`);
+      }
+      return;
+    }
+
     const updated: Customer = {
       ...selected,
       date: undefined,
@@ -2434,6 +2468,50 @@ export default function Home() {
     return `${date.replaceAll("-", ".")} · ${firstAppointmentTime(time || "08:00")}`;
   }
 
+  function maintenanceCancellationDocumentType(customer: Customer, cancelledAt: string) {
+    const datePart = (customer.date || todayIso()).replaceAll("-", "");
+    const timePart = firstAppointmentTime(customer.time || "00:00").replace(":", "");
+    const cancelledPart = cancelledAt.replace(/[^0-9]/g, "");
+    return `maintenance_cancelled_${datePart}_${timePart}_${cancelledPart}`;
+  }
+
+  function maintenanceCancellationTitle(customer: Customer) {
+    return `Karbantartási időpont lemondva · ${formatReportDateLabel(customer)}`;
+  }
+
+  function maintenanceRowSortValue(row: PageDocumentRow) {
+    const date = row.reportDate || "0000-00-00";
+    const time = firstAppointmentTime(row.reportTime || "00:00") || "00:00";
+    return `${date}T${time}`;
+  }
+
+  function maintenanceCancellationRowsFor(customer: Customer): PageDocumentRow[] {
+    return docsFor(customer)
+      .filter((doc) => doc.type.startsWith("maintenance_cancelled"))
+      .map((doc) => {
+        const label = (doc.title || "").replace(/^Karbantartási időpont lemondva\s*·\s*/, "") || formatQuoteSentAt(doc.sentAt || doc.createdAt);
+        const dateMatch = label.match(/(\d{4})[.\- ](\d{2})[.\- ](\d{2})/);
+        const timeMatch = label.match(/(\d{1,2}:\d{2})/);
+        const reportDate = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : doc.sentAt?.slice(0, 10) || doc.createdAt?.slice(0, 10);
+        return {
+          title: "Karbantartási időpont lemondva",
+          status: "Lemondva",
+          action: "MaintenanceCancelled",
+          appointmentType: "maintenance" as AppointmentType,
+          reportDate,
+          reportTime: timeMatch?.[1],
+          reportDateLabel: label,
+        };
+      });
+  }
+
+  function restoredInstallationStatusAfterMaintenance(customer: Customer) {
+    if (customer.status === "Lezárva") return "Lezárva";
+    const installationReport = savedReportFor({ ...customer, activeWorkReportId: undefined, appointmentType: "installation" }, "installation");
+    if (installationReport?.id || customer.stockDeducted) return "Lezárva";
+    return "Visszahívandó";
+  }
+
   function errorMentionsWorkReportType(error: any) {
     const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
     return text.includes("appointment_type") || text.includes("work_reports_customer_appointment_type_uidx");
@@ -2700,7 +2778,7 @@ export default function Home() {
 
   function maintenanceDocumentRowsFor(customer: Customer, includeBundle = false): PageDocumentRow[] {
     const existingReports = maintenanceReportsFor(customer);
-    const rows: PageDocumentRow[] = existingReports.map((report) => ({
+    const reportRows: PageDocumentRow[] = existingReports.map((report) => ({
       title: `Karbantartási munkalap · ${formatMaintenanceReportDate(report)}`,
       status: maintenanceReportStatus(report),
       action: "MaintenanceReport",
@@ -2714,8 +2792,9 @@ export default function Home() {
     const currentType = normalizeAppointmentType(customer.appointmentType);
     const hasCurrentMaintenanceDate = currentType === "maintenance" && Boolean(customer.date);
     const currentAlreadySaved = hasCurrentMaintenanceDate ? existingReports.some((report) => sameReportAppointment(report, customer)) : false;
+    const currentRows: PageDocumentRow[] = [];
     if (hasCurrentMaintenanceDate && !currentAlreadySaved) {
-      rows.unshift({
+      currentRows.push({
         title: `Karbantartási munkalap · ${formatReportDateLabel(customer)}`,
         status: "Munkalap hiányzik",
         action: "MaintenanceReport",
@@ -2726,7 +2805,9 @@ export default function Home() {
       });
     }
 
-    const savedRows = rows.filter((row) => Boolean(row.reportId));
+    const rows = [...currentRows, ...reportRows, ...maintenanceCancellationRowsFor(customer)]
+      .sort((a, b) => maintenanceRowSortValue(b).localeCompare(maintenanceRowSortValue(a)));
+    const savedRows = reportRows.filter((row) => Boolean(row.reportId));
     if (includeBundle && savedRows.length) {
       return [
         {
@@ -3263,7 +3344,7 @@ export default function Home() {
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
                 {documentCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs találat.</div> : null}
-                {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerInquiryLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{[...documentRowsFor(customer), ...maintenanceDocumentRowsFor(customer, true)].map((row)=><div key={`${row.title}-${"reportId" in row ? row.reportId || row.action : row.action}` } className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
+                {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerInquiryLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{[...documentRowsFor(customer), ...maintenanceDocumentRowsFor(customer, true)].map((row)=><div key={`${row.title}-${row.reportId || row.reportDateLabel || row.reportDate || row.action}` } className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
               </div>
               <PaginationControls currentPage={documentPagination.currentPage} pageCount={documentPagination.pageCount} totalCount={documentCustomers.length} label="ügyfél" onPageChange={setDocumentPage} />
             </Card>

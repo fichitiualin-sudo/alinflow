@@ -23,6 +23,7 @@ function actionCustomerFor(customer: Customer, row: DocumentRow): Customer {
 }
 
 export function documentStatusClass(status: string) {
+  if (status.includes("Lemond")) return "bg-red-500/20 text-red-200";
   if (status.includes("Elküld") || status.includes("Kész") || status.includes("Lezár") || status.includes("Aláírva") || status.includes("Elkészült")) {
     return "bg-emerald-400/20 text-emerald-200";
   }

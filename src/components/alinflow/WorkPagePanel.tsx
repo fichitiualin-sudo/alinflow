@@ -145,6 +145,9 @@ export function WorkPagePanel({
   const isInstallation = isInstallationAppointment(currentAppointmentType);
   const isSurvey = currentAppointmentType === "survey";
   const isMaintenance = currentAppointmentType === "maintenance";
+  const installationFinished = isInstallation && (selected.status === "Szerelés kész – admin folyamatban" || selected.status === "Lezárva");
+  const maintenanceFinished = isMaintenance && selected.status === "Lezárva";
+  const canStartMaintenance = installationFinished || maintenanceFinished;
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
     : isMaintenance
@@ -296,7 +299,7 @@ export function WorkPagePanel({
             <div className="space-y-3">
               {documentRows.map((row) => (
                 <DocumentRowCard
-                  key={`${row.title}-${row.reportId || row.appointmentType || "main"}`}
+                  key={`${row.title}-${row.reportId || row.reportDateLabel || row.reportDate || row.action || "main"}`}
                   selected={selected}
                   row={row}
                   quoteEmailBusy={quoteEmailBusy}
@@ -311,19 +314,21 @@ export function WorkPagePanel({
             <MaintenanceHistory
               selected={selected}
               rows={maintenanceRows}
+              canStartMaintenance={canStartMaintenance}
               quoteEmailBusy={quoteEmailBusy}
               appointmentEmailBusy={appointmentEmailBusy}
               onOpenDocumentPreview={onOpenDocumentPreview}
               onOpenWorkReportFor={onOpenWorkReportFor}
               onSendQuoteEmail={onSendQuoteEmail}
               onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+              onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
             />
             <CustomerTimeline items={timelineItems} />
           </Card>
 
           <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
             <div className="space-y-3">
-              {selected.status === "Lezárva" ? <StepButton color="green" onClick={() => onStartMaintenanceForCustomer(selected)}>{isMaintenance ? "Új karbantartási időpont" : "Karbantartási időpont"}</StepButton> : null}
+              {canStartMaintenance ? <StepButton color="green" onClick={() => onStartMaintenanceForCustomer(selected)}>{isMaintenance ? "Új karbantartási időpont" : "Karbantartási időpont"}</StepButton> : null}
               {isSurvey ? null : <StepButton color="cyan" onClick={onOpenWorkReport}>{isMaintenance ? "Karbantartási munkalap és aláírás" : "Munkalap és egyszerű aláírás"}</StepButton>}
               <StepButton color="blue" onClick={() => onSendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
               {isSurvey ? (
@@ -335,7 +340,7 @@ export function WorkPagePanel({
               )}
               {isInstallation ? <StepButton color="green" onClick={onCloseWork}>Teljes lezárás</StepButton> : null}
               {selected.status !== "Lezárva" ? <button onClick={onCancelAppointment} className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-red-500 to-rose-500 px-5 py-4 text-left font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
-                <span>Időpont törlése / lemondva</span>
+                <span>{isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"}</span>
                 <span className="rounded-full bg-black/10 px-3 py-1 text-sm">×</span>
               </button> : null}
             </div>
@@ -410,25 +415,30 @@ function DocumentRowCard({
 function MaintenanceHistory({
   selected,
   rows,
+  canStartMaintenance,
   quoteEmailBusy,
   appointmentEmailBusy,
   onOpenDocumentPreview,
   onOpenWorkReportFor,
   onSendQuoteEmail,
   onSendAppointmentEmailFor,
+  onStartMaintenanceForCustomer,
 }: {
   selected: Customer;
   rows: DocumentRow[];
+  canStartMaintenance: boolean;
   quoteEmailBusy: boolean;
   appointmentEmailBusy: boolean;
   onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
   onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
   onSendQuoteEmail: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
+  onStartMaintenanceForCustomer: (customer: Customer) => void;
 }) {
-  if (!rows.length) return null;
+  if (!rows.length && !canStartMaintenance) return null;
 
   const dates = rows.map((row) => row.reportDateLabel || row.reportDate || row.title).filter(Boolean);
+  const printableReportRows = rows.filter((row) => row.action === "MaintenanceReport" && Boolean(row.reportId));
   const maintenanceCustomer = { ...selected, appointmentType: "maintenance" as AppointmentType };
 
   return (
@@ -438,36 +448,57 @@ function MaintenanceHistory({
           <p className="text-lg font-black text-emerald-100">Karbantartási napló</p>
           <p className="mt-1 text-sm font-bold text-slate-400">Garanciához megőrzött karbantartási munkalapok, dátum szerint.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => onOpenDocumentPreview(maintenanceCustomer, "all_work_reports")}
-          className="shrink-0 rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 ring-1 ring-emerald-300/20"
-        >
-          Összes munkalap
-        </button>
+        <div className="flex flex-col gap-2 sm:items-end">
+          {canStartMaintenance ? (
+            <button
+              type="button"
+              onClick={() => onStartMaintenanceForCustomer(selected)}
+              className="rounded-2xl bg-emerald-400 px-4 py-3 text-sm font-black text-slate-950"
+            >
+              Új karbantartás
+            </button>
+          ) : null}
+          {printableReportRows.length ? (
+            <button
+              type="button"
+              onClick={() => onOpenDocumentPreview(maintenanceCustomer, "all_work_reports")}
+              className="rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 ring-1 ring-emerald-300/20"
+            >
+              Összes munkalap
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {dates.map((date) => (
-          <span key={date} className="rounded-full bg-slate-950/60 px-3 py-1 text-xs font-black text-emerald-100 ring-1 ring-emerald-300/10">{date}</span>
-        ))}
-      </div>
+      {rows.length ? (
+        <>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {dates.map((date) => (
+              <span key={date} className="rounded-full bg-slate-950/60 px-3 py-1 text-xs font-black text-emerald-100 ring-1 ring-emerald-300/10">{date}</span>
+            ))}
+          </div>
 
-      <div className="mt-4 space-y-3">
-        {rows.map((row) => (
-          <DocumentRowCard
-            key={`${row.reportId || row.title}`}
-            selected={maintenanceCustomer}
-            row={row}
-            quoteEmailBusy={quoteEmailBusy}
-            appointmentEmailBusy={appointmentEmailBusy}
-            onOpenDocumentPreview={onOpenDocumentPreview}
-            onOpenWorkReportFor={onOpenWorkReportFor}
-            onSendQuoteEmail={onSendQuoteEmail}
-            onSendAppointmentEmailFor={onSendAppointmentEmailFor}
-          />
-        ))}
-      </div>
+          <div className="mt-4 space-y-3">
+            {rows.map((row) => (
+              <DocumentRowCard
+                key={`${row.reportId || row.reportDateLabel || row.reportDate || row.title}`}
+                selected={maintenanceCustomer}
+                row={row}
+                quoteEmailBusy={quoteEmailBusy}
+                appointmentEmailBusy={appointmentEmailBusy}
+                onOpenDocumentPreview={onOpenDocumentPreview}
+                onOpenWorkReportFor={onOpenWorkReportFor}
+                onSendQuoteEmail={onSendQuoteEmail}
+                onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+              />
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="mt-4 rounded-2xl border border-dashed border-emerald-300/20 bg-slate-950/40 p-4 text-sm font-bold text-slate-300">
+          Még nincs rögzített karbantartási munkalap. Az első karbantartást az <span className="text-emerald-100">Új karbantartás</span> gombbal tudod indítani.
+        </div>
+      )}
     </div>
   );
 }
