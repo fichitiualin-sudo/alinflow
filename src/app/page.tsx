@@ -109,8 +109,8 @@ import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { normalizePostalCodeInput, uniqueSettlementByCity } from "@/lib/alinflow/postal-codes";
 import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, intervalsOverlap, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType, slotInterval } from "@/lib/alinflow/appointments";
 
-const LIST_PAGE_SIZE = 20;
-const DASHBOARD_WAREHOUSE_LIMIT = 6;
+const LIST_PAGE_SIZE = 10;
+const DASHBOARD_WAREHOUSE_LIMIT = 10;
 
 type PageDocumentRow = {
   action: string;
@@ -367,6 +367,7 @@ export default function Home() {
   const [user,setUser] = useState<User | null>(null);
   const [authLoading,setAuthLoading] = useState(true);
   const [dataLoading,setDataLoading] = useState(false);
+  const [initialDataReady,setInitialDataReady] = useState(false);
   const [loginEmail,setLoginEmail] = useState("");
   const [loginPassword,setLoginPassword] = useState("");
   const [loginBusy,setLoginBusy] = useState(false);
@@ -379,6 +380,8 @@ export default function Home() {
   const [maintenanceReportsByCustomer,setMaintenanceReportsByCustomer] = useState<Record<string, WorkReport[]>>({});
   const [documentsByCustomer,setDocumentsByCustomer] = useState<Record<string, DocumentRecord[]>>({});
   const [workChecklistsByCustomer,setWorkChecklistsByCustomer] = useState<Record<string, WorkChecklistState>>({});
+  const [detailDataLoadedByCustomer,setDetailDataLoadedByCustomer] = useState<Record<string, boolean>>({});
+  const [detailDataLoadingByCustomer,setDetailDataLoadingByCustomer] = useState<Record<string, boolean>>({});
   const [documentPreviewType,setDocumentPreviewType] = useState<DocumentPreviewType>("work_report");
   const [documentBackView,setDocumentBackView] = useState<"documents" | "work">("work");
   const [documentPreviewReportId,setDocumentPreviewReportId] = useState<string | undefined>(undefined);
@@ -404,13 +407,19 @@ export default function Home() {
 
   const currentViewRef = useRef<View>(view);
   const viewHistoryRef = useRef<View[]>([]);
-  const initialDataLoadedRef = useRef(false);
-  const dataLoadInFlightRef = useRef(false);
   const loadedUserIdRef = useRef<string | null>(null);
+  const loadCustomersPromiseRef = useRef<Promise<void> | null>(null);
+  const initialDataReadyRef = useRef(false);
+  const detailDataLoadedRef = useRef<Record<string, boolean>>({});
+  const detailDataLoadingRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     currentViewRef.current = view;
   }, [view]);
+
+  useEffect(() => {
+    initialDataReadyRef.current = initialDataReady;
+  }, [initialDataReady]);
 
   function navigateToView(nextView: View) {
     const currentView = currentViewRef.current;
@@ -467,8 +476,23 @@ export default function Home() {
   const dashboardLeadCustomers = filteredActiveCustomers.filter((customer) => !customer.date);
   const dashboardLeadPagination = paginateItems(dashboardLeadCustomers, leadPage);
   const archivePagination = paginateItems(filteredArchivedCustomers, archivePage);
+  const documentCustomerPagination = paginateItems(filteredCustomers, documentPage);
   const visibleLeadCustomers = dashboardLeadPagination.items;
   const visibleArchivedCustomers = archivePagination.items;
+  const visibleDocumentCustomersForLoad = documentCustomerPagination.items;
+  const visibleDocumentCustomersForLoadKey = visibleDocumentCustomersForLoad.map((customer) => customer.id).join("|");
+
+  useEffect(() => {
+    if (!user || !initialDataReady) return;
+    if (["lead", "quote", "quotePreview", "schedule", "work", "workReport", "documentPreview"].includes(view) && selected.id) {
+      void loadCustomerDetailData([selected.id]);
+    }
+  }, [user?.id, initialDataReady, view, selected.id]);
+
+  useEffect(() => {
+    if (!user || !initialDataReady || view !== "documents") return;
+    void loadCustomerDetailData(visibleDocumentCustomersForLoad.map((customer) => customer.id));
+  }, [user?.id, initialDataReady, view, documentPage, customerSearch, customerStatusFilter, visibleDocumentCustomersForLoadKey]);
 
   function normalizeSearch(value?: string) {
     return String(value || "")
@@ -642,25 +666,39 @@ export default function Home() {
   }, [view]);
 
 
+  function requestDataLoadForUser(currentUser: User, force = false) {
+    if (!force && loadedUserIdRef.current === currentUser.id && initialDataReadyRef.current) return;
+    loadedUserIdRef.current = currentUser.id;
+    void loadCustomersFromDb({ background: initialDataReadyRef.current });
+  }
+
   useEffect(() => {
     let mounted = true;
 
-    const handleSessionUser = (currentUser: User | null) => {
+    supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
+      const currentUser = data.session?.user ?? null;
+      setUser(currentUser);
+      setAuthLoading(false);
+      if (currentUser) requestDataLoadForUser(currentUser);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      const currentUser = session?.user ?? null;
       setUser(currentUser);
       setAuthLoading(false);
 
       if (currentUser) {
-        if (loadedUserIdRef.current !== currentUser.id) {
-          loadedUserIdRef.current = currentUser.id;
-          void loadCustomersFromDb({ blockScreen: true });
+        if (event === "SIGNED_IN" || event === "INITIAL_SESSION" || loadedUserIdRef.current !== currentUser.id) {
+          requestDataLoadForUser(currentUser);
         }
         return;
       }
 
       loadedUserIdRef.current = null;
-      initialDataLoadedRef.current = false;
-      dataLoadInFlightRef.current = false;
+      initialDataReadyRef.current = false;
+      setInitialDataReady(false);
       setDataLoading(false);
       setCustomers([]);
       setSelected(EMPTY_CUSTOMER);
@@ -669,15 +707,11 @@ export default function Home() {
       setMaintenanceReportsByCustomer({});
       setDocumentsByCustomer({});
       setWorkChecklistsByCustomer({});
+      setDetailDataLoadedByCustomer({});
+      setDetailDataLoadingByCustomer({});
+      detailDataLoadedRef.current = {};
+      detailDataLoadingRef.current = {};
       setWorkChecklist(EMPTY_WORK_CHECKLIST);
-    };
-
-    supabase.auth.getSession().then(({ data }) => {
-      handleSessionUser(data.session?.user ?? null);
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      handleSessionUser(session?.user ?? null);
     });
 
     return () => {
@@ -715,6 +749,7 @@ export default function Home() {
     setScheduleAppointmentType(normalizeAppointmentType(draft?.scheduleAppointmentType || customerToOpen.appointmentType));
     setWorkReport(emptyWorkReport(customerToOpen));
     setWorkChecklist(effectiveChecklistFor(customerToOpen));
+    if (customerToOpen.id) void loadCustomerDetailData([customerToOpen.id]);
     setEditCustomer(draft?.editCustomer ?? false);
     setAllowWorkResourceEdit(draft?.allowWorkResourceEdit ?? false);
     navigateToView(v);
@@ -1008,49 +1043,176 @@ export default function Home() {
     setNewProductInstallPrice(String(DEFAULT_INSTALL_PRICE));
   }
 
-  async function loadCustomersFromDb(options: { blockScreen?: boolean } = {}) {
-    if (dataLoadInFlightRef.current) return;
+  function customerWithDetailDocuments(customer: Customer, docs: DocumentRecord[]) {
+    const type = normalizeAppointmentType(customer.appointmentType);
+    const quoteSentAt = documentTimestamp(docs, "quote_email") || customer.quoteSentAt;
+    const appointmentEmailAt = documentTimestamp(docs, appointmentEmailDocumentType(type));
+    const appointmentBookedAt = documentTimestamp(docs, appointmentBookedDocumentType(type));
+    const lastCalledAt = documentTimestamp(docs, "phone_call") || customer.lastCalledAt;
 
-    dataLoadInFlightRef.current = true;
-    const shouldBlockScreen = options.blockScreen ?? !initialDataLoadedRef.current;
+    return {
+      ...customer,
+      lastCalledAt,
+      quoteSentAt,
+      appointmentBookedAt: appointmentBookedAt || customer.appointmentBookedAt || appointmentEmailAt,
+      appointmentUpdatedAt: appointmentEmailAt || customer.appointmentUpdatedAt,
+    };
+  }
 
-    if (shouldBlockScreen) setDataLoading(true);
-    setMessage("");
+  function replaceLoadedDetailIds(ids: string[]) {
+    const donePatch = Object.fromEntries(ids.map((id) => [id, true]));
+    const loadingPatch = Object.fromEntries(ids.map((id) => [id, false]));
+    detailDataLoadedRef.current = { ...detailDataLoadedRef.current, ...donePatch };
+    detailDataLoadingRef.current = { ...detailDataLoadingRef.current, ...loadingPatch };
+    setDetailDataLoadedByCustomer((prev) => ({ ...prev, ...donePatch }));
+    setDetailDataLoadingByCustomer((prev) => ({ ...prev, ...loadingPatch }));
+  }
+
+  async function loadCustomerDetailData(customerIds: string[], options: { force?: boolean } = {}) {
+    if (!user) return;
+
+    const uniqueIds = Array.from(new Set(customerIds.filter(Boolean)));
+    const idsToLoad = options.force
+      ? uniqueIds
+      : uniqueIds.filter((id) => !detailDataLoadedRef.current[id] && !detailDataLoadingRef.current[id]);
+
+    if (!idsToLoad.length) return;
+
+    const loadingPatch = Object.fromEntries(idsToLoad.map((id) => [id, true]));
+    detailDataLoadingRef.current = { ...detailDataLoadingRef.current, ...loadingPatch };
+    setDetailDataLoadingByCustomer((prev) => ({ ...prev, ...loadingPatch }));
 
     try {
-      const loadedProducts = await loadProductsFromDb();
-      const [
-        _inventoryResult,
-        customerResult,
-        quoteResult,
-        itemResult,
-        jobResult,
-        workReportResult,
-        documentResult,
-        checklistResult,
-      ] = await Promise.all([
-        loadInventoryFromDb(loadedProducts),
+      const [workReportResult, documentResult, checklistResult] = await Promise.all([
+        supabase.from("work_reports").select("*").in("customer_id", idsToLoad).order("created_at", { ascending: false }),
+        supabase.from("documents").select("*").in("customer_id", idsToLoad).order("created_at", { ascending: false }),
+        supabase.from("work_checklists").select("*").in("customer_id", idsToLoad),
+      ]);
+
+      if (workReportResult.error) console.warn("work_reports részletes betöltési hiba", workReportResult.error.message);
+      if (documentResult.error) console.warn("documents részletes betöltési hiba", documentResult.error.message);
+      if (checklistResult.error) console.warn("work_checklists részletes betöltési hiba", checklistResult.error.message);
+
+      const idSet = new Set(idsToLoad);
+      const loadedReportsByKey: Record<string, WorkReport> = {};
+      const loadedMaintenanceReports: Record<string, WorkReport[]> = Object.fromEntries(idsToLoad.map((id) => [id, [] as WorkReport[]]));
+      const loadedDocuments: Record<string, DocumentRecord[]> = Object.fromEntries(idsToLoad.map((id) => [id, [] as DocumentRecord[]]));
+      const loadedChecklists: Record<string, WorkChecklistState> = {};
+
+      (workReportResult.data || []).forEach((row: any) => {
+        if (!row.customer_id || !idSet.has(row.customer_id)) return;
+        const report = workReportFromRow(row);
+        if (normalizeAppointmentType(report.appointmentType) === "maintenance") {
+          loadedMaintenanceReports[row.customer_id] = [...(loadedMaintenanceReports[row.customer_id] || []), report];
+          return;
+        }
+        loadedReportsByKey[workReportKeyFromReport(report, row.customer_id)] = report;
+      });
+
+      Object.keys(loadedMaintenanceReports).forEach((customerId) => {
+        loadedMaintenanceReports[customerId] = loadedMaintenanceReports[customerId].sort(compareWorkReportsDesc);
+      });
+
+      (documentResult.data || []).forEach((row: any) => {
+        if (!row.customer_id || !idSet.has(row.customer_id)) return;
+        loadedDocuments[row.customer_id] = [...(loadedDocuments[row.customer_id] || []), documentFromRow(row)];
+      });
+
+      (checklistResult.data || []).forEach((row: any) => {
+        if (!row.customer_id || !idSet.has(row.customer_id)) return;
+        loadedChecklists[row.customer_id] = workChecklistFromRow(row);
+      });
+
+      setWorkReportsByCustomer((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((key) => {
+          if (next[key]?.customerId && idSet.has(next[key].customerId as string)) delete next[key];
+        });
+        return { ...next, ...loadedReportsByKey };
+      });
+
+      setMaintenanceReportsByCustomer((prev) => {
+        const next = { ...prev };
+        idsToLoad.forEach((id) => {
+          next[id] = loadedMaintenanceReports[id] || [];
+        });
+        return next;
+      });
+
+      setDocumentsByCustomer((prev) => {
+        const next = { ...prev };
+        idsToLoad.forEach((id) => {
+          next[id] = loadedDocuments[id] || [];
+        });
+        return next;
+      });
+
+      setWorkChecklistsByCustomer((prev) => {
+        const next = { ...prev };
+        idsToLoad.forEach((id) => {
+          next[id] = loadedChecklists[id] || EMPTY_WORK_CHECKLIST;
+        });
+        return next;
+      });
+
+      setCustomers((prev) => prev.map((customer) => (
+        idSet.has(customer.id) ? customerWithDetailDocuments(customer, loadedDocuments[customer.id] || []) : customer
+      )));
+      setSelected((prev) => (
+        prev.id && idSet.has(prev.id) ? customerWithDetailDocuments(prev, loadedDocuments[prev.id] || []) : prev
+      ));
+
+      replaceLoadedDetailIds(idsToLoad);
+    } catch (error: any) {
+      console.warn("Részletes ügyféladatok betöltési hiba", error?.message || error);
+      const failedPatch = Object.fromEntries(idsToLoad.map((id) => [id, false]));
+      detailDataLoadingRef.current = { ...detailDataLoadingRef.current, ...failedPatch };
+      setDetailDataLoadingByCustomer((prev) => ({ ...prev, ...failedPatch }));
+    }
+  }
+
+  async function refreshVisibleDocumentData() {
+    await loadCustomersFromDb({ background: true });
+    await loadCustomerDetailData(visibleDocumentCustomersForLoad.map((customer) => customer.id), { force: true });
+  }
+
+  async function loadCustomersFromDb(options: { background?: boolean } = {}) {
+    if (loadCustomersPromiseRef.current) return loadCustomersPromiseRef.current;
+
+    const loadPromise = (async () => {
+      setDataLoading(true);
+      if (!options.background) setMessage("");
+
+      const loadedProductsPromise = loadProductsFromDb();
+      const dataPromise = Promise.all([
         supabase.from("customers").select("*").order("created_at", { ascending: false }),
         supabase.from("quotes").select("*").order("created_at", { ascending: false }),
         supabase.from("quote_items").select("*"),
         supabase.from("jobs").select("*").order("created_at", { ascending: false }),
-        supabase.from("work_reports").select("*").order("created_at", { ascending: false }),
-        supabase.from("documents").select("*").order("created_at", { ascending: false }),
-        supabase.from("work_checklists").select("*"),
       ]);
 
+      const loadedProducts = await loadedProductsPromise;
+      void loadInventoryFromDb(loadedProducts);
+
+      const [
+        customerResult,
+        quoteResult,
+        itemResult,
+        jobResult,
+      ] = await dataPromise;
+
       const { data: customerRows, error: customerError } = customerResult;
-      const { data: quoteRows } = quoteResult;
-      const { data: itemRows } = itemResult;
-      const { data: jobRows } = jobResult;
-      const { data: workReportRows } = workReportResult;
-      const { data: documentRows } = documentResult;
-      const { data: checklistRows } = checklistResult;
 
       if (customerError) {
         setMessage(`Nem sikerült betölteni az ügyfeleket: ${customerError.message}`);
+        initialDataReadyRef.current = true;
+        setInitialDataReady(true);
         return;
       }
+
+      const quoteRows = quoteResult.data || [];
+      const itemRows = itemResult.data || [];
+      const jobRows = jobResult.data || [];
 
     const quotesByCustomer = new Map<string, any>();
     (quoteRows || []).forEach((quote: any) => {
@@ -1069,48 +1231,16 @@ export default function Home() {
       if (!jobsByCustomer.has(job.customer_id)) jobsByCustomer.set(job.customer_id, job);
     });
 
-    const workReportsMap: Record<string, WorkReport> = {};
-    const maintenanceReportsMap: Record<string, WorkReport[]> = {};
-    (workReportRows || []).forEach((row: any) => {
-      if (!row.customer_id) return;
-      const report = workReportFromRow(row);
-      if (normalizeAppointmentType(report.appointmentType) === "maintenance") {
-        const current = maintenanceReportsMap[row.customer_id] || [];
-        current.push(report);
-        maintenanceReportsMap[row.customer_id] = current;
-        return;
-      }
-      workReportsMap[workReportKeyFromReport(report, row.customer_id)] = report;
-    });
-    Object.keys(maintenanceReportsMap).forEach((customerId) => {
-      maintenanceReportsMap[customerId] = maintenanceReportsMap[customerId].sort(compareWorkReportsDesc);
-    });
-
-    const documentsMap: Record<string, DocumentRecord[]> = {};
-    (documentRows || []).forEach((row: any) => {
-      if (!row.customer_id) return;
-      const current = documentsMap[row.customer_id] || [];
-      current.push(documentFromRow(row));
-      documentsMap[row.customer_id] = current;
-    });
-
-    const checklistsMap: Record<string, WorkChecklistState> = {};
-    (checklistRows || []).forEach((row: any) => {
-      if (!row.customer_id) return;
-      checklistsMap[row.customer_id] = workChecklistFromRow(row);
-    });
 
     const loadedCustomers: Customer[] = sortCustomersByCreatedAtDesc((customerRows || []).map((row: any) => {
       const quote = quotesByCustomer.get(row.id);
       const job = jobsByCustomer.get(row.id);
-      const docs = documentsMap[row.id] || [];
+      const existingDocs = documentsByCustomer[row.id] || [];
       const loadedAppointmentType = normalizeAppointmentType(job?.appointment_type);
-      const quoteSentAt = documentTimestamp(docs, "quote_email") || quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
-      const appointmentEmailAt = documentTimestamp(docs, appointmentEmailDocumentType(loadedAppointmentType));
-      const appointmentBookedAt = documentTimestamp(docs, appointmentBookedDocumentType(loadedAppointmentType));
+      const quoteSentAt = quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
       const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
 
-      return {
+      const customer: Customer = {
         id: row.id,
         name: row.name || "",
         city: row.city || "",
@@ -1126,16 +1256,18 @@ export default function Home() {
         time: job?.scheduled_time || undefined,
         createdAt: row.created_at || undefined,
         updatedAt: row.updated_at || undefined,
-        lastCalledAt: documentTimestamp(docs, "phone_call"),
+        lastCalledAt: undefined,
         quoteSentAt,
-        appointmentBookedAt: appointmentBookedAt || job?.created_at || appointmentEmailAt,
-        appointmentUpdatedAt: job?.updated_at || appointmentEmailAt,
+        appointmentBookedAt: job?.created_at || quoteSentAt,
+        appointmentUpdatedAt: job?.updated_at || quoteSentAt,
         appointmentType: loadedAppointmentType,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
         stockDeducted: Boolean(row.stock_deducted),
       };
+
+      return existingDocs.length ? customerWithDetailDocuments(customer, existingDocs) : customer;
     }));
 
     const returnContext = readReturnContext();
@@ -1162,36 +1294,38 @@ export default function Home() {
     const nextQuoteItems = selectedFromDraft ? (customerDraft?.quoteItems || nextSelected.quoteItems) : nextSelected.quoteItems;
 
     setCustomers(loadedCustomers);
-    setWorkReportsByCustomer(workReportsMap);
-    setMaintenanceReportsByCustomer(maintenanceReportsMap);
-    setDocumentsByCustomer(documentsMap);
-    setWorkChecklistsByCustomer(checklistsMap);
     setSelected(nextSelected);
     setQuoteItems(nextQuoteItems);
-    setWorkChecklist(effectiveChecklistFor(nextSelected, workReportsMap, documentsMap, checklistsMap));
+    setWorkChecklist(effectiveChecklistFor(nextSelected));
+    initialDataReadyRef.current = true;
+    setInitialDataReady(true);
+    void loadCustomerDetailData([nextSelected.id, ...loadedCustomers.slice(0, LIST_PAGE_SIZE).map((customer) => customer.id)].filter(Boolean));
 
-      if (selectedFromReturn && returnContext) {
-        setScheduleDate(nextSelected.date || todayIso());
-        setScheduleTime(firstAppointmentTime(nextSelected.time));
-        setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
-        setWorkReport(emptyWorkReport(nextSelected));
-        setEditCustomer(false);
-        replaceView(returnContext.view);
-        if (typeof window !== "undefined") window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
-      } else if (customerDraft && selectedFromDraft) {
-        setScheduleDate(customerDraft.scheduleDate || nextSelected.date || todayIso());
-        setScheduleTime(customerDraft.scheduleTime || firstAppointmentTime(nextSelected.time));
-        setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
-        setEditCustomer(customerDraft.editCustomer);
-        setAllowWorkResourceEdit(customerDraft.allowWorkResourceEdit);
-        // Frissítés / újratöltés után ne vigyen vissza automatikusan egy belső oldalra.
-        // A folyamatban lévő szerkesztés megmarad, de a kezdőlap marad a kiindulópont.
-      }
-    } finally {
-      initialDataLoadedRef.current = true;
-      dataLoadInFlightRef.current = false;
-      if (shouldBlockScreen) setDataLoading(false);
+    if (selectedFromReturn && returnContext) {
+      setScheduleDate(nextSelected.date || todayIso());
+      setScheduleTime(firstAppointmentTime(nextSelected.time));
+      setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
+      setWorkReport(emptyWorkReport(nextSelected));
+      setEditCustomer(false);
+      replaceView(returnContext.view);
+      if (typeof window !== "undefined") window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
+    } else if (customerDraft && selectedFromDraft) {
+      setScheduleDate(customerDraft.scheduleDate || nextSelected.date || todayIso());
+      setScheduleTime(customerDraft.scheduleTime || firstAppointmentTime(nextSelected.time));
+      setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
+      setEditCustomer(customerDraft.editCustomer);
+      setAllowWorkResourceEdit(customerDraft.allowWorkResourceEdit);
+      // Frissítés / újratöltés után ne vigyen vissza automatikusan egy belső oldalra.
+      // A folyamatban lévő szerkesztés megmarad, de a kezdőlap marad a kiindulópont.
     }
+
+    })().finally(() => {
+      setDataLoading(false);
+      loadCustomersPromiseRef.current = null;
+    });
+
+    loadCustomersPromiseRef.current = loadPromise;
+    return loadPromise;
   }
 
   async function persistCustomerToDb(customer: Customer) {
@@ -2154,7 +2288,7 @@ export default function Home() {
     return <LoginScreen email={loginEmail} password={loginPassword} message={loginMessage} loading={loginBusy} onEmail={setLoginEmail} onPassword={setLoginPassword} onSubmit={handleLogin} />;
   }
 
-  if (dataLoading) {
+  if (dataLoading && !initialDataReady) {
     return <main className="min-h-screen bg-slate-950 p-8 text-slate-100"><div className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-slate-900/80 p-6 font-black">Adatok betöltése Supabase-ből...</div></main>;
   }
 
@@ -3339,8 +3473,8 @@ export default function Home() {
 
   if (view==="documents") {
     const documentCustomers = filteredCustomers;
-    const documentPagination = paginateItems(documentCustomers, documentPage);
-    const visibleDocumentCustomers = documentPagination.items;
+    const documentPagination = documentCustomerPagination;
+    const visibleDocumentCustomers = visibleDocumentCustomersForLoad;
     return (
       <Shell>
         <Back onClick={()=>goBack()}/>
@@ -3353,7 +3487,7 @@ export default function Home() {
                   <option value="all">Összes státusz</option>
                   {STATUS_OPTIONS.map((status)=><option key={status} value={status}>{status}</option>)}
                 </select>
-                <button onClick={() => void loadCustomersFromDb({ blockScreen: false })} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100">Frissítés</button>
+                <button type="button" onClick={() => void refreshVisibleDocumentData()} disabled={dataLoading} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 disabled:opacity-60">{dataLoading ? "Frissítés..." : "Frissítés"}</button>
               </div>
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">

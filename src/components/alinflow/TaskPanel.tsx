@@ -11,7 +11,7 @@ import { Back, Card, Layout, Shell } from "./LayoutPrimitives";
 
 export type TaskFilter = "today" | "tomorrow" | "closing" | "stock" | "callback" | "quotes";
 
-const TASK_PAGE_SIZE = 20;
+const TASK_PAGE_SIZE = 10;
 
 const TASK_TITLE_MAP: Record<TaskFilter, string> = {
   today: "Mai munkák",

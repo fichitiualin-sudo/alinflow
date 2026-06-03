@@ -15,7 +15,7 @@ function PanelCard({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
-const PANEL_PAGE_SIZE = 20;
+const PANEL_PAGE_SIZE = 10;
 
 function formatCustomerCreatedAt(value?: string) {
   if (!value) return "";

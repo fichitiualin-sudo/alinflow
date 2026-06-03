@@ -39,7 +39,7 @@ function productDevicePrice(product: ClimateProduct) {
   return Math.max(0, Number(product.price || 0) - Number(product.installPrice || 0));
 }
 
-const WAREHOUSE_PAGE_SIZE = 20;
+const WAREHOUSE_PAGE_SIZE = 10;
 
 function paginate<T>(items: T[], page: number) {
   const pageCount = Math.max(1, Math.ceil(items.length / WAREHOUSE_PAGE_SIZE));
