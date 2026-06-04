@@ -1,6 +1,6 @@
 import type { CalendarMode, Customer } from "./types";
-import { displayAddress, pad, todayIso } from "./format";
-import { climateSummary } from "./products";
+import { displayAddress, ft, pad, todayIso } from "./format";
+import { cleanQuoteItems, climateSummary, isQuoteAlternatives, itemName, itemQuantity, itemTotal, total } from "./products";
 import { appointmentDurationMinutes, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkSummary, firstAppointmentTime, isInstallationAppointment } from "./appointments";
 
 export function weekStart(d: Date) {
@@ -26,6 +26,23 @@ function compactCalendarDate(date: Date) {
   return `${y}${m}${d}T${h}${min}00`;
 }
 
+function calendarPriceSummary(customer: Customer) {
+  const items = cleanQuoteItems(customer.quoteItems || []);
+  if (!items.length) return "";
+
+  if (isQuoteAlternatives(customer.quotePricingMode)) {
+    return items
+      .map((item, index) => `${index + 1}. lehetőség: ${itemQuantity(item)} db ${itemName(item)} – ${ft(itemTotal(item))}`)
+      .join(" | ");
+  }
+
+  if (items.length === 1) {
+    return `${itemQuantity(items[0])} db ${itemName(items[0])}: ${ft(itemTotal(items[0]))}`;
+  }
+
+  return `Összesen: ${ft(total(items))}`;
+}
+
 function parseCalendarTime(value?: string) {
   const firstTime = firstAppointmentTime(value);
   const [hour, minute] = firstTime.split(":").map(Number);
@@ -45,11 +62,13 @@ export function googleCalendarHref(customer: Customer) {
   const isInstallation = isInstallationAppointment(customer.appointmentType);
   const workSummary = isInstallation ? climateSummary(customer.quoteItems) : appointmentWorkSummary(customer);
   const title = `${workLabel} – ${customer.name || "ügyfél"}`;
+  const priceSummary = isInstallation ? calendarPriceSummary(customer) : "";
   const details = [
     customer.name ? `Ügyfél: ${customer.name}` : "",
     customer.phone ? `Telefon: ${customer.phone}` : "",
     customer.email ? `Email: ${customer.email}` : "",
     isInstallation ? `Klíma: ${workSummary} – szereléssel együtt` : `Munka: ${workSummary}`,
+    priceSummary ? `Ár: ${priceSummary}` : "",
     customer.need ? `Igény: ${customer.need}` : "",
     customer.notes ? `Megjegyzés: ${customer.notes}` : "",
     `Időpont típusa: ${workLabel}`,

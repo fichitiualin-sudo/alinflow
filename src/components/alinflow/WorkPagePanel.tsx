@@ -43,6 +43,7 @@ type WorkPagePanelProps = {
   canEditWorkResources: boolean;
   quoteEmailBusy: boolean;
   appointmentEmailBusy: boolean;
+  thankYouEmailBusy: boolean;
   checklistItems: ChecklistItem[];
   currentWorkChecklist: WorkChecklistState;
   checklistReady: boolean;
@@ -78,6 +79,7 @@ type WorkPagePanelProps = {
   onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
   onSendQuoteEmail: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
+  onSendThankYouEmailFor: (customer: Customer) => void;
   onOpenWorkReport: () => void;
   onMarkInstallationDone: () => void;
   onCancelAppointment: () => void;
@@ -100,6 +102,7 @@ export function WorkPagePanel({
   canEditWorkResources,
   quoteEmailBusy,
   appointmentEmailBusy,
+  thankYouEmailBusy,
   checklistItems,
   currentWorkChecklist,
   checklistReady,
@@ -135,6 +138,7 @@ export function WorkPagePanel({
   onOpenWorkReportFor,
   onSendQuoteEmail,
   onSendAppointmentEmailFor,
+  onSendThankYouEmailFor,
   onOpenWorkReport,
   onMarkInstallationDone,
   onCancelAppointment,
@@ -298,10 +302,12 @@ export function WorkPagePanel({
                   row={row}
                   quoteEmailBusy={quoteEmailBusy}
                   appointmentEmailBusy={appointmentEmailBusy}
+                  thankYouEmailBusy={thankYouEmailBusy}
                   onOpenDocumentPreview={onOpenDocumentPreview}
                   onOpenWorkReportFor={onOpenWorkReportFor}
                   onSendQuoteEmail={onSendQuoteEmail}
                   onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+                  onSendThankYouEmailFor={onSendThankYouEmailFor}
                 />
               ))}
             </div>
@@ -311,10 +317,12 @@ export function WorkPagePanel({
               canStartMaintenance={canStartMaintenance}
               quoteEmailBusy={quoteEmailBusy}
               appointmentEmailBusy={appointmentEmailBusy}
+              thankYouEmailBusy={thankYouEmailBusy}
               onOpenDocumentPreview={onOpenDocumentPreview}
               onOpenWorkReportFor={onOpenWorkReportFor}
               onSendQuoteEmail={onSendQuoteEmail}
               onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+              onSendThankYouEmailFor={onSendThankYouEmailFor}
               onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
             />
             <CustomerTimeline items={timelineItems} />
@@ -369,19 +377,23 @@ function DocumentRowCard({
   row,
   quoteEmailBusy,
   appointmentEmailBusy,
+  thankYouEmailBusy,
   onOpenDocumentPreview,
   onOpenWorkReportFor,
   onSendQuoteEmail,
   onSendAppointmentEmailFor,
+  onSendThankYouEmailFor,
 }: {
   selected: Customer;
   row: DocumentRow;
   quoteEmailBusy: boolean;
   appointmentEmailBusy: boolean;
+  thankYouEmailBusy: boolean;
   onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
   onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
   onSendQuoteEmail: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
+  onSendThankYouEmailFor: (customer: Customer) => void;
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
@@ -401,6 +413,8 @@ function DocumentRowCard({
         onSendAppointment={onSendAppointmentEmailFor}
         quoteEmailBusy={quoteEmailBusy}
         appointmentEmailBusy={appointmentEmailBusy}
+        thankYouEmailBusy={thankYouEmailBusy}
+        onSendThankYou={onSendThankYouEmailFor}
       />
     </div>
   );
@@ -412,10 +426,12 @@ function MaintenanceHistory({
   canStartMaintenance,
   quoteEmailBusy,
   appointmentEmailBusy,
+  thankYouEmailBusy,
   onOpenDocumentPreview,
   onOpenWorkReportFor,
   onSendQuoteEmail,
   onSendAppointmentEmailFor,
+  onSendThankYouEmailFor,
   onStartMaintenanceForCustomer,
 }: {
   selected: Customer;
@@ -423,10 +439,12 @@ function MaintenanceHistory({
   canStartMaintenance: boolean;
   quoteEmailBusy: boolean;
   appointmentEmailBusy: boolean;
+  thankYouEmailBusy: boolean;
   onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
   onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
   onSendQuoteEmail: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
+  onSendThankYouEmailFor: (customer: Customer) => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
 }) {
   if (!rows.length && !canStartMaintenance) return null;
@@ -480,10 +498,12 @@ function MaintenanceHistory({
                 row={row}
                 quoteEmailBusy={quoteEmailBusy}
                 appointmentEmailBusy={appointmentEmailBusy}
+                thankYouEmailBusy={thankYouEmailBusy}
                 onOpenDocumentPreview={onOpenDocumentPreview}
                 onOpenWorkReportFor={onOpenWorkReportFor}
                 onSendQuoteEmail={onSendQuoteEmail}
                 onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+                onSendThankYouEmailFor={onSendThankYouEmailFor}
               />
             ))}
           </div>

@@ -374,6 +374,7 @@ export default function Home() {
   const [loginMessage,setLoginMessage] = useState("");
   const [quoteEmailBusy,setQuoteEmailBusy] = useState(false);
   const [appointmentEmailBusy,setAppointmentEmailBusy] = useState(false);
+  const [thankYouEmailBusy,setThankYouEmailBusy] = useState(false);
   const [sendAppointmentNotice,setSendAppointmentNotice] = useState(true);
   const [workReport,setWorkReport] = useState<WorkReport>(emptyWorkReport());
   const [workReportsByCustomer,setWorkReportsByCustomer] = useState<Record<string, WorkReport>>({});
@@ -2478,6 +2479,52 @@ export default function Home() {
   }
 
 
+  async function sendThankYouEmailFor(customer: Customer = selected) {
+    const targetCustomer = {
+      ...customer,
+      quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems,
+      appointmentType: "installation" as AppointmentType,
+    };
+
+    if (!targetCustomer.email?.trim()) {
+      setMessage("A köszönő email elküldéséhez előbb add meg az ügyfél email címét.");
+      return false;
+    }
+
+    const installationDone = targetCustomer.status === "Szerelés kész – admin folyamatban" || targetCustomer.status === "Lezárva" || Boolean(targetCustomer.stockDeducted) || Boolean(savedReportFor(targetCustomer, "installation")?.id);
+    if (!installationDone) {
+      setMessage("A köszönő emailt a telepítés után érdemes elküldeni.");
+      return false;
+    }
+
+    setThankYouEmailBusy(true);
+    setMessage("Köszönő email küldése folyamatban...");
+
+    try {
+      const response = await fetch("/api/send-thank-you", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(quotePayload(targetCustomer, targetCustomer.quoteItems || quoteItems)),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Nem sikerült elküldeni a köszönő emailt.");
+      }
+
+      const sentAt = new Date().toISOString();
+      await logDocument(targetCustomer, "thank_you_email", "Köszönő email", "Elküldve", sentAt);
+      setMessage("Köszönő email elküldve ✅");
+      return true;
+    } catch (error: any) {
+      setMessage(`Köszönő email küldési hiba: ${error.message}`);
+      return false;
+    } finally {
+      setThankYouEmailBusy(false);
+    }
+  }
+
+
   function workReportPayload(report: WorkReport = workReport, customer: Customer = selected) {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
     return {
@@ -2911,7 +2958,9 @@ export default function Home() {
     const quoteBaseStatus = quoteDoc?.status || (customer.status === "Ajánlat elküldve" ? "Elküldve" : "Nincs elküldve");
     const quoteDisplayStatus = quoteBaseStatus.includes("Elküld") && quoteSentAt ? `${quoteBaseStatus} · ${formatQuoteSentAt(quoteSentAt)}` : quoteBaseStatus;
 
-    return [
+    const installationDone = customer.status === "Szerelés kész – admin folyamatban" || customer.status === "Lezárva" || Boolean(customer.stockDeducted) || Boolean(savedReportFor(customer, "installation")?.id);
+
+    const rows: PageDocumentRow[] = [
       { title: "Ajánlat email", status: quoteDisplayStatus, action: "Ajánlat", appointmentType: "installation" as AppointmentType },
       {
         title: "Szerelési időpont-visszaigazolás",
@@ -2920,9 +2969,23 @@ export default function Home() {
         appointmentType: "installation" as AppointmentType,
       },
       { title: "Munkalap és vásárlási nyilatkozat", status: workAndDeclarationStatus(customer, "installation"), action: "MunkalapNyilatkozat", appointmentType: "installation" as AppointmentType },
+    ];
+
+    if (installationDone) {
+      rows.push({
+        title: "Köszönő email",
+        status: docStatus(customer, "thank_you_email", "Nem küldve"),
+        action: "KoszonoEmail",
+        appointmentType: "installation" as AppointmentType,
+      });
+    }
+
+    rows.push(
       { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
       { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
-    ];
+    );
+
+    return rows;
   }
 
   function maintenanceDocumentRowsFor(customer: Customer, includeBundle = false): PageDocumentRow[] {
@@ -3642,6 +3705,7 @@ export default function Home() {
         canEditWorkResources={canEditWorkResources}
         quoteEmailBusy={quoteEmailBusy}
         appointmentEmailBusy={appointmentEmailBusy}
+        thankYouEmailBusy={thankYouEmailBusy}
         checklistItems={checklistItems}
         currentWorkChecklist={currentWorkChecklist}
         checklistReady={checklistReady}
@@ -3677,6 +3741,7 @@ export default function Home() {
         onOpenWorkReportFor={openWorkReportFor}
         onSendQuoteEmail={sendQuoteEmail}
         onSendAppointmentEmailFor={sendAppointmentEmailFor}
+        onSendThankYouEmailFor={sendThankYouEmailFor}
         onOpenWorkReport={openWorkReport}
         onMarkInstallationDone={markInstallationDone}
         onCancelAppointment={cancelAppointment}

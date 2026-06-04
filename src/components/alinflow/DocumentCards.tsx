@@ -80,7 +80,9 @@ export function DocumentActionButtons({
   onEditWorkReport,
   onSendQuote,
   onSendAppointment,
+  onSendThankYou,
   quoteEmailBusy,
+  thankYouEmailBusy,
   appointmentEmailBusy,
 }: {
   customer: Customer;
@@ -89,7 +91,9 @@ export function DocumentActionButtons({
   onEditWorkReport: (customer: Customer) => void;
   onSendQuote: () => void;
   onSendAppointment: (customer: Customer) => void;
+  onSendThankYou?: (customer: Customer) => void;
   quoteEmailBusy: boolean;
+  thankYouEmailBusy?: boolean;
   appointmentEmailBusy: boolean;
 }) {
   const actionCustomer = actionCustomerFor(customer, row);
@@ -98,6 +102,7 @@ export function DocumentActionButtons({
   const sendButton = `${baseButton} bg-blue-400/20 text-blue-100 hover:bg-blue-400/30`;
   const editButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
   const helperButton = `${baseButton} bg-cyan-300/15 text-cyan-100 hover:bg-cyan-300/25`;
+  const thankButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
   const gridClass = "mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2";
 
   if (row.action === "MunkalapNyilatkozat") {
@@ -131,6 +136,9 @@ export function DocumentActionButtons({
   }
   if (row.action === "Időpont") {
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className={viewButton}>Megtekintés</button><button onClick={() => onSendAppointment(actionCustomer)} disabled={appointmentEmailBusy} className={helperButton}>{appointmentEmailBusy ? "Küldés..." : "Email"}</button></div>;
+  }
+  if (row.action === "KoszonoEmail") {
+    return <button onClick={() => onSendThankYou?.(actionCustomer)} disabled={thankYouEmailBusy} className={`mt-3 w-full ${thankButton}`}>{thankYouEmailBusy ? "Küldés..." : "Köszönő email küldése"}</button>;
   }
   return null;
 }
