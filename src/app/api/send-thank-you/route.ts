@@ -14,7 +14,6 @@ type Customer = {
 type QuoteItem = {
   name?: string;
   quantity?: number;
-  totalPrice?: number;
 };
 
 function safeText(value: unknown) {
@@ -28,12 +27,6 @@ function escapeHtml(value: unknown) {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#039;");
-}
-
-function ft(value: unknown) {
-  const numberValue = Number(value || 0);
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return "";
-  return `${numberValue.toLocaleString("hu-HU")} Ft`;
 }
 
 function uniqueEmailRef(prefix: string) {
@@ -61,6 +54,13 @@ function fullAddress(cityValue?: string, addressValue?: string, fallback = "ninc
   return address || location || fallback;
 }
 
+const DEFAULT_GOOGLE_REVIEW_URL = "https://g.page/r/CaTB2608T1bZEBM/review";
+const DEFAULT_FACEBOOK_REVIEW_URL = "https://www.facebook.com/100094506956317/reviews/";
+
+function reviewUrl(envName: string, fallback: string) {
+  return safeText(process.env[envName]) || fallback;
+}
+
 function itemLines(items: QuoteItem[]) {
   if (!items.length) {
     return `<li style="margin:8px 0"><strong>Klímaberendezés telepítése</strong></li>`;
@@ -68,16 +68,16 @@ function itemLines(items: QuoteItem[]) {
 
   return items.map((item) => {
     const quantity = Number(item.quantity || 1);
-    const price = ft(item.totalPrice);
-    return `<li style="margin:8px 0"><strong>${quantity} db ${escapeHtml(item.name || "Klímaberendezés")}</strong>${price ? ` <span style="color:#64748b">– ${escapeHtml(price)}</span>` : ""}</li>`;
+    return `<li style="margin:8px 0"><strong>${quantity} db ${escapeHtml(item.name || "Klímaberendezés")}</strong></li>`;
   }).join("");
 }
 
-function thankYouEmailHtml(customer: Customer, items: QuoteItem[], totalAmount?: number) {
+function thankYouEmailHtml(customer: Customer, items: QuoteItem[]) {
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const address = escapeHtml(fullAddress(customer.city, customer.address, "", customer.postalCode));
   const installationDate = escapeHtml(formatDate(customer.date));
-  const total = ft(totalAmount);
+  const googleReviewUrl = escapeHtml(reviewUrl("KLIMALIN_GOOGLE_REVIEW_URL", DEFAULT_GOOGLE_REVIEW_URL));
+  const facebookReviewUrl = escapeHtml(reviewUrl("KLIMALIN_FACEBOOK_REVIEW_URL", DEFAULT_FACEBOOK_REVIEW_URL));
 
   return `<!doctype html>
 <html lang="hu">
@@ -110,7 +110,6 @@ function thankYouEmailHtml(customer: Customer, items: QuoteItem[], totalAmount?:
             <div style="font-size:14px;color:#64748b;margin-bottom:8px">Telepítés adatai</div>
             ${installationDate ? `<div style="font-size:15px;line-height:1.6;color:#111827"><strong>Dátum:</strong> ${installationDate}</div>` : ""}
             ${address ? `<div style="font-size:15px;line-height:1.6;color:#111827"><strong>Helyszín:</strong> ${address}</div>` : ""}
-            ${total ? `<div style="font-size:15px;line-height:1.6;color:#111827"><strong>Összeg:</strong> ${escapeHtml(total)}</div>` : ""}
           </div>
 
           <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;padding:18px 20px;margin-bottom:18px">
@@ -123,6 +122,15 @@ function thankYouEmailHtml(customer: Customer, items: QuoteItem[], totalAmount?:
           <div style="background:#ecfeff;border-radius:18px;padding:18px 20px;margin-bottom:18px;color:#334155;font-size:15px;line-height:1.65">
             <strong style="color:#020617">Garancia és karbantartás</strong><br>
             A garancia megőrzéséhez javasolt évente legalább egy karbantartást elvégezni. A karbantartási munkalapokat rendszerünkben dátum szerint megőrizzük, így szükség esetén később is visszakereshetők.
+          </div>
+
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:18px 20px;margin-bottom:18px;color:#334155;font-size:15px;line-height:1.65">
+            <strong style="color:#020617">Értékelnének minket?</strong><br>
+            Nagyon sokat jelent számunkra, ha pár mondatban megírják a tapasztalatukat. Ezzel másoknak is segítenek a döntésben.
+            <div style="margin-top:14px;display:block">
+              <a href="${googleReviewUrl}" style="display:inline-block;margin:0 8px 8px 0;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 16px;font-weight:800;font-size:14px">Google értékelés</a>
+              <a href="${facebookReviewUrl}" style="display:inline-block;margin:0 0 8px 0;background:#1877f2;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 16px;font-weight:800;font-size:14px">Facebook értékelés</a>
+            </div>
           </div>
 
           <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:22px;color:#334155;font-size:15px;line-height:1.65">
@@ -149,7 +157,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const customer: Customer = body.customer || {};
     const items: QuoteItem[] = Array.isArray(body.items) ? body.items : [];
-    const totalAmount = Number(body.totalAmount || 0);
     const to = safeText(customer.email);
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
@@ -168,7 +175,7 @@ export async function POST(request: Request) {
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("klimalin-thank-you"),
         },
-        html: thankYouEmailHtml(customer, items, Number.isFinite(totalAmount) ? totalAmount : undefined),
+        html: thankYouEmailHtml(customer, items),
       }),
     });
 
