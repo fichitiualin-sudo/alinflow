@@ -133,14 +133,19 @@ export type LeadImportCandidate = {
   mergedRows?: number;
 };
 
-export type WorkChecklistState = {
-  worksheet: boolean;
-  signature: boolean;
-  purchaseDeclaration: boolean;
-  alinInvoice: boolean;
-  amovaInvoice: boolean;
-  nkvh: boolean;
-  docsSent: boolean;
+export type WorkChecklistItemKey =
+  | "worksheet"
+  | "signature"
+  | "purchaseDeclaration"
+  | "alinInvoice"
+  | "amovaInvoice"
+  | "nkvh"
+  | "docsSent";
+
+export type WorkChecklistCompletedAt = Partial<Record<WorkChecklistItemKey, string>>;
+
+export type WorkChecklistState = Record<WorkChecklistItemKey, boolean> & {
+  completedAt?: WorkChecklistCompletedAt;
 };
 
 export type ReturnContext = {

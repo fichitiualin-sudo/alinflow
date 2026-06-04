@@ -1,10 +1,9 @@
 "use client";
 
-import type { AppointmentType, Customer, CustomerTimelineItem, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistState } from "@/lib/alinflow/types";
-import { Btn, Card, Field, Gradient,  Layout, Main, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
+import { Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
-import { CustomerTimeline } from "@/components/alinflow/CustomerTimeline";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
   hasCustomProductPrice,
@@ -25,8 +24,17 @@ type MaterialItem = {
   isExtra?: boolean;
 };
 
-type ChecklistItem = { key: keyof WorkChecklistState; label: string };
+type ChecklistItem = { key: WorkChecklistItemKey; label: string };
 type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string };
+type WorkActionDates = {
+  appointmentEmail?: string;
+  workReport?: string;
+  workDone?: string;
+  surveyDone?: string;
+  maintenanceDone?: string;
+  fullClose?: string;
+  cancelled?: string;
+};
 
 type WorkPagePanelProps = {
   selected: Customer;
@@ -46,11 +54,12 @@ type WorkPagePanelProps = {
   thankYouEmailBusy: boolean;
   checklistItems: ChecklistItem[];
   currentWorkChecklist: WorkChecklistState;
+  checklistDates: WorkChecklistCompletedAt;
+  actionDates: WorkActionDates;
   checklistReady: boolean;
   missingChecklist: string[];
   documentRows: DocumentRow[];
   maintenanceRows: DocumentRow[];
-  timelineItems: CustomerTimelineItem[];
   onBack: () => void;
   onCloseWork: () => void;
   onRememberExternalCustomer: (customer: Customer, returnView?: View) => void;
@@ -84,7 +93,7 @@ type WorkPagePanelProps = {
   onMarkInstallationDone: () => void;
   onCancelAppointment: () => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
-  onToggleChecklist: (key: keyof WorkChecklistState) => void;
+  onToggleChecklist: (key: WorkChecklistItemKey) => void;
 };
 
 export function WorkPagePanel({
@@ -105,11 +114,12 @@ export function WorkPagePanel({
   thankYouEmailBusy,
   checklistItems,
   currentWorkChecklist,
+  checklistDates,
+  actionDates,
   checklistReady,
   missingChecklist,
   documentRows,
   maintenanceRows,
-  timelineItems,
   onBack,
   onCloseWork,
   onRememberExternalCustomer,
@@ -325,41 +335,56 @@ export function WorkPagePanel({
               onSendThankYouEmailFor={onSendThankYouEmailFor}
               onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
             />
-            <CustomerTimeline items={timelineItems} />
           </Card>
 
           <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
             <div className="space-y-3">
-              {canStartMaintenance ? <StepButton color="green" onClick={() => onStartMaintenanceForCustomer(selected)}>{isMaintenance ? "Új karbantartási időpont" : "Karbantartási időpont"}</StepButton> : null}
-              {isSurvey ? null : <StepButton color="cyan" onClick={onOpenWorkReport}>{isMaintenance ? "Karbantartási munkalap és aláírás" : "Munkalap és egyszerű aláírás"}</StepButton>}
-              <StepButton color="blue" onClick={() => onSendAppointmentEmailFor(selected)}>{appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}</StepButton>
-              {isSurvey ? (
-                <StepButton color="green" onClick={onMarkInstallationDone}>Felmérés kész – árajánlat készítése</StepButton>
-              ) : isMaintenance ? (
-                selected.status !== "Lezárva" ? <StepButton color="green" onClick={onMarkInstallationDone}>Karbantartás lezárása</StepButton> : null
-              ) : (
-                <StepButton color="amber" onClick={onMarkInstallationDone}>{appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban</StepButton>
+              {isSurvey ? null : (
+                <ActionButton
+                  color="cyan"
+                  onClick={onOpenWorkReport}
+                  label={isMaintenance ? "Karbantartási munkalap és aláírás" : "Munkalap és egyszerű aláírás"}
+                  doneAt={actionDates.workReport}
+                />
               )}
-              {isInstallation ? <StepButton color="green" onClick={onCloseWork}>Teljes lezárás</StepButton> : null}
-              {selected.status !== "Lezárva" ? <button onClick={onCancelAppointment} className="group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-red-500 to-rose-500 px-5 py-4 text-left font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
-                <span>{isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"}</span>
-                <span className="rounded-full bg-black/10 px-3 py-1 text-sm">×</span>
-              </button> : null}
+              <ActionButton
+                color="blue"
+                onClick={() => onSendAppointmentEmailFor(selected)}
+                label={appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}
+                doneAt={actionDates.appointmentEmail}
+              />
+              {isSurvey ? (
+                <ActionButton color="green" onClick={onMarkInstallationDone} label="Felmérés kész – árajánlat készítése" doneAt={actionDates.surveyDone} />
+              ) : isMaintenance ? (
+                selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null
+              ) : (
+                <ActionButton color="amber" onClick={onMarkInstallationDone} label={`${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban`} doneAt={actionDates.workDone} />
+              )}
+              {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
+              {selected.status !== "Lezárva" ? <ActionButton color="red" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} icon="×" /> : null}
             </div>
           </Card>
 
           {isInstallation ? <Card title="Lezárási ellenőrzőlista">
             <div className="space-y-3">
-              {checklistItems.map((item) => (
-                <button
-                  key={item.key}
-                  onClick={() => onToggleChecklist(item.key)}
-                  className={`w-full rounded-2xl p-4 text-left font-black transition ${currentWorkChecklist[item.key] ? "border border-emerald-300/30 bg-emerald-400/20 text-emerald-200" : "border border-white/10 bg-slate-900/80 text-slate-200"}`}
-                >
-                  <span className="mr-3">{currentWorkChecklist[item.key] ? "✓" : "○"}</span>
-                  {item.label}
-                </button>
-              ))}
+              {checklistItems.map((item) => {
+                const doneAt = currentWorkChecklist[item.key] ? checklistDates[item.key] : undefined;
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => onToggleChecklist(item.key)}
+                    className={`w-full rounded-2xl p-4 text-left font-black transition ${currentWorkChecklist[item.key] ? "border border-emerald-300/30 bg-emerald-400/20 text-emerald-200" : "border border-white/10 bg-slate-900/80 text-slate-200"}`}
+                  >
+                    <span className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="mr-3">{currentWorkChecklist[item.key] ? "✓" : "○"}</span>
+                        {item.label}
+                      </span>
+                      {doneAt ? <span className="shrink-0 text-right text-xs font-black text-emerald-100/80">{formatDoneAt(doneAt)}</span> : null}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <div className={`mt-4 rounded-2xl p-4 font-black ${checklistReady ? "bg-emerald-400/20 text-emerald-200" : "bg-amber-400/20 text-amber-200"}`}>
               {checklistReady ? "Teljes lezárás engedélyezve ✅" : `Admin hiányos: ${missingChecklist.length} tétel`}
@@ -371,6 +396,56 @@ export function WorkPagePanel({
   );
 }
 
+
+
+function formatDoneAt(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("hu-HU", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function ActionButton({
+  label,
+  doneAt,
+  color = "cyan",
+  icon = "→",
+  onClick,
+}: {
+  label: string;
+  doneAt?: string;
+  color?: "cyan" | "green" | "blue" | "amber" | "red";
+  icon?: string;
+  onClick?: () => void;
+}) {
+  const colorClass = {
+    cyan: "from-cyan-300 to-sky-400 text-slate-950 shadow-cyan-500/20",
+    green: "from-emerald-400 to-green-500 text-slate-950 shadow-emerald-500/20",
+    blue: "from-blue-400 to-indigo-500 text-white shadow-blue-500/20",
+    amber: "from-amber-300 to-orange-400 text-slate-950 shadow-amber-500/20",
+    red: "from-red-500 to-rose-500 text-white shadow-red-500/20",
+  }[color];
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]`}
+    >
+      <span className="min-w-0">
+        <span className="block leading-tight">{label}</span>
+        {doneAt ? <span className="mt-1 block text-xs font-black opacity-75">{formatDoneAt(doneAt)}</span> : null}
+      </span>
+      <span className="shrink-0 rounded-full bg-black/10 px-3 py-1 text-sm transition group-hover:translate-x-1">{icon}</span>
+    </button>
+  );
+}
 
 function DocumentRowCard({
   selected,
@@ -424,14 +499,8 @@ function MaintenanceHistory({
   selected,
   rows,
   canStartMaintenance,
-  quoteEmailBusy,
-  appointmentEmailBusy,
-  thankYouEmailBusy,
   onOpenDocumentPreview,
   onOpenWorkReportFor,
-  onSendQuoteEmail,
-  onSendAppointmentEmailFor,
-  onSendThankYouEmailFor,
   onStartMaintenanceForCustomer,
 }: {
   selected: Customer;
@@ -449,18 +518,33 @@ function MaintenanceHistory({
 }) {
   if (!rows.length && !canStartMaintenance) return null;
 
-  const dates = rows.map((row) => row.reportDateLabel || row.reportDate || row.title).filter(Boolean);
-  const printableReportRows = rows.filter((row) => row.action === "MaintenanceReport" && Boolean(row.reportId));
-  const maintenanceCustomer = { ...selected, appointmentType: "maintenance" as AppointmentType };
+  const reportRows = rows.filter((row) => row.action !== "MaintenanceBundle");
+  const printableReportRows = reportRows.filter((row) => row.action === "MaintenanceReport" && Boolean(row.reportId));
+  const maintenanceCustomerBase = { ...selected, appointmentType: "maintenance" as AppointmentType };
+
+  function rowCustomer(row: DocumentRow): Customer {
+    return {
+      ...maintenanceCustomerBase,
+      date: row.reportDate || selected.date,
+      time: row.reportTime || selected.time,
+      activeWorkReportId: row.reportId,
+    };
+  }
 
   return (
-    <div className="mt-4 rounded-3xl border border-emerald-300/15 bg-emerald-400/5 p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-lg font-black text-emerald-100">Karbantartási napló</p>
-          <p className="mt-1 text-sm font-bold text-slate-400">Garanciához megőrzött karbantartási munkalapok, dátum szerint.</p>
-        </div>
-        <div className="flex flex-col gap-2 sm:items-end">
+    <div className="mt-4 rounded-3xl border border-white/10 bg-slate-950/40 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-lg font-black text-slate-100">Karbantartási napló</p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {printableReportRows.length ? (
+            <button
+              type="button"
+              onClick={() => onOpenDocumentPreview(maintenanceCustomerBase, "all_work_reports")}
+              className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-emerald-100 ring-1 ring-emerald-300/10"
+            >
+              Összes munkalap
+            </button>
+          ) : null}
           {canStartMaintenance ? (
             <button
               type="button"
@@ -470,48 +554,45 @@ function MaintenanceHistory({
               Új karbantartás
             </button>
           ) : null}
-          {printableReportRows.length ? (
-            <button
-              type="button"
-              onClick={() => onOpenDocumentPreview(maintenanceCustomer, "all_work_reports")}
-              className="rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 ring-1 ring-emerald-300/20"
-            >
-              Összes munkalap
-            </button>
-          ) : null}
         </div>
       </div>
 
-      {rows.length ? (
-        <>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {dates.map((date) => (
-              <span key={date} className="rounded-full bg-slate-950/60 px-3 py-1 text-xs font-black text-emerald-100 ring-1 ring-emerald-300/10">{date}</span>
-            ))}
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {rows.map((row) => (
-              <DocumentRowCard
-                key={`${row.reportId || row.reportDateLabel || row.reportDate || row.title}`}
-                selected={maintenanceCustomer}
-                row={row}
-                quoteEmailBusy={quoteEmailBusy}
-                appointmentEmailBusy={appointmentEmailBusy}
-                thankYouEmailBusy={thankYouEmailBusy}
-                onOpenDocumentPreview={onOpenDocumentPreview}
-                onOpenWorkReportFor={onOpenWorkReportFor}
-                onSendQuoteEmail={onSendQuoteEmail}
-                onSendAppointmentEmailFor={onSendAppointmentEmailFor}
-                onSendThankYouEmailFor={onSendThankYouEmailFor}
-              />
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="mt-4 rounded-2xl border border-dashed border-emerald-300/20 bg-slate-950/40 p-4 text-sm font-bold text-slate-300">
-          Még nincs rögzített karbantartási munkalap. Az első karbantartást az <span className="text-emerald-100">Új karbantartás</span> gombbal tudod indítani.
+      {reportRows.length ? (
+        <div className="mt-4 divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60">
+          {reportRows.map((row) => {
+            const label = row.reportDateLabel || row.reportDate || row.title || "Dátum nélkül";
+            const isCancelled = row.action === "MaintenanceCancelled" || row.status.includes("Lemond");
+            const hasReport = row.action === "MaintenanceReport" && Boolean(row.reportId);
+            const customerForRow = rowCustomer(row);
+            return (
+              <div key={`${row.action}-${row.reportId || row.reportDateLabel || row.reportDate || row.title}`} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-slate-100">{label}</p>
+                  {isCancelled ? <p className="mt-1 text-xs font-black text-red-200">Lemondva</p> : row.status ? <p className="mt-1 text-xs font-bold text-slate-400">{row.status}</p> : null}
+                </div>
+                {isCancelled ? null : hasReport ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDocumentPreview(customerForRow, "work_report", row.reportId)}
+                    className="shrink-0 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white/15"
+                  >
+                    Megtekintés
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onOpenWorkReportFor(customerForRow, row.reportId)}
+                    className="shrink-0 rounded-xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/30"
+                  >
+                    Munkalap
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
+      ) : (
+        <p className="mt-4 rounded-2xl border border-dashed border-white/10 bg-slate-900/60 p-4 text-sm font-bold text-slate-400">Még nincs karbantartási bejegyzés.</p>
       )}
     </div>
   );

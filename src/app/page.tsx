@@ -18,6 +18,8 @@ import type {
   QuoteItem,
   QuotePricingMode,
   View,
+  WorkChecklistCompletedAt,
+  WorkChecklistItemKey,
   WorkChecklistState,
   WorkReport,
 } from "@/lib/alinflow/types";
@@ -123,6 +125,16 @@ type PageDocumentRow = {
   reportDateLabel?: string;
 };
 
+type WorkActionDates = {
+  appointmentEmail?: string;
+  workReport?: string;
+  workDone?: string;
+  surveyDone?: string;
+  maintenanceDone?: string;
+  fullClose?: string;
+  cancelled?: string;
+};
+
 function customerCreatedAtMs(customer: Pick<Customer, "createdAt">) {
   if (!customer.createdAt) return 0;
   const date = new Date(customer.createdAt);
@@ -179,6 +191,11 @@ function isMissingPostalCodeColumnError(error: any) {
 function isMissingAppointmentTypeColumnError(error: any) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
   return text.includes("appointment_type") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
+function isMissingChecklistCompletedAtColumnError(error: any) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
+  return text.includes("completed_at") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
 }
 
 function withoutPostalCode<T extends Record<string, any>>(row: T) {
@@ -721,7 +738,7 @@ export default function Home() {
     };
   }, []);
 
-  const checklistItems: { key: keyof WorkChecklistState; label: string }[] = [
+  const checklistItems: { key: WorkChecklistItemKey; label: string }[] = [
     { key: "nkvh", label: "NKVH adatok rögzítése" },
     { key: "worksheet", label: "Munkalap kitöltve" },
     { key: "purchaseDeclaration", label: "Vásárlási nyilatkozat kész" },
@@ -1507,7 +1524,7 @@ export default function Home() {
   async function persistWorkChecklist(customer: Customer, checklist: WorkChecklistState) {
     if (!customer.id || !user) return;
 
-    const payload = {
+    const basePayload = {
       customer_id: customer.id,
       worksheet: checklist.worksheet,
       signature: checklist.signature,
@@ -1518,10 +1535,25 @@ export default function Home() {
       docs_sent: checklist.docsSent,
       updated_by: user.id,
     };
+    const payload = {
+      ...basePayload,
+      completed_at: checklist.completedAt || {},
+    };
 
     const { error } = await supabase
       .from("work_checklists")
       .upsert(payload, { onConflict: "customer_id" });
+
+    if (error && isMissingChecklistCompletedAtColumnError(error)) {
+      const { error: retryError } = await supabase
+        .from("work_checklists")
+        .upsert(basePayload, { onConflict: "customer_id" });
+      if (retryError) {
+        console.warn("work_checklists mentési hiba", retryError.message);
+        setMessage("A lezárási ellenőrzőlista nem mentődött. Futtasd a WORK_CHECKLIST_SQL.sql fájlt a Supabase-ben.");
+      }
+      return;
+    }
 
     if (error) {
       console.warn("work_checklists mentési hiba", error.message);
@@ -1531,20 +1563,33 @@ export default function Home() {
 
   async function updateChecklistForCustomer(customer: Customer, patch: Partial<WorkChecklistState>) {
     const base = effectiveChecklistFor(customer);
-    const next: WorkChecklistState = { ...base, ...patch };
+    const completedAt: WorkChecklistCompletedAt = { ...(base.completedAt || {}) };
+    (["worksheet", "signature", "purchaseDeclaration", "alinInvoice", "amovaInvoice", "nkvh", "docsSent"] as WorkChecklistItemKey[]).forEach((key) => {
+      const value = patch[key];
+      if (typeof value !== "boolean") return;
+      if (value) completedAt[key] = completedAt[key] || new Date().toISOString();
+      else delete completedAt[key];
+    });
+    const next: WorkChecklistState = { ...base, ...patch, completedAt };
     setWorkChecklist(next);
     setWorkChecklistsByCustomer((prev) => ({ ...prev, [customer.id]: next }));
     await persistWorkChecklist(customer, next);
     return next;
   }
 
-  async function toggleChecklist(key: keyof WorkChecklistState) {
+  async function toggleChecklist(key: WorkChecklistItemKey) {
     const base = selected.id ? effectiveChecklistFor(selected) : workChecklist;
     if ((key === "worksheet" || key === "purchaseDeclaration") && !base.signature) {
       setMessage("A munkalap és a vásárlási nyilatkozat csak ügyfélaláírás után jelölhető elkészültként.");
       return;
     }
-    const next: WorkChecklistState = { ...base, [key]: !base[key] };
+
+    const nextValue = !base[key];
+    const completedAt: WorkChecklistCompletedAt = { ...(base.completedAt || {}) };
+    if (nextValue) completedAt[key] = completedAt[key] || new Date().toISOString();
+    else delete completedAt[key];
+
+    const next: WorkChecklistState = { ...base, [key]: nextValue, completedAt };
     setWorkChecklist(next);
 
     if (selected.id) {
@@ -1988,6 +2033,7 @@ export default function Home() {
 
     try {
       await persistCustomerToDb(updated);
+      await logDocument(updated, "installation_done", `${appointmentTypeLabel(updated.appointmentType)} kész – admin folyamatban`, "Kész", changedAt);
       setSelected(updated);
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
@@ -2026,6 +2072,7 @@ export default function Home() {
 
     try {
       await persistCustomerToDb(updated);
+      await logDocument(updated, "work_closed", "Teljes lezárás", "Lezárva", changedAt);
       setSelected(updated);
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
@@ -2713,6 +2760,14 @@ export default function Home() {
     return text.includes("appointment_type") || text.includes("work_reports_customer_appointment_type_uidx");
   }
 
+  function checklistCompletedAtFromRow(row: any): WorkChecklistCompletedAt {
+    const raw = row?.completed_at;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return Object.fromEntries(
+      Object.entries(raw).filter(([, value]) => typeof value === "string" && value.trim().length > 0)
+    ) as WorkChecklistCompletedAt;
+  }
+
   function workChecklistFromRow(row: any): WorkChecklistState {
     return {
       worksheet: Boolean(row.worksheet),
@@ -2722,6 +2777,7 @@ export default function Home() {
       amovaInvoice: Boolean(row.amova_invoice),
       nkvh: Boolean(row.nkvh),
       docsSent: Boolean(row.docs_sent),
+      completedAt: checklistCompletedAtFromRow(row),
     };
   }
 
@@ -2741,7 +2797,7 @@ export default function Home() {
     docsMap: Record<string, DocumentRecord[]> = documentsByCustomer,
     checklistsMap: Record<string, WorkChecklistState> = workChecklistsByCustomer
   ): WorkChecklistState {
-    if (!customer.id) return { ...workChecklist };
+    if (!customer.id) return { ...workChecklist, completedAt: { ...(workChecklist.completedAt || {}) } };
 
     const saved = checklistsMap[customer.id] || EMPTY_WORK_CHECKLIST;
     const report = reportsMap[customer.id] || reportsMap[workReportMapKey(customer.id, "installation")] || Object.values(reportsMap).find((item) => item.customerId === customer.id && normalizeAppointmentType(item.appointmentType) === "installation");
@@ -2761,6 +2817,21 @@ export default function Home() {
       (saved.docsSent || report?.emailSentAt || statusMeansSent(workDoc?.status) || statusMeansSent(purchaseDoc?.status))
     );
 
+    const workDoneAt = report?.emailSentAt || report?.signedAt || report?.updatedAt || report?.createdAt || workDoc?.sentAt || workDoc?.updatedAt || workDoc?.createdAt || purchaseDoc?.sentAt || purchaseDoc?.updatedAt || purchaseDoc?.createdAt;
+    const docsSentAt = report?.emailSentAt || workDoc?.sentAt || workDoc?.updatedAt || workDoc?.createdAt || purchaseDoc?.sentAt || purchaseDoc?.updatedAt || purchaseDoc?.createdAt;
+    const completedAt: WorkChecklistCompletedAt = { ...(saved.completedAt || {}) };
+
+    (["worksheet", "signature", "purchaseDeclaration"] as WorkChecklistItemKey[]).forEach((key) => {
+      if (workAndDeclarationReady) completedAt[key] = completedAt[key] || workDoneAt;
+      else delete completedAt[key];
+    });
+    if (documentsSent) completedAt.docsSent = completedAt.docsSent || docsSentAt;
+    else delete completedAt.docsSent;
+
+    (["nkvh", "alinInvoice", "amovaInvoice"] as WorkChecklistItemKey[]).forEach((key) => {
+      if (!saved[key]) delete completedAt[key];
+    });
+
     return {
       ...EMPTY_WORK_CHECKLIST,
       ...saved,
@@ -2768,6 +2839,7 @@ export default function Home() {
       signature: workAndDeclarationReady,
       purchaseDeclaration: workAndDeclarationReady,
       docsSent: documentsSent,
+      completedAt,
     };
   }
 
@@ -2949,6 +3021,34 @@ export default function Home() {
     const purchaseDoc = docFor(customer, "purchase_declaration");
     if (statusMeansSignedOrSent(workDoc?.status) || statusMeansSignedOrSent(purchaseDoc?.status)) return "Elkészült";
     return "Nincs kész";
+  }
+
+  function timestampForDocument(customer: Customer, type: string) {
+    const doc = docFor(customer, type);
+    return doc?.sentAt || doc?.updatedAt || doc?.createdAt || undefined;
+  }
+
+  function timestampForReport(report?: WorkReport) {
+    return report?.emailSentAt || report?.signedAt || report?.updatedAt || report?.createdAt || undefined;
+  }
+
+  function workActionDatesFor(customer: Customer): WorkActionDates {
+    const type = normalizeAppointmentType(customer.appointmentType);
+    const report = savedReportFor(customer, type);
+    const installationDoneAt = timestampForDocument(customer, "installation_done") || (
+      type === "installation" && (customer.status === "Szerelés kész – admin folyamatban" || customer.status === "Lezárva")
+        ? customer.updatedAt
+        : undefined
+    );
+
+    return {
+      appointmentEmail: timestampForDocument(customer, appointmentEmailDocumentType(type)),
+      workReport: timestampForReport(report),
+      workDone: installationDoneAt,
+      surveyDone: timestampForDocument(customer, "survey_done"),
+      maintenanceDone: timestampForDocument(customer, "maintenance_done"),
+      fullClose: timestampForDocument(customer, "work_closed") || (type === "installation" && customer.status === "Lezárva" ? customer.updatedAt : undefined),
+    };
   }
 
   function documentRowsFor(customer: Customer): PageDocumentRow[] {
@@ -3708,11 +3808,12 @@ export default function Home() {
         thankYouEmailBusy={thankYouEmailBusy}
         checklistItems={checklistItems}
         currentWorkChecklist={currentWorkChecklist}
+        checklistDates={currentWorkChecklist.completedAt || {}}
+        actionDates={workActionDatesFor(selected)}
         checklistReady={checklistReady}
         missingChecklist={missingChecklist}
         documentRows={documentRowsFor(selected)}
         maintenanceRows={maintenanceDocumentRowsFor(selected)}
-        timelineItems={customerTimelineItems(selected)}
         onBack={()=>goBack()}
         onCloseWork={closeWork}
         onRememberExternalCustomer={rememberExternalCustomer}

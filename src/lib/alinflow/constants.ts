@@ -12,6 +12,7 @@ export const EMPTY_WORK_CHECKLIST: WorkChecklistState = {
   amovaInvoice: false,
   nkvh: false,
   docsSent: false,
+  completedAt: {},
 };
 
 
