@@ -147,17 +147,16 @@ export function Calendar({
                       <p className="truncate text-xs text-cyan-100/80 md:text-[11px]">{calendarJobSummary(job)}</p>
                       <p className="truncate text-xs opacity-70 md:text-[11px]">{job.city}</p>
                     </button>
-                    {!selectable ? (
+                    {mode === "week" && !selectable ? (
                       <a
                         href={googleCalendarHref(job)}
                         target="_blank"
                         rel="noreferrer"
                         onClick={(event) => event.stopPropagation()}
-                        className="mt-2 inline-flex w-full items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2.5 py-1 text-[10px] font-black text-amber-100 transition hover:bg-amber-300/25 md:w-auto md:px-3 md:py-1.5"
-                        title="Időpont hozzáadása a Google Naptárhoz"
+                        className="mt-2 inline-flex items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2.5 py-1 text-[10px] font-black text-amber-100 transition hover:bg-amber-300/25"
+                        title="Hozzáadás Google Naptárhoz"
                       >
-                        <span className="md:hidden">+ Naptár</span>
-                        <span className="hidden md:inline">Időpont hozzáadása a Google Naptárhoz</span>
+                        + Naptár
                       </a>
                     ) : null}
                   </div>
