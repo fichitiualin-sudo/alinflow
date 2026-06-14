@@ -87,6 +87,7 @@ A jelenlegi projektben használt vagy korábban bevezetett fő táblák:
 - `quotes`
 - `quote_items`
 - `jobs`
+- `appointments`
 - `documents`
 - `work_reports`
 - `work_checklists`
@@ -95,7 +96,7 @@ A jelenlegi projektben használt vagy korábban bevezetett fő táblák:
 - `climate_products`
 - `profiles`
 
-Az élő sémában jelenleg nincs `appointments` tábla. A pontos oszlopokért, constraint-ekért, indexekért és RLS policy-kért az auditált Supabase séma a forrás.
+A 4. stabilizálási fázis additív migrációja létrehozta az `appointments` táblát és a `jobs` rekordok idempotens másolatát. Az alkalmazás ebben a fázisban továbbra is a `jobs` táblát használja. A migráció részletei: [`APPOINTMENTS_MIGRATION.md`](APPOINTMENTS_MIGRATION.md).
 
 ## Kapcsolatok
 
@@ -104,6 +105,7 @@ customer
 ├── quotes
 │   └── quote_items
 ├── jobs (jelenlegi kompatibilitási időpontrekord)
+├── appointments (több időpont és történet; a 4. fázisban még nincs alkalmazáskódos olvasás)
 ├── documents
 ├── work_checklist
 └── work_reports

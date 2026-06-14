@@ -7,7 +7,7 @@ Ez a mappa az AlinFlow üzleti és technikai működésének forrása. A kód é
 1. [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md)
 2. [`BUSINESS_LOGIC.md`](BUSINESS_LOGIC.md)
 3. [`ARCHITECTURE.md`](ARCHITECTURE.md)
-4. Adatbázis-munka előtt: [`DATA_MODEL.md`](DATA_MODEL.md) és [`SUPABASE_SCHEMA_AUDIT.md`](SUPABASE_SCHEMA_AUDIT.md)
+4. Adatbázis-munka előtt: [`DATA_MODEL.md`](DATA_MODEL.md), [`SUPABASE_SCHEMA_AUDIT.md`](SUPABASE_SCHEMA_AUDIT.md) és [`APPOINTMENTS_MIGRATION.md`](APPOINTMENTS_MIGRATION.md)
 5. Az adott feladathoz tartozó témadokumentum
 6. [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md)
 
@@ -23,3 +23,5 @@ Ez a mappa az AlinFlow üzleti és technikai működésének forrása. A kód é
 Az AlinFlow 1.0 véglegesítése folyamatban van. A többcéges működés külön jövőbeli projekt, amelyet csak a jelenlegi egycéges rendszer stabilizálása és teljes mentése után szabad elkezdeni.
 
 Az élő Supabase-séma 2026-06-14-én, csak olvasási lekérdezésekkel fel lett mérve. Az audit pillanatképe és az újrafuttatható ellenőrző SQL a [`SUPABASE_SCHEMA_AUDIT.md`](SUPABASE_SCHEMA_AUDIT.md) dokumentumban található.
+
+Az additív `appointments` migráció 2026-06-14-én sikeresen lefutott. Az alkalmazás továbbra is a `jobs` kompatibilitási táblát használja; a több-időpontos olvasás külön későbbi fázis.
