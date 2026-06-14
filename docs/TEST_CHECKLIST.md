@@ -62,6 +62,8 @@ npm run build
 - [ ] Törölt legacy job backfill appointmentja nem jelenik meg újra.
 - [ ] Ajánlott idősávok elérhetők.
 - [ ] Időpont módosítható.
+- [ ] Időpont mentésekor az `appointments` rekord frissül, a kapcsolt `jobs` sor csak kompatibilitási tükör.
+- [ ] Felmérés és szerelés külön `appointments` rekordban marad, nem írják felül egymást.
 - [ ] Ütközés felismerhető.
 - [ ] Klímák és anyagok a szereléshez kapcsolódnak.
 - [ ] Google Naptár leírásban az ár a klíma sor végén van.
@@ -87,6 +89,8 @@ npm run build
 - [ ] Új karbantartás gomb csak a naplóban van.
 - [ ] Karbantartás 1 órás és egyedi idővel rögzíthető.
 - [ ] Nem írja felül a szerelési időpontot.
+- [ ] Minden új karbantartás új `appointments` rekordot kap, a korábbi karbantartások megmaradnak.
+- [ ] A karbantartás kapcsolt `jobs` tükre nem veszi át egy másik időpont `legacy_source_key` értékét.
 - [ ] Nem tünteti el az ajánlatot, nyilatkozatot vagy szerelési munkalapot.
 - [ ] Minden karbantartás külön munkalapot hoz létre.
 - [ ] Több karbantartás dátum szerint listázódik.

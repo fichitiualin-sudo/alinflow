@@ -108,6 +108,8 @@ Ajánlott sávok:
 
 Az időpont legyen módosítható, és az ütközést ellenőrizni kell. Több klíma hosszabb időt igényelhet; a tényleges jelenlegi időtartam-logikát az `appointments.ts` tartalmazza.
 
+Az időpont írásának elsődleges rekordja az `appointments`. A `jobs` csak kompatibilitási tükör, ezért felmérés, szerelés és karbantartás nem írhatja felül egymás `appointments` rekordját.
+
 Szerelési időpontnál:
 
 - kiválasztott klímák és szerelési anyagok kapcsolódnak hozzá;
@@ -167,6 +169,7 @@ A telepített klímát jellemzően évente karban kell tartani. Egy készülékn
 - nem foglal és nem von le új klímakészletet;
 - nem írhatja felül az ügyfél szerelési időpontját és dokumentumait;
 - minden alkalom külön rekord és külön munkalap;
+- minden új éves karbantartás külön `appointments` rekordként jön létre;
 - karbantartás lezárásához legyen megfelelő munkalap és aláírás;
 - a karbantartás dátuma és munkalapja később megtekinthető/letölthető.
 

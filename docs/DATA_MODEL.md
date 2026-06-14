@@ -98,6 +98,8 @@ A jelenlegi projektben használt vagy korábban bevezetett fő táblák:
 
 A 4. stabilizálási fázis additív migrációja létrehozta az `appointments` táblát és a `jobs` rekordok idempotens másolatát. Az 5. fázistól az alkalmazás elsődlegesen az `appointments` táblából olvas, a `jobs` pedig kompatibilitási fallback és a jelenlegi írás célja marad. Részletek: [`APPOINTMENTS_MIGRATION.md`](APPOINTMENTS_MIGRATION.md) és [`APPOINTMENTS_COMPATIBLE_READ.md`](APPOINTMENTS_COMPATIBLE_READ.md).
 
+A 6. stabilizálási fázistól az időpontok írásánál is az `appointments` az elsődleges rekord. A `jobs` tábla nem szűnik meg, hanem tranzakciós kompatibilitási tükörként frissül az `appointments.legacy_source_key = jobs:<job_id>` kapcsolaton keresztül. Részletek: [`APPOINTMENTS_WRITE.md`](APPOINTMENTS_WRITE.md).
+
 ## Kapcsolatok
 
 ```text

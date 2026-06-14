@@ -74,6 +74,7 @@ export type Customer = {
   date?: string;
   time?: string;
   appointmentType?: AppointmentType;
+  activeAppointmentId?: string;
   activeWorkReportId?: string;
   createdAt?: string;
   updatedAt?: string;
