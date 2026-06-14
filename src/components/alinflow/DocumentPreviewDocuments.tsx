@@ -1,7 +1,7 @@
 import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
-import { defaultWorkDescription, formatSignedAt, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
+import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 
 function formatDocumentDate(value?: string) {
@@ -133,7 +133,7 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
           <div className="w-[56mm] text-center">
             {report.signatureDataUrl ? <img src={report.signatureDataUrl} alt="Ügyfél aláírása" className="mx-auto mb-1 max-h-[22mm] max-w-full object-contain print:max-h-[18mm]"/> : <div className="mb-1 h-[18mm] border border-dashed border-slate-400"/>}
             <div className="border-t border-slate-900 pt-1 italic">Ügyfél aláírása</div>
-            {report.signedAt ? <p className="mt-0.5 text-[10px] print:text-[8.5px]">Aláírva: {formatSignedAt(report.signedAt)}</p> : null}
+            {hasValidWorkReportSignature(report) ? <p className="mt-0.5 text-[10px] print:text-[8.5px]">Aláírva: {formatSignedAt(report.signedAt)}</p> : null}
           </div>
         </section>
 
@@ -176,7 +176,7 @@ export function AllWorkReportsDocument({ customer, reports, quoteItems }: { cust
                   <p className="font-black">{workReportTitle(reportCustomer.appointmentType)}</p>
                   <p className="text-sm text-slate-600">{formatDocumentDate(reportCustomer.date)} · {reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, quoteItems) : "nincs idő"}</p>
                 </div>
-                <p className="text-sm font-bold text-slate-600">{report.signedAt ? `Aláírva: ${formatSignedAt(report.signedAt)}` : "aláírás nélkül"}</p>
+                <p className="text-sm font-bold text-slate-600">{hasValidWorkReportSignature(report) ? `Aláírva: ${formatSignedAt(report.signedAt)}` : "aláírás nélkül"}</p>
               </div>
             );
           })}
