@@ -3721,7 +3721,6 @@ export default function Home() {
         onStep={step}
         onOpenCustomer={(customer)=>openCustomer(customer,"work")}
         onSetScheduleTime={setScheduleTime}
-        onSetAppointmentType={updateScheduleAppointmentType}
         onUpdateQuoteItem={updateQuoteItem}
         onUpdateQuoteProduct={updateQuoteProduct}
         onAddQuoteItem={addQuoteItem}
