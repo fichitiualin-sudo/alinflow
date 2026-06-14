@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
 import { Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
@@ -162,6 +163,7 @@ export function WorkPagePanel({
   const installationFinished = isInstallation && (selected.status === "Szerelés kész – admin folyamatban" || selected.status === "Lezárva");
   const maintenanceFinished = isMaintenance && selected.status === "Lezárva";
   const canStartMaintenance = installationFinished || maintenanceFinished;
+  const [showMaterials, setShowMaterials] = useState(false);
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
     : isMaintenance
@@ -262,7 +264,19 @@ export function WorkPagePanel({
             </div> : null}
           </Card>
 
-          {isInstallation ? <Card title="Felhasznált anyagok">
+          {isInstallation ? (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setShowMaterials((open) => !open)}
+                className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
+              >
+                {showMaterials ? "Felhasznált anyagok elrejtése" : "Felhasznált anyagok megjelenítése"}
+              </button>
+            </div>
+          ) : null}
+
+          {isInstallation && showMaterials ? <Card title="Felhasznált anyagok">
             <div className="mb-4 flex justify-end">
               <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddExtraMaterial}>+ Egyéb anyag</button>
             </div>
