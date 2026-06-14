@@ -191,11 +191,6 @@ function isMissingPostalCodeColumnError(error: any) {
   return text.includes("postal_code") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
 }
 
-function isMissingAppointmentTypeColumnError(error: any) {
-  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
-  return text.includes("appointment_type") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
-}
-
 function isMissingChecklistCompletedAtColumnError(error: any) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
   return text.includes("completed_at") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
@@ -203,11 +198,6 @@ function isMissingChecklistCompletedAtColumnError(error: any) {
 
 function withoutPostalCode<T extends Record<string, any>>(row: T) {
   const { postal_code, ...rest } = row;
-  return rest;
-}
-
-function withoutAppointmentType<T extends Record<string, any>>(row: T) {
-  const { appointment_type, ...rest } = row;
   return rest;
 }
 
@@ -1299,6 +1289,7 @@ export default function Home() {
         appointmentBookedAt: appointment?.created_at || quoteSentAt,
         appointmentUpdatedAt: appointment?.updated_at || quoteSentAt,
         appointmentType: loadedAppointmentType,
+        activeAppointmentId: appointment?.id || undefined,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
@@ -1366,7 +1357,53 @@ export default function Home() {
     return loadPromise;
   }
 
-  async function persistCustomerToDb(customer: Customer) {
+  type PersistCustomerResult = {
+    appointmentId?: string;
+    jobId?: string;
+  };
+
+  async function saveAppointmentWithJobMirror(customer: Customer, quoteId?: string): Promise<PersistCustomerResult> {
+    const { data, error } = await supabase.rpc("save_appointment_with_job_mirror", {
+      p_appointment_id: customer.activeAppointmentId || null,
+      p_customer_id: customer.id,
+      p_quote_id: quoteId || null,
+      p_title: customer.name,
+      p_scheduled_date: customer.date,
+      p_scheduled_time: customer.time || "08:00",
+      p_appointment_type: normalizeAppointmentType(customer.appointmentType),
+      p_status: normalizeStatus(customer.status || "Időpont foglalva"),
+      p_address: customer.address || null,
+      p_notes: customer.notes || customer.need || null,
+      p_created_by: user?.id || null,
+    });
+
+    if (error) throw error;
+
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      appointmentId: row?.appointment_id || undefined,
+      jobId: row?.job_id || undefined,
+    };
+  }
+
+  async function cancelAppointmentWithJobMirror(customer: Customer, cancelledAt: string): Promise<PersistCustomerResult> {
+    const { data, error } = await supabase.rpc("cancel_appointment_with_job_mirror", {
+      p_appointment_id: customer.activeAppointmentId || null,
+      p_customer_id: customer.id,
+      p_cancelled_at: cancelledAt,
+      p_status: "Lemondva",
+    });
+
+    if (error) throw error;
+
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      appointmentId: row?.appointment_id || undefined,
+      jobId: row?.job_id || undefined,
+    };
+  }
+
+  async function persistCustomerToDb(customer: Customer): Promise<PersistCustomerResult | undefined> {
     if (!user || !customer.id || !customer.name.trim()) return;
 
     const customerPayload = {
@@ -1428,39 +1465,13 @@ export default function Home() {
     }
 
     if (customer.date) {
-      const { data: existingJobs } = await supabase
-        .from("jobs")
-        .select("id")
-        .eq("customer_id", customer.id)
-        .limit(1);
-
-      const jobPayload = {
-        customer_id: customer.id,
-        quote_id: quoteId || null,
-        title: customer.name,
-        scheduled_date: customer.date,
-        scheduled_time: customer.time || "08:00",
-        appointment_type: normalizeAppointmentType(customer.appointmentType),
-        status: normalizeStatus(customer.status || "Időpont foglalva"),
-        address: customer.address || null,
-        notes: customer.notes || customer.need || null,
-        created_by: user.id,
-      };
-
-      const jobId = existingJobs?.[0]?.id as string | undefined;
-      let jobResult = jobId
-        ? await supabase.from("jobs").update(jobPayload).eq("id", jobId)
-        : await supabase.from("jobs").insert(jobPayload);
-      if (jobResult.error && isMissingAppointmentTypeColumnError(jobResult.error)) {
-        const fallbackPayload = withoutAppointmentType(jobPayload);
-        jobResult = jobId
-          ? await supabase.from("jobs").update(fallbackPayload).eq("id", jobId)
-          : await supabase.from("jobs").insert(fallbackPayload);
-      }
-      if (jobResult.error) throw jobResult.error;
-    } else if (customer.status === "Lemondva") {
-      await supabase.from("jobs").delete().eq("customer_id", customer.id);
+      return saveAppointmentWithJobMirror(customer, quoteId);
     }
+
+    if (customer.status === "Lemondva") {
+      return cancelAppointmentWithJobMirror(customer, customer.updatedAt || new Date().toISOString());
+    }
+
   }
 
   function startNewCustomer() {
@@ -1509,11 +1520,15 @@ export default function Home() {
     const now = new Date().toISOString();
     const updated: Customer = { ...selected, updatedAt: now };
     try {
-      await persistCustomerToDb(updated);
-      setSelected(updated);
-      setCustomers((prev) => sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === updated.id ? updated : customer)));
+      const persisted = await persistCustomerToDb(updated);
+      const savedUpdated: Customer = {
+        ...updated,
+        activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
+      };
+      setSelected(savedUpdated);
+      setCustomers((prev) => sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === savedUpdated.id ? savedUpdated : customer)));
       setEditCustomer(false);
-      clearCustomerDraft(updated.id);
+      clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Ügyféladatok mentve ✅");
     } catch (error: any) {
@@ -1855,21 +1870,25 @@ export default function Home() {
       updatedAt: appointmentBookedAt,
     };
     try {
-      await persistCustomerToDb(updated);
-      if (normalizeAppointmentType(updated.appointmentType) !== "maintenance") {
-        await logDocument(updated, appointmentBookedDocumentType(updated.appointmentType), `${appointmentTypeLabel(updated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
+      const persisted = await persistCustomerToDb(updated);
+      const savedUpdated: Customer = {
+        ...updated,
+        activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
+      };
+      if (normalizeAppointmentType(savedUpdated.appointmentType) !== "maintenance") {
+        await logDocument(savedUpdated, appointmentBookedDocumentType(savedUpdated.appointmentType), `${appointmentTypeLabel(savedUpdated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
       }
-      setCustomers(prev=>prev.map(c=>c.id===updated.id ? updated : c));
-      setSelected(updated);
+      setCustomers(prev=>prev.map(c=>c.id===savedUpdated.id ? savedUpdated : c));
+      setSelected(savedUpdated);
 
       if (sendAppointmentNotice) {
-        const sent = await sendAppointmentEmailFor(updated);
+        const sent = await sendAppointmentEmailFor(savedUpdated);
         setMessage(sent ? (wasExistingSchedule ? "Időpont módosítva és tájékoztató email elküldve ✅" : "Időpont mentve és tájékoztató email elküldve ✅") : "Időpont mentve, de az email küldése nem sikerült.");
       } else {
         setMessage(wasExistingSchedule ? "Időpont módosítva ✅ Email nem ment ki." : "Időpont mentve a naptárba ✅ Email nem ment ki.");
       }
 
-      clearCustomerDraft(updated.id);
+      clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
       replaceView(wasExistingSchedule ? "work" : "dashboard");
     } catch (error: any) {
@@ -1898,11 +1917,15 @@ export default function Home() {
     };
 
     try {
-      await persistCustomerToDb(updated);
-      setSelected(updated);
-      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+      const persisted = await persistCustomerToDb(updated);
+      const savedUpdated: Customer = {
+        ...updated,
+        activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
+      };
+      setSelected(savedUpdated);
+      setCustomers(prev => prev.map(c => c.id === savedUpdated.id ? savedUpdated : c));
       setAllowWorkResourceEdit(false);
-      clearCustomerDraft(updated.id);
+      clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Időponthoz tartozó klímák és anyagok módosítva ✅");
       replaceView("work");
@@ -2115,6 +2138,7 @@ export default function Home() {
         date: installationReport?.workDate || undefined,
         time: installationReport?.workTime || undefined,
         appointmentType: "installation",
+        activeAppointmentId: undefined,
         activeWorkReportId: undefined,
         status: restoredStatus,
         isFresh: restoredStatus !== "Lezárva",
@@ -2123,14 +2147,18 @@ export default function Home() {
 
       try {
         await logDocument(selected, maintenanceCancellationDocumentType(selected, changedAt), maintenanceCancellationTitle(selected), "Lemondva", changedAt);
-        await supabase.from("jobs").delete().eq("customer_id", selected.id);
-        await persistCustomerToDb(restored);
-        setSelected(restored);
+        await cancelAppointmentWithJobMirror(selected, changedAt);
+        const persisted = await persistCustomerToDb(restored);
+        const savedRestored: Customer = {
+          ...restored,
+          activeAppointmentId: persisted?.appointmentId || restored.activeAppointmentId,
+        };
+        setSelected(savedRestored);
         setScheduleAppointmentType("installation");
-        setScheduleDate(restored.date || todayIso());
-        setScheduleTime(firstAppointmentTime(restored.time || "08:00"));
+        setScheduleDate(savedRestored.date || todayIso());
+        setScheduleTime(firstAppointmentTime(savedRestored.time || "08:00"));
         setAllowWorkResourceEdit(false);
-        setCustomers(prev => prev.map(c => c.id === restored.id ? restored : c));
+        setCustomers(prev => prev.map(c => c.id === savedRestored.id ? savedRestored : c));
         setMessage("Karbantartási időpont lemondva ✅ A klímaszerelés és a korábbi dokumentumok megmaradtak.");
         replaceView("work");
       } catch (error: any) {
@@ -2151,8 +2179,9 @@ export default function Home() {
 
     try {
       await persistCustomerToDb(updated);
-      setSelected(updated);
-      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+      const cancelledUpdated: Customer = { ...updated, activeAppointmentId: undefined };
+      setSelected(cancelledUpdated);
+      setCustomers(prev => prev.map(c => c.id === cancelledUpdated.id ? cancelledUpdated : c));
       setMessage("Időpont törölve / lemondva ✅ A foglalás felszabadult.");
       replaceView("dashboard");
     } catch (error: any) {
@@ -2186,6 +2215,7 @@ export default function Home() {
       date: undefined,
       time: undefined,
       appointmentType: "maintenance",
+      activeAppointmentId: undefined,
       activeWorkReportId: undefined,
       status: "Időpont foglalva",
       isFresh: true,
