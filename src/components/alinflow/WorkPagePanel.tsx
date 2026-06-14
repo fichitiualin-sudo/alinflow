@@ -11,6 +11,7 @@ import {
   isCustomQuoteItem,
   itemPriceLine,
   itemTotal,
+  itemUnitPrice,
   prod,
   qty,
   sortProducts,
@@ -254,6 +255,17 @@ export function WorkPagePanel({
                     <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
                     <b>{ft(itemTotal(it))}</b>
                   </div>
+                  <label className="mt-3 block rounded-2xl bg-white/5 p-3">
+                    <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Ár szereléssel együtt / db</span>
+                    <input
+                      className="mt-2 w-full bg-transparent text-lg font-black outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                      type="number"
+                      min={0}
+                      disabled={!canEditWorkResources}
+                      value={it.customPrice ?? itemUnitPrice(it)}
+                      onChange={(event) => onUpdateQuoteItem(i, "customPrice", priceInputValue(event.target.value))}
+                    />
+                  </label>
                   {hasCustomProductPrice(it) ? (
                     <button type="button" disabled={!canEditWorkResources} onClick={() => onSyncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
                       Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
@@ -694,4 +706,10 @@ function numericInputValue(value: string) {
   if (value === "") return "";
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
+}
+
+function priceInputValue(value: string) {
+  if (value === "") return "";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : "";
 }

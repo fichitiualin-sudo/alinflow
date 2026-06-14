@@ -1870,16 +1870,31 @@ export default function Home() {
   }
 
   function stockErrorMessage() {
-    const shortageProduct = cleanQuoteItems(quoteItems).find((q) => isKnownProductId(q.productId) && reservedForProduct(q.productId) > stockOf(q.productId));
-    if (shortageProduct) {
-      const p = prod(shortageProduct.productId);
-      return `Nem zárható le: ${p.name} készlethiányos. Raktáron: ${stockOf(shortageProduct.productId)} db, lefoglalva: ${reservedForProduct(shortageProduct.productId)} db.`;
+    if (selected.stockDeducted) return "";
+
+    const neededByProduct = cleanQuoteItems(quoteItems).reduce((map, item) => {
+      if (!isKnownProductId(item.productId)) return map;
+      map.set(item.productId, (map.get(item.productId) || 0) + itemQuantity(item));
+      return map;
+    }, new Map<string, number>());
+
+    for (const [productId, needed] of neededByProduct) {
+      const otherReserved = reservedForProduct(productId, selected.id);
+      const available = stockOf(productId);
+      if (needed + otherReserved > available) {
+        const p = prod(productId);
+        return `Nem zárható le: ${p.name} készlethiányos. Raktáron: ${available} db, más munkákhoz lefoglalva: ${otherReserved} db, ehhez az időponthoz szükséges: ${needed} db.`;
+      }
     }
 
-    const shortageMaterial = materialInventory.find((item: any) => usedMaterialAmountForStock(item.name) > item.stock);
+    const shortageMaterial = materialInventory.find((item: any) => {
+      const needed = usedMaterialAmountForStock(item.name);
+      return needed + materialReserved(item.name, selected.id) > item.stock;
+    });
     if (shortageMaterial) {
       const used = usedMaterialAmountForStock(shortageMaterial.name);
-      return `Nem zárható le: ${shortageMaterial.name} készlethiányos. Raktáron: ${shortageMaterial.stock} ${shortageMaterial.unit}, szükséges: ${used} ${shortageMaterial.unit}.`;
+      const otherReserved = materialReserved(shortageMaterial.name, selected.id);
+      return `Nem zárható le: ${shortageMaterial.name} készlethiányos. Raktáron: ${shortageMaterial.stock} ${shortageMaterial.unit}, más munkákhoz lefoglalva: ${otherReserved} ${shortageMaterial.unit}, ehhez az időponthoz szükséges: ${used} ${shortageMaterial.unit}.`;
     }
 
     return "";
@@ -2159,9 +2174,9 @@ export default function Home() {
   }
 
 
-  function reservedForProduct(productId: string) {
+  function reservedForProduct(productId: string, excludeCustomerId?: string) {
     return customers
-      .filter((customer) => Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva")
+      .filter((customer) => customer.id !== excludeCustomerId && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted)
       .reduce((sum, customer) => {
         const items = customer.quoteItems ?? [];
         return sum + items
@@ -2213,8 +2228,8 @@ export default function Home() {
     return perClimate[materialName] ?? 0;
   }
 
-  function materialReserved(materialName: string) {
-    const activeJobs = customers.filter((customer: any) => Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva");
+  function materialReserved(materialName: string, excludeCustomerId?: string) {
+    const activeJobs = customers.filter((customer: any) => customer.id !== excludeCustomerId && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted);
 
     return Math.round(activeJobs.reduce((sum: number, customer: any) => {
       const items = customer.quoteItems ?? [];
@@ -3687,6 +3702,7 @@ export default function Home() {
         mode={mode}
         calDate={calDate}
         calendarCustomers={calendarCustomers}
+        message={message}
         scheduleDate={scheduleDate}
         scheduleTime={scheduleTime}
         shownTime={shownTime}

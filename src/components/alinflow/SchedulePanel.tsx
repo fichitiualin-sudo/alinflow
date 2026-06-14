@@ -1,7 +1,7 @@
 "use client";
 
 import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
-import { isCustomQuoteItem, itemName, sortProducts } from "@/lib/alinflow/products";
+import { isCustomQuoteItem, itemName, itemUnitPrice, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { APPOINTMENT_TYPES, appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
@@ -12,6 +12,7 @@ type SchedulePanelProps = {
   mode: CalendarMode;
   calDate: Date;
   calendarCustomers: Customer[];
+  message: string;
   scheduleDate: string;
   scheduleTime: string;
   shownTime: string;
@@ -58,6 +59,12 @@ function numericInputValue(value: string) {
   return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
 }
 
+function priceInputValue(value: string) {
+  if (value === "") return "";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : "";
+}
+
 function slotLabel(slot: string, appointmentType: AppointmentType, items: QuoteItem[]) {
   if (slot === "16:00" && appointmentType === "installation") return `+1 · ${appointmentTimeLabel(appointmentType, slot, items)}`;
   return appointmentTimeLabel(appointmentType, slot, items);
@@ -69,6 +76,7 @@ export function SchedulePanel({
   mode,
   calDate,
   calendarCustomers,
+  message,
   scheduleDate,
   scheduleTime,
   shownTime,
@@ -105,12 +113,18 @@ export function SchedulePanel({
   const selectedTimeLabel = normalizeAppointmentTimeInput(scheduleTime)
     ? appointmentTimeLabel(appointmentType, scheduleTime, quoteItems)
     : "adj meg időpontot";
+  const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("ez az idősáv") || message.toLocaleLowerCase("hu-HU").startsWith("adj meg");
 
   return (
     <Shell>
       <Back onClick={onBack} />
       <Layout>
         <Main>
+          {message ? (
+            <div className={`mb-4 rounded-2xl border p-4 font-black ${messageIsError ? "border-red-300/40 bg-red-500/20 text-red-100" : "border-emerald-300/30 bg-emerald-400/20 text-emerald-100"}`}>
+              {message}
+            </div>
+          ) : null}
           <Calendar
             mode={mode}
             date={calDate}
@@ -206,6 +220,16 @@ export function SchedulePanel({
                         onChange={(event) => onUpdateQuoteItem(index, "quantity", numericInputValue(event.target.value))}
                       />
                     </div>
+                    <label className="mt-3 block rounded-2xl bg-white/5 p-3">
+                      <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Ár szereléssel együtt / db</span>
+                      <input
+                        className="mt-2 w-full bg-transparent text-lg font-black outline-none"
+                        type="number"
+                        min={0}
+                        value={item.customPrice ?? itemUnitPrice(item)}
+                        onChange={(event) => onUpdateQuoteItem(index, "customPrice", priceInputValue(event.target.value))}
+                      />
+                    </label>
                   </div>
                 ))}
                 <button className="mb-4 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950" onClick={onAddQuoteItem}>
