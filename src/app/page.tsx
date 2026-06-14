@@ -106,6 +106,11 @@ import {
   emptyWorkReport,
   formatSignedAt,
   hasValidWorkReportSignature,
+  sameReportAppointment,
+  sortWorkReportsByDateDesc,
+  workReportFromRow,
+  workReportKeyFromReport,
+  workReportMapKey,
   workReportSignatureState,
   workReportTitle,
 } from "@/lib/alinflow/work-report";
@@ -2657,27 +2662,6 @@ export default function Home() {
     };
   }
 
-  function workReportFromRow(row: any): WorkReport {
-    const appointmentType = normalizeAppointmentType(row.appointment_type);
-    return {
-      id: row.id,
-      customerId: row.customer_id,
-      appointmentId: row.appointment_id || undefined,
-      legacySourceKey: row.legacy_source_key || undefined,
-      appointmentType,
-      workDate: row.work_date || undefined,
-      workTime: row.work_time || undefined,
-      workDescription: row.work_description || defaultWorkDescription(appointmentType),
-      notes: row.notes || "",
-      signatureDataUrl: row.signature_data_url || "",
-      signerName: row.signer_name || row.customer_name || "",
-      signedAt: row.signed_at || undefined,
-      emailSentAt: row.email_sent_at || undefined,
-      createdAt: row.created_at || undefined,
-      updatedAt: row.updated_at || undefined,
-    };
-  }
-
   function documentFromRow(row: any): DocumentRecord {
     return {
       id: row.id,
@@ -2707,37 +2691,6 @@ export default function Home() {
 
   function reportDocumentType(type?: string | null) {
     return normalizeAppointmentType(type) === "maintenance" ? "maintenance_work_report" : "work_report";
-  }
-
-  function workReportMapKey(customerId: string, type?: string | null, workDate?: string, workTime?: string, reportId?: string) {
-    const normalized = normalizeAppointmentType(type);
-    if (normalized === "installation") return customerId;
-    const safeDate = workDate || "nincs-datum";
-    const safeTime = firstAppointmentTime(workTime || "08:00");
-    return `${customerId}:${normalized}:${safeDate}:${safeTime}:${reportId || "uj"}`;
-  }
-
-  function workReportKeyFromReport(report: WorkReport, fallbackCustomerId?: string) {
-    const customerId = report.customerId || fallbackCustomerId || "";
-    return workReportMapKey(customerId, report.appointmentType, report.workDate, report.workTime, report.id);
-  }
-
-  function reportDateTimeMs(report: WorkReport) {
-    const dateText = report.workDate || report.createdAt || "";
-    const timeText = report.workTime || "00:00";
-    const parsed = report.workDate ? new Date(`${dateText}T${firstAppointmentTime(timeText) || "00:00"}`) : new Date(dateText);
-    const time = parsed.getTime();
-    return Number.isNaN(time) ? 0 : time;
-  }
-
-  function sortWorkReportsByDateDesc(reports: WorkReport[]) {
-    return [...reports].sort((a, b) => reportDateTimeMs(b) - reportDateTimeMs(a));
-  }
-
-  function sameReportAppointment(report: WorkReport, customer: Customer) {
-    if (report.appointmentId && customer.activeAppointmentId) return report.appointmentId === customer.activeAppointmentId;
-    if (!customer.date) return false;
-    return report.workDate === customer.date && firstAppointmentTime(report.workTime || "08:00") === firstAppointmentTime(customer.time || "08:00");
   }
 
   function workReportsForCustomer(customer: Customer, type?: AppointmentType) {
