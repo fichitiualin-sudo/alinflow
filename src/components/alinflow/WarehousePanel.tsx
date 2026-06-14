@@ -156,7 +156,7 @@ export function WarehousePanel({
                     ) : null}
 
                     <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
-                      <input id={`stock-${product.id}`} type="number" min={1} defaultValue={1} className="input md:max-w-[140px]" />
+                      <input id={`stock-${product.id}`} type="number" defaultValue={1} className="input md:max-w-[140px]" />
                       <button
                         onClick={() => {
                           const input = document.getElementById(`stock-${product.id}`) as HTMLInputElement | null;
@@ -164,7 +164,7 @@ export function WarehousePanel({
                         }}
                         className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
                       >
-                        + Bevételezés
+                        Készlet módosítása
                       </button>
                     </div>
                   </div>
@@ -204,7 +204,7 @@ export function WarehousePanel({
                     ) : null}
 
                     <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
-                      <input id={`mat-${item.name}`} type="number" min={1} defaultValue={1} className="input md:max-w-[140px]" />
+                      <input id={`mat-${item.name}`} type="number" defaultValue={1} className="input md:max-w-[140px]" />
                       <button
                         onClick={() => {
                           const input = document.getElementById(`mat-${item.name}`) as HTMLInputElement | null;
@@ -212,7 +212,7 @@ export function WarehousePanel({
                         }}
                         className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
                       >
-                        + Bevételezés
+                        Készlet módosítása
                       </button>
                     </div>
                   </div>
