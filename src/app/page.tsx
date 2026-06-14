@@ -1657,7 +1657,7 @@ export default function Home() {
       setMessage("Ügyféladatok mentve ✅");
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
-      replaceView("dashboard");
+      returnToLastMenu();
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -1724,7 +1724,7 @@ export default function Home() {
       if (selected.id === customer.id) {
         setSelected(EMPTY_CUSTOMER);
         setQuoteItems(EMPTY_QUOTE_ITEMS);
-        replaceView("dashboard");
+        returnToLastMenu();
       }
 
       clearCustomerDraft(customer.id);
@@ -1980,7 +1980,6 @@ export default function Home() {
     const error = isInstallation ? stockErrorMessage() : "";
     if (error) {
       setMessage(error);
-      replaceView("dashboard");
       return;
     }
 
@@ -2014,7 +2013,6 @@ export default function Home() {
     const error = isInstallation ? stockErrorMessage() : "";
     if (error) {
       setMessage(error);
-      replaceView("dashboard");
       return;
     }
 
@@ -2042,7 +2040,7 @@ export default function Home() {
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
       setMessage("Munka teljesen lezárva ✅ A naptárban sötétzöld lezárt munkaként megmarad.");
-      replaceView("dashboard");
+      returnToLastMenu();
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -2105,7 +2103,7 @@ export default function Home() {
       setSelected(cancelledUpdated);
       setCustomers(prev => prev.map(c => c.id === cancelledUpdated.id ? cancelledUpdated : c));
       setMessage("Időpont törölve / lemondva ✅ A foglalás felszabadult.");
-      replaceView("dashboard");
+      returnToLastMenu();
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
     }
@@ -2455,7 +2453,6 @@ export default function Home() {
       clearCustomerDraft(updated.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Ajánlat elküldve emailben ✅");
-      returnToLastMenu();
     } catch (error: any) {
       setMessage(`Email küldési hiba: ${error.message}`);
     } finally {
