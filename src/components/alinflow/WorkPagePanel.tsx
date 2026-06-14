@@ -164,6 +164,7 @@ export function WorkPagePanel({
   const maintenanceFinished = isMaintenance && selected.status === "Lezárva";
   const canStartMaintenance = installationFinished || maintenanceFinished;
   const [showMaterials, setShowMaterials] = useState(false);
+  const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
     : isMaintenance
@@ -177,7 +178,11 @@ export function WorkPagePanel({
           ← Vissza
         </button>
       </div>
-      {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
+      {message ? (
+        <div className={`rounded-2xl border p-4 font-black ${messageIsError ? "border-red-300/40 bg-red-500/20 text-red-100" : "border-emerald-300/30 bg-emerald-400/20 text-emerald-100"}`}>
+          {message}
+        </div>
+      ) : null}
       <Layout>
         <Main>
           <Card title="Ügyféladatok">

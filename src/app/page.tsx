@@ -664,7 +664,7 @@ export default function Home() {
   ];
 
   const currentWorkChecklist = selected.id ? effectiveChecklistFor(selected) : workChecklist;
-  const missingChecklist = checklistItems.filter((item) => !currentWorkChecklist[item.key]).map((item) => item.label);
+  const missingChecklist = checklistItems.filter((item) => item.key !== "docsSent" && !currentWorkChecklist[item.key]).map((item) => item.label);
   const checklistReady = missingChecklist.length === 0;
 
   function openCustomer(c:Customer, v:View) {
