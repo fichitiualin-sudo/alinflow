@@ -94,6 +94,8 @@ export type Customer = {
 export type WorkReport = {
   id?: string;
   customerId?: string;
+  appointmentId?: string;
+  legacySourceKey?: string;
   appointmentType?: AppointmentType;
   workDate?: string;
   workTime?: string;
