@@ -2662,6 +2662,8 @@ export default function Home() {
     return {
       id: row.id,
       customerId: row.customer_id,
+      appointmentId: row.appointment_id || undefined,
+      legacySourceKey: row.legacy_source_key || undefined,
       appointmentType,
       workDate: row.work_date || undefined,
       workTime: row.work_time || undefined,
@@ -2733,6 +2735,7 @@ export default function Home() {
   }
 
   function sameReportAppointment(report: WorkReport, customer: Customer) {
+    if (report.appointmentId && customer.activeAppointmentId) return report.appointmentId === customer.activeAppointmentId;
     if (!customer.date) return false;
     return report.workDate === customer.date && firstAppointmentTime(report.workTime || "08:00") === firstAppointmentTime(customer.time || "08:00");
   }
@@ -2810,6 +2813,11 @@ export default function Home() {
   function errorMentionsWorkReportType(error: any) {
     const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
     return text.includes("appointment_type") || text.includes("work_reports_customer_appointment_type_uidx");
+  }
+
+  function errorMentionsWorkReportHistoryLink(error: any) {
+    const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
+    return text.includes("appointment_id") || text.includes("legacy_source_key");
   }
 
   function checklistCompletedAtFromRow(row: any): WorkChecklistCompletedAt {
@@ -2922,6 +2930,10 @@ export default function Home() {
 
   function currentMaintenanceReportFor(customer: Customer) {
     if (normalizeAppointmentType(customer.appointmentType) !== "maintenance") return undefined;
+    if (customer.activeAppointmentId) {
+      const exact = maintenanceReportsFor(customer).find((report) => report.appointmentId === customer.activeAppointmentId);
+      if (exact) return exact;
+    }
     const currentDate = customer.date || scheduleDate;
     const currentTime = firstAppointmentTime(customer.time || scheduleTime || "");
     return maintenanceReportsFor(customer).find((report) => {
@@ -2947,7 +2959,20 @@ export default function Home() {
       return currentMaintenanceReportFor(customer);
     }
 
-    if (workReport.customerId === customer.id && normalizeAppointmentType(workReport.appointmentType) === normalizedType) return workReport;
+    if (customer.activeAppointmentId) {
+      const exact = Object.values(workReportsByCustomer).find((report) => (
+        report.customerId === customer.id
+        && report.appointmentId === customer.activeAppointmentId
+        && normalizeAppointmentType(report.appointmentType) === normalizedType
+      ));
+      if (exact) return exact;
+    }
+
+    if (
+      workReport.customerId === customer.id
+      && normalizeAppointmentType(workReport.appointmentType) === normalizedType
+      && (!customer.activeAppointmentId || !workReport.appointmentId || workReport.appointmentId === customer.activeAppointmentId)
+    ) return workReport;
     const key = workReportMapKey(customer.id, normalizedType);
     return workReportsByCustomer[key] || Object.values(workReportsByCustomer).find((report) => report.customerId === customer.id && normalizeAppointmentType(report.appointmentType) === normalizedType);
   }
@@ -3213,6 +3238,40 @@ export default function Home() {
       return;
     }
 
+    if (customer.activeAppointmentId) {
+      const cachedAppointmentReport = [
+        ...maintenanceReportsFor(customer),
+        ...Object.values(workReportsByCustomer).filter((report) => report.customerId === customer.id),
+      ].find((report) => report.appointmentId === customer.activeAppointmentId);
+      if (cachedAppointmentReport) {
+        setWorkReport({ ...cachedAppointmentReport, signerName: cachedAppointmentReport.signerName || customer.name || "" });
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("work_reports")
+        .select("*")
+        .eq("appointment_id", customer.activeAppointmentId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data) {
+        const loadedReport = { ...workReportFromRow(data), workDescription: data.work_description || defaultWorkDescription(targetType) };
+        setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
+        if (normalizeAppointmentType(loadedReport.appointmentType) === "maintenance") {
+          setMaintenanceReportsByCustomer((prev) => {
+            const current = prev[customer.id] || [];
+            const without = current.filter((report) => report.id !== loadedReport.id);
+            return { ...prev, [customer.id]: [loadedReport, ...without].sort(compareWorkReportsDesc) };
+          });
+        } else {
+          setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(customer.id, targetType)]: loadedReport }));
+        }
+        return;
+      }
+    }
+
     if (targetType === "maintenance") {
       const currentReport = currentMaintenanceReportFor(customer);
       if (currentReport) {
@@ -3322,6 +3381,7 @@ export default function Home() {
     const signedAt = hasValidWorkReportSignature(workReport) ? workReport.signedAt : null;
     const reportToSave: WorkReport = {
       ...workReport,
+      appointmentId: workReport.appointmentId || selected.activeAppointmentId,
       workDate: workReport.workDate || selected.date || scheduleDate,
       workTime: workReport.workTime || selected.time || shownTime || scheduleTime,
       signerName: workReport.signerName || selected.name,
@@ -3335,6 +3395,7 @@ export default function Home() {
       const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
       const basePayload = {
         customer_id: selected.id,
+        appointment_id: selected.activeAppointmentId || null,
         appointment_type: currentAppointmentType,
         work_date: reportToSave.workDate || selected.date || scheduleDate || null,
         work_time: reportToSave.workTime || selected.time || shownTime || null,
@@ -3350,6 +3411,7 @@ export default function Home() {
         signed_at: signedAt,
         created_by: user?.id || null,
       };
+      const { appointment_id, ...payloadWithoutHistoryLink } = basePayload;
 
       const currentReportId = workReport.id || reportToSave.id || selected.activeWorkReportId;
       let data: any = null;
@@ -3371,8 +3433,18 @@ export default function Home() {
         error = result.error;
       }
 
+      if (error && errorMentionsWorkReportHistoryLink(error)) {
+        const existingReport = currentAppointmentType === "maintenance" ? undefined : savedReportFor(selected, currentAppointmentType);
+        const retryReportId = currentReportId || existingReport?.id;
+        const retryResult = retryReportId
+          ? await supabase.from("work_reports").update(payloadWithoutHistoryLink).eq("id", retryReportId).select("*").single()
+          : await supabase.from("work_reports").insert(payloadWithoutHistoryLink).select("*").single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
+
       if (error && currentAppointmentType === "installation" && errorMentionsWorkReportType(error)) {
-        const { appointment_type, ...fallbackPayload } = basePayload;
+        const { appointment_type, ...fallbackPayload } = payloadWithoutHistoryLink;
         const fallbackResult = await supabase
           .from("work_reports")
           .upsert(fallbackPayload, { onConflict: "customer_id" })
@@ -3387,6 +3459,18 @@ export default function Home() {
           throw new Error("A karbantartási munkalap külön mentéséhez futtasd a SUPABASE_WORK_REPORT_TIPUS_OSZLOP.sql fájlt a Supabase-ben.");
         }
         throw error;
+      }
+
+      if (data?.id && !data.legacy_source_key) {
+        const legacySourceKey = `work_reports:${data.id}`;
+        const legacyResult = await supabase
+          .from("work_reports")
+          .update({ legacy_source_key: legacySourceKey })
+          .eq("id", data.id)
+          .select("legacy_source_key")
+          .maybeSingle();
+        if (legacyResult.error && !errorMentionsWorkReportHistoryLink(legacyResult.error)) throw legacyResult.error;
+        if (!legacyResult.error) data.legacy_source_key = legacyResult.data?.legacy_source_key || legacySourceKey;
       }
 
       let emailSentAt = data?.email_sent_at || undefined;
@@ -3432,6 +3516,8 @@ export default function Home() {
       const savedReportForState: WorkReport = {
         id: data.id,
         customerId: data.customer_id,
+        appointmentId: data.appointment_id || reportToSave.appointmentId || selected.activeAppointmentId,
+        legacySourceKey: data.legacy_source_key || reportToSave.legacySourceKey,
         appointmentType: currentAppointmentType,
         workDate: data.work_date || reportToSave.workDate,
         workTime: data.work_time || reportToSave.workTime,
