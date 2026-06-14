@@ -93,6 +93,11 @@ import {
   postalCodeFromCustomerData,
   sortCustomersByCreatedAtDesc,
 } from "@/lib/alinflow/customers";
+import {
+  appointmentTimeAvailable,
+  availableAppointmentSlots,
+  sortCustomersBySchedule,
+} from "@/lib/alinflow/schedule";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
 import { AllWorkReportsDocument, AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
@@ -131,7 +136,7 @@ import {
   workReportTitle,
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
-import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, intervalsOverlap, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType, slotInterval } from "@/lib/alinflow/appointments";
+import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 
 const DASHBOARD_WAREHOUSE_LIMIT = 10;
@@ -177,49 +182,6 @@ function withoutPostalCode<T extends Record<string, any>>(row: T) {
   return rest;
 }
 
-function appointmentIntervalsForDay(customers: Customer[], date: string, selectedCustomerId?: string) {
-  const dayCustomers = customers.filter((customer) => customer.id !== selectedCustomerId && customer.date === date && customer.status !== "Lemondva");
-  return dayCustomers.map((customer) => appointmentInterval(customer)).filter(Boolean) as { start: number; end: number }[];
-}
-
-function appointmentTimeAvailable({
-  customers,
-  date,
-  appointmentType,
-  items,
-  selectedCustomerId,
-  time,
-}: {
-  customers: Customer[];
-  date: string;
-  appointmentType: AppointmentType;
-  items: QuoteItem[];
-  selectedCustomerId?: string;
-  time: string;
-}) {
-  const candidate = slotInterval(time, appointmentType, items);
-  if (!candidate) return false;
-  const intervals = appointmentIntervalsForDay(customers, date, selectedCustomerId);
-  return intervals.every((interval) => !intervalsOverlap(candidate, interval));
-}
-
-function availableAppointmentSlots({
-  customers,
-  date,
-  appointmentType,
-  items,
-  selectedCustomerId,
-}: {
-  customers: Customer[];
-  date: string;
-  appointmentType: AppointmentType;
-  items: QuoteItem[];
-  selectedCustomerId?: string;
-}) {
-  const slots = isInstallationAppointment(appointmentType) && qty(items) >= 2 ? ["08:00 + 12:00"] : appointmentSlotOptions(appointmentType, items);
-  return slots.filter((slot) => appointmentTimeAvailable({ customers, date, appointmentType, items, selectedCustomerId, time: slot }));
-}
-
 function timeValue(value?: string) {
   if (!value) return 0;
   const date = new Date(value);
@@ -231,22 +193,6 @@ function differentEnough(a?: string, b?: string) {
   const second = timeValue(b);
   if (!first || !second) return Boolean(a || b);
   return Math.abs(first - second) > 60_000;
-}
-
-function scheduledTimeValue(value?: string) {
-  const match = String(value || "").match(/(\d{1,2}):(\d{2})/);
-  if (!match) return 24 * 60 + 1;
-  return Number(match[1]) * 60 + Number(match[2]);
-}
-
-function sortCustomersBySchedule(list: Customer[]) {
-  return [...list].sort((a, b) => {
-    const byDate = String(a.date || "").localeCompare(String(b.date || ""));
-    if (byDate !== 0) return byDate;
-    const byTime = scheduledTimeValue(a.time) - scheduledTimeValue(b.time);
-    if (byTime !== 0) return byTime;
-    return (a.name || "").localeCompare(b.name || "", "hu");
-  });
 }
 
 function appointmentSummary(customer: Customer) {
