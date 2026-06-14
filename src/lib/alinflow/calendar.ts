@@ -36,11 +36,7 @@ function calendarPriceSummary(customer: Customer) {
       .join(" | ");
   }
 
-  if (items.length === 1) {
-    return `${itemQuantity(items[0])} db ${itemName(items[0])}: ${ft(itemTotal(items[0]))}`;
-  }
-
-  return `Összesen: ${ft(total(items))}`;
+  return ft(total(items));
 }
 
 function parseCalendarTime(value?: string) {
@@ -67,8 +63,7 @@ export function googleCalendarHref(customer: Customer) {
     customer.name ? `Ügyfél: ${customer.name}` : "",
     customer.phone ? `Telefon: ${customer.phone}` : "",
     customer.email ? `Email: ${customer.email}` : "",
-    isInstallation ? `Klíma: ${workSummary} – szereléssel együtt` : `Munka: ${workSummary}`,
-    priceSummary ? `Ár: ${priceSummary}` : "",
+    isInstallation ? `Klíma: ${workSummary} – szereléssel együtt${priceSummary ? `: ${priceSummary}` : ""}` : `Munka: ${workSummary}`,
     customer.need ? `Igény: ${customer.need}` : "",
     customer.notes ? `Megjegyzés: ${customer.notes}` : "",
     `Időpont típusa: ${workLabel}`,
