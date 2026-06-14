@@ -12,7 +12,18 @@ A fájl sok felelősséget kezel. Célzott refaktor indokolt lehet, de működé
 
 ## 3. Supabase séma dokumentálása
 
-A repo SQL fájljai és az élő Supabase séma eltérhetnek. A véglegesítés része legyen egy tényleges sémadump vagy kézzel ellenőrzött adatmodell.
+**Felmérve 2026-06-14-én.** Az élő táblák, oszlopok, constraint-ek, indexek, RLS policy-k, triggerek és migrációs számlálók kézzel ellenőrzött pillanatképe:
+
+[`SUPABASE_SCHEMA_AUDIT.md`](SUPABASE_SCHEMA_AUDIT.md)
+
+Nyitott feladat maradt:
+
+- a repository elavult starter SQL-jének rendezése;
+- a kódban hivatkozott, de hiányzó SQL-fájlok pótlása vagy hivatkozásaik megszüntetése;
+- verziózott migrációs baseline létrehozása;
+- a duplikált RLS policy-párok későbbi, külön jóváhagyott rendezése.
+
+Ezeket nem szabad összekeverni az additív `appointments` migrációval, és egyik sem indokolhat meglévő tábla, oszlop, constraint vagy adat törlését.
 
 ## 4. Automatikus tesztek
 

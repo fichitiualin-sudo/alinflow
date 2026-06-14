@@ -1,6 +1,6 @@
 # Adatmodell
 
-> Ez a dokumentum domain-szintű térkép. SQL-migráció előtt mindig ellenőrizni kell a tényleges Supabase sémát.
+> Ez a dokumentum domain-szintű térkép. Az élő séma 2026-06-14-i, csak olvasási felmérése: [`SUPABASE_SCHEMA_AUDIT.md`](SUPABASE_SCHEMA_AUDIT.md). SQL-migráció előtt az auditot újra kell futtatni.
 
 ## TypeScript domain-típusok
 
@@ -93,8 +93,9 @@ A jelenlegi projektben használt vagy korábban bevezetett fő táblák:
 - `inventory_stock`
 - `material_inventory`
 - `climate_products`
+- `profiles`
 
-A pontos oszlopokért és constraint-ekért a Supabase séma a forrás.
+Az élő sémában jelenleg nincs `appointments` tábla. A pontos oszlopokért, constraint-ekért, indexekért és RLS policy-kért az auditált Supabase séma a forrás.
 
 ## Kapcsolatok
 
@@ -102,7 +103,7 @@ A pontos oszlopokért és constraint-ekért a Supabase séma a forrás.
 customer
 ├── quotes
 │   └── quote_items
-├── jobs / appointments
+├── jobs (jelenlegi kompatibilitási időpontrekord)
 ├── documents
 ├── work_checklist
 └── work_reports
@@ -119,6 +120,9 @@ customer
 5. Az időponttípus és munkalaptípus migrációja a régi rekordokra alapértelmezett `installation` értéket adhat.
 6. A lezárási checklist dátumai külön JSON/mező formában tartósan tárolandók.
 7. Minden adatbázis-változás előtt mentés szükséges.
+8. A 2026-06-14-i élő sémában a `jobs` és a `work_reports` táblán nincs csak `customer_id` alapú unique constraint.
+9. Az új `appointments` tábla legacy backfillje egyedi `legacy_source_key` mezőt és unique indexet igényel.
+10. Az átmeneti kettős írásban az `appointments` az elsődleges rekord, a `jobs` csak kompatibilitási tükör lehet.
 
 ## Jövőbeli irány
 
