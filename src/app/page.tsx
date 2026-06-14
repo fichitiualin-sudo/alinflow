@@ -77,6 +77,15 @@ import {
   offsetIso,
   todayIso,
 } from "@/lib/alinflow/format";
+import {
+  appointmentBookedDocumentType,
+  appointmentEmailDocumentType,
+  documentFromRow,
+  documentTimestamp,
+  maintenanceCancellationDocumentType,
+  reportDocumentType,
+  statusMeansSent,
+} from "@/lib/alinflow/documents";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
 import { AllWorkReportsDocument, AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
@@ -184,11 +193,6 @@ function postalCodeFromCustomerData(city?: string, postalCode?: string, address?
   if (addressMatch?.[0]) return addressMatch[0];
 
   return uniqueSettlementByCity(city)?.postalCode || "";
-}
-
-function documentTimestamp(docs: DocumentRecord[], type: string) {
-  const doc = docs.find((item) => item.type === type);
-  return doc?.sentAt || doc?.updatedAt || doc?.createdAt || undefined;
 }
 
 function isMissingPostalCodeColumnError(error: any) {
@@ -2662,37 +2666,6 @@ export default function Home() {
     };
   }
 
-  function documentFromRow(row: any): DocumentRecord {
-    return {
-      id: row.id,
-      customerId: row.customer_id,
-      type: row.document_type || row.type || "document",
-      title: row.title || "Dokumentum",
-      status: row.status || "Mentve",
-      sentAt: row.sent_at || undefined,
-      createdAt: row.created_at || undefined,
-      updatedAt: row.updated_at || undefined,
-    };
-  }
-
-  function appointmentBookedDocumentType(type?: string | null) {
-    const normalized = normalizeAppointmentType(type);
-    if (normalized === "maintenance") return "maintenance_appointment_booked";
-    if (normalized === "survey") return "survey_appointment_booked";
-    return "appointment_booked";
-  }
-
-  function appointmentEmailDocumentType(type?: string | null) {
-    const normalized = normalizeAppointmentType(type);
-    if (normalized === "maintenance") return "maintenance_appointment_email";
-    if (normalized === "survey") return "survey_appointment_email";
-    return "appointment_email";
-  }
-
-  function reportDocumentType(type?: string | null) {
-    return normalizeAppointmentType(type) === "maintenance" ? "maintenance_work_report" : "work_report";
-  }
-
   function workReportsForCustomer(customer: Customer, type?: AppointmentType) {
     if (!customer.id) return [];
     return sortWorkReportsByDateDesc(
@@ -2717,13 +2690,6 @@ export default function Home() {
     const time = (report as WorkReport).workTime || (report as Pick<Customer, "date" | "time" | "appointmentType">).time;
     if (!date) return "nincs dátum";
     return `${date.replaceAll("-", ".")} · ${firstAppointmentTime(time || "08:00")}`;
-  }
-
-  function maintenanceCancellationDocumentType(customer: Customer, cancelledAt: string) {
-    const datePart = (customer.date || todayIso()).replaceAll("-", "");
-    const timePart = firstAppointmentTime(customer.time || "00:00").replace(":", "");
-    const cancelledPart = cancelledAt.replace(/[^0-9]/g, "");
-    return `maintenance_cancelled_${datePart}_${timePart}_${cancelledPart}`;
   }
 
   function maintenanceCancellationTitle(customer: Customer) {
@@ -2792,10 +2758,6 @@ export default function Home() {
       docsSent: Boolean(row.docs_sent),
       completedAt: checklistCompletedAtFromRow(row),
     };
-  }
-
-  function statusMeansSent(status?: string) {
-    return (status || "").toLowerCase().includes("elküld");
   }
 
   function effectiveChecklistFor(
