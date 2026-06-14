@@ -105,6 +105,8 @@ import {
   defaultWorkDescription,
   emptyWorkReport,
   formatSignedAt,
+  hasValidWorkReportSignature,
+  workReportSignatureState,
   workReportTitle,
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
@@ -1982,7 +1984,7 @@ export default function Home() {
 
     if (currentAppointmentType === "maintenance") {
       const maintenanceReport = savedReportFor(selected, "maintenance");
-      if (!maintenanceReport?.id || !(maintenanceReport.signatureDataUrl || maintenanceReport.signedAt || maintenanceReport.emailSentAt)) {
+      if (!maintenanceReport?.id || !hasValidWorkReportSignature(maintenanceReport)) {
         setMessage("Karbantartás lezárása előtt készítsd el és írasd alá a karbantartási munkalapot.");
         return;
       }
@@ -2698,8 +2700,10 @@ export default function Home() {
 
   function reportStatusText(report?: WorkReport) {
     if (!report) return "Nincs kész";
-    if (report.emailSentAt) return "Elküldve";
-    if (report.signatureDataUrl || report.signedAt) return "Aláírva, elkészült";
+    const signatureState = workReportSignatureState(report);
+    if (signatureState === "sent_signed") return "Aláírva, elküldve";
+    if (signatureState === "signed") return "Aláírva, elkészült";
+    if (signatureState === "sent_unsigned") return "Elküldve, aláírásra vár";
     if (report.id) return "Mentve, aláírásra vár";
     return "Nincs kész";
   }
@@ -2781,12 +2785,6 @@ export default function Home() {
     };
   }
 
-  function statusMeansSignedOrSent(status?: string) {
-    const text = (status || "").toLowerCase();
-    if (!text || text.includes("nincs kész") || text.includes("aláírásra vár")) return false;
-    return text.includes("elküld") || text.includes("aláír");
-  }
-
   function statusMeansSent(status?: string) {
     return (status || "").toLowerCase().includes("elküld");
   }
@@ -2805,19 +2803,12 @@ export default function Home() {
     const workDoc = docs.find((doc) => doc.type === "work_report");
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
 
-    const workAndDeclarationReady = Boolean(
-      report?.signatureDataUrl ||
-      report?.signedAt ||
-      report?.emailSentAt ||
-      statusMeansSignedOrSent(workDoc?.status) ||
-      statusMeansSignedOrSent(purchaseDoc?.status)
-    );
+    const workAndDeclarationReady = hasValidWorkReportSignature(report);
     const documentsSent = Boolean(
-      workAndDeclarationReady &&
-      (saved.docsSent || report?.emailSentAt || statusMeansSent(workDoc?.status) || statusMeansSent(purchaseDoc?.status))
+      saved.docsSent || report?.emailSentAt || statusMeansSent(workDoc?.status) || statusMeansSent(purchaseDoc?.status)
     );
 
-    const workDoneAt = report?.emailSentAt || report?.signedAt || report?.updatedAt || report?.createdAt || workDoc?.sentAt || workDoc?.updatedAt || workDoc?.createdAt || purchaseDoc?.sentAt || purchaseDoc?.updatedAt || purchaseDoc?.createdAt;
+    const workDoneAt = workAndDeclarationReady ? report?.signedAt : undefined;
     const docsSentAt = report?.emailSentAt || workDoc?.sentAt || workDoc?.updatedAt || workDoc?.createdAt || purchaseDoc?.sentAt || purchaseDoc?.updatedAt || purchaseDoc?.createdAt;
     const completedAt: WorkChecklistCompletedAt = { ...(saved.completedAt || {}) };
 
@@ -2873,8 +2864,10 @@ export default function Home() {
   }
 
   function maintenanceReportStatus(report: WorkReport) {
-    if (report.emailSentAt) return "Elküldve";
-    if (report.signatureDataUrl || report.signedAt) return "Aláírva";
+    const signatureState = workReportSignatureState(report);
+    if (signatureState === "sent_signed") return "Aláírva, elküldve";
+    if (signatureState === "signed") return "Aláírva";
+    if (signatureState === "sent_unsigned") return "Elküldve, aláírásra vár";
     if (report.id) return "Mentve";
     return "Nincs kész";
   }
@@ -2981,45 +2974,36 @@ export default function Home() {
 
   function hasCustomerSignature(customer: Customer, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
     const report = type === "maintenance" ? currentMaintenanceReportFor(customer) : savedReportFor(customer, type);
-    const docs = docsFor(customer);
-    if (type === "maintenance") {
-      return Boolean(report?.signatureDataUrl || report?.signedAt || report?.emailSentAt);
-    }
-    const workDoc = docs.find((doc) => doc.type === "work_report");
-    const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
-    return Boolean(
-      report?.signatureDataUrl ||
-      report?.signedAt ||
-      report?.emailSentAt ||
-      statusMeansSignedOrSent(workDoc?.status) ||
-      statusMeansSignedOrSent(purchaseDoc?.status)
-    );
+    return hasValidWorkReportSignature(report);
   }
 
   function workReportDocumentStatus(customer: Customer, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
     const report = savedReportFor(customer, type);
-    if (report?.emailSentAt) return "Elküldve";
-    if (hasCustomerSignature(customer, type)) return "Aláírva, elkészült";
+    const signatureState = workReportSignatureState(report);
+    if (signatureState === "sent_signed") return "Aláírva, elküldve";
+    if (signatureState === "signed") return "Aláírva, elkészült";
+    if (signatureState === "sent_unsigned") return "Elküldve, aláírásra vár";
     if (report?.id) return "Mentve, aláírásra vár";
     return "Nincs kész";
   }
 
   function purchaseDeclarationStatus(customer: Customer, type: AppointmentType = "installation") {
     const report = savedReportFor(customer, type);
-    if (report?.emailSentAt) return "Elküldve";
-    if (hasCustomerSignature(customer, type)) return "Elkészült";
+    const signatureState = workReportSignatureState(report);
+    if (signatureState === "sent_signed") return "Elkészült, elküldve";
+    if (signatureState === "signed") return "Elkészült";
+    if (signatureState === "sent_unsigned") return "Elküldve, aláírásra vár";
     if (report?.id) return "Aláírásra vár";
     return "Aláírásra vár";
   }
 
   function workAndDeclarationStatus(customer: Customer, type: AppointmentType = "installation") {
     const report = savedReportFor(customer, type);
-    if (report?.emailSentAt) return "Elküldve";
-    if (hasCustomerSignature(customer, type)) return "Elkészült";
+    const signatureState = workReportSignatureState(report);
+    if (signatureState === "sent_signed") return "Elkészült, elküldve";
+    if (signatureState === "signed") return "Elkészült";
+    if (signatureState === "sent_unsigned") return "Elküldve, aláírásra vár";
     if (report?.id) return "Mentve, aláírásra vár";
-    const workDoc = docFor(customer, "work_report");
-    const purchaseDoc = docFor(customer, "purchase_declaration");
-    if (statusMeansSignedOrSent(workDoc?.status) || statusMeansSignedOrSent(purchaseDoc?.status)) return "Elkészült";
     return "Nincs kész";
   }
 
@@ -3029,7 +3013,7 @@ export default function Home() {
   }
 
   function timestampForReport(report?: WorkReport) {
-    return report?.emailSentAt || report?.signedAt || report?.updatedAt || report?.createdAt || undefined;
+    return hasValidWorkReportSignature(report) ? report?.signedAt : undefined;
   }
 
   function workActionDatesFor(customer: Customer): WorkActionDates {
@@ -3282,12 +3266,12 @@ export default function Home() {
       return;
     }
 
-    if (sendEmail && !workReport.signatureDataUrl) {
+    if (sendEmail && !hasValidWorkReportSignature(workReport)) {
       setMessage("Küldés előtt szükséges az egyszerű ügyfél aláírás.");
       return;
     }
 
-    const signedAt = workReport.signatureDataUrl ? (workReport.signedAt || new Date().toISOString()) : null;
+    const signedAt = hasValidWorkReportSignature(workReport) ? workReport.signedAt : null;
     const reportToSave: WorkReport = {
       ...workReport,
       workDate: workReport.workDate || selected.date || scheduleDate,
@@ -3372,7 +3356,7 @@ export default function Home() {
         await supabase.from("work_reports").update({ email_sent_at: emailSentAt }).eq("id", data.id);
       }
 
-      const hasSignedReport = Boolean(reportToSave.signatureDataUrl || signedAt);
+      const hasSignedReport = hasValidWorkReportSignature(reportToSave);
       const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
       const isMaintenanceReport = currentAppointmentType === "maintenance";
       if (!isMaintenanceReport) {
@@ -3612,8 +3596,8 @@ export default function Home() {
               <button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button>
             </div>
           )}
-          {!isAppointmentPreview && !isQuotePreview && !isAllWorkReportsPreview && !report.id && !report.signatureDataUrl ? (
-            <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">Ehhez az ügyfélhez még nincs mentett munkalap vagy aláírás. A dokumentum előnézete az ügyféladatokból készül, de hivatalosan előbb érdemes aláíratni és menteni.</div>
+          {!isAppointmentPreview && !isQuotePreview && !isAllWorkReportsPreview && !hasValidWorkReportSignature(report) ? (
+            <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">A dokumentum még nincs érvényesen aláírva. A munkalap és a vásárlási nyilatkozat csak aláírásképpel és aláírási időponttal számít elkészültnek.</div>
           ) : null}
         </div>
         <div className="print-document-area print:bg-white">

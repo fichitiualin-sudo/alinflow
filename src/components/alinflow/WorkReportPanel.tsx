@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
-import { formatSignedAt, workReportTitle } from "@/lib/alinflow/work-report";
+import { formatSignedAt, hasValidWorkReportSignature, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentSummaryLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 
 type WorkReportPanelProps = {
@@ -40,6 +40,7 @@ export function WorkReportPanel({
   const isMaintenance = appointmentType === "maintenance";
   const reportTitle = workReportTitle(selected.appointmentType);
   const climateLabel = isMaintenance ? "Karbantartandó klíma" : "Klíma";
+  const hasValidSignature = hasValidWorkReportSignature(workReport);
 
   return (
     <Shell>
@@ -79,7 +80,7 @@ export function WorkReportPanel({
               onChange={(value)=>onUpdateWorkReportField("signerName", value)}
             />
             <SignaturePad value={workReport.signatureDataUrl} onChange={onSignatureChange}/>
-            {workReport.signedAt ? (
+            {hasValidSignature ? (
               <p className="mt-3 text-sm font-bold text-emerald-200">Aláírva: {formatSignedAt(workReport.signedAt)}</p>
             ) : (
               <p className="mt-3 text-sm font-bold text-amber-200">Még nincs aláírás.</p>
@@ -87,7 +88,7 @@ export function WorkReportPanel({
           </Card>
         </Main>
         <Side>
-          <Gradient title="Munkalap státusz" value={workReport.signatureDataUrl ? "Aláírva" : "Aláírásra vár"}/>
+          <Gradient title="Munkalap státusz" value={hasValidSignature ? "Aláírva" : "Aláírásra vár"}/>
           <Card title="Műveletek">
             <div className="grid grid-cols-1 gap-3">
               <StepButton color="green" onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>

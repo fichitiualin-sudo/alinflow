@@ -24,6 +24,24 @@ export function workReportTitle(appointmentType?: string | null) {
   return "Klímaszerelési munkalap";
 }
 
+export function hasValidWorkReportSignature(report?: Pick<WorkReport, "signatureDataUrl" | "signedAt"> | null) {
+  const signatureDataUrl = report?.signatureDataUrl?.trim();
+  const signedAt = report?.signedAt?.trim();
+  if (!signatureDataUrl || !signedAt) return false;
+  return !Number.isNaN(new Date(signedAt).getTime());
+}
+
+export type WorkReportSignatureState = "unsigned" | "signed" | "sent_unsigned" | "sent_signed";
+
+export function workReportSignatureState(
+  report?: Pick<WorkReport, "signatureDataUrl" | "signedAt" | "emailSentAt"> | null
+): WorkReportSignatureState {
+  const signed = hasValidWorkReportSignature(report);
+  const sent = Boolean(report?.emailSentAt);
+  if (signed) return sent ? "sent_signed" : "signed";
+  return sent ? "sent_unsigned" : "unsigned";
+}
+
 export function emptyWorkReport(customer?: Customer): WorkReport {
   return {
     customerId: customer?.id,

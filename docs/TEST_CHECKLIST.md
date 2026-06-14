@@ -65,8 +65,11 @@ npm run build
 ## Munkalap és lezárás
 
 - [ ] Munkalap aláírható.
+- [ ] Aláírtnak csak együtt meglévő aláíráskép és érvényes aláírási időpont számít.
 - [ ] Aláírás nélkül nem jelölődik késznek.
 - [ ] Vásárlási nyilatkozat aláírás nélkül nem kész.
+- [ ] Az emailküldés és a `docsSent` állapot önmagában nem jelenti a munkalap vagy nyilatkozat aláírását.
+- [ ] Korábban elküldött, de aláírás nélküli dokumentum `Elküldve, aláírásra vár` állapotban jelenik meg.
 - [ ] Checklist pipák dátuma mentődik és visszatöltődik.
 - [ ] Teljes lezárás csak a szükséges feltételekkel engedett.
 - [ ] Lezárás után a dokumentumok megmaradnak.
