@@ -86,6 +86,13 @@ import {
   reportDocumentType,
   statusMeansSent,
 } from "@/lib/alinflow/documents";
+import {
+  LIST_PAGE_SIZE,
+  formatCustomerCreatedAt,
+  paginateItems,
+  postalCodeFromCustomerData,
+  sortCustomersByCreatedAtDesc,
+} from "@/lib/alinflow/customers";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
 import { AllWorkReportsDocument, AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
@@ -124,11 +131,9 @@ import {
   workReportTitle,
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
-import { normalizePostalCodeInput, uniqueSettlementByCity } from "@/lib/alinflow/postal-codes";
 import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, intervalsOverlap, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType, slotInterval } from "@/lib/alinflow/appointments";
 import { compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 
-const LIST_PAGE_SIZE = 10;
 const DASHBOARD_WAREHOUSE_LIMIT = 10;
 
 type PageDocumentRow = {
@@ -152,47 +157,9 @@ type WorkActionDates = {
   cancelled?: string;
 };
 
-function customerCreatedAtMs(customer: Pick<Customer, "createdAt">) {
-  if (!customer.createdAt) return 0;
-  const date = new Date(customer.createdAt);
-  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
-}
-
-function sortCustomersByCreatedAtDesc(list: Customer[]) {
-  return [...list].sort((a, b) => customerCreatedAtMs(b) - customerCreatedAtMs(a));
-}
-
-function paginateItems<T>(items: T[], page: number) {
-  const pageCount = Math.max(1, Math.ceil(items.length / LIST_PAGE_SIZE));
-  const currentPage = Math.min(Math.max(1, page), pageCount);
-  const start = (currentPage - 1) * LIST_PAGE_SIZE;
-  return {
-    currentPage,
-    pageCount,
-    items: items.slice(start, start + LIST_PAGE_SIZE),
-  };
-}
-
-function formatCustomerCreatedAt(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
 function customerInquiryLabel(customer: Customer) {
   const created = formatCustomerCreatedAt(customer.createdAt);
   return created ? `Érdeklődött: ${created}` : "";
-}
-
-function postalCodeFromCustomerData(city?: string, postalCode?: string, address?: string) {
-  const direct = normalizePostalCodeInput(postalCode);
-  if (direct) return direct;
-
-  const addressMatch = String(address || "").match(/\b\d{4}\b/);
-  if (addressMatch?.[0]) return addressMatch[0];
-
-  return uniqueSettlementByCity(city)?.postalCode || "";
 }
 
 function isMissingPostalCodeColumnError(error: any) {
