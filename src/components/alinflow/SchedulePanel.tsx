@@ -4,7 +4,7 @@ import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem
 import { isCustomQuoteItem, itemName, itemUnitPrice, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
-import { APPOINTMENT_TYPES, appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
+import { appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
 
 type SchedulePanelProps = {
   selected: Customer;
@@ -31,7 +31,6 @@ type SchedulePanelProps = {
   onStep: (value: number) => void;
   onOpenCustomer: (customer: Customer) => void;
   onSetScheduleTime: (value: string) => void;
-  onSetAppointmentType: (value: AppointmentType) => void;
   onUpdateQuoteItem: (index: number, key: keyof QuoteItem, value: string | number | boolean) => void;
   onUpdateQuoteProduct: (index: number, productId: string) => void;
   onAddQuoteItem: () => void;
@@ -95,7 +94,6 @@ export function SchedulePanel({
   onStep,
   onOpenCustomer,
   onSetScheduleTime,
-  onSetAppointmentType,
   onUpdateQuoteItem,
   onUpdateQuoteProduct,
   onAddQuoteItem,
@@ -136,23 +134,6 @@ export function SchedulePanel({
             onStep={onStep}
             onOpen={onOpenCustomer}
           />
-          <Card title="Időpont típusa">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              {APPOINTMENT_TYPES.map((type) => {
-                const isSelected = appointmentType === type.value;
-                return (
-                  <button
-                    key={type.value}
-                    type="button"
-                    onClick={() => onSetAppointmentType(type.value)}
-                    className={`rounded-2xl border p-4 text-left transition ${isSelected ? "border-cyan-200 bg-cyan-300 text-slate-950" : "border-white/10 bg-slate-900/80 text-slate-100 hover:border-cyan-300/40"}`}
-                  >
-                    <span className="block text-lg font-black">{type.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
           <Card title="Ajánlott időpontok">
             {isMultiDayJob ? (
               freeSlots.length ? (
