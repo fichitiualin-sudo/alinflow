@@ -96,7 +96,7 @@ A jelenlegi projektben használt vagy korábban bevezetett fő táblák:
 - `climate_products`
 - `profiles`
 
-A 4. stabilizálási fázis additív migrációja létrehozta az `appointments` táblát és a `jobs` rekordok idempotens másolatát. Az alkalmazás ebben a fázisban továbbra is a `jobs` táblát használja. A migráció részletei: [`APPOINTMENTS_MIGRATION.md`](APPOINTMENTS_MIGRATION.md).
+A 4. stabilizálási fázis additív migrációja létrehozta az `appointments` táblát és a `jobs` rekordok idempotens másolatát. Az 5. fázistól az alkalmazás elsődlegesen az `appointments` táblából olvas, a `jobs` pedig kompatibilitási fallback és a jelenlegi írás célja marad. Részletek: [`APPOINTMENTS_MIGRATION.md`](APPOINTMENTS_MIGRATION.md) és [`APPOINTMENTS_COMPATIBLE_READ.md`](APPOINTMENTS_COMPATIBLE_READ.md).
 
 ## Kapcsolatok
 
@@ -105,7 +105,7 @@ customer
 ├── quotes
 │   └── quote_items
 ├── jobs (jelenlegi kompatibilitási időpontrekord)
-├── appointments (több időpont és történet; a 4. fázisban még nincs alkalmazáskódos olvasás)
+├── appointments (elsődleges időpont-olvasás, több rekord ügyfelenként)
 ├── documents
 ├── work_checklist
 └── work_reports

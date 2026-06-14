@@ -112,6 +112,7 @@ import {
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { normalizePostalCodeInput, uniqueSettlementByCity } from "@/lib/alinflow/postal-codes";
 import { appointmentDocumentTitle, appointmentInterval, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, intervalsOverlap, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType, slotInterval } from "@/lib/alinflow/appointments";
+import { compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 
 const LIST_PAGE_SIZE = 10;
 const DASHBOARD_WAREHOUSE_LIMIT = 10;
@@ -1208,6 +1209,7 @@ export default function Home() {
         supabase.from("customers").select("*").order("created_at", { ascending: false }),
         supabase.from("quotes").select("*").order("created_at", { ascending: false }),
         supabase.from("quote_items").select("*"),
+        supabase.from("appointments").select("*").order("created_at", { ascending: false }),
         supabase.from("jobs").select("*").order("created_at", { ascending: false }),
       ]);
 
@@ -1218,6 +1220,7 @@ export default function Home() {
         customerResult,
         quoteResult,
         itemResult,
+        appointmentResult,
         jobResult,
       ] = await dataPromise;
 
@@ -1233,9 +1236,22 @@ export default function Home() {
       const quoteRows = quoteResult.data || [];
       const itemRows = itemResult.data || [];
       const jobRows = jobResult.data || [];
+      const appointmentRows = appointmentResult.data || [];
+
+      if (appointmentResult.error && !isMissingAppointmentsTableError(appointmentResult.error)) {
+        console.warn("Appointments betöltési hiba, jobs kompatibilitási fallback aktív", appointmentResult.error.message);
+      }
+      if (jobResult.error && !appointmentRows.length) {
+        console.warn("Jobs kompatibilitási fallback betöltési hiba", jobResult.error.message);
+      }
+      if (appointmentResult.error && jobResult.error) {
+        setMessage(`Nem sikerült betölteni az időpontokat: ${appointmentResult.error.message}`);
+      }
 
     const quotesByCustomer = new Map<string, any>();
+    const quotesById = new Map<string, any>();
     (quoteRows || []).forEach((quote: any) => {
+      if (quote.id) quotesById.set(quote.id, quote);
       if (!quotesByCustomer.has(quote.customer_id)) quotesByCustomer.set(quote.customer_id, quote);
     });
 
@@ -1246,17 +1262,19 @@ export default function Home() {
       itemsByQuote.set(item.quote_id, current);
     });
 
-    const jobsByCustomer = new Map<string, any>();
-    (jobRows || []).forEach((job: any) => {
-      if (!jobsByCustomer.has(job.customer_id)) jobsByCustomer.set(job.customer_id, job);
-    });
+    const appointmentsByCustomer = currentAppointmentsByCustomer(
+      compatibleAppointmentRows(appointmentRows, jobRows, {
+        jobsReadSucceeded: !jobResult.error,
+      }),
+    );
 
 
     const loadedCustomers: Customer[] = sortCustomersByCreatedAtDesc((customerRows || []).map((row: any) => {
-      const quote = quotesByCustomer.get(row.id);
-      const job = jobsByCustomer.get(row.id);
+      const appointment = appointmentsByCustomer.get(row.id);
+      const quote = (appointment?.quote_id && quotesById.get(appointment.quote_id))
+        || quotesByCustomer.get(row.id);
       const existingDocs = documentsByCustomer[row.id] || [];
-      const loadedAppointmentType = normalizeAppointmentType(job?.appointment_type);
+      const loadedAppointmentType = normalizeAppointmentType(appointment?.appointment_type);
       const quoteSentAt = quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
       const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
 
@@ -1267,19 +1285,19 @@ export default function Home() {
         postalCode: postalCodeFromCustomerData(row.city, row.postal_code, row.address),
         phone: row.phone || "",
         email: row.email || "",
-        address: row.address || job?.address || "",
+        address: row.address || appointment?.address || "",
         source: row.source || "Kézi rögzítés",
-        status: normalizeStatus(row.status || job?.status || "Visszahívandó"),
+        status: normalizeStatus(row.status || appointment?.status || "Visszahívandó"),
         need: row.need || "",
         notes: row.notes || "",
-        date: job?.scheduled_date || undefined,
-        time: job?.scheduled_time || undefined,
+        date: appointment?.scheduled_date || undefined,
+        time: appointment?.scheduled_time || undefined,
         createdAt: row.created_at || undefined,
         updatedAt: row.updated_at || undefined,
         lastCalledAt: undefined,
         quoteSentAt,
-        appointmentBookedAt: job?.created_at || quoteSentAt,
-        appointmentUpdatedAt: job?.updated_at || quoteSentAt,
+        appointmentBookedAt: appointment?.created_at || quoteSentAt,
+        appointmentUpdatedAt: appointment?.updated_at || quoteSentAt,
         appointmentType: loadedAppointmentType,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,

@@ -55,6 +55,11 @@ npm run build
 
 ## Szerelés
 
+- [ ] Az időpont az `appointments` rekordból töltődik vissza.
+- [ ] A `jobs`-ban frissebb legacy módosítás kompatibilisen visszatöltődik.
+- [ ] Appointmenthez kötött ajánlat klímatételei töltődnek vissza.
+- [ ] Csak `jobs`-ban lévő időpont fallbackként megjelenik.
+- [ ] Törölt legacy job backfill appointmentja nem jelenik meg újra.
 - [ ] Ajánlott idősávok elérhetők.
 - [ ] Időpont módosítható.
 - [ ] Ütközés felismerhető.
@@ -76,6 +81,8 @@ npm run build
 
 ## Karbantartás
 
+- [ ] Több appointment esetén a legújabb aktív időpont töltődik be.
+- [ ] Lemondott appointment nem írja felül az aktív időpontot.
 - [ ] Lezárt ügyfélnél elérhető a karbantartási napló.
 - [ ] Új karbantartás gomb csak a naplóban van.
 - [ ] Karbantartás 1 órás és egyedi idővel rögzíthető.

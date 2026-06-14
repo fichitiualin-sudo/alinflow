@@ -122,6 +122,6 @@ A jelenlegi alkalmazás nem olvassa és nem írja az új táblát, ezért a bizt
 
 Automatikus `drop table` rollback nincs, mert az adatot törölne. A tábla eltávolítása csak külön jóváhagyással, friss mentés után és annak igazolásával történhet, hogy nincs `legacy_source_key is null` új rekord.
 
-## Következő fázis
+## Kapcsolódó következő fázis
 
-A következő fázis feladata a kompatibilis több-időpontos olvasás. Ez a migráció nem kezdi el azt a munkát, és nem vezet be kettős írást.
+Az 5. stabilizálási fázis bevezette a kompatibilis, elsődlegesen `appointments` alapú olvasást. Az írás továbbra is `jobs` alapú, kettős írás még nincs. Részletek: [`APPOINTMENTS_COMPATIBLE_READ.md`](APPOINTMENTS_COMPATIBLE_READ.md).
