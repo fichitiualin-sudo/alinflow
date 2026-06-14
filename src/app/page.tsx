@@ -2194,8 +2194,8 @@ export default function Home() {
   }
 
   async function addStock(productId: string, amount: number) {
-    if (!amount || amount <= 0) return;
-    const nextStock = stockOf(productId) + amount;
+    if (!Number.isFinite(amount) || amount === 0) return;
+    const nextStock = Math.max(0, stockOf(productId) + amount);
     setInventory((prev) => {
       const exists = prev.some((item) => item.productId === productId);
       if (exists) {
@@ -2246,10 +2246,10 @@ export default function Home() {
   }
 
   async function addMaterialStock(materialName: string, amount: number) {
-    if (!amount || amount <= 0) return;
+    if (!Number.isFinite(amount) || amount === 0) return;
     const current = materialInventory.find((item: any) => item.name === materialName);
     if (!current) return;
-    const nextItem = { ...current, stock: Math.round((Number(current.stock || 0) + amount) * 10) / 10 };
+    const nextItem = { ...current, stock: Math.max(0, Math.round((Number(current.stock || 0) + amount) * 10) / 10) };
     setMaterialInventory((prev: any[]) => prev.map((item: any) => item.name === materialName ? nextItem : item));
 
     try {

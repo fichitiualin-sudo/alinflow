@@ -138,9 +138,7 @@ export function appointmentDurationMinutes(type?: string | null, items: QuoteIte
   const appointmentType = normalizeAppointmentType(type);
   if (isOneHourAppointment(appointmentType)) return 60;
   if (quantity(items) >= 2 || String(time || "").includes("+")) return 8 * 60;
-  const start = timeToMinutes(time);
-  if (start >= 16 * 60) return 2 * 60;
-  return 4 * 60;
+  return 3 * 60;
 }
 
 export function slotInterval(slot: string, type?: string | null, items: QuoteItem[] = []): AppointmentInterval | null {
