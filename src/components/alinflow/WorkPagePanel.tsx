@@ -15,6 +15,7 @@ import {
   prod,
   qty,
   sortProducts,
+  total,
 } from "@/lib/alinflow/products";
 import type { View } from "@/lib/alinflow/types";
 import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
@@ -242,30 +243,20 @@ export function WorkPagePanel({
             {isInstallation ? <div className="space-y-3">
               {quoteItems.map((it, i) => (
                 <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_110px_44px]">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_120px_150px_44px]">
                     {isCustomQuoteItem(it) ? (
                       <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={(event) => onUpdateQuoteItem(i, "customName", event.target.value)} placeholder="Klíma megnevezése" />
                     ) : (
                       <ProductSelect products={products} value={it.productId} onChange={(value) => onUpdateQuoteProduct(i, value)} disabled={!canEditWorkResources} />
                     )}
                     <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", numericInputValue(event.target.value))} />
+                    <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={0} disabled={!canEditWorkResources} value={it.customPrice ?? itemUnitPrice(it)} onChange={(event) => onUpdateQuoteItem(i, "customPrice", priceInputValue(event.target.value))} />
                     <button className="rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(i)}>×</button>
                   </div>
                   <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
                     <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
                     <b>{ft(itemTotal(it))}</b>
                   </div>
-                  <label className="mt-3 block rounded-2xl bg-white/5 p-3">
-                    <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Ár szereléssel együtt / db</span>
-                    <input
-                      className="mt-2 w-full bg-transparent text-lg font-black outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                      type="number"
-                      min={0}
-                      disabled={!canEditWorkResources}
-                      value={it.customPrice ?? itemUnitPrice(it)}
-                      onChange={(event) => onUpdateQuoteItem(i, "customPrice", priceInputValue(event.target.value))}
-                    />
-                  </label>
                   {hasCustomProductPrice(it) ? (
                     <button type="button" disabled={!canEditWorkResources} onClick={() => onSyncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
                       Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
@@ -273,6 +264,10 @@ export function WorkPagePanel({
                   ) : null}
                 </div>
               ))}
+              <div className="flex flex-col gap-2 rounded-3xl bg-cyan-300 p-5 text-slate-950 md:flex-row md:items-center md:justify-between">
+                <b className="text-xl">Összesen</b>
+                <b className="text-2xl">{ft(total(quoteItems))}</b>
+              </div>
             </div> : null}
             {isInstallation ? <div className="mt-4 flex flex-col gap-3 md:flex-row">
               <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddQuoteItem}>+ Klíma hozzáadása</button>
