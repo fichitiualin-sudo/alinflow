@@ -1,11 +1,57 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+
+type ThemeMode = "dark" | "light";
+
+const THEME_STORAGE_KEY = "alinflow-theme";
+
+export function ThemeToggle() {
+  const [theme, setTheme] = useState<ThemeMode>("dark");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const nextTheme: ThemeMode = saved === "light" ? "light" : "dark";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+  }, []);
+
+  function updateTheme(nextTheme: ThemeMode) {
+    setTheme(nextTheme);
+    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+  }
+
+  return (
+    <div className="theme-toggle no-print flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/10 p-2 text-sm font-black shadow-xl backdrop-blur">
+      <button
+        type="button"
+        onClick={() => updateTheme("dark")}
+        className={`rounded-xl px-4 py-2 transition ${theme === "dark" ? "bg-cyan-300 text-slate-950" : "text-cyan-100 hover:bg-white/10"}`}
+      >
+        Sötét mód
+      </button>
+      <button
+        type="button"
+        onClick={() => updateTheme("light")}
+        className={`rounded-xl px-4 py-2 transition ${theme === "light" ? "bg-cyan-300 text-slate-950" : "text-cyan-100 hover:bg-white/10"}`}
+      >
+        Világos mód
+      </button>
+    </div>
+  );
+}
 
 export function Shell({ children }: { children: ReactNode }) {
   return (
     <main className="min-h-screen bg-[#08111F] p-4 text-white print:bg-white print:p-0 print:text-black md:p-8">
-      <div className="mx-auto w-full max-w-[1500px] space-y-8 print:max-w-none print:space-y-0 2xl:max-w-[1680px]">{children}</div>
+      <div className="mx-auto w-full max-w-[1500px] space-y-8 print:max-w-none print:space-y-0 2xl:max-w-[1680px]">
+        <div className="flex justify-end print:hidden">
+          <ThemeToggle />
+        </div>
+        {children}
+      </div>
     </main>
   );
 }
