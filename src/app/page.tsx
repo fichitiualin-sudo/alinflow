@@ -4028,7 +4028,7 @@ export default function Home() {
           <Btn onClick={startNewCustomer}>+ Új ügyfél</Btn>
           <Btn color="blue" onClick={() => navigateToView("documents")}>Dokumentumok</Btn>
           <Btn color="green" onClick={() => navigateToView("warehouse")}>Raktár / klímák</Btn>
-          <Btn color="blue" onClick={() => navigateToView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn>
+          <Btn color="red" onClick={() => navigateToView("archive")}>Lezárt / lemondott ({archivedCustomers.length})</Btn>
           <button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button>
         </div>
       </header>

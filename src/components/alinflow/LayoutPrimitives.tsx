@@ -104,8 +104,8 @@ export function StepButton({ children, color = "cyan", onClick, href }: { childr
   return <button onClick={onClick} className={className}>{content}</button>;
 }
 
-export function Btn({ children, onClick, color = "cyan" }: { children: ReactNode; onClick?: () => void; color?: "cyan" | "green" | "blue" }) {
-  const c = color === "green" ? "bg-emerald-400" : color === "blue" ? "bg-blue-400" : "bg-cyan-300";
+export function Btn({ children, onClick, color = "cyan" }: { children: ReactNode; onClick?: () => void; color?: "cyan" | "green" | "blue" | "red" }) {
+  const c = color === "green" ? "bg-emerald-400" : color === "blue" ? "bg-blue-400" : color === "red" ? "bg-red-400" : "bg-cyan-300";
   return <button onClick={onClick} className={`${c} rounded-2xl px-5 py-4 font-black text-slate-950`}>{children}</button>;
 }
 
