@@ -184,6 +184,7 @@ type QuickAppointmentDraft = {
   selectedCustomerId?: string;
   name: string;
   phone: string;
+  email: string;
   postalCode: string;
   city: string;
   address: string;
@@ -328,6 +329,7 @@ export default function Home() {
   const [scheduleTime,setScheduleTime] = useState("08:00");
   const [scheduleAppointmentType,setScheduleAppointmentType] = useState<AppointmentType>("installation");
   const [quickAppointment,setQuickAppointment] = useState<QuickAppointmentDraft | null>(null);
+  const [quickAppointmentEmailPrompt,setQuickAppointmentEmailPrompt] = useState<Customer | null>(null);
   const [materials,setMaterials] = useState(DEFAULT_MATERIALS);
   const [materialOverrides,setMaterialOverrides] = useState<Record<string,string>>({});
   const [inventory,setInventory] = useState<InventoryItem[]>(DEFAULT_INVENTORY);
@@ -1535,6 +1537,7 @@ export default function Home() {
       search: "",
       name: "",
       phone: "",
+      email: "",
       postalCode: "",
       city: "",
       address: "",
@@ -1646,7 +1649,7 @@ export default function Home() {
       city: quickAppointment.city.trim(),
       postalCode: quickAppointment.postalCode.trim(),
       phone: quickAppointment.phone.trim(),
-      email: "",
+      email: quickAppointment.email.trim(),
       address: quickAppointment.address.trim(),
       source: "Naptár gyors rögzítés",
       status: "Időpont foglalva",
@@ -1662,6 +1665,7 @@ export default function Home() {
       ...baseCustomer,
       name: existingCustomer ? baseCustomer.name : quickAppointment.name.trim(),
       phone: existingCustomer ? baseCustomer.phone : quickAppointment.phone.trim(),
+      email: existingCustomer ? baseCustomer.email : quickAppointment.email.trim(),
       postalCode: existingCustomer ? baseCustomer.postalCode : quickAppointment.postalCode.trim(),
       city: existingCustomer ? baseCustomer.city : quickAppointment.city.trim(),
       address: existingCustomer ? baseCustomer.address : quickAppointment.address.trim(),
@@ -1702,6 +1706,7 @@ export default function Home() {
       setScheduleTime(firstAppointmentTime(savedCustomer.time));
       setScheduleAppointmentType(appointmentType);
       setQuickAppointment(null);
+      setQuickAppointmentEmailPrompt(savedCustomer);
       setMessage(`${appointmentTypeLabel(appointmentType)} időpont rögzítve a naptárból ✅`);
       if (savedCustomer.id) void loadCustomerDetailData([savedCustomer.id]);
     } catch (error: any) {
@@ -2780,6 +2785,17 @@ export default function Home() {
     }
   }
 
+  async function sendQuickAppointmentEmail() {
+    if (!quickAppointmentEmailPrompt) return;
+    const sent = await sendAppointmentEmailFor(quickAppointmentEmailPrompt);
+    if (sent) setQuickAppointmentEmailPrompt(null);
+  }
+
+  function skipQuickAppointmentEmail() {
+    setQuickAppointmentEmailPrompt(null);
+    setMessage("Időpont mentve email küldése nélkül ✅");
+  }
+
 
   async function sendThankYouEmailFor(customer: Customer = selected) {
     const targetCustomer = {
@@ -3842,6 +3858,50 @@ export default function Home() {
 
 
 
+  function renderQuickAppointmentEmailPrompt() {
+    if (!quickAppointmentEmailPrompt) return null;
+
+    const customer = quickAppointmentEmailPrompt;
+    const items = cleanQuoteItems(customer.quoteItems || []);
+    const canSend = Boolean(customer.email?.trim());
+    const type = normalizeAppointmentType(customer.appointmentType);
+
+    return (
+      <div className="fixed inset-0 z-[85] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur">
+        <div className="mx-auto my-8 max-w-2xl rounded-[2rem] border border-white/10 bg-slate-900 p-5 shadow-2xl md:p-6">
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-200">Időpont mentve</p>
+          <h2 className="mt-2 text-2xl font-black">Tájékoztató e-mail küldése?</h2>
+          <p className="mt-2 text-sm font-bold text-slate-400">
+            {customer.name || "Névtelen ügyfél"} · {appointmentTypeLabel(type)} · {appointmentSummaryLabel(customer)}
+          </p>
+          <div className="mt-4 rounded-2xl bg-white/5 p-4 text-sm font-bold text-slate-300">
+            <p>{fullCustomerAddress(customer) || "Nincs cím megadva."}</p>
+            <p className="mt-2">{items.length ? climateSummary(items) : "Nincs klíma/ár ehhez az időponthoz."}</p>
+            {items.length && type === "installation" ? <p className="mt-2 text-emerald-200">Ajánlati összeg: {ft(total(items))}</p> : null}
+          </div>
+          {!canSend ? (
+            <div className="mt-4 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-black text-amber-100">
+              Ehhez az ügyfélhez nincs email cím. Add meg az ügyfél adatlapján, vagy mentsd email küldése nélkül.
+            </div>
+          ) : null}
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button type="button" onClick={skipQuickAppointmentEmail} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-slate-100">
+              Mentés e-mail küldése nélkül
+            </button>
+            <button
+              type="button"
+              onClick={() => void sendQuickAppointmentEmail()}
+              disabled={!canSend || appointmentEmailBusy}
+              className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {appointmentEmailBusy ? "Email küldése..." : "Tájékoztató e-mail küldése"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderQuickAppointmentDialog() {
     if (!quickAppointment) return null;
 
@@ -3931,6 +3991,7 @@ export default function Home() {
             <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
               <input className="input" value={quickAppointment.name} onChange={(event) => updateQuickAppointment({ name: event.target.value })} placeholder="Név" />
               <input className="input" value={quickAppointment.phone} onChange={(event) => updateQuickAppointment({ phone: event.target.value })} placeholder="Telefon" />
+              <input className="input" value={quickAppointment.email} onChange={(event) => updateQuickAppointment({ email: event.target.value })} placeholder="Email" />
               <input className="input" value={quickAppointment.postalCode} onChange={(event) => updateQuickAppointment({ postalCode: event.target.value })} placeholder="Irányítószám" />
               <input className="input" value={quickAppointment.city} onChange={(event) => updateQuickAppointment({ city: event.target.value })} placeholder="Település" />
               <input className="input md:col-span-2" value={quickAppointment.address} onChange={(event) => updateQuickAppointment({ address: event.target.value })} placeholder="Cím" />
@@ -4390,6 +4451,7 @@ export default function Home() {
 
       {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
       {renderQuickAppointmentDialog()}
+      {renderQuickAppointmentEmailPrompt()}
 
       <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
 

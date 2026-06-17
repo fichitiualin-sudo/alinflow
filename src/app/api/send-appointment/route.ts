@@ -59,6 +59,10 @@ function uniqueEmailRef(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function ft(value: number) {
+  return `${Number(value || 0).toLocaleString("hu-HU")} Ft`;
+}
+
 function formatDate(value?: string) {
   if (!value) return "egyeztetett időpont";
   const date = new Date(`${value}T00:00:00`);
@@ -71,7 +75,10 @@ function itemLines(items: QuoteItem[], appointmentType?: string) {
   const isInstall = isInstallationAppointment(appointmentType);
 
   if (!isInstall) {
-    return `<li style="margin:8px 0"><strong>${escapeHtml(workLabel)}</strong></li>`;
+    if (!items.length) return `<li style="margin:8px 0"><strong>${escapeHtml(workLabel)}</strong></li>`;
+    return items
+      .map((item) => `<li style="margin:8px 0"><strong>${Number(item.quantity || 1)} db ${escapeHtml(item.name || workLabel)}</strong> <span style="color:#64748b">– ${escapeHtml(workLabel.toLowerCase())}</span></li>`)
+      .join("");
   }
 
   if (!items.length) {
@@ -79,7 +86,11 @@ function itemLines(items: QuoteItem[], appointmentType?: string) {
   }
 
   return items
-    .map((item) => `<li style="margin:8px 0"><strong>${Number(item.quantity || 1)} db ${escapeHtml(item.name || "Klímaberendezés")}</strong> <span style="color:#64748b">– szereléssel együtt</span></li>`)
+    .map((item) => {
+      const totalPrice = Number(item.totalPrice || 0);
+      const priceText = totalPrice ? `: ${ft(totalPrice)}` : "";
+      return `<li style="margin:8px 0"><strong>${Number(item.quantity || 1)} db ${escapeHtml(item.name || "Klímaberendezés")}</strong> <span style="color:#64748b">– szereléssel együtt${priceText}</span></li>`;
+    })
     .join("");
 }
 
