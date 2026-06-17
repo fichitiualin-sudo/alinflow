@@ -140,6 +140,7 @@ import {
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
+import { normalizePostalCodeInput, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
   declarationFromRow,
@@ -1551,6 +1552,15 @@ export default function Home() {
 
   function updateQuickAppointment(patch: Partial<QuickAppointmentDraft>) {
     setQuickAppointment((prev) => prev ? { ...prev, ...patch } : prev);
+  }
+
+  function updateQuickAppointmentPostalCode(value: string) {
+    const postalCode = normalizePostalCodeInput(value);
+    const exact = uniqueSettlementByPostalCode(postalCode);
+    updateQuickAppointment({
+      postalCode,
+      ...(exact ? { city: exact.city } : {}),
+    });
   }
 
   function chooseQuickAppointmentType(appointmentType: AppointmentType) {
@@ -3224,7 +3234,7 @@ export default function Home() {
   }
 
   function timestampForReport(report?: WorkReport) {
-    return hasValidWorkReportSignature(report) ? report?.signedAt : undefined;
+    return hasValidWorkReportSignature(report) ? report?.signedAt || report?.updatedAt || report?.createdAt : undefined;
   }
 
   function workActionDatesFor(customer: Customer): WorkActionDates {
@@ -3876,7 +3886,7 @@ export default function Home() {
           </p>
           <div className="mt-4 rounded-2xl bg-white/5 p-4 text-sm font-bold text-slate-300">
             <p>{fullCustomerAddress(customer) || "Nincs cím megadva."}</p>
-            <p className="mt-2">{items.length ? climateSummary(items) : "Nincs klíma/ár ehhez az időponthoz."}</p>
+            {items.length ? <p className="mt-2">{climateSummary(items)}</p> : null}
             {items.length && type === "installation" ? <p className="mt-2 text-emerald-200">Ajánlati összeg: {ft(total(items))}</p> : null}
           </div>
           {!canSend ? (
@@ -3992,7 +4002,7 @@ export default function Home() {
               <input className="input" value={quickAppointment.name} onChange={(event) => updateQuickAppointment({ name: event.target.value })} placeholder="Név" />
               <input className="input" value={quickAppointment.phone} onChange={(event) => updateQuickAppointment({ phone: event.target.value })} placeholder="Telefon" />
               <input className="input" value={quickAppointment.email} onChange={(event) => updateQuickAppointment({ email: event.target.value })} placeholder="Email" />
-              <input className="input" value={quickAppointment.postalCode} onChange={(event) => updateQuickAppointment({ postalCode: event.target.value })} placeholder="Irányítószám" />
+              <input className="input" inputMode="numeric" maxLength={4} value={quickAppointment.postalCode} onChange={(event) => updateQuickAppointmentPostalCode(event.target.value)} placeholder="Irányítószám" />
               <input className="input" value={quickAppointment.city} onChange={(event) => updateQuickAppointment({ city: event.target.value })} placeholder="Település" />
               <input className="input md:col-span-2" value={quickAppointment.address} onChange={(event) => updateQuickAppointment({ address: event.target.value })} placeholder="Cím" />
             </div>
@@ -4024,8 +4034,6 @@ export default function Home() {
                   </div>
                 </div>
               ) : null}
-
-              {isSurvey ? <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">Felmérésnél nem kötelező klímát választani. A klíma és az ár később rögzíthető.</div> : null}
 
               {isMaintenance ? (
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
