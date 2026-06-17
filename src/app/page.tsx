@@ -1078,6 +1078,10 @@ export default function Home() {
     };
   }
 
+  function stockDeductedFromWorkStatus(status?: string | null) {
+    return status === "Szerelés kész – admin folyamatban" || status === "Lezárva";
+  }
+
   function workScopeKey(customer: Pick<Customer, "id" | "activeAppointmentId">) {
     return customer.activeAppointmentId ? `${customer.id}:${customer.activeAppointmentId}` : customer.id;
   }
@@ -1359,10 +1363,15 @@ export default function Home() {
         || currentAppointmentMap.get(customerId);
     };
 
+    const quoteForAppointment = (row: any, appointment?: any) => {
+      if (appointment?.quote_id && quotesById.has(appointment.quote_id)) return quotesById.get(appointment.quote_id);
+      if (appointment?.id && quotesByAppointment.has(appointment.id)) return quotesByAppointment.get(appointment.id);
+      if (appointment?.id) return undefined;
+      return quotesByCustomer.get(row.id);
+    };
+
     const customerFromAppointment = (row: any, appointment?: any): Customer => {
-      const quote = (appointment?.quote_id && quotesById.get(appointment.quote_id))
-        || (appointment?.id && quotesByAppointment.get(appointment.id))
-        || quotesByCustomer.get(row.id);
+      const quote = quoteForAppointment(row, appointment);
       const existingDocs = documentsByCustomer[row.id] || [];
       const loadedAppointmentType = normalizeAppointmentType(appointment?.appointment_type);
       const quoteSentAt = quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
@@ -1394,7 +1403,9 @@ export default function Home() {
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
-        stockDeducted: Boolean(row.stock_deducted),
+        stockDeducted: appointment?.id
+          ? stockDeductedFromWorkStatus(appointment.status)
+          : Boolean(row.stock_deducted) || stockDeductedFromWorkStatus(row.status),
       };
 
       return existingDocs.length ? customerWithDetailDocuments(customer, existingDocs) : customer;
@@ -1544,6 +1555,16 @@ export default function Home() {
     if (customerResult.error) throw customerResult.error;
 
     let quoteId = customer.activeQuoteId;
+    if (quoteId && customer.activeAppointmentId) {
+      const { data: quoteScope } = await supabase
+        .from("quotes")
+        .select("appointment_id")
+        .eq("id", quoteId)
+        .maybeSingle();
+      if (quoteScope?.appointment_id && quoteScope.appointment_id !== customer.activeAppointmentId) {
+        quoteId = undefined;
+      }
+    }
     if (!quoteId && customer.activeAppointmentId) {
       const { data: appointmentQuote } = await supabase
         .from("appointments")
@@ -1833,8 +1854,10 @@ export default function Home() {
       time: normalizedTime,
       appointmentType,
       activeAppointmentId: undefined,
+      activeQuoteId: undefined,
       activeWorkReportId: undefined,
       status: "Időpont foglalva",
+      stockDeducted: false,
       quoteItems: quoteItemsForAppointment,
       productId: quoteItemsForAppointment[0]?.productId || undefined,
       isFresh: true,
@@ -2326,7 +2349,7 @@ export default function Home() {
     }, new Map<string, number>());
 
     for (const [productId, needed] of neededByProduct) {
-      const otherReserved = reservedForProduct(productId, selected.id);
+      const otherReserved = reservedForProduct(productId, selected.activeAppointmentId || selected.id);
       const available = stockOf(productId);
       if (needed + otherReserved > available) {
         const p = prod(productId);
@@ -2336,11 +2359,11 @@ export default function Home() {
 
     const shortageMaterial = materialInventory.find((item: any) => {
       const needed = usedMaterialAmountForStock(item.name);
-      return needed + materialReserved(item.name, selected.id) > item.stock;
+      return needed + materialReserved(item.name, selected.activeAppointmentId || selected.id) > item.stock;
     });
     if (shortageMaterial) {
       const used = usedMaterialAmountForStock(shortageMaterial.name);
-      const otherReserved = materialReserved(shortageMaterial.name, selected.id);
+      const otherReserved = materialReserved(shortageMaterial.name, selected.activeAppointmentId || selected.id);
       return `Nem zárható le: ${shortageMaterial.name} készlethiányos. Raktáron: ${shortageMaterial.stock} ${shortageMaterial.unit}, más munkákhoz lefoglalva: ${otherReserved} ${shortageMaterial.unit}, ehhez az időponthoz szükséges: ${used} ${shortageMaterial.unit}.`;
     }
 
@@ -2600,8 +2623,10 @@ export default function Home() {
       time: undefined,
       appointmentType: "maintenance",
       activeAppointmentId: undefined,
+      activeQuoteId: undefined,
       activeWorkReportId: undefined,
       status: "Időpont foglalva",
+      stockDeducted: false,
       isFresh: true,
       updatedAt: changedAt,
     };
@@ -2623,9 +2648,9 @@ export default function Home() {
   }
 
 
-  function reservedForProduct(productId: string, excludeCustomerId?: string) {
+  function reservedForProduct(productId: string, excludeWorkId?: string) {
     return allWorkCustomers
-      .filter((customer) => !shouldExcludeReservedWork(customer, excludeCustomerId) && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted)
+      .filter((customer) => !shouldExcludeReservedWork(customer, excludeWorkId) && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted)
       .reduce((sum, customer) => {
         const items = customer.quoteItems ?? [];
         return sum + items
@@ -2642,10 +2667,10 @@ export default function Home() {
     return stockOf(productId) - reservedForProduct(productId);
   }
 
-  function shouldExcludeReservedWork(customer: Customer, excludeCustomerId?: string) {
-    if (!excludeCustomerId || customer.id !== excludeCustomerId) return false;
-    if (selected.activeAppointmentId && customer.activeAppointmentId) return customer.activeAppointmentId === selected.activeAppointmentId;
-    return true;
+  function shouldExcludeReservedWork(customer: Customer, excludeWorkId?: string) {
+    if (!excludeWorkId) return false;
+    if (customer.activeAppointmentId) return customer.activeAppointmentId === excludeWorkId;
+    return customer.id === excludeWorkId;
   }
 
   async function addStock(productId: string, amount: number) {
@@ -2683,8 +2708,8 @@ export default function Home() {
     return perClimate[materialName] ?? 0;
   }
 
-  function materialReserved(materialName: string, excludeCustomerId?: string) {
-    const activeJobs = allWorkCustomers.filter((customer: any) => !shouldExcludeReservedWork(customer, excludeCustomerId) && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted);
+  function materialReserved(materialName: string, excludeWorkId?: string) {
+    const activeJobs = allWorkCustomers.filter((customer: any) => !shouldExcludeReservedWork(customer, excludeWorkId) && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted);
 
     return Math.round(activeJobs.reduce((sum: number, customer: any) => {
       const items = customer.quoteItems ?? [];
