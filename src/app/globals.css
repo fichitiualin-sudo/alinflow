@@ -196,6 +196,44 @@ html[data-theme="light"] ::placeholder {
   color: #64748b !important;
 }
 
+html[data-theme="light"] .calendar-event-card {
+  border-color: rgba(14, 116, 144, 0.28) !important;
+  background: #eef9ff !important;
+  color: #0f172a !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .calendar-event-card p,
+html[data-theme="light"] .calendar-event-card b,
+html[data-theme="light"] .calendar-event-card span,
+html[data-theme="light"] .calendar-event-card button {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .calendar-event-card p:first-child {
+  color: #075985 !important;
+}
+
+html[data-theme="light"] .calendar-event-card .text-cyan-100\/80,
+html[data-theme="light"] .calendar-event-card .text-cyan-200\/80 {
+  color: #0e7490 !important;
+}
+
+html[data-theme="light"] .calendar-event-card .opacity-70 {
+  opacity: 1 !important;
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .calendar-add-link {
+  border-color: rgba(180, 83, 9, 0.35) !important;
+  background: #fef3c7 !important;
+  color: #92400e !important;
+}
+
+html[data-theme="light"] .calendar-add-link:hover {
+  background: #fde68a !important;
+}
+
 
 @media print {
   @page {
