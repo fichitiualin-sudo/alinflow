@@ -157,20 +157,22 @@ html[data-theme="light"] .text-slate-300 {
 
 html[data-theme="light"] .text-slate-400,
 html[data-theme="light"] .text-slate-500 {
-  color: #475569 !important;
+  color: #334155 !important;
 }
 
 html[data-theme="light"] .text-cyan-100,
+html[data-theme="light"] .text-cyan-100\/80,
 html[data-theme="light"] .text-cyan-200,
 html[data-theme="light"] .text-cyan-200\/80 {
-  color: #0e7490 !important;
+  color: #0f766e !important;
 }
 
 html[data-theme="light"] .text-emerald-100,
+html[data-theme="light"] .text-emerald-100\/80,
 html[data-theme="light"] .text-emerald-200,
 html[data-theme="light"] .text-emerald-200\/80,
 html[data-theme="light"] .text-emerald-300 {
-  color: #047857 !important;
+  color: #166534 !important;
 }
 
 html[data-theme="light"] .text-amber-100,
@@ -178,9 +180,66 @@ html[data-theme="light"] .text-amber-200 {
   color: #92400e !important;
 }
 
+html[data-theme="light"] .text-blue-100,
+html[data-theme="light"] .text-blue-200,
+html[data-theme="light"] .text-blue-300 {
+  color: #1d4ed8 !important;
+}
+
+html[data-theme="light"] .text-violet-50,
+html[data-theme="light"] .text-violet-100,
+html[data-theme="light"] .text-violet-200,
+html[data-theme="light"] .text-violet-300 {
+  color: #6d28d9 !important;
+}
+
+html[data-theme="light"] .text-orange-100,
+html[data-theme="light"] .text-orange-200,
+html[data-theme="light"] .text-yellow-100,
+html[data-theme="light"] .text-yellow-200 {
+  color: #a16207 !important;
+}
+
+html[data-theme="light"] .text-red-100,
 html[data-theme="light"] .text-red-200,
 html[data-theme="light"] .text-red-300 {
   color: #b91c1c !important;
+}
+
+html[data-theme="light"] .bg-cyan-300\/10,
+html[data-theme="light"] .bg-cyan-300\/15,
+html[data-theme="light"] .bg-cyan-300\/20 {
+  background-color: #ccfbf1 !important;
+}
+
+html[data-theme="light"] .bg-blue-400\/20 {
+  background-color: #dbeafe !important;
+}
+
+html[data-theme="light"] .bg-violet-400\/15,
+html[data-theme="light"] .bg-violet-400\/20 {
+  background-color: #ede9fe !important;
+}
+
+html[data-theme="light"] .bg-emerald-400\/10,
+html[data-theme="light"] .bg-emerald-400\/20 {
+  background-color: #dcfce7 !important;
+}
+
+html[data-theme="light"] .bg-amber-300\/15,
+html[data-theme="light"] .bg-amber-300\/20,
+html[data-theme="light"] .bg-amber-400\/20 {
+  background-color: #fef3c7 !important;
+}
+
+html[data-theme="light"] .bg-red-400\/20,
+html[data-theme="light"] .bg-red-500\/20,
+html[data-theme="light"] .bg-red-500\/30 {
+  background-color: #fee2e2 !important;
+}
+
+html[data-theme="light"] .bg-slate-500\/20 {
+  background-color: #e2e8f0 !important;
 }
 
 html[data-theme="light"] .shadow-2xl,
