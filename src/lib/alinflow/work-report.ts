@@ -78,7 +78,7 @@ export function workReportFromRow(row: any): WorkReport {
 
 export function workReportMapKey(customerId: string, type?: string | null, workDate?: string, workTime?: string, reportId?: string) {
   const normalized = normalizeAppointmentType(type);
-  if (normalized === "installation") return customerId;
+  if (normalized === "installation" && !workDate && !workTime && !reportId) return customerId;
   const safeDate = workDate || "nincs-datum";
   const safeTime = firstAppointmentTime(workTime || "08:00");
   return `${customerId}:${normalized}:${safeDate}:${safeTime}:${reportId || "uj"}`;
