@@ -108,7 +108,7 @@ import { LeadPanel } from "@/components/alinflow/LeadPanel";
 import { QuoteBuilderPanel } from "@/components/alinflow/QuoteBuilderPanel";
 import { WorkPagePanel } from "@/components/alinflow/WorkPagePanel";
 import { LoginScreen } from "@/components/alinflow/LoginScreen";
-import { Back, Btn, Card, Field, Gradient, InfoRow, Layout, Main, Shell, Side, StepButton } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Btn, Card, Field, Gradient, InfoRow, Layout, Main, Shell, Side, StepButton, ThemeToggle } from "@/components/alinflow/LayoutPrimitives";
 import { Stats } from "@/components/alinflow/StatsPanel";
 import { TaskPanel, type TaskFilter } from "@/components/alinflow/TaskPanel";
 import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
@@ -3817,6 +3817,7 @@ export default function Home() {
           <h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1>
         </div>
         <div className="flex flex-wrap gap-3">
+          <ThemeToggle />
           <Btn onClick={startNewCustomer}>+ Új ügyfél</Btn>
           <Btn color="blue" onClick={() => navigateToView("documents")}>Dokumentumok</Btn>
           <Btn color="green" onClick={() => navigateToView("warehouse")}>Raktár / klímák</Btn>

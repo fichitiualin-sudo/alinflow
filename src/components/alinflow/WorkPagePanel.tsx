@@ -166,6 +166,8 @@ export function WorkPagePanel({
   const maintenanceFinished = isMaintenance && selected.status === "Lezárva";
   const canStartMaintenance = installationFinished || maintenanceFinished;
   const [showMaterials, setShowMaterials] = useState(false);
+  const [showDocuments, setShowDocuments] = useState(false);
+  const [showCloseChecklist, setShowCloseChecklist] = useState(false);
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
@@ -329,7 +331,16 @@ export function WorkPagePanel({
 
         <Side>
           <Gradient title="Munka státusz" value={selected.status === "Szerelés kész – admin folyamatban" ? `${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban` : selected.status || "Folyamatban"} />
-          <Card title="Dokumentumok">
+
+          <button
+            type="button"
+            onClick={() => setShowDocuments((open) => !open)}
+            className="w-full rounded-2xl bg-white/10 px-5 py-4 text-left font-black text-cyan-100 ring-1 ring-white/10"
+          >
+            {showDocuments ? "Dokumentumok elrejtése" : "Dokumentumok megjelenítése"}
+          </button>
+
+          {showDocuments ? <Card title="Dokumentumok">
             <div className="space-y-3">
               {documentRows.map((row) => (
                 <DocumentRowCard
@@ -361,7 +372,7 @@ export function WorkPagePanel({
               onSendThankYouEmailFor={onSendThankYouEmailFor}
               onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
             />
-          </Card>
+          </Card> : null}
 
           <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
             <div className="space-y-3">
@@ -391,7 +402,17 @@ export function WorkPagePanel({
             </div>
           </Card>
 
-          {isInstallation ? <Card title="Lezárási ellenőrzőlista">
+          {isInstallation ? (
+            <button
+              type="button"
+              onClick={() => setShowCloseChecklist((open) => !open)}
+              className="w-full rounded-2xl bg-white/10 px-5 py-4 text-left font-black text-cyan-100 ring-1 ring-white/10"
+            >
+              {showCloseChecklist ? "Lezárási ellenőrzőlista elrejtése" : "Lezárási ellenőrzőlista megjelenítése"}
+            </button>
+          ) : null}
+
+          {isInstallation && showCloseChecklist ? <Card title="Lezárási ellenőrzőlista">
             <div className="space-y-3">
               {checklistItems.map((item) => {
                 const doneAt = currentWorkChecklist[item.key] ? checklistDates[item.key] : undefined;
