@@ -3825,7 +3825,8 @@ export default function Home() {
 
       if (error && currentAppointmentType === "installation" && errorMentionsWorkReportType(error)) {
         const { appointment_type, ...fallbackPayload } = payloadWithoutHistoryLink;
-        const fallbackReportId = currentReportId || existingReport?.id;
+        const fallbackExistingReport = savedReportFor(selected, currentAppointmentType);
+        const fallbackReportId = currentReportId || fallbackExistingReport?.id;
         const fallbackResult = fallbackReportId
           ? await supabase
               .from("work_reports")
