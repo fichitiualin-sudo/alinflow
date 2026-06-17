@@ -1357,9 +1357,30 @@ export default function Home() {
     });
     const currentAppointmentMap = currentAppointmentsByCustomer(compatibleRows);
     const appointmentHistoryMap = appointmentsByCustomer(compatibleRows);
+    const activeWorkPriority = (row: any) => {
+      const type = normalizeAppointmentType(row.appointment_type);
+      const status = normalizeStatus(row.status || "");
+      if (type === "maintenance" || status === "Lemondva") return 99;
+      if (status === "Időpont foglalva" || status === "Szerelés folyamatban") return 0;
+      if (status === "Ajánlat elküldve" || status === "Visszahívandó") return 1;
+      if (status === "Szerelés kész – admin folyamatban") return 2;
+      if (status === "Lezárva") return 3;
+      return 4;
+    };
+    const comparePrimaryWork = (first: any, second: any) => {
+      const priorityDiff = activeWorkPriority(first) - activeWorkPriority(second);
+      if (priorityDiff !== 0) return priorityDiff;
+      const dateDiff = String(second.scheduled_date || "").localeCompare(String(first.scheduled_date || ""));
+      if (dateDiff !== 0) return dateDiff;
+      const updatedDiff = String(second.updated_at || "").localeCompare(String(first.updated_at || ""));
+      if (updatedDiff !== 0) return updatedDiff;
+      return String(second.created_at || "").localeCompare(String(first.created_at || ""));
+    };
     const primaryAppointmentFor = (customerId: string) => {
       const rows = appointmentHistoryMap.get(customerId) || [];
-      return rows.find((row: any) => normalizeAppointmentType(row.appointment_type) !== "maintenance" && row.status !== "cancelled" && row.status !== "Lemondva")
+      return [...rows]
+        .filter((row: any) => normalizeAppointmentType(row.appointment_type) !== "maintenance" && normalizeStatus(row.status || "") !== "Lemondva")
+        .sort(comparePrimaryWork)[0]
         || currentAppointmentMap.get(customerId);
     };
 
@@ -1386,7 +1407,7 @@ export default function Home() {
         email: row.email || "",
         address: row.address || appointment?.address || "",
         source: row.source || "Kézi rögzítés",
-        status: normalizeStatus(row.status || appointment?.status || "Visszahívandó"),
+        status: normalizeStatus(appointment?.status || row.status || "Visszahívandó"),
         need: row.need || "",
         notes: row.notes || "",
         date: appointment?.scheduled_date || undefined,
@@ -1610,6 +1631,20 @@ export default function Home() {
 
     if (customer.date) {
       const result = await saveAppointmentWithJobMirror(customer, quoteId);
+      if (result.appointmentId && quoteId) {
+        const [quoteLinkResult, appointmentLinkResult] = await Promise.all([
+          supabase
+            .from("quotes")
+            .update({ appointment_id: result.appointmentId })
+            .eq("id", quoteId),
+          supabase
+            .from("appointments")
+            .update({ quote_id: quoteId })
+            .eq("id", result.appointmentId),
+        ]);
+        if (quoteLinkResult.error) throw quoteLinkResult.error;
+        if (appointmentLinkResult.error) throw appointmentLinkResult.error;
+      }
       return { ...result, quoteId };
     }
 
