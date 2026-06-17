@@ -84,6 +84,7 @@ export type Customer = {
   time?: string;
   appointmentType?: AppointmentType;
   activeAppointmentId?: string;
+  activeQuoteId?: string;
   activeWorkReportId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -138,6 +139,7 @@ export type PurchaseDeclaration = {
 export type DocumentRecord = {
   id?: string;
   customerId: string;
+  appointmentId?: string;
   type: string;
   title: string;
   status: string;
