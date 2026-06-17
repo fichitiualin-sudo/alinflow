@@ -29,6 +29,12 @@ type WorkReport = {
   signedAt?: string;
 };
 
+type SellerCompany = {
+  name?: string;
+  taxNumber?: string;
+  representative?: string;
+};
+
 function safeText(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -85,7 +91,7 @@ function signatureBase64(dataUrl?: string) {
 }
 
 
-const SELLER_COMPANY = {
+const DEFAULT_SELLER_COMPANY = {
   name: "AMOVA 4U Kft.",
   taxNumber: "29253630-2-13",
   representative: "Adorján Mirjam",
@@ -114,11 +120,16 @@ function declarationItemsRows(items: QuoteItem[]) {
   }).join("");
 }
 
-function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report: WorkReport) {
+function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report: WorkReport, seller: SellerCompany = DEFAULT_SELLER_COMPANY) {
   const customerName = customer.name || report.signerName || "";
   const customerAddress = fullAddress(customer.city, customer.address, "", customer.postalCode);
   const kelt = formatKelt(report.signedAt);
   const hasSignature = Boolean(signatureBase64(report.signatureDataUrl));
+  const shownSeller = {
+    name: seller.name || DEFAULT_SELLER_COMPANY.name,
+    taxNumber: seller.taxNumber || DEFAULT_SELLER_COMPANY.taxNumber,
+    representative: seller.representative || DEFAULT_SELLER_COMPANY.representative,
+  };
 
   return `<div class="purchase-page" style="max-width:794px;width:100%;margin:0 auto;background:#ffffff;border:1px solid #d1d5db;border-radius:10px;padding:38px 45px 32px 45px;font-family:'Times New Roman',Times,serif;color:#111827;page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid;box-sizing:border-box">
     <h2 style="margin:0;text-align:center;font-size:16px;line-height:1;font-weight:900;letter-spacing:.02em">VÁSÁRLÁSI<br>NYILATKOZAT</h2>
@@ -126,9 +137,9 @@ function purchaseDeclarationHtml(customer: Customer, items: QuoteItem[], report:
 
     <p style="margin:0 0 4px 0;font-size:11px;font-weight:900">Az értékesítő vállalkozás adatai:</p>
     <div style="margin-left:12px;margin-bottom:6px;font-size:10.5px;line-height:1.25">
-      neve: ${dottedValue(SELLER_COMPANY.name)}<br>
-      adószáma: ${dottedValue(SELLER_COMPANY.taxNumber)}<br>
-      a képviseletében eljáró természetes személy neve: ${dottedValue(SELLER_COMPANY.representative)}
+      neve: ${dottedValue(shownSeller.name)}<br>
+      adószáma: ${dottedValue(shownSeller.taxNumber)}<br>
+      a képviseletében eljáró természetes személy neve: ${dottedValue(shownSeller.representative)}
     </div>
 
     <p style="margin:0 0 4px 0;font-size:11px;font-weight:900">A telepíttető adatai:</p>
@@ -193,7 +204,7 @@ function itemsHtml(items: QuoteItem[]) {
   }).join("");
 }
 
-function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: WorkReport) {
+function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: WorkReport, purchaseDeclaration?: { seller?: SellerCompany; items?: QuoteItem[] }) {
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const rawName = customer.name || report.signerName || "";
   const address = escapeHtml(fullAddress(customer.city, customer.address, "nincs megadva", customer.postalCode));
@@ -310,7 +321,7 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
         </div>
       </div>
 
-      ${isInstall ? purchaseDeclarationHtml(customer, items, report) : ""}
+      ${isInstall ? purchaseDeclarationHtml(customer, purchaseDeclaration?.items?.length ? purchaseDeclaration.items : items, report, purchaseDeclaration?.seller) : ""}
     </div>
   </body>
 </html>`;
@@ -326,6 +337,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const customer: Customer = body.customer || {};
     const items: QuoteItem[] = Array.isArray(body.items) ? body.items : [];
+    const purchaseDeclaration = body.purchaseDeclaration || {};
     const report: WorkReport = body.report || {};
     const to = safeText(customer.email);
 
@@ -350,7 +362,7 @@ export async function POST(request: Request) {
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("klimalin-work-report"),
         },
-        html: workReportEmailHtml(customer, items, report),
+        html: workReportEmailHtml(customer, items, report, purchaseDeclaration),
         attachments,
       }),
     });

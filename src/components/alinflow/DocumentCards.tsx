@@ -8,6 +8,7 @@ type DocumentRow = {
   status: string;
   appointmentType?: AppointmentType;
   reportId?: string;
+  purchaseDeclarationId?: string;
   reportDate?: string;
   reportTime?: string;
 };
@@ -41,7 +42,7 @@ export function DocumentLibraryActionButtons({
   customer: Customer;
   row: DocumentRow;
   ready: boolean;
-  onPreview: (customer: Customer, type: DocumentPreviewType) => void;
+  onPreview: (customer: Customer, type: DocumentPreviewType, purchaseDeclarationId?: string) => void;
 }) {
   if (!ready && row.action !== "MaintenanceBundle") return null;
 
@@ -51,7 +52,7 @@ export function DocumentLibraryActionButtons({
     return (
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <button onClick={() => onPreview(actionCustomer, "work_report")} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Munkalap</button>
-        <button onClick={() => onPreview(actionCustomer, "purchase_declaration")} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Nyilatkozat</button>
+        <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Nyilatkozat</button>
       </div>
     );
   }
@@ -62,7 +63,7 @@ export function DocumentLibraryActionButtons({
     return <button onClick={() => onPreview(actionCustomer, "work_report")} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
   }
   if (row.action === "Nyilatkozat") {
-    return <button onClick={() => onPreview(actionCustomer, "purchase_declaration")} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
+    return <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
   }
   if (row.action === "Ajánlat") {
     return <button onClick={() => onPreview(actionCustomer, "quote_document")} className="mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100">Ajánlat megtekintése</button>;
@@ -88,7 +89,7 @@ export function DocumentActionButtons({
 }: {
   customer: Customer;
   row: DocumentRow;
-  onPreview: (customer: Customer, type: DocumentPreviewType) => void;
+  onPreview: (customer: Customer, type: DocumentPreviewType, purchaseDeclarationId?: string) => void;
   onEditWorkReport: (customer: Customer) => void;
   onSendQuote: () => void;
   onSendAppointment: (customer: Customer) => void;
@@ -110,7 +111,7 @@ export function DocumentActionButtons({
     return (
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Munkalap</button>
-        <button onClick={() => onPreview(actionCustomer, "purchase_declaration")} className={viewButton}>Nyilatkozat</button>
+        <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Nyilatkozat</button>
         <button onClick={() => onEditWorkReport(actionCustomer)} className={`${editButton} sm:col-span-2`}>Szerkesztés / aláírás</button>
       </div>
     );
@@ -130,7 +131,7 @@ export function DocumentActionButtons({
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={editButton}>Szerkesztés / aláírás</button></div>;
   }
   if (row.action === "Nyilatkozat") {
-    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "purchase_declaration")} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={helperButton}>Aláíráshoz</button></div>;
+    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={helperButton}>Aláíráshoz</button></div>;
   }
   if (row.action === "Ajánlat") {
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={viewButton}>Megtekintés</button><button onClick={onSendQuote} disabled={quoteEmailBusy} className={sendButton}>{quoteEmailBusy ? "Küldés..." : "Küldés"}</button></div>;
