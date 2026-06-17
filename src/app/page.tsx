@@ -173,6 +173,26 @@ type WorkActionDates = {
   cancelled?: string;
 };
 
+type QuickAppointmentCustomerMode = "new" | "existing";
+
+type QuickAppointmentDraft = {
+  date: string;
+  time: string;
+  appointmentType?: AppointmentType;
+  customerMode?: QuickAppointmentCustomerMode;
+  search: string;
+  selectedCustomerId?: string;
+  name: string;
+  phone: string;
+  postalCode: string;
+  city: string;
+  address: string;
+  notes: string;
+  productId: string;
+  quantity: number | "";
+  price: number | "";
+};
+
 function customerInquiryLabel(customer: Customer) {
   const created = formatCustomerCreatedAt(customer.createdAt);
   return created ? `Érdeklődött: ${created}` : "";
@@ -307,6 +327,7 @@ export default function Home() {
   const [scheduleDate,setScheduleDate] = useState(() => todayIso());
   const [scheduleTime,setScheduleTime] = useState("08:00");
   const [scheduleAppointmentType,setScheduleAppointmentType] = useState<AppointmentType>("installation");
+  const [quickAppointment,setQuickAppointment] = useState<QuickAppointmentDraft | null>(null);
   const [materials,setMaterials] = useState(DEFAULT_MATERIALS);
   const [materialOverrides,setMaterialOverrides] = useState<Record<string,string>>({});
   const [inventory,setInventory] = useState<InventoryItem[]>(DEFAULT_INVENTORY);
@@ -1505,6 +1526,187 @@ export default function Home() {
     setScheduleAppointmentType(nextType);
     const slots = isInstallationAppointment(nextType) && qty(quoteItems) >= 2 ? ["08:00"] : appointmentSlotOptions(nextType, quoteItems);
     setScheduleTime((previous) => normalizeAppointmentTimeInput(previous) || slots[0] || "08:00");
+  }
+
+  function openQuickAppointment(date: string) {
+    setQuickAppointment({
+      date,
+      time: "08:00",
+      search: "",
+      name: "",
+      phone: "",
+      postalCode: "",
+      city: "",
+      address: "",
+      notes: "",
+      productId: "",
+      quantity: 1,
+      price: "",
+    });
+    setMessage("");
+  }
+
+  function updateQuickAppointment(patch: Partial<QuickAppointmentDraft>) {
+    setQuickAppointment((prev) => prev ? { ...prev, ...patch } : prev);
+  }
+
+  function chooseQuickAppointmentType(appointmentType: AppointmentType) {
+    const nextType = normalizeAppointmentType(appointmentType);
+    setQuickAppointment((prev) => prev ? {
+      ...prev,
+      appointmentType: nextType,
+      customerMode: nextType === "maintenance" ? "existing" : prev.customerMode,
+      selectedCustomerId: undefined,
+      search: "",
+      productId: "",
+      quantity: 1,
+      price: "",
+    } : prev);
+  }
+
+  function chooseQuickAppointmentCustomerMode(customerMode: QuickAppointmentCustomerMode) {
+    setQuickAppointment((prev) => prev ? {
+      ...prev,
+      customerMode,
+      selectedCustomerId: undefined,
+      search: "",
+    } : prev);
+  }
+
+  function updateQuickAppointmentProduct(productId: string) {
+    const product = products.find((item) => item.id === productId);
+    updateQuickAppointment({ productId, price: product ? product.price : "" });
+  }
+
+  function quickAppointmentSelectedCustomer(draft: QuickAppointmentDraft | null = quickAppointment) {
+    if (!draft?.selectedCustomerId) return undefined;
+    return customers.find((customer) => customer.id === draft.selectedCustomerId);
+  }
+
+  function quickAppointmentQuoteItems(draft: QuickAppointmentDraft, existingCustomer?: Customer): QuoteItem[] {
+    const type = normalizeAppointmentType(draft.appointmentType);
+    if (type === "maintenance") return cleanQuoteItems(existingCustomer?.quoteItems || []);
+    if (type === "survey") return existingCustomer ? cleanQuoteItems(existingCustomer.quoteItems || []) : EMPTY_QUOTE_ITEMS;
+    if (!draft.productId) return EMPTY_QUOTE_ITEMS;
+    return cleanQuoteItems([{
+      productId: draft.productId,
+      quantity: draft.quantity || 1,
+      customPrice: draft.price,
+    }]);
+  }
+
+  async function saveQuickAppointment() {
+    if (!quickAppointment?.appointmentType) {
+      setMessage("Válaszd ki, mit szeretnél rögzíteni.");
+      return;
+    }
+
+    const appointmentType = normalizeAppointmentType(quickAppointment.appointmentType);
+    const normalizedTime = normalizeAppointmentTimeInput(quickAppointment.time);
+    if (!normalizedTime) {
+      setMessage("Adj meg érvényes időpontot, például 10:00 vagy 13:30.");
+      return;
+    }
+
+    const existingCustomer = quickAppointmentSelectedCustomer();
+    if (quickAppointment.customerMode === "existing" && !existingCustomer) {
+      setMessage("Válassz ki egy meglévő ügyfelet az időponthoz.");
+      return;
+    }
+
+    if (quickAppointment.customerMode === "new" && !quickAppointment.name.trim()) {
+      setMessage("Az új ügyfélhez legalább nevet adj meg.");
+      return;
+    }
+
+    if (appointmentType === "installation" && !quickAppointment.productId) {
+      setMessage("Szereléshez válassz klímát.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const quoteItemsForAppointment = quickAppointmentQuoteItems(quickAppointment, existingCustomer);
+    const slotIsAvailable = appointmentTimeAvailable({
+      customers,
+      date: quickAppointment.date,
+      appointmentType,
+      items: quoteItemsForAppointment,
+      selectedCustomerId: existingCustomer?.id,
+      time: normalizedTime,
+    });
+
+    if (!slotIsAvailable) {
+      setMessage("Ez az idősáv foglalt. Adj meg másik időpontot.");
+      return;
+    }
+
+    const baseCustomer: Customer = existingCustomer || {
+      id: crypto.randomUUID(),
+      name: quickAppointment.name.trim(),
+      city: quickAppointment.city.trim(),
+      postalCode: quickAppointment.postalCode.trim(),
+      phone: quickAppointment.phone.trim(),
+      email: "",
+      address: quickAppointment.address.trim(),
+      source: "Naptár gyors rögzítés",
+      status: "Időpont foglalva",
+      need: "",
+      notes: quickAppointment.notes.trim(),
+      createdAt: now,
+      updatedAt: now,
+      quoteItems: EMPTY_QUOTE_ITEMS,
+      quotePricingMode: "bundle",
+    };
+
+    const customerToSave: Customer = {
+      ...baseCustomer,
+      name: existingCustomer ? baseCustomer.name : quickAppointment.name.trim(),
+      phone: existingCustomer ? baseCustomer.phone : quickAppointment.phone.trim(),
+      postalCode: existingCustomer ? baseCustomer.postalCode : quickAppointment.postalCode.trim(),
+      city: existingCustomer ? baseCustomer.city : quickAppointment.city.trim(),
+      address: existingCustomer ? baseCustomer.address : quickAppointment.address.trim(),
+      notes: quickAppointment.notes.trim() || baseCustomer.notes || "",
+      date: quickAppointment.date,
+      time: normalizedTime,
+      appointmentType,
+      activeAppointmentId: undefined,
+      activeWorkReportId: undefined,
+      status: "Időpont foglalva",
+      quoteItems: quoteItemsForAppointment,
+      productId: quoteItemsForAppointment[0]?.productId || undefined,
+      isFresh: true,
+      appointmentBookedAt: baseCustomer.appointmentBookedAt || now,
+      appointmentUpdatedAt: now,
+      updatedAt: now,
+    };
+
+    try {
+      const persisted = await persistCustomerToDb(customerToSave);
+      const savedCustomer: Customer = {
+        ...customerToSave,
+        activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId,
+      };
+      if (appointmentType !== "maintenance") {
+        await logDocument(savedCustomer, appointmentBookedDocumentType(appointmentType), `${appointmentTypeLabel(appointmentType)} időpont rögzítése`, "Rögzítve", now);
+      }
+      setCustomers((prev) => {
+        const exists = prev.some((customer) => customer.id === savedCustomer.id);
+        const next = exists
+          ? prev.map((customer) => customer.id === savedCustomer.id ? savedCustomer : customer)
+          : [savedCustomer, ...prev];
+        return sortCustomersByCreatedAtDesc(next);
+      });
+      setSelected(savedCustomer);
+      setQuoteItems(savedCustomer.quoteItems);
+      setScheduleDate(savedCustomer.date || quickAppointment.date);
+      setScheduleTime(firstAppointmentTime(savedCustomer.time));
+      setScheduleAppointmentType(appointmentType);
+      setQuickAppointment(null);
+      setMessage(`${appointmentTypeLabel(appointmentType)} időpont rögzítve a naptárból ✅`);
+      if (savedCustomer.id) void loadCustomerDetailData([savedCustomer.id]);
+    } catch (error: any) {
+      setMessage(`Mentési hiba: ${error.message}`);
+    }
   }
 
   async function saveCustomerData() {
@@ -3640,6 +3842,159 @@ export default function Home() {
 
 
 
+  function renderQuickAppointmentDialog() {
+    if (!quickAppointment) return null;
+
+    const appointmentType = quickAppointment.appointmentType ? normalizeAppointmentType(quickAppointment.appointmentType) : undefined;
+    const isInstallation = appointmentType === "installation";
+    const isSurvey = appointmentType === "survey";
+    const isMaintenance = appointmentType === "maintenance";
+    const isExistingMode = quickAppointment.customerMode === "existing";
+    const selectedQuickCustomer = quickAppointmentSelectedCustomer(quickAppointment);
+    const searchTerm = quickAppointment.search.trim().toLocaleLowerCase("hu-HU");
+    const quickCustomerMatches = customers
+      .filter((customer) => {
+        if (!searchTerm) return true;
+        return [
+          customer.name,
+          customer.phone,
+          customer.email,
+          customer.address,
+          customer.city,
+          customer.postalCode,
+        ].join(" ").toLocaleLowerCase("hu-HU").includes(searchTerm);
+      })
+      .slice(0, 8);
+    const linkedItems = quickAppointmentQuoteItems(quickAppointment, selectedQuickCustomer);
+    const sortedProducts = sortProducts(products);
+
+    return (
+      <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur">
+        <div className="mx-auto my-6 max-w-3xl rounded-[2rem] border border-white/10 bg-slate-900 p-5 shadow-2xl md:p-6">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-200">Naptár gyors rögzítés</p>
+              <h2 className="mt-2 text-2xl font-black">Mit szeretnél rögzíteni?</h2>
+              <p className="mt-1 text-sm font-bold text-slate-400">{quickAppointment.date.replaceAll("-", ".")} · {quickAppointment.time || "08:00"}</p>
+            </div>
+            <button type="button" onClick={() => setQuickAppointment(null)} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-cyan-100">Bezárás</button>
+          </div>
+
+          {message ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-black text-amber-100">{message}</div> : null}
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {([
+              ["installation", "Szerelés"],
+              ["survey", "Felmérés"],
+              ["maintenance", "Karbantartás"],
+            ] as [AppointmentType, string][]).map(([type, label]) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => chooseQuickAppointmentType(type)}
+                className={`rounded-2xl px-4 py-4 text-left font-black transition ${appointmentType === type ? "bg-cyan-300 text-slate-950" : "border border-white/10 bg-white/10 text-slate-100 hover:border-cyan-300/40"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {appointmentType && !isMaintenance ? (
+            <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <button type="button" onClick={() => chooseQuickAppointmentCustomerMode("new")} className={`rounded-2xl px-4 py-4 text-left font-black ${quickAppointment.customerMode === "new" ? "bg-emerald-400 text-slate-950" : "border border-white/10 bg-white/10 text-slate-100"}`}>
+                Új ügyfél
+              </button>
+              <button type="button" onClick={() => chooseQuickAppointmentCustomerMode("existing")} className={`rounded-2xl px-4 py-4 text-left font-black ${quickAppointment.customerMode === "existing" ? "bg-emerald-400 text-slate-950" : "border border-white/10 bg-white/10 text-slate-100"}`}>
+                Meglévő ügyfél
+              </button>
+            </div>
+          ) : null}
+
+          {appointmentType && (isMaintenance || isExistingMode) ? (
+            <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4">
+              <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Ügyfélkereső</label>
+              <input className="input mt-2" value={quickAppointment.search} onChange={(event) => updateQuickAppointment({ search: event.target.value, selectedCustomerId: undefined })} placeholder="Név, telefonszám vagy cím..." />
+              <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+                {quickCustomerMatches.map((customer) => (
+                  <button key={customer.id} type="button" onClick={() => updateQuickAppointment({ selectedCustomerId: customer.id, search: customer.name })} className={`w-full rounded-2xl border p-3 text-left transition ${quickAppointment.selectedCustomerId === customer.id ? "border-emerald-300 bg-emerald-400/20" : "border-white/10 bg-slate-950/60 hover:border-cyan-300/40"}`}>
+                    <p className="font-black">{customer.name || "Névtelen ügyfél"}</p>
+                    <p className="mt-1 text-sm text-slate-400">{customer.phone || "nincs telefonszám"} · {fullCustomerAddress(customer) || customer.city || "nincs cím"}</p>
+                    {customer.quoteItems?.length ? <p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p> : null}
+                  </button>
+                ))}
+                {quickCustomerMatches.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 text-sm font-black text-slate-300">Nincs találat.</div> : null}
+              </div>
+            </div>
+          ) : null}
+
+          {appointmentType && quickAppointment.customerMode === "new" ? (
+            <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <input className="input" value={quickAppointment.name} onChange={(event) => updateQuickAppointment({ name: event.target.value })} placeholder="Név" />
+              <input className="input" value={quickAppointment.phone} onChange={(event) => updateQuickAppointment({ phone: event.target.value })} placeholder="Telefon" />
+              <input className="input" value={quickAppointment.postalCode} onChange={(event) => updateQuickAppointment({ postalCode: event.target.value })} placeholder="Irányítószám" />
+              <input className="input" value={quickAppointment.city} onChange={(event) => updateQuickAppointment({ city: event.target.value })} placeholder="Település" />
+              <input className="input md:col-span-2" value={quickAppointment.address} onChange={(event) => updateQuickAppointment({ address: event.target.value })} placeholder="Cím" />
+            </div>
+          ) : null}
+
+          {appointmentType && (quickAppointment.customerMode === "new" || selectedQuickCustomer) ? (
+            <div className="mt-5 space-y-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+                  <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Időpont</span>
+                  <input type="time" step={300} className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={quickAppointment.time} onChange={(event) => updateQuickAppointment({ time: event.target.value })} onBlur={(event) => updateQuickAppointment({ time: normalizeAppointmentTimeInput(event.target.value) || event.target.value })} />
+                </label>
+                <label className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+                  <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Megjegyzés</span>
+                  <input className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={quickAppointment.notes} onChange={(event) => updateQuickAppointment({ notes: event.target.value })} placeholder="belső megjegyzés" />
+                </label>
+              </div>
+
+              {isInstallation ? (
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                  <p className="mb-3 text-sm font-black text-slate-300">Klíma és ár</p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_100px_160px]">
+                    <select className="input" value={quickAppointment.productId} onChange={(event) => updateQuickAppointmentProduct(event.target.value)}>
+                      <option value="">Válassz klímát...</option>
+                      {sortedProducts.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                    </select>
+                    <input className="input" type="number" min={1} value={quickAppointment.quantity} onChange={(event) => updateQuickAppointment({ quantity: event.target.value === "" ? "" : Math.max(1, Number(event.target.value) || 1) })} />
+                    <input className="input" type="number" min={0} value={quickAppointment.price} onChange={(event) => updateQuickAppointment({ price: event.target.value === "" ? "" : Math.max(0, Number(event.target.value) || 0) })} placeholder="Ár" />
+                  </div>
+                </div>
+              ) : null}
+
+              {isSurvey ? <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">Felmérésnél nem kötelező klímát választani. A klíma és az ár később rögzíthető.</div> : null}
+
+              {isMaintenance ? (
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                  <p className="mb-3 text-sm font-black text-slate-300">Kapcsolódó korábbi klímák / telepítés</p>
+                  {linkedItems.length ? (
+                    <div className="space-y-2">
+                      {linkedItems.map((item, index) => (
+                        <div key={`${item.productId}-${index}`} className="rounded-2xl bg-slate-950/60 p-3">
+                          <p className="font-black">{itemName(item)}</p>
+                          <p className="text-sm text-slate-400">{Number(item.quantity) || 1} db</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl bg-amber-400/15 p-4 text-sm font-bold text-amber-100">Ennél az ügyfélnél nincs korábbi klíma rögzítve, de a karbantartási időpont így is menthető.</div>
+                  )}
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-3 md:flex-row md:justify-end">
+                <button type="button" onClick={() => setQuickAppointment(null)} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-slate-100">Mégse</button>
+                <button type="button" onClick={() => void saveQuickAppointment()} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Időpont mentése</button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   function renderLeadImportPanel() {
     return (
       <LeadImportPanel
@@ -4034,11 +4389,12 @@ export default function Home() {
       </header>
 
       {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
+      {renderQuickAppointmentDialog()}
 
       <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
 
       <section className="space-y-6 xl:hidden">
-        <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/>
+        <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment}/>
         {renderCustomerSearchPanel()}
         {renderDraftNoticePanel()}
         {renderDashboardLeadsPanel()}
@@ -4048,7 +4404,7 @@ export default function Home() {
 
       <section className="hidden gap-6 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] xl:items-start 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
         <div className="space-y-6">
-          <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")}/>
+          <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment}/>
           {renderDashboardLeadsPanel()}
         </div>
 
