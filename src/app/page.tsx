@@ -713,18 +713,16 @@ export default function Home() {
     };
   }, []);
 
-  const checklistItems: { key: WorkChecklistItemKey; label: string }[] = [
-    { key: "nkvh", label: "NKVH adatok rögzítése" },
-    { key: "worksheet", label: "Munkalap kitöltve" },
-    { key: "purchaseDeclaration", label: "Vásárlási nyilatkozat kész" },
-    { key: "signature", label: "Ügyfél aláírása megvan" },
-    { key: "alinInvoice", label: "Adorján Alin E.V. számla kész" },
-    { key: "amovaInvoice", label: "AMOVA 4U Kft. számla kész" },
-    { key: "docsSent", label: "Dokumentumcsomag elküldve" },
-  ];
-
   const currentWorkChecklist = selected.id ? effectiveChecklistFor(selected) : workChecklist;
-  const missingChecklist = checklistItems.filter((item) => item.key !== "docsSent" && !currentWorkChecklist[item.key]).map((item) => item.label);
+  const closeRequirementItems = [
+    {
+      label: "Munkalap és egyszerű aláírás",
+      done: Boolean(currentWorkChecklist.worksheet && currentWorkChecklist.signature && currentWorkChecklist.purchaseDeclaration),
+    },
+    { label: "NKVH", done: Boolean(currentWorkChecklist.nkvh) },
+    { label: "Számlázás", done: Boolean(currentWorkChecklist.alinInvoice) },
+  ];
+  const missingChecklist = closeRequirementItems.filter((item) => !item.done).map((item) => item.label);
   const checklistReady = missingChecklist.length === 0;
 
   function openCustomer(c:Customer, v:View) {
@@ -4395,12 +4393,9 @@ export default function Home() {
         quoteEmailBusy={quoteEmailBusy}
         appointmentEmailBusy={appointmentEmailBusy}
         thankYouEmailBusy={thankYouEmailBusy}
-        checklistItems={checklistItems}
         currentWorkChecklist={currentWorkChecklist}
         checklistDates={currentWorkChecklist.completedAt || {}}
         actionDates={workActionDatesFor(selected)}
-        checklistReady={checklistReady}
-        missingChecklist={missingChecklist}
         documentRows={documentRowsFor(selected)}
         maintenanceRows={maintenanceDocumentRowsFor(selected)}
         onBack={()=>goBack()}
