@@ -27,7 +27,6 @@ type MaterialItem = {
   isExtra?: boolean;
 };
 
-type ChecklistItem = { key: WorkChecklistItemKey; label: string };
 type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string };
 type WorkActionDates = {
   appointmentEmail?: string;
@@ -55,12 +54,9 @@ type WorkPagePanelProps = {
   quoteEmailBusy: boolean;
   appointmentEmailBusy: boolean;
   thankYouEmailBusy: boolean;
-  checklistItems: ChecklistItem[];
   currentWorkChecklist: WorkChecklistState;
   checklistDates: WorkChecklistCompletedAt;
   actionDates: WorkActionDates;
-  checklistReady: boolean;
-  missingChecklist: string[];
   documentRows: DocumentRow[];
   maintenanceRows: DocumentRow[];
   onBack: () => void;
@@ -115,12 +111,9 @@ export function WorkPagePanel({
   quoteEmailBusy,
   appointmentEmailBusy,
   thankYouEmailBusy,
-  checklistItems,
   currentWorkChecklist,
   checklistDates,
   actionDates,
-  checklistReady,
-  missingChecklist,
   documentRows,
   maintenanceRows,
   onBack,
@@ -167,7 +160,6 @@ export function WorkPagePanel({
   const canStartMaintenance = installationFinished || maintenanceFinished;
   const [showMaterials, setShowMaterials] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
-  const [showCloseChecklist, setShowCloseChecklist] = useState(false);
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
@@ -384,59 +376,25 @@ export function WorkPagePanel({
                   doneAt={actionDates.workReport}
                 />
               )}
-              <ActionButton
+              {isInstallation ? <ActionButton
                 color="blue"
-                onClick={() => onSendAppointmentEmailFor(selected)}
-                label={appointmentEmailBusy ? "Email küldése..." : "Időpont email újraküldése"}
-                doneAt={actionDates.appointmentEmail}
-              />
+                onClick={() => onToggleChecklist("nkvh")}
+                label="NKVH"
+                doneAt={currentWorkChecklist.nkvh ? checklistDates.nkvh : undefined}
+                icon={currentWorkChecklist.nkvh ? "✓" : "○"}
+              /> : null}
               {isSurvey ? (
                 <ActionButton color="green" onClick={onMarkInstallationDone} label="Felmérés kész – árajánlat készítése" doneAt={actionDates.surveyDone} />
               ) : isMaintenance ? (
                 selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null
               ) : (
-                <ActionButton color="amber" onClick={onMarkInstallationDone} label={`${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban`} doneAt={actionDates.workDone} />
+                <ActionButton color="amber" onClick={() => onToggleChecklist("alinInvoice")} label="Számlázás" doneAt={currentWorkChecklist.alinInvoice ? checklistDates.alinInvoice : undefined} icon={currentWorkChecklist.alinInvoice ? "✓" : "○"} />
               )}
               {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
               {selected.status !== "Lezárva" ? <ActionButton color="red" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} icon="×" /> : null}
             </div>
           </Card>
 
-          {isInstallation ? (
-            <button
-              type="button"
-              onClick={() => setShowCloseChecklist((open) => !open)}
-              className="w-full rounded-2xl bg-white/10 px-5 py-4 text-left font-black text-cyan-100 ring-1 ring-white/10"
-            >
-              {showCloseChecklist ? "Lezárási ellenőrzőlista elrejtése" : "Lezárási ellenőrzőlista megjelenítése"}
-            </button>
-          ) : null}
-
-          {isInstallation && showCloseChecklist ? <Card title="Lezárási ellenőrzőlista">
-            <div className="space-y-3">
-              {checklistItems.map((item) => {
-                const doneAt = currentWorkChecklist[item.key] ? checklistDates[item.key] : undefined;
-                return (
-                  <button
-                    key={item.key}
-                    onClick={() => onToggleChecklist(item.key)}
-                    className={`w-full rounded-2xl p-4 text-left font-black transition ${currentWorkChecklist[item.key] ? "border border-emerald-300/30 bg-emerald-400/20 text-emerald-200" : "border border-white/10 bg-slate-900/80 text-slate-200"}`}
-                  >
-                    <span className="flex items-start justify-between gap-3">
-                      <span className="min-w-0">
-                        <span className="mr-3">{currentWorkChecklist[item.key] ? "✓" : "○"}</span>
-                        {item.label}
-                      </span>
-                      {doneAt ? <span className="shrink-0 text-right text-xs font-black text-emerald-100/80">{formatDoneAt(doneAt)}</span> : null}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className={`mt-4 rounded-2xl p-4 font-black ${checklistReady ? "bg-emerald-400/20 text-emerald-200" : "bg-amber-400/20 text-amber-200"}`}>
-              {checklistReady ? "Teljes lezárás engedélyezve ✅" : `Admin hiányos: ${missingChecklist.length} tétel`}
-            </div>
-          </Card> : null}
         </Side>
       </Layout>
     </>
