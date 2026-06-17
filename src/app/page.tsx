@@ -139,7 +139,7 @@ import {
 } from "@/lib/alinflow/work-report";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
-import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
+import { compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { normalizePostalCodeInput, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
@@ -193,7 +193,6 @@ type QuickAppointmentDraft = {
   productId: string;
   quantity: number | "";
   price: number | "";
-  maintenanceInstallationIds: string[];
 };
 
 function customerInquiryLabel(customer: Customer) {
@@ -320,7 +319,6 @@ export default function Home() {
   const [mode,setMode] = useState<CalendarMode>("week");
   const [calDate,setCalDate] = useState(() => new Date());
   const [customers,setCustomers] = useState<Customer[]>([]);
-  const [workHistoryByCustomer,setWorkHistoryByCustomer] = useState<Record<string, Customer[]>>({});
   const [customerSearch,setCustomerSearch] = useState("");
   const [customerStatusFilter,setCustomerStatusFilter] = useState("all");
   const [leadPage,setLeadPage] = useState(1);
@@ -456,10 +454,9 @@ export default function Home() {
   const scheduleStoredTime = isMultiDayJob ? "08:00 + 12:00" : normalizedScheduleTime;
   const shownTime = appointmentTimeRangeLabel({ appointmentType: normalizedScheduleAppointmentType, time: scheduleStoredTime, quoteItems }, normalizedScheduleTime);
   const sortedCustomers = sortCustomersByCreatedAtDesc(customers);
-  const allWorkCustomers = workCustomersForScheduling(sortedCustomers, workHistoryByCustomer);
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
-  const calendarCustomers = sortCustomersBySchedule(allWorkCustomers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva"));
+  const calendarCustomers = sortCustomersBySchedule(sortedCustomers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva"));
   const workResourceEditLocked = selected.status === "Szerelés kész – admin folyamatban" || selected.status === "Lezárva";
   const canEditWorkResources = !workResourceEditLocked || allowWorkResourceEdit;
   const hasCustomerFilter = customerSearch.trim().length > 0 || customerStatusFilter !== "all";
@@ -749,29 +746,6 @@ export default function Home() {
     navigateToView(v);
   }
 
-  function openWorkVersion(work: Customer) {
-    const next: Customer = {
-      ...selected,
-      ...work,
-      id: selected.id,
-      name: selected.name || work.name,
-      phone: selected.phone || work.phone,
-      email: selected.email || work.email,
-      postalCode: selected.postalCode || work.postalCode,
-      city: selected.city || work.city,
-      address: work.address || selected.address,
-    };
-    setSelected(next);
-    setQuoteItems(next.quoteItems || EMPTY_QUOTE_ITEMS);
-    setScheduleDate(next.date || todayIso());
-    setScheduleTime(firstAppointmentTime(next.time));
-    setScheduleAppointmentType(normalizeAppointmentType(next.appointmentType));
-    setWorkReport(emptyWorkReport(next));
-    setWorkChecklist(effectiveChecklistFor(next));
-    setAllowWorkResourceEdit(false);
-    navigateToView("work");
-  }
-
   function openTask(filter: TaskFilter) {
     setTaskFilter(filter);
     navigateToView("tasks");
@@ -834,7 +808,6 @@ export default function Home() {
     clearCustomerDraft();
     await supabase.auth.signOut();
     replaceView("dashboard");
-    setWorkHistoryByCustomer({});
   }
 
 
@@ -1063,11 +1036,10 @@ export default function Home() {
 
   function customerWithDetailDocuments(customer: Customer, docs: DocumentRecord[]) {
     const type = normalizeAppointmentType(customer.appointmentType);
-    const scopedDocs = documentsForCustomerScope(customer, docs);
-    const quoteSentAt = documentTimestamp(scopedDocs, "quote_email") || customer.quoteSentAt;
-    const appointmentEmailAt = documentTimestamp(scopedDocs, appointmentEmailDocumentType(type));
-    const appointmentBookedAt = documentTimestamp(scopedDocs, appointmentBookedDocumentType(type));
-    const lastCalledAt = documentTimestamp(scopedDocs, "phone_call") || customer.lastCalledAt;
+    const quoteSentAt = documentTimestamp(docs, "quote_email") || customer.quoteSentAt;
+    const appointmentEmailAt = documentTimestamp(docs, appointmentEmailDocumentType(type));
+    const appointmentBookedAt = documentTimestamp(docs, appointmentBookedDocumentType(type));
+    const lastCalledAt = documentTimestamp(docs, "phone_call") || customer.lastCalledAt;
 
     return {
       ...customer,
@@ -1076,56 +1048,6 @@ export default function Home() {
       appointmentBookedAt: appointmentBookedAt || customer.appointmentBookedAt || appointmentEmailAt,
       appointmentUpdatedAt: appointmentEmailAt || customer.appointmentUpdatedAt,
     };
-  }
-
-  function workScopeKey(customer: Pick<Customer, "id" | "activeAppointmentId">) {
-    return customer.activeAppointmentId ? `${customer.id}:${customer.activeAppointmentId}` : customer.id;
-  }
-
-  function documentsForCustomerScope(customer: Pick<Customer, "activeAppointmentId">, docs: DocumentRecord[] = []) {
-    if (!customer.activeAppointmentId) return docs;
-    const scoped = docs.filter((doc) => doc.appointmentId === customer.activeAppointmentId);
-    return scoped.length ? scoped : docs.filter((doc) => !doc.appointmentId);
-  }
-
-  function workCustomersForScheduling(primaryCustomers: Customer[], historyByCustomer: Record<string, Customer[]>) {
-    const byWork = new Map<string, Customer>();
-    primaryCustomers.forEach((customer) => byWork.set(customer.activeAppointmentId || `customer:${customer.id}`, customer));
-    Object.values(historyByCustomer).flat().forEach((customer) => {
-      byWork.set(customer.activeAppointmentId || `customer:${customer.id}`, customer);
-    });
-    return Array.from(byWork.values());
-  }
-
-  function customerInstallationWorks(customer: Customer | undefined) {
-    if (!customer?.id) return [];
-    return workCustomersForScheduling([customer], { [customer.id]: workHistoryByCustomer[customer.id] || [] })
-      .filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId)
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.time || "").localeCompare(String(a.time || "")));
-  }
-
-  function updateWorkHistory(savedWork: Customer) {
-    if (!savedWork.id) return;
-    setWorkHistoryByCustomer((prev) => {
-      const key = savedWork.activeAppointmentId || `customer:${savedWork.id}`;
-      const current = prev[savedWork.id] || [];
-      const next = [savedWork, ...current.filter((work) => (work.activeAppointmentId || `customer:${work.id}`) !== key)];
-      return { ...prev, [savedWork.id]: sortCustomersBySchedule(next).reverse() };
-    });
-  }
-
-  function shouldPromoteWorkToCustomerList(customer: Customer) {
-    return normalizeAppointmentType(customer.appointmentType) !== "maintenance";
-  }
-
-  function promoteCustomerWork(savedWork: Customer) {
-    updateWorkHistory(savedWork);
-    if (!shouldPromoteWorkToCustomerList(savedWork)) return;
-    setCustomers((prev) => {
-      const exists = prev.some((customer) => customer.id === savedWork.id);
-      const next = exists ? prev.map((customer) => customer.id === savedWork.id ? savedWork : customer) : [savedWork, ...prev];
-      return sortCustomersByCreatedAtDesc(next);
-    });
   }
 
   function replaceLoadedDetailIds(ids: string[]) {
@@ -1197,8 +1119,7 @@ export default function Home() {
 
       (checklistResult.data || []).forEach((row: any) => {
         if (!row.customer_id || !idSet.has(row.customer_id)) return;
-        const key = row.appointment_id ? `${row.customer_id}:${row.appointment_id}` : row.customer_id;
-        loadedChecklists[key] = workChecklistFromRow(row);
+        loadedChecklists[row.customer_id] = workChecklistFromRow(row);
       });
 
       setWorkReportsByCustomer((prev) => {
@@ -1236,11 +1157,9 @@ export default function Home() {
       setWorkChecklistsByCustomer((prev) => {
         const next = { ...prev };
         idsToLoad.forEach((id) => {
-          Object.keys(next).forEach((key) => {
-            if (key === id || key.startsWith(`${id}:`)) delete next[key];
-          });
+          next[id] = loadedChecklists[id] || EMPTY_WORK_CHECKLIST;
         });
-        return { ...next, ...loadedChecklists };
+        return next;
       });
 
       setCustomers((prev) => prev.map((customer) => (
@@ -1334,10 +1253,8 @@ export default function Home() {
 
     const quotesByCustomer = new Map<string, any>();
     const quotesById = new Map<string, any>();
-    const quotesByAppointment = new Map<string, any>();
     (quoteRows || []).forEach((quote: any) => {
       if (quote.id) quotesById.set(quote.id, quote);
-      if (quote.appointment_id) quotesByAppointment.set(quote.appointment_id, quote);
       if (!quotesByCustomer.has(quote.customer_id)) quotesByCustomer.set(quote.customer_id, quote);
     });
 
@@ -1348,20 +1265,16 @@ export default function Home() {
       itemsByQuote.set(item.quote_id, current);
     });
 
-    const compatibleRows = compatibleAppointmentRows(appointmentRows, jobRows, {
-      jobsReadSucceeded: !jobResult.error,
-    });
-    const currentAppointmentMap = currentAppointmentsByCustomer(compatibleRows);
-    const appointmentHistoryMap = appointmentsByCustomer(compatibleRows);
-    const primaryAppointmentFor = (customerId: string) => {
-      const rows = appointmentHistoryMap.get(customerId) || [];
-      return rows.find((row: any) => normalizeAppointmentType(row.appointment_type) !== "maintenance" && row.status !== "cancelled" && row.status !== "Lemondva")
-        || currentAppointmentMap.get(customerId);
-    };
+    const appointmentsByCustomer = currentAppointmentsByCustomer(
+      compatibleAppointmentRows(appointmentRows, jobRows, {
+        jobsReadSucceeded: !jobResult.error,
+      }),
+    );
 
-    const customerFromAppointment = (row: any, appointment?: any): Customer => {
+
+    const loadedCustomers: Customer[] = sortCustomersByCreatedAtDesc((customerRows || []).map((row: any) => {
+      const appointment = appointmentsByCustomer.get(row.id);
       const quote = (appointment?.quote_id && quotesById.get(appointment.quote_id))
-        || (appointment?.id && quotesByAppointment.get(appointment.id))
         || quotesByCustomer.get(row.id);
       const existingDocs = documentsByCustomer[row.id] || [];
       const loadedAppointmentType = normalizeAppointmentType(appointment?.appointment_type);
@@ -1390,7 +1303,6 @@ export default function Home() {
         appointmentUpdatedAt: appointment?.updated_at || quoteSentAt,
         appointmentType: loadedAppointmentType,
         activeAppointmentId: appointment?.id || undefined,
-        activeQuoteId: quote?.id || undefined,
         quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
         productId: quoteItemsFromDb[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
@@ -1398,16 +1310,7 @@ export default function Home() {
       };
 
       return existingDocs.length ? customerWithDetailDocuments(customer, existingDocs) : customer;
-    };
-
-    const loadedCustomers: Customer[] = sortCustomersByCreatedAtDesc((customerRows || []).map((row: any) => (
-      customerFromAppointment(row, primaryAppointmentFor(row.id))
-    )));
-
-    const nextWorkHistory: Record<string, Customer[]> = {};
-    (customerRows || []).forEach((row: any) => {
-      nextWorkHistory[row.id] = (appointmentHistoryMap.get(row.id) || []).map((appointment) => customerFromAppointment(row, appointment));
-    });
+    }));
 
     const returnContext = readReturnContext();
     const customerDraft = readCustomerDraft();
@@ -1433,7 +1336,6 @@ export default function Home() {
     const nextQuoteItems = selectedFromDraft ? (customerDraft?.quoteItems || nextSelected.quoteItems) : nextSelected.quoteItems;
 
     setCustomers(loadedCustomers);
-    setWorkHistoryByCustomer(nextWorkHistory);
     setSelected(nextSelected);
     setQuoteItems(nextQuoteItems);
     setWorkChecklist(effectiveChecklistFor(nextSelected));
@@ -1471,7 +1373,6 @@ export default function Home() {
   type PersistCustomerResult = {
     appointmentId?: string;
     jobId?: string;
-    quoteId?: string;
   };
 
   async function saveAppointmentWithJobMirror(customer: Customer, quoteId?: string): Promise<PersistCustomerResult> {
@@ -1543,26 +1444,15 @@ export default function Home() {
 
     if (customerResult.error) throw customerResult.error;
 
-    let quoteId = customer.activeQuoteId;
-    if (!quoteId && customer.activeAppointmentId) {
-      const { data: appointmentQuote } = await supabase
-        .from("appointments")
-        .select("quote_id")
-        .eq("id", customer.activeAppointmentId)
-        .maybeSingle();
-      quoteId = appointmentQuote?.quote_id || undefined;
-    }
-    if (!quoteId && !customer.date) {
-      const { data: existingQuotes } = await supabase
-        .from("quotes")
-        .select("id")
-        .eq("customer_id", customer.id)
-        .limit(1);
-      quoteId = existingQuotes?.[0]?.id as string | undefined;
-    }
+    const { data: existingQuotes } = await supabase
+      .from("quotes")
+      .select("id")
+      .eq("customer_id", customer.id)
+      .limit(1);
+
+    let quoteId = existingQuotes?.[0]?.id as string | undefined;
     const quotePayload = {
       customer_id: customer.id,
-      appointment_id: customer.activeAppointmentId || null,
       status: normalizeStatus(customer.status || "Ajánlat elküldve"),
       total_amount: total(customer.quoteItems || []),
       notes: quotePricingModeToNotes(customer.quotePricingMode),
@@ -1588,13 +1478,11 @@ export default function Home() {
     }
 
     if (customer.date) {
-      const result = await saveAppointmentWithJobMirror(customer, quoteId);
-      return { ...result, quoteId };
+      return saveAppointmentWithJobMirror(customer, quoteId);
     }
 
     if (customer.status === "Lemondva") {
-      const result = await cancelAppointmentWithJobMirror(customer, customer.updatedAt || new Date().toISOString());
-      return { ...result, quoteId };
+      return cancelAppointmentWithJobMirror(customer, customer.updatedAt || new Date().toISOString());
     }
 
   }
@@ -1656,7 +1544,6 @@ export default function Home() {
       productId: "",
       quantity: 1,
       price: "",
-      maintenanceInstallationIds: [],
     });
     setMessage("");
   }
@@ -1685,7 +1572,6 @@ export default function Home() {
       productId: "",
       quantity: 1,
       price: "",
-      maintenanceInstallationIds: [],
     } : prev);
   }
 
@@ -1695,7 +1581,6 @@ export default function Home() {
       customerMode,
       selectedCustomerId: undefined,
       search: "",
-      maintenanceInstallationIds: [],
     } : prev);
   }
 
@@ -1709,25 +1594,9 @@ export default function Home() {
     return customers.find((customer) => customer.id === draft.selectedCustomerId);
   }
 
-  function selectQuickAppointmentCustomer(customer: Customer) {
-    const installationIds = customerInstallationWorks(customer)
-      .map((work) => work.activeAppointmentId)
-      .filter(Boolean) as string[];
-    updateQuickAppointment({
-      selectedCustomerId: customer.id,
-      search: customer.name,
-      maintenanceInstallationIds: installationIds,
-    });
-  }
-
   function quickAppointmentQuoteItems(draft: QuickAppointmentDraft, existingCustomer?: Customer): QuoteItem[] {
     const type = normalizeAppointmentType(draft.appointmentType);
-    if (type === "maintenance") {
-      const selectedIds = new Set(draft.maintenanceInstallationIds || []);
-      const selectedWorks = customerInstallationWorks(existingCustomer)
-        .filter((work) => selectedIds.size === 0 || (work.activeAppointmentId && selectedIds.has(work.activeAppointmentId)));
-      return cleanQuoteItems(selectedWorks.flatMap((work) => work.quoteItems || []));
-    }
+    if (type === "maintenance") return cleanQuoteItems(existingCustomer?.quoteItems || []);
     if (type === "survey") return existingCustomer ? cleanQuoteItems(existingCustomer.quoteItems || []) : EMPTY_QUOTE_ITEMS;
     if (!draft.productId) return EMPTY_QUOTE_ITEMS;
     return cleanQuoteItems([{
@@ -1735,27 +1604,6 @@ export default function Home() {
       quantity: draft.quantity || 1,
       customPrice: draft.price,
     }]);
-  }
-
-  async function saveMaintenanceAppointmentLinks(maintenanceCustomer: Customer, installationAppointmentIds: string[]) {
-    if (!maintenanceCustomer.activeAppointmentId || !maintenanceCustomer.id) return;
-    const ids = Array.from(new Set(installationAppointmentIds.filter(Boolean)));
-    const { error: deleteError } = await supabase
-      .from("maintenance_appointment_items")
-      .delete()
-      .eq("maintenance_appointment_id", maintenanceCustomer.activeAppointmentId);
-    if (deleteError) throw deleteError;
-    if (!ids.length) return;
-    const rows = ids.map((installationId) => ({
-      maintenance_appointment_id: maintenanceCustomer.activeAppointmentId,
-      installation_appointment_id: installationId,
-      customer_id: maintenanceCustomer.id,
-      legacy_source_key: `quick-maintenance:${maintenanceCustomer.activeAppointmentId}:${installationId}`,
-    }));
-    const { error } = await supabase
-      .from("maintenance_appointment_items")
-      .upsert(rows, { onConflict: "maintenance_appointment_id,installation_appointment_id" });
-    if (error) throw error;
   }
 
   async function saveQuickAppointment() {
@@ -1790,10 +1638,11 @@ export default function Home() {
     const now = new Date().toISOString();
     const quoteItemsForAppointment = quickAppointmentQuoteItems(quickAppointment, existingCustomer);
     const slotIsAvailable = appointmentTimeAvailable({
-      customers: allWorkCustomers,
+      customers,
       date: quickAppointment.date,
       appointmentType,
       items: quoteItemsForAppointment,
+      selectedCustomerId: existingCustomer?.id,
       time: normalizedTime,
     });
 
@@ -1848,14 +1697,17 @@ export default function Home() {
       const savedCustomer: Customer = {
         ...customerToSave,
         activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId,
-        activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
       };
       if (appointmentType !== "maintenance") {
         await logDocument(savedCustomer, appointmentBookedDocumentType(appointmentType), `${appointmentTypeLabel(appointmentType)} időpont rögzítése`, "Rögzítve", now);
-      } else {
-        await saveMaintenanceAppointmentLinks(savedCustomer, quickAppointment.maintenanceInstallationIds);
       }
-      promoteCustomerWork(savedCustomer);
+      setCustomers((prev) => {
+        const exists = prev.some((customer) => customer.id === savedCustomer.id);
+        const next = exists
+          ? prev.map((customer) => customer.id === savedCustomer.id ? savedCustomer : customer)
+          : [savedCustomer, ...prev];
+        return sortCustomersByCreatedAtDesc(next);
+      });
       setSelected(savedCustomer);
       setQuoteItems(savedCustomer.quoteItems);
       setScheduleDate(savedCustomer.date || quickAppointment.date);
@@ -1878,10 +1730,9 @@ export default function Home() {
       const savedUpdated: Customer = {
         ...updated,
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
-        activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
       setSelected(savedUpdated);
-      promoteCustomerWork(savedUpdated);
+      setCustomers((prev) => sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === savedUpdated.id ? savedUpdated : customer)));
       setEditCustomer(false);
       clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
@@ -1916,7 +1767,6 @@ export default function Home() {
 
     const basePayload = {
       customer_id: customer.id,
-      appointment_id: customer.activeAppointmentId || null,
       worksheet: checklist.worksheet,
       signature: checklist.signature,
       purchase_declaration: checklist.purchaseDeclaration,
@@ -1933,26 +1783,16 @@ export default function Home() {
 
     const { error } = await supabase
       .from("work_checklists")
-      .upsert(payload, { onConflict: customer.activeAppointmentId ? "customer_id,appointment_id" : "customer_id" });
+      .upsert(payload, { onConflict: "customer_id" });
 
     if (error && isMissingChecklistCompletedAtColumnError(error)) {
-      const { appointment_id, completed_at, ...basePayloadWithoutScopedColumns } = basePayload as any;
       const { error: retryError } = await supabase
         .from("work_checklists")
-        .upsert(basePayloadWithoutScopedColumns, { onConflict: "customer_id" });
+        .upsert(basePayload, { onConflict: "customer_id" });
       if (retryError) {
         console.warn("work_checklists mentési hiba", retryError.message);
         setMessage("A lezárási ellenőrzőlista nem mentődött. Futtasd a WORK_CHECKLIST_SQL.sql fájlt a Supabase-ben.");
       }
-      return;
-    }
-
-    if (error && customer.activeAppointmentId) {
-      const { appointment_id, completed_at, ...legacyPayload } = payload as any;
-      const { error: retryError } = await supabase
-        .from("work_checklists")
-        .upsert(legacyPayload, { onConflict: "customer_id" });
-      if (retryError) console.warn("work_checklists mentĂ©si hiba", retryError.message);
       return;
     }
 
@@ -1973,7 +1813,7 @@ export default function Home() {
     });
     const next: WorkChecklistState = { ...base, ...patch, completedAt };
     setWorkChecklist(next);
-    setWorkChecklistsByCustomer((prev) => ({ ...prev, [workScopeKey(customer)]: next }));
+    setWorkChecklistsByCustomer((prev) => ({ ...prev, [customer.id]: next }));
     await persistWorkChecklist(customer, next);
     return next;
   }
@@ -1994,7 +1834,7 @@ export default function Home() {
     setWorkChecklist(next);
 
     if (selected.id) {
-      setWorkChecklistsByCustomer((prev) => ({ ...prev, [workScopeKey(selected)]: next }));
+      setWorkChecklistsByCustomer((prev) => ({ ...prev, [selected.id]: next }));
       await persistWorkChecklist(selected, next);
     }
   }
@@ -2208,12 +2048,11 @@ export default function Home() {
       return;
     }
     const slotIsAvailable = appointmentTimeAvailable({
-      customers: allWorkCustomers,
+      customers,
       date: scheduleDate,
       appointmentType: normalizedScheduleAppointmentType,
       items: quoteItems,
       selectedCustomerId: selected.id,
-      selectedAppointmentId: selected.activeAppointmentId,
       time: slotToValidate,
     });
     if (!slotIsAvailable) {
@@ -2241,12 +2080,11 @@ export default function Home() {
       const savedUpdated: Customer = {
         ...updated,
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
-        activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
       if (normalizeAppointmentType(savedUpdated.appointmentType) !== "maintenance") {
         await logDocument(savedUpdated, appointmentBookedDocumentType(savedUpdated.appointmentType), `${appointmentTypeLabel(savedUpdated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
       }
-      promoteCustomerWork(savedUpdated);
+      setCustomers(prev=>prev.map(c=>c.id===savedUpdated.id ? savedUpdated : c));
       setSelected(savedUpdated);
 
       if (sendAppointmentNotice) {
@@ -2289,10 +2127,9 @@ export default function Home() {
       const savedUpdated: Customer = {
         ...updated,
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
-        activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
       setSelected(savedUpdated);
-      promoteCustomerWork(savedUpdated);
+      setCustomers(prev => prev.map(c => c.id === savedUpdated.id ? savedUpdated : c));
       setAllowWorkResourceEdit(false);
       clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
@@ -2395,7 +2232,7 @@ export default function Home() {
         await persistCustomerToDb(updated);
         await logDocument(updated, "survey_done", "Felmérés megtörtént", "Kész", changedAt);
         setSelected(updated);
-        promoteCustomerWork(updated);
+        setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
         setAllowWorkResourceEdit(false);
         setScheduleAppointmentType("installation");
         setScheduleTime("08:00");
@@ -2428,7 +2265,7 @@ export default function Home() {
         await persistCustomerToDb(updated);
         await logDocument(updated, "maintenance_done", "Karbantartás lezárva", "Kész", changedAt);
         setSelected(updated);
-        updateWorkHistory(updated);
+        setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
         setAllowWorkResourceEdit(false);
         setMessage("Karbantartás lezárva ✅ Visszanézhető a Lezárt / lemondott ügyfelek között.");
         replaceView("work");
@@ -2461,7 +2298,7 @@ export default function Home() {
       await persistCustomerToDb(updated);
       await logDocument(updated, "installation_done", `${appointmentTypeLabel(updated.appointmentType)} kész – admin folyamatban`, "Kész", changedAt);
       setSelected(updated);
-      promoteCustomerWork(updated);
+      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
       setMessage(`${appointmentTypeLabel(updated.appointmentType)} kész ✅ Admin még folyamatban.`);
       replaceView("work");
@@ -2499,7 +2336,7 @@ export default function Home() {
       await persistCustomerToDb(updated);
       await logDocument(updated, "work_closed", "Teljes lezárás", "Lezárva", changedAt);
       setSelected(updated);
-      promoteCustomerWork(updated);
+      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       setAllowWorkResourceEdit(false);
       setMessage("Munka teljesen lezárva ✅ A naptárban sötétzöld lezárt munkaként megmarad.");
       returnToLastMenu();
@@ -2534,7 +2371,6 @@ export default function Home() {
         const savedRestored: Customer = {
           ...restored,
           activeAppointmentId: persisted?.appointmentId || restored.activeAppointmentId,
-          activeQuoteId: persisted?.quoteId || restored.activeQuoteId,
         };
         setSelected(savedRestored);
         setScheduleAppointmentType("installation");
@@ -2564,7 +2400,7 @@ export default function Home() {
       await persistCustomerToDb(updated);
       const cancelledUpdated: Customer = { ...updated, activeAppointmentId: undefined };
       setSelected(cancelledUpdated);
-      promoteCustomerWork(cancelledUpdated);
+      setCustomers(prev => prev.map(c => c.id === cancelledUpdated.id ? cancelledUpdated : c));
       setMessage("Időpont törölve / lemondva ✅ A foglalás felszabadult.");
       returnToLastMenu();
     } catch (error: any) {
@@ -2593,7 +2429,6 @@ export default function Home() {
 
   function startMaintenanceForCustomer(customer: Customer) {
     const changedAt = new Date().toISOString();
-    const installationItems = cleanQuoteItems(customerInstallationWorks(customer).flatMap((work) => work.quoteItems || []));
     const maintenanceCustomer: Customer = {
       ...customer,
       date: undefined,
@@ -2607,7 +2442,7 @@ export default function Home() {
     };
 
     setSelected(maintenanceCustomer);
-    setQuoteItems(installationItems.length ? installationItems : customer.quoteItems || EMPTY_QUOTE_ITEMS);
+    setQuoteItems(customer.quoteItems || EMPTY_QUOTE_ITEMS);
     setScheduleDate(todayIso());
     setScheduleTime("08:00");
     setScheduleAppointmentType("maintenance");
@@ -2624,8 +2459,8 @@ export default function Home() {
 
 
   function reservedForProduct(productId: string, excludeCustomerId?: string) {
-    return allWorkCustomers
-      .filter((customer) => !shouldExcludeReservedWork(customer, excludeCustomerId) && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted)
+    return customers
+      .filter((customer) => customer.id !== excludeCustomerId && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted)
       .reduce((sum, customer) => {
         const items = customer.quoteItems ?? [];
         return sum + items
@@ -2640,12 +2475,6 @@ export default function Home() {
 
   function freeStock(productId: string) {
     return stockOf(productId) - reservedForProduct(productId);
-  }
-
-  function shouldExcludeReservedWork(customer: Customer, excludeCustomerId?: string) {
-    if (!excludeCustomerId || customer.id !== excludeCustomerId) return false;
-    if (selected.activeAppointmentId && customer.activeAppointmentId) return customer.activeAppointmentId === selected.activeAppointmentId;
-    return true;
   }
 
   async function addStock(productId: string, amount: number) {
@@ -2684,7 +2513,7 @@ export default function Home() {
   }
 
   function materialReserved(materialName: string, excludeCustomerId?: string) {
-    const activeJobs = allWorkCustomers.filter((customer: any) => !shouldExcludeReservedWork(customer, excludeCustomerId) && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted);
+    const activeJobs = customers.filter((customer: any) => customer.id !== excludeCustomerId && Boolean(customer.date) && isInstallationAppointment(customer.appointmentType) && customer.status !== "Lezárva" && customer.status !== "Lemondva" && !customer.stockDeducted);
 
     return Math.round(activeJobs.reduce((sum: number, customer: any) => {
       const items = customer.quoteItems ?? [];
@@ -3170,9 +2999,9 @@ export default function Home() {
   ): WorkChecklistState {
     if (!customer.id) return { ...workChecklist, completedAt: { ...(workChecklist.completedAt || {}) } };
 
-    const saved = checklistsMap[workScopeKey(customer)] || checklistsMap[customer.id] || EMPTY_WORK_CHECKLIST;
+    const saved = checklistsMap[customer.id] || EMPTY_WORK_CHECKLIST;
     const report = reportsMap[customer.id] || reportsMap[workReportMapKey(customer.id, "installation")] || Object.values(reportsMap).find((item) => item.customerId === customer.id && normalizeAppointmentType(item.appointmentType) === "installation");
-    const docs = documentsForCustomerScope(customer, docsMap[customer.id] || []);
+    const docs = docsMap[customer.id] || [];
     const workDoc = docs.find((doc) => doc.type === "work_report");
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
 
@@ -3295,7 +3124,7 @@ export default function Home() {
   }
 
   function docsFor(customer: Customer) {
-    return customer.id ? documentsForCustomerScope(customer, documentsByCustomer[customer.id] || []) : [];
+    return customer.id ? (documentsByCustomer[customer.id] || []) : [];
   }
 
   function docFor(customer: Customer, type: string) {
@@ -3338,7 +3167,6 @@ export default function Home() {
     const shouldStoreTimestamp = Boolean(eventAt) || status.toLowerCase().includes("elküld");
     const payload = {
       customer_id: customer.id,
-      appointment_id: customer.activeAppointmentId || null,
       document_type: type,
       title,
       status,
@@ -3348,31 +3176,16 @@ export default function Home() {
 
     const { data, error } = await supabase
       .from("documents")
-      .upsert(payload, { onConflict: customer.activeAppointmentId ? "customer_id,document_type,appointment_id" : "customer_id,document_type" })
+      .upsert(payload, { onConflict: "customer_id,document_type" })
       .select("*")
       .single();
-    if (error && customer.activeAppointmentId) {
-      const { appointment_id, ...legacyPayload } = payload;
-      const retry = await supabase
-        .from("documents")
-        .upsert(legacyPayload, { onConflict: "customer_id,document_type" })
-        .select("*")
-        .single();
-      if (retry.error) return undefined;
-      const saved = documentFromRow(retry.data);
-      setDocumentsByCustomer((prev) => {
-        const current = prev[customer.id] || [];
-        const withoutCurrent = current.filter((doc) => doc.type !== saved.type);
-        return { ...prev, [customer.id]: [saved, ...withoutCurrent] };
-      });
-      return saved;
-    }
+
     if (error) return undefined;
 
     const saved = documentFromRow(data);
     setDocumentsByCustomer((prev) => {
       const current = prev[customer.id] || [];
-      const withoutCurrent = current.filter((doc) => doc.type !== saved.type || doc.appointmentId !== saved.appointmentId);
+      const withoutCurrent = current.filter((doc) => doc.type !== saved.type);
       return { ...prev, [customer.id]: [saved, ...withoutCurrent] };
     });
     return saved;
@@ -3946,7 +3759,7 @@ export default function Home() {
           return { ...prev, [selected.id]: [savedReportForState, ...without].sort(compareWorkReportsDesc) };
         });
       } else {
-        setWorkReportsByCustomer((prev) => ({ ...prev, [workReportKeyFromReport(savedReportForState, selected.id)]: savedReportForState }));
+        setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(selected.id, currentAppointmentType)]: savedReportForState }));
       }
       if (savedPurchaseDeclaration) {
         setPurchaseDeclarationsByCustomer((prev) => {
@@ -3958,7 +3771,7 @@ export default function Home() {
       if (isMaintenanceReport) {
         const updatedSelected = { ...selected, activeWorkReportId: savedReportForState.id };
         setSelected(updatedSelected);
-        updateWorkHistory(updatedSelected);
+        setCustomers((prev) => prev.map((customer) => customer.id === selected.id ? updatedSelected : customer));
       }
       setMessage(sendEmail ? `${workReportTitle(selected.appointmentType)} mentve és emailben elküldve ✅` : `${workReportTitle(selected.appointmentType)} mentve ✅`);
       replaceView("work");
@@ -4106,7 +3919,6 @@ export default function Home() {
     const isMaintenance = appointmentType === "maintenance";
     const isExistingMode = quickAppointment.customerMode === "existing";
     const selectedQuickCustomer = quickAppointmentSelectedCustomer(quickAppointment);
-    const maintenanceInstallationWorks = selectedQuickCustomer ? customerInstallationWorks(selectedQuickCustomer) : [];
     const searchTerm = quickAppointment.search.trim().toLocaleLowerCase("hu-HU");
     const quickCustomerMatches = customers
       .filter((customer) => {
@@ -4172,7 +3984,7 @@ export default function Home() {
               <input className="input mt-2" value={quickAppointment.search} onChange={(event) => updateQuickAppointment({ search: event.target.value, selectedCustomerId: undefined })} placeholder="Név, telefonszám vagy cím..." />
               <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
                 {quickCustomerMatches.map((customer) => (
-                  <button key={customer.id} type="button" onClick={() => selectQuickAppointmentCustomer(customer)} className={`w-full rounded-2xl border p-3 text-left transition ${quickAppointment.selectedCustomerId === customer.id ? "border-emerald-300 bg-emerald-400/20" : "border-white/10 bg-slate-950/60 hover:border-cyan-300/40"}`}>
+                  <button key={customer.id} type="button" onClick={() => updateQuickAppointment({ selectedCustomerId: customer.id, search: customer.name })} className={`w-full rounded-2xl border p-3 text-left transition ${quickAppointment.selectedCustomerId === customer.id ? "border-emerald-300 bg-emerald-400/20" : "border-white/10 bg-slate-950/60 hover:border-cyan-300/40"}`}>
                     <p className="font-black">{customer.name || "Névtelen ügyfél"}</p>
                     <p className="mt-1 text-sm text-slate-400">{customer.phone || "nincs telefonszám"} · {fullCustomerAddress(customer) || customer.city || "nincs cím"}</p>
                     {customer.quoteItems?.length ? <p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p> : null}
@@ -4224,30 +4036,6 @@ export default function Home() {
               {isMaintenance ? (
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
                   <p className="mb-3 text-sm font-black text-slate-300">Kapcsolódó korábbi klímák / telepítés</p>
-                  {maintenanceInstallationWorks.length ? (
-                    <div className="mb-3 space-y-2">
-                      {maintenanceInstallationWorks.map((work) => (
-                        <label key={work.activeAppointmentId} className="flex cursor-pointer items-start gap-3 rounded-2xl bg-slate-950/60 p-3">
-                          <input
-                            type="checkbox"
-                            className="mt-1 h-5 w-5"
-                            checked={Boolean(work.activeAppointmentId && quickAppointment.maintenanceInstallationIds.includes(work.activeAppointmentId))}
-                            onChange={(event) => {
-                              if (!work.activeAppointmentId) return;
-                              const current = new Set(quickAppointment.maintenanceInstallationIds);
-                              if (event.target.checked) current.add(work.activeAppointmentId);
-                              else current.delete(work.activeAppointmentId);
-                              updateQuickAppointment({ maintenanceInstallationIds: Array.from(current) });
-                            }}
-                          />
-                          <span>
-                            <span className="block font-black">{climateSummary(work.quoteItems) || "Korábbi telepítés"}</span>
-                            <span className="mt-1 block text-sm text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"}</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  ) : null}
                   {linkedItems.length ? (
                     <div className="space-y-2">
                       {linkedItems.map((item, index) => (
@@ -4517,10 +4305,9 @@ export default function Home() {
 
   if (view==="schedule") {
     const free = availableAppointmentSlots({
-      customers: allWorkCustomers,
+      customers,
       date: scheduleDate,
       selectedCustomerId: selected.id,
-      selectedAppointmentId: selected.activeAppointmentId,
       appointmentType: normalizedScheduleAppointmentType,
       items: quoteItems,
     });
@@ -4611,7 +4398,6 @@ export default function Home() {
         actionDates={workActionDatesFor(selected)}
         documentRows={documentRowsFor(selected)}
         maintenanceRows={maintenanceDocumentRowsFor(selected)}
-        workHistory={workHistoryByCustomer[selected.id] || []}
         onBack={()=>goBack()}
         onCloseWork={closeWork}
         onRememberExternalCustomer={rememberExternalCustomer}
@@ -4646,7 +4432,6 @@ export default function Home() {
         onCancelAppointment={cancelAppointment}
         onStartMaintenanceForCustomer={startMaintenanceForCustomer}
         onToggleChecklist={toggleChecklist}
-        onOpenWorkVersion={openWorkVersion}
       />
     </Shell>
   );

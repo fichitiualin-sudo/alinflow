@@ -11,7 +11,6 @@ export function documentFromRow(row: any): DocumentRecord {
   return {
     id: row.id,
     customerId: row.customer_id,
-    appointmentId: row.appointment_id || undefined,
     type: row.document_type || row.type || "document",
     title: row.title || "Dokumentum",
     status: row.status || "Mentve",

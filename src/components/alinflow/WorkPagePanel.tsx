@@ -7,7 +7,6 @@ import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
-  climateSummary,
   hasCustomProductPrice,
   isCustomQuoteItem,
   itemPriceLine,
@@ -60,7 +59,6 @@ type WorkPagePanelProps = {
   actionDates: WorkActionDates;
   documentRows: DocumentRow[];
   maintenanceRows: DocumentRow[];
-  workHistory: Customer[];
   onBack: () => void;
   onCloseWork: () => void;
   onRememberExternalCustomer: (customer: Customer, returnView?: View) => void;
@@ -95,7 +93,6 @@ type WorkPagePanelProps = {
   onCancelAppointment: () => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
-  onOpenWorkVersion: (customer: Customer) => void;
 };
 
 export function WorkPagePanel({
@@ -119,7 +116,6 @@ export function WorkPagePanel({
   actionDates,
   documentRows,
   maintenanceRows,
-  workHistory,
   onBack,
   onCloseWork,
   onRememberExternalCustomer,
@@ -154,7 +150,6 @@ export function WorkPagePanel({
   onCancelAppointment,
   onStartMaintenanceForCustomer,
   onToggleChecklist,
-  onOpenWorkVersion,
 }: WorkPagePanelProps) {
   const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
   const isInstallation = isInstallationAppointment(currentAppointmentType);
@@ -165,9 +160,6 @@ export function WorkPagePanel({
   const canStartMaintenance = installationFinished || maintenanceFinished;
   const [showMaterials, setShowMaterials] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
-  const [showWorkHistory, setShowWorkHistory] = useState(false);
-  const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
-  const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance");
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
@@ -202,48 +194,6 @@ export function WorkPagePanel({
               onExternalOpen={() => onRememberExternalCustomer(selected, "work")}
             />
           </Card>
-
-          {(previousInstallationWorks.length || maintenanceWorks.length) ? (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setShowWorkHistory((open) => !open)}
-                className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
-              >
-                {showWorkHistory ? "Korábbi munkák elrejtése" : "Korábbi munkák és karbantartások megjelenítése"}
-              </button>
-            </div>
-          ) : null}
-
-          {showWorkHistory ? (
-            <Card title="Korábbi munkák">
-              <div className="space-y-3">
-                {previousInstallationWorks.map((work) => (
-                  <button
-                    key={work.activeAppointmentId || `${work.id}-${work.date}`}
-                    type="button"
-                    onClick={() => onOpenWorkVersion(work)}
-                    className="w-full rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-left hover:border-cyan-300/40"
-                  >
-                    <p className="font-black">{climateSummary(work.quoteItems) || "Korábbi szerelés"}</p>
-                    <p className="mt-1 text-sm font-bold text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"} · {work.status || "Folyamatban"}</p>
-                  </button>
-                ))}
-                {maintenanceWorks.map((work) => (
-                  <button
-                    key={work.activeAppointmentId || `${work.id}-${work.date}`}
-                    type="button"
-                    onClick={() => onOpenWorkVersion(work)}
-                    className="w-full rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-left hover:border-emerald-300/50"
-                  >
-                    <p className="font-black">Karbantartás</p>
-                    <p className="mt-1 text-sm font-bold text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"} · {work.status || "Folyamatban"}</p>
-                    {work.quoteItems?.length ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{climateSummary(work.quoteItems)}</p> : null}
-                  </button>
-                ))}
-              </div>
-            </Card>
-          ) : null}
 
           <Card title={workItemsTitle}>
             {selected.date ? (

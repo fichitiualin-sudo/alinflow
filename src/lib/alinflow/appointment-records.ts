@@ -113,24 +113,6 @@ export function currentAppointmentsByCustomer(rows: AppointmentRecordRow[] = [])
   return currentByCustomer;
 }
 
-export function appointmentsByCustomer(rows: AppointmentRecordRow[] = []) {
-  const rowsByCustomer = new Map<string, AppointmentRecordRow[]>();
-
-  rows.forEach((row) => {
-    const customerId = String(row.customer_id || "");
-    if (!customerId) return;
-    const customerRows = rowsByCustomer.get(customerId) || [];
-    customerRows.push(row);
-    rowsByCustomer.set(customerId, customerRows);
-  });
-
-  rowsByCustomer.forEach((customerRows, customerId) => {
-    rowsByCustomer.set(customerId, [...customerRows].sort(compareAppointmentRows));
-  });
-
-  return rowsByCustomer;
-}
-
 export function isMissingAppointmentsTableError(error: unknown) {
   const value = error as {
     message?: string;
