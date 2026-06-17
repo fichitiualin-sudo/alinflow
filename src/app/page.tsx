@@ -15,8 +15,10 @@ import type {
   DocumentRecord,
   InventoryItem,
   LeadImportCandidate,
+  PurchaseDeclaration,
   QuoteItem,
   QuotePricingMode,
+  SellerCompany,
   View,
   WorkChecklistCompletedAt,
   WorkChecklistItemKey,
@@ -138,6 +140,14 @@ import {
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
+import {
+  DEFAULT_SELLER_COMPANY,
+  declarationFromRow,
+  declarationToRow,
+  sellerCompanyFromRow,
+  sellerCompanyToRow,
+  sellerSnapshot,
+} from "@/lib/alinflow/purchase-declarations";
 
 const DASHBOARD_WAREHOUSE_LIMIT = 10;
 
@@ -147,6 +157,7 @@ type PageDocumentRow = {
   status: string;
   appointmentType?: AppointmentType;
   reportId?: string;
+  purchaseDeclarationId?: string;
   reportDate?: string;
   reportTime?: string;
   reportDateLabel?: string;
@@ -175,6 +186,11 @@ function isMissingPostalCodeColumnError(error: any) {
 function isMissingChecklistCompletedAtColumnError(error: any) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
   return text.includes("completed_at") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
+function isMissingSellerTableError(error: any) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
+  return (text.includes("seller_companies") || text.includes("purchase_declarations")) && (text.includes("relation") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
 }
 
 function withoutPostalCode<T extends Record<string, any>>(row: T) {
@@ -312,12 +328,20 @@ export default function Home() {
   const [workReportsByCustomer,setWorkReportsByCustomer] = useState<Record<string, WorkReport>>({});
   const [maintenanceReportsByCustomer,setMaintenanceReportsByCustomer] = useState<Record<string, WorkReport[]>>({});
   const [documentsByCustomer,setDocumentsByCustomer] = useState<Record<string, DocumentRecord[]>>({});
+  const [sellerCompanies,setSellerCompanies] = useState<SellerCompany[]>([DEFAULT_SELLER_COMPANY]);
+  const [purchaseDeclarationsByCustomer,setPurchaseDeclarationsByCustomer] = useState<Record<string, PurchaseDeclaration[]>>({});
+  const [selectedSellerId,setSelectedSellerId] = useState(DEFAULT_SELLER_COMPANY.id);
+  const [newSellerName,setNewSellerName] = useState("");
+  const [newSellerTaxNumber,setNewSellerTaxNumber] = useState("");
+  const [newSellerRepresentative,setNewSellerRepresentative] = useState("");
+  const [purchaseDeclarationItemKeys,setPurchaseDeclarationItemKeys] = useState<string[]>([]);
   const [workChecklistsByCustomer,setWorkChecklistsByCustomer] = useState<Record<string, WorkChecklistState>>({});
   const [detailDataLoadedByCustomer,setDetailDataLoadedByCustomer] = useState<Record<string, boolean>>({});
   const [detailDataLoadingByCustomer,setDetailDataLoadingByCustomer] = useState<Record<string, boolean>>({});
   const [documentPreviewType,setDocumentPreviewType] = useState<DocumentPreviewType>("work_report");
   const [documentBackView,setDocumentBackView] = useState<"documents" | "work">("work");
   const [documentPreviewReportId,setDocumentPreviewReportId] = useState<string | undefined>(undefined);
+  const [documentPreviewDeclarationId,setDocumentPreviewDeclarationId] = useState<string | undefined>(undefined);
   const [quoteIssuedAt,setQuoteIssuedAt] = useState("");
   const [workReportBusy,setWorkReportBusy] = useState(false);
   const [workReportEmailBusy,setWorkReportEmailBusy] = useState(false);
@@ -337,6 +361,15 @@ export default function Home() {
   const [showClimateProductManager,setShowClimateProductManager] = useState(false);
 
   setActiveProducts(products);
+
+  useEffect(() => {
+    setPurchaseDeclarationItemKeys((current) => {
+      const allKeys = quoteItems.map((_, index) => String(index));
+      if (!allKeys.length) return [];
+      const kept = current.filter((key) => allKeys.includes(key));
+      return kept.length ? kept : allKeys;
+    });
+  }, [quoteItems]);
 
   const currentViewRef = useRef<View>(view);
   const viewHistoryRef = useRef<View[]>([]);
@@ -639,6 +672,9 @@ export default function Home() {
       setWorkReportsByCustomer({});
       setMaintenanceReportsByCustomer({});
       setDocumentsByCustomer({});
+      setSellerCompanies([DEFAULT_SELLER_COMPANY]);
+      setPurchaseDeclarationsByCustomer({});
+      setSelectedSellerId(DEFAULT_SELLER_COMPANY.id);
       setWorkChecklistsByCustomer({});
       setDetailDataLoadedByCustomer({});
       setDetailDataLoadingByCustomer({});
@@ -1016,20 +1052,23 @@ export default function Home() {
     setDetailDataLoadingByCustomer((prev) => ({ ...prev, ...loadingPatch }));
 
     try {
-      const [workReportResult, documentResult, checklistResult] = await Promise.all([
+      const [workReportResult, documentResult, checklistResult, purchaseDeclarationResult] = await Promise.all([
         supabase.from("work_reports").select("*").in("customer_id", idsToLoad).order("created_at", { ascending: false }),
         supabase.from("documents").select("*").in("customer_id", idsToLoad).order("created_at", { ascending: false }),
         supabase.from("work_checklists").select("*").in("customer_id", idsToLoad),
+        supabase.from("purchase_declarations").select("*").in("customer_id", idsToLoad).order("created_at", { ascending: false }),
       ]);
 
       if (workReportResult.error) console.warn("work_reports részletes betöltési hiba", workReportResult.error.message);
       if (documentResult.error) console.warn("documents részletes betöltési hiba", documentResult.error.message);
       if (checklistResult.error) console.warn("work_checklists részletes betöltési hiba", checklistResult.error.message);
+      if (purchaseDeclarationResult.error && !isMissingSellerTableError(purchaseDeclarationResult.error)) console.warn("purchase_declarations részletes betöltési hiba", purchaseDeclarationResult.error.message);
 
       const idSet = new Set(idsToLoad);
       const loadedReportsByKey: Record<string, WorkReport> = {};
       const loadedMaintenanceReports: Record<string, WorkReport[]> = Object.fromEntries(idsToLoad.map((id) => [id, [] as WorkReport[]]));
       const loadedDocuments: Record<string, DocumentRecord[]> = Object.fromEntries(idsToLoad.map((id) => [id, [] as DocumentRecord[]]));
+      const loadedPurchaseDeclarations: Record<string, PurchaseDeclaration[]> = Object.fromEntries(idsToLoad.map((id) => [id, [] as PurchaseDeclaration[]]));
       const loadedChecklists: Record<string, WorkChecklistState> = {};
 
       (workReportResult.data || []).forEach((row: any) => {
@@ -1049,6 +1088,11 @@ export default function Home() {
       (documentResult.data || []).forEach((row: any) => {
         if (!row.customer_id || !idSet.has(row.customer_id)) return;
         loadedDocuments[row.customer_id] = [...(loadedDocuments[row.customer_id] || []), documentFromRow(row)];
+      });
+
+      (purchaseDeclarationResult.data || []).forEach((row: any) => {
+        if (!row.customer_id || !idSet.has(row.customer_id)) return;
+        loadedPurchaseDeclarations[row.customer_id] = [...(loadedPurchaseDeclarations[row.customer_id] || []), declarationFromRow(row)];
       });
 
       (checklistResult.data || []).forEach((row: any) => {
@@ -1076,6 +1120,14 @@ export default function Home() {
         const next = { ...prev };
         idsToLoad.forEach((id) => {
           next[id] = loadedDocuments[id] || [];
+        });
+        return next;
+      });
+
+      setPurchaseDeclarationsByCustomer((prev) => {
+        const next = { ...prev };
+        idsToLoad.forEach((id) => {
+          next[id] = loadedPurchaseDeclarations[id] || [];
         });
         return next;
       });
@@ -1109,6 +1161,21 @@ export default function Home() {
     await loadCustomerDetailData(visibleDocumentCustomersForLoad.map((customer) => customer.id), { force: true });
   }
 
+  async function loadSellerCompaniesFromDb() {
+    const result = await supabase.from("seller_companies").select("*").eq("active", true).order("is_default", { ascending: false }).order("name", { ascending: true });
+    if (result.error) {
+      if (!isMissingSellerTableError(result.error)) console.warn("Eladó cégek betöltési hiba", result.error.message);
+      setSellerCompanies([DEFAULT_SELLER_COMPANY]);
+      setSelectedSellerId(DEFAULT_SELLER_COMPANY.id);
+      return [DEFAULT_SELLER_COMPANY];
+    }
+
+    const sellers = [DEFAULT_SELLER_COMPANY, ...(result.data || []).map(sellerCompanyFromRow).filter((seller) => seller.name !== DEFAULT_SELLER_COMPANY.name)];
+    setSellerCompanies(sellers);
+    setSelectedSellerId((current) => sellers.some((seller) => seller.id === current) ? current : sellers[0].id);
+    return sellers;
+  }
+
   async function loadCustomersFromDb(options: { background?: boolean } = {}) {
     if (loadCustomersPromiseRef.current) return loadCustomersPromiseRef.current;
 
@@ -1117,6 +1184,7 @@ export default function Home() {
       if (!options.background) setMessage("");
 
       const loadedProductsPromise = loadProductsFromDb();
+      const loadedSellersPromise = loadSellerCompaniesFromDb();
       const dataPromise = Promise.all([
         supabase.from("customers").select("*").order("created_at", { ascending: false }),
         supabase.from("quotes").select("*").order("created_at", { ascending: false }),
@@ -1126,6 +1194,7 @@ export default function Home() {
       ]);
 
       const loadedProducts = await loadedProductsPromise;
+      await loadedSellersPromise;
       void loadInventoryFromDb(loadedProducts);
 
       const [
@@ -2558,6 +2627,8 @@ export default function Home() {
 
   function workReportPayload(report: WorkReport = workReport, customer: Customer = selected) {
     const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
+    const declarationItems = items.filter((_, index) => purchaseDeclarationItemKeys.includes(String(index)));
+    const seller = sellerSnapshot(sellerCompanies, selectedSellerId);
     return {
       customer: {
         id: customer.id,
@@ -2579,6 +2650,15 @@ export default function Home() {
         unitPrice: itemUnitPrice(item),
         totalPrice: itemTotal(item),
       })),
+      purchaseDeclaration: {
+        seller,
+        items: (declarationItems.length ? declarationItems : items).map((item) => ({
+          name: itemName(item),
+          quantity: itemQuantity(item),
+          unitPrice: itemUnitPrice(item),
+          totalPrice: itemTotal(item),
+        })),
+      },
       report: {
         workDescription: report.workDescription,
         notes: report.notes,
@@ -2968,6 +3048,17 @@ export default function Home() {
       { title: "Munkalap és vásárlási nyilatkozat", status: workAndDeclarationStatus(customer, "installation"), action: "MunkalapNyilatkozat", appointmentType: "installation" as AppointmentType },
     ];
 
+    purchaseDeclarationsFor(customer).forEach((declaration) => {
+      rows.push({
+        title: `Vásárlási nyilatkozat – ${declaration.sellerName}`,
+        status: declaration.signedAt ? "Aláírva" : "Aláírásra vár",
+        action: "Nyilatkozat",
+        appointmentType: "installation" as AppointmentType,
+        reportId: declaration.workReportId,
+        purchaseDeclarationId: declaration.id,
+      });
+    });
+
     if (installationDone) {
       rows.push({
         title: "Köszönő email",
@@ -3181,13 +3272,14 @@ export default function Home() {
     openWorkReportFor(selected);
   }
 
-  function openDocumentPreview(customer: Customer, type: DocumentPreviewType, reportId?: string) {
+  function openDocumentPreview(customer: Customer, type: DocumentPreviewType, purchaseDeclarationId?: string, reportId?: string) {
     const activeReportId = reportId || customer.activeWorkReportId;
     const customerForPreview = { ...customer, activeWorkReportId: activeReportId, quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems };
     setSelected(customerForPreview);
     setQuoteItems(customerForPreview.quoteItems);
     setDocumentPreviewType(type);
     setDocumentPreviewReportId(activeReportId);
+    setDocumentPreviewDeclarationId(purchaseDeclarationId);
     setDocumentBackView(view === "documents" ? "documents" : "work");
     if (type === "quote_document") {
       setQuoteIssuedAt(new Date().toISOString());
@@ -3200,6 +3292,41 @@ export default function Home() {
 
   function updateWorkReportField(field: keyof WorkReport, value: string) {
     setWorkReport((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function togglePurchaseDeclarationItem(key: string) {
+    setPurchaseDeclarationItemKeys((prev) => {
+      if (prev.includes(key)) return prev.filter((itemKey) => itemKey !== key);
+      return [...prev, key];
+    });
+  }
+
+  async function addSellerCompany() {
+    const seller = {
+      name: newSellerName.trim(),
+      taxNumber: newSellerTaxNumber.trim(),
+      representative: newSellerRepresentative.trim(),
+    };
+    if (!seller.name || !seller.taxNumber || !seller.representative) {
+      setMessage("Az új eladó céghez cégnév, adószám és képviselő neve is szükséges.");
+      return;
+    }
+
+    const result = await supabase.from("seller_companies").insert(sellerCompanyToRow(seller)).select("*").single();
+    if (result.error) {
+      setMessage(isMissingSellerTableError(result.error)
+        ? "Az eladó cégek mentéséhez előbb futtasd az új Supabase migrációt."
+        : `Eladó cég mentési hiba: ${result.error.message}`);
+      return;
+    }
+
+    const savedSeller = sellerCompanyFromRow(result.data);
+    setSellerCompanies((prev) => [...prev.filter((item) => item.id !== savedSeller.id), savedSeller].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name, "hu")));
+    setSelectedSellerId(savedSeller.id);
+    setNewSellerName("");
+    setNewSellerTaxNumber("");
+    setNewSellerRepresentative("");
+    setMessage("Eladó cég mentve.");
   }
 
   async function saveWorkReport(sendEmail = false) {
@@ -3331,6 +3458,35 @@ export default function Home() {
       const hasSignedReport = hasValidWorkReportSignature(reportToSave);
       const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
       const isMaintenanceReport = currentAppointmentType === "maintenance";
+      let savedPurchaseDeclaration: PurchaseDeclaration | null = null;
+      if (!isMaintenanceReport && hasSignedReport) {
+        const seller = sellerSnapshot(sellerCompanies, selectedSellerId);
+        const selectedDeclarationItems = quoteItems.filter((_, index) => purchaseDeclarationItemKeys.includes(String(index)));
+        const declarationItems = selectedDeclarationItems.length ? selectedDeclarationItems : quoteItems;
+        const legacySourceKey = `purchase_declarations:${selected.id}:${data.id}:${seller.id}`;
+        const declarationResult = await supabase
+          .from("purchase_declarations")
+          .upsert(declarationToRow({
+            customerId: selected.id,
+            appointmentId: selected.activeAppointmentId,
+            workReportId: data.id,
+            seller,
+            quoteItems: declarationItems,
+            report: { ...reportToSave, signedAt: signedAt || reportToSave.signedAt },
+            legacySourceKey,
+          }), { onConflict: "legacy_source_key" })
+          .select("*")
+          .single();
+
+        if (declarationResult.error) {
+          if (isMissingSellerTableError(declarationResult.error)) {
+            setMessage("A vásárlási nyilatkozat eladóválasztásához előbb futtasd az új Supabase migrációt.");
+            return;
+          }
+          throw declarationResult.error;
+        }
+        savedPurchaseDeclaration = declarationFromRow(declarationResult.data);
+      }
       if (!isMaintenanceReport) {
         await logDocument(
           selected,
@@ -3341,7 +3497,7 @@ export default function Home() {
         );
       }
       if (!isMaintenanceReport && hasSignedReport) {
-        await logDocument(selected, "purchase_declaration", "Vásárlási nyilatkozat", sendEmail ? "Elküldve" : "Elkészült", documentEventAt);
+        await logDocument(selected, "purchase_declaration", `Vásárlási nyilatkozat${savedPurchaseDeclaration ? ` – ${savedPurchaseDeclaration.sellerName}` : ""}`, sendEmail ? "Elküldve" : "Elkészült", documentEventAt);
       }
 
       if (!isMaintenanceReport) {
@@ -3379,6 +3535,12 @@ export default function Home() {
       } else {
         setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(selected.id, currentAppointmentType)]: savedReportForState }));
       }
+      if (savedPurchaseDeclaration) {
+        setPurchaseDeclarationsByCustomer((prev) => {
+          const current = prev[selected.id] || [];
+          return { ...prev, [selected.id]: [savedPurchaseDeclaration, ...current.filter((item) => item.id !== savedPurchaseDeclaration?.id)] };
+        });
+      }
       setWorkReport(savedReportForState);
       if (isMaintenanceReport) {
         const updatedSelected = { ...selected, activeWorkReportId: savedReportForState.id };
@@ -3409,6 +3571,39 @@ export default function Home() {
       if (report) return report;
     }
     return savedReportFor(customer) || emptyWorkReport(customer);
+  }
+
+  function purchaseDeclarationsFor(customer: Customer = selected) {
+    return customer.id ? (purchaseDeclarationsByCustomer[customer.id] || []) : [];
+  }
+
+  function purchaseDeclarationForPreview(customer: Customer = selected) {
+    const declarations = purchaseDeclarationsFor(customer);
+    if (documentPreviewDeclarationId) {
+      return declarations.find((item) => item.id === documentPreviewDeclarationId);
+    }
+    return declarations[0];
+  }
+
+  function purchaseDeclarationSellerForPreview(customer: Customer = selected) {
+    const declaration = purchaseDeclarationForPreview(customer);
+    if (declaration) {
+      return {
+        id: declaration.sellerCompanyId || declaration.id || DEFAULT_SELLER_COMPANY.id,
+        name: declaration.sellerName,
+        taxNumber: declaration.sellerTaxNumber,
+        representative: declaration.sellerRepresentative,
+      };
+    }
+    return sellerSnapshot(sellerCompanies, selectedSellerId);
+  }
+
+  function purchaseDeclarationItemsForPreview(customer: Customer = selected) {
+    const declaration = purchaseDeclarationForPreview(customer);
+    if (declaration?.quoteItems?.length) return declaration.quoteItems;
+    const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
+    const selectedItems = items.filter((_, index) => purchaseDeclarationItemKeys.includes(String(index)));
+    return selectedItems.length ? selectedItems : items;
   }
 
   function documentIsReady(customer: Customer, row: PageDocumentRow) {
@@ -3578,7 +3773,7 @@ export default function Home() {
           {isAllWorkReportsPreview ? (
             <AllWorkReportsDocument customer={selected} reports={allPreviewReports} quoteItems={quoteItems}/>
           ) : documentPreviewType === "purchase_declaration" ? (
-            <PurchaseDeclarationDocument customer={selected} report={report} quoteItems={quoteItems}/>
+            <PurchaseDeclarationDocument customer={{ ...selected, quoteItems: purchaseDeclarationItemsForPreview(selected) }} report={report} quoteItems={purchaseDeclarationItemsForPreview(selected)} seller={purchaseDeclarationSellerForPreview(selected)}/>
           ) : isAppointmentPreview ? (
             <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems}/>
           ) : isQuotePreview ? (
@@ -3739,10 +3934,22 @@ export default function Home() {
       workReportBusy={workReportBusy}
       workReportEmailBusy={workReportEmailBusy}
       message={message}
+      sellerCompanies={sellerCompanies}
+      selectedSellerId={selectedSellerId}
+      newSellerName={newSellerName}
+      newSellerTaxNumber={newSellerTaxNumber}
+      newSellerRepresentative={newSellerRepresentative}
+      purchaseDeclarationItemKeys={purchaseDeclarationItemKeys}
       onBack={()=>goBack("work")}
       onSave={(sendEmail)=>saveWorkReport(sendEmail)}
       onUpdateWorkReportField={updateWorkReportField}
       onSignatureChange={(value)=>setWorkReport((prev)=>({ ...prev, signatureDataUrl: value, signedAt: value ? new Date().toISOString() : undefined }))}
+      onSelectSeller={setSelectedSellerId}
+      onNewSellerNameChange={setNewSellerName}
+      onNewSellerTaxNumberChange={setNewSellerTaxNumber}
+      onNewSellerRepresentativeChange={setNewSellerRepresentative}
+      onAddSeller={addSellerCompany}
+      onTogglePurchaseDeclarationItem={togglePurchaseDeclarationItem}
     />
   );
 

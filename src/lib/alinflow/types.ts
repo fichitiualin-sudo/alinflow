@@ -45,6 +45,15 @@ export type QuoteItem = {
   isManual?: boolean;
 };
 
+export type SellerCompany = {
+  id: string;
+  name: string;
+  taxNumber: string;
+  representative: string;
+  isDefault?: boolean;
+  active?: boolean;
+};
+
 export type ClimateProduct = {
   id: string;
   name: string;
@@ -105,6 +114,23 @@ export type WorkReport = {
   signerName: string;
   signedAt?: string;
   emailSentAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type PurchaseDeclaration = {
+  id?: string;
+  customerId: string;
+  appointmentId?: string;
+  workReportId?: string;
+  sellerCompanyId?: string;
+  sellerName: string;
+  sellerTaxNumber: string;
+  sellerRepresentative: string;
+  quoteItems: QuoteItem[];
+  signatureDataUrl?: string;
+  signerName?: string;
+  signedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };

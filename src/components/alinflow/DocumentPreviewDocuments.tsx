@@ -1,8 +1,9 @@
-import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
+import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
+import { DEFAULT_SELLER_COMPANY } from "@/lib/alinflow/purchase-declarations";
 
 function formatDocumentDate(value?: string) {
   if (!value) return "nincs megadva";
@@ -189,9 +190,10 @@ export function AllWorkReportsDocument({ customer, reports, quoteItems }: { cust
   );
 }
 
-export function PurchaseDeclarationDocument({ customer, report, quoteItems }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[] }) {
+export function PurchaseDeclarationDocument({ customer, report, quoteItems, seller }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[]; seller?: SellerCompany }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
+  const shownSeller = seller || DEFAULT_SELLER_COMPANY;
   return (
     <article className="doc-print-page purchase-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[12px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[12mm] print:text-[10px] print:leading-[1.2] print:shadow-none">
       <div className="text-center">
@@ -203,9 +205,9 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems }: { 
         <section>
           <h3 className="font-black">Az értékesítő vállalkozás adatai:</h3>
           <div className="ml-3 mt-0.5 space-y-0.5">
-            <p>neve: {dottedLine("AMOVA 4U Kft.")}</p>
-            <p>adószáma: {dottedLine("29253630-2-13")}</p>
-            <p>a képviseletében eljáró természetes személy neve: {dottedLine("Adorján Mirjam")}</p>
+            <p>neve: {dottedLine(shownSeller.name)}</p>
+            <p>adószáma: {dottedLine(shownSeller.taxNumber)}</p>
+            <p>a képviseletében eljáró természetes személy neve: {dottedLine(shownSeller.representative)}</p>
           </div>
         </section>
 

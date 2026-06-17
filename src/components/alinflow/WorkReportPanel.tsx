@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { Customer, QuoteItem, WorkReport } from "@/lib/alinflow/types";
+import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
 import { formatSignedAt, hasValidWorkReportSignature, workReportTitle } from "@/lib/alinflow/work-report";
@@ -16,10 +16,22 @@ type WorkReportPanelProps = {
   workReportBusy: boolean;
   workReportEmailBusy: boolean;
   message: string;
+  sellerCompanies: SellerCompany[];
+  selectedSellerId: string;
+  newSellerName: string;
+  newSellerTaxNumber: string;
+  newSellerRepresentative: string;
+  purchaseDeclarationItemKeys: string[];
   onBack: () => void;
   onSave: (sendEmail: boolean) => void;
   onUpdateWorkReportField: (field: keyof WorkReport, value: string) => void;
   onSignatureChange: (value: string) => void;
+  onSelectSeller: (value: string) => void;
+  onNewSellerNameChange: (value: string) => void;
+  onNewSellerTaxNumberChange: (value: string) => void;
+  onNewSellerRepresentativeChange: (value: string) => void;
+  onAddSeller: () => void;
+  onTogglePurchaseDeclarationItem: (key: string) => void;
 };
 
 export function WorkReportPanel({
@@ -31,10 +43,22 @@ export function WorkReportPanel({
   workReportBusy,
   workReportEmailBusy,
   message,
+  sellerCompanies,
+  selectedSellerId,
+  newSellerName,
+  newSellerTaxNumber,
+  newSellerRepresentative,
+  purchaseDeclarationItemKeys,
   onBack,
   onSave,
   onUpdateWorkReportField,
   onSignatureChange,
+  onSelectSeller,
+  onNewSellerNameChange,
+  onNewSellerTaxNumberChange,
+  onNewSellerRepresentativeChange,
+  onAddSeller,
+  onTogglePurchaseDeclarationItem,
 }: WorkReportPanelProps) {
   const appointmentType = normalizeAppointmentType(selected.appointmentType);
   const isMaintenance = appointmentType === "maintenance";
@@ -86,6 +110,43 @@ export function WorkReportPanel({
               <p className="mt-3 text-sm font-bold text-amber-200">Még nincs aláírás.</p>
             )}
           </Card>
+          {!isMaintenance ? (
+            <Card title="Vásárlási nyilatkozat eladója">
+              <label className="block rounded-2xl bg-slate-900/80 p-4">
+                <span className="text-sm text-slate-400">Eladó / értékesítő cég</span>
+                <select className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={selectedSellerId} onChange={(event) => onSelectSeller(event.target.value)}>
+                  {sellerCompanies.map((seller) => (
+                    <option key={seller.id} value={seller.id}>{seller.name} · {seller.taxNumber}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="mt-4 rounded-2xl bg-slate-900/80 p-4">
+                <p className="text-sm font-black text-slate-300">Új eladó cég hozzáadása</p>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <input className="input" value={newSellerName} onChange={(event) => onNewSellerNameChange(event.target.value)} placeholder="Cégnév" />
+                  <input className="input" value={newSellerTaxNumber} onChange={(event) => onNewSellerTaxNumberChange(event.target.value)} placeholder="Adószám" />
+                  <input className="input" value={newSellerRepresentative} onChange={(event) => onNewSellerRepresentativeChange(event.target.value)} placeholder="Képviselő neve" />
+                </div>
+                <button type="button" onClick={onAddSeller} className="mt-3 rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950">Eladó cég mentése</button>
+              </div>
+
+              <div className="mt-4 rounded-2xl bg-slate-900/80 p-4">
+                <p className="text-sm font-black text-slate-300">A nyilatkozatban szereplő termékek</p>
+                <div className="mt-3 space-y-2">
+                  {quoteItems.map((item, index) => {
+                    const key = String(index);
+                    return (
+                      <label key={key} className="flex items-center gap-3 rounded-xl bg-white/5 p-3 text-sm font-bold">
+                        <input type="checkbox" checked={purchaseDeclarationItemKeys.includes(key)} onChange={() => onTogglePurchaseDeclarationItem(key)} />
+                        <span>{climateSummary([item])}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </Card>
+          ) : null}
         </Main>
         <Side>
           <Gradient title="Munkalap státusz" value={hasValidSignature ? "Aláírva" : "Aláírásra vár"}/>
