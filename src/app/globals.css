@@ -199,6 +199,10 @@ html[data-theme="light"] ::placeholder {
 html[data-theme="light"] .calendar-event-card {
   border-color: rgba(14, 116, 144, 0.28) !important;
   background: #eef9ff !important;
+  --calendar-event-text: #0f172a;
+  --calendar-event-muted: #334155;
+  --calendar-event-time: #075985;
+  --calendar-event-accent: #0e7490;
   color: #0f172a !important;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
 }
@@ -207,21 +211,66 @@ html[data-theme="light"] .calendar-event-card p,
 html[data-theme="light"] .calendar-event-card b,
 html[data-theme="light"] .calendar-event-card span,
 html[data-theme="light"] .calendar-event-card button {
-  color: #0f172a !important;
+  color: var(--calendar-event-text) !important;
 }
 
 html[data-theme="light"] .calendar-event-card p:first-child {
-  color: #075985 !important;
+  color: var(--calendar-event-time) !important;
 }
 
 html[data-theme="light"] .calendar-event-card .text-cyan-100\/80,
 html[data-theme="light"] .calendar-event-card .text-cyan-200\/80 {
-  color: #0e7490 !important;
+  color: var(--calendar-event-accent) !important;
 }
 
 html[data-theme="light"] .calendar-event-card .opacity-70 {
   opacity: 1 !important;
-  color: #334155 !important;
+  color: var(--calendar-event-muted) !important;
+}
+
+html[data-theme="light"] .calendar-event-card.bg-emerald-950\/90 {
+  border-color: rgba(22, 101, 52, 0.38) !important;
+  background: #dcfce7 !important;
+  --calendar-event-text: #14532d;
+  --calendar-event-muted: #166534;
+  --calendar-event-time: #166534;
+  --calendar-event-accent: #047857;
+}
+
+html[data-theme="light"] .calendar-event-card.bg-amber-400\/20 {
+  border-color: rgba(217, 119, 6, 0.42) !important;
+  background: #fef3c7 !important;
+  --calendar-event-text: #78350f;
+  --calendar-event-muted: #92400e;
+  --calendar-event-time: #92400e;
+  --calendar-event-accent: #b45309;
+}
+
+html[data-theme="light"] .calendar-event-card.bg-sky-400\/20 {
+  border-color: rgba(2, 132, 199, 0.38) !important;
+  background: #e0f2fe !important;
+  --calendar-event-text: #075985;
+  --calendar-event-muted: #0369a1;
+  --calendar-event-time: #0369a1;
+  --calendar-event-accent: #0284c7;
+}
+
+html[data-theme="light"] .calendar-event-card.bg-violet-400\/15 {
+  border-color: rgba(124, 58, 237, 0.34) !important;
+  background: #ede9fe !important;
+  --calendar-event-text: #4c1d95;
+  --calendar-event-muted: #5b21b6;
+  --calendar-event-time: #5b21b6;
+  --calendar-event-accent: #7c3aed;
+}
+
+html[data-theme="light"] .calendar-event-card.bg-white\/10 {
+  border-color: rgba(15, 23, 42, 0.14) !important;
+  background: #ffffff !important;
+  --calendar-event-text: #0f172a;
+  --calendar-event-muted: #334155;
+  --calendar-event-time: #075985;
+  --calendar-event-accent: #0e7490;
 }
 
 html[data-theme="light"] .calendar-add-link {
