@@ -133,7 +133,7 @@ export function Calendar({
                 {jobs.map((job) => (
                   <div
                     key={job.id}
-                    className={`w-full rounded-2xl p-3 text-left transition hover:ring-2 hover:ring-cyan-300/50 md:p-2 ${calendarStatusStyle(job.status)}`}
+                    className={`calendar-event-card w-full rounded-2xl p-3 text-left transition hover:ring-2 hover:ring-cyan-300/50 md:p-2 ${calendarStatusStyle(job.status)}`}
                   >
                     <button
                       type="button"
@@ -153,7 +153,7 @@ export function Calendar({
                         target="_blank"
                         rel="noreferrer"
                         onClick={(event) => event.stopPropagation()}
-                        className="mt-2 inline-flex items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2.5 py-1 text-[10px] font-black text-amber-100 transition hover:bg-amber-300/25"
+                        className="calendar-add-link mt-2 inline-flex items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2.5 py-1 text-[10px] font-black text-amber-100 transition hover:bg-amber-300/25"
                         title="Hozzáadás Google Naptárhoz"
                       >
                         + Naptár
