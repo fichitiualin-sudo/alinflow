@@ -3825,11 +3825,19 @@ export default function Home() {
 
       if (error && currentAppointmentType === "installation" && errorMentionsWorkReportType(error)) {
         const { appointment_type, ...fallbackPayload } = payloadWithoutHistoryLink;
-        const fallbackResult = await supabase
-          .from("work_reports")
-          .upsert(fallbackPayload, { onConflict: "customer_id" })
-          .select("*")
-          .single();
+        const fallbackReportId = currentReportId || existingReport?.id;
+        const fallbackResult = fallbackReportId
+          ? await supabase
+              .from("work_reports")
+              .update(fallbackPayload)
+              .eq("id", fallbackReportId)
+              .select("*")
+              .single()
+          : await supabase
+              .from("work_reports")
+              .insert(fallbackPayload)
+              .select("*")
+              .single();
         data = fallbackResult.data;
         error = fallbackResult.error;
       }
@@ -3877,19 +3885,41 @@ export default function Home() {
         const selectedDeclarationItems = quoteItems.filter((_, index) => purchaseDeclarationItemKeys.includes(String(index)));
         const declarationItems = selectedDeclarationItems.length ? selectedDeclarationItems : quoteItems;
         const legacySourceKey = `purchase_declarations:${selected.id}:${data.id}:${seller.id}`;
-        const declarationResult = await supabase
+        const declarationPayload = declarationToRow({
+          customerId: selected.id,
+          appointmentId: selected.activeAppointmentId,
+          workReportId: data.id,
+          seller,
+          quoteItems: declarationItems,
+          report: { ...reportToSave, signedAt: signedAt || reportToSave.signedAt },
+          legacySourceKey,
+        });
+        const declarationSourceMatch = await supabase
           .from("purchase_declarations")
-          .upsert(declarationToRow({
-            customerId: selected.id,
-            appointmentId: selected.activeAppointmentId,
-            workReportId: data.id,
-            seller,
-            quoteItems: declarationItems,
-            report: { ...reportToSave, signedAt: signedAt || reportToSave.signedAt },
-            legacySourceKey,
-          }), { onConflict: "legacy_source_key" })
-          .select("*")
-          .single();
+          .select("id")
+          .eq("legacy_source_key", legacySourceKey)
+          .maybeSingle();
+
+        if (declarationSourceMatch.error) {
+          if (isMissingSellerTableError(declarationSourceMatch.error)) {
+            setMessage("A vásárlási nyilatkozat eladóválasztásához előbb futtasd az új Supabase migrációt.");
+            return;
+          }
+          throw declarationSourceMatch.error;
+        }
+
+        const declarationResult = declarationSourceMatch.data?.id
+          ? await supabase
+              .from("purchase_declarations")
+              .update(declarationPayload)
+              .eq("id", declarationSourceMatch.data.id)
+              .select("*")
+              .single()
+          : await supabase
+              .from("purchase_declarations")
+              .insert(declarationPayload)
+              .select("*")
+              .single();
 
         if (declarationResult.error) {
           if (isMissingSellerTableError(declarationResult.error)) {
