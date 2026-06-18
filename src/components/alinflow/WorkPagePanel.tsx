@@ -268,11 +268,6 @@ export function WorkPagePanel({
                 </div>
               </div>
             ) : null}
-            {isMaintenance ? (
-              <div className="mb-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-100">
-                Ez karbantartási időpont. A klímák csak tájékoztató jelleggel jelennek meg, készletet és szerelési anyagot nem foglalnak.
-              </div>
-            ) : null}
             {(isInstallation || isMaintenance) && quoteItems.length === 0 ? <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm font-bold text-slate-300">Nincs rögzített klíma.</div> : null}
             {isMaintenance && quoteItems.length ? (
               <div className="space-y-3">
@@ -325,7 +320,7 @@ export function WorkPagePanel({
               <button
                 type="button"
                 onClick={() => setShowMaterials((open) => !open)}
-                className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
+                className="document-action-button rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
               >
                 {showMaterials ? "Felhasznált anyagok elrejtése" : "Felhasznált anyagok megjelenítése"}
               </button>
@@ -377,7 +372,7 @@ export function WorkPagePanel({
           <button
             type="button"
             onClick={() => setShowDocuments((open) => !open)}
-            className="w-full rounded-2xl bg-white/10 px-5 py-4 text-left font-black text-cyan-100 ring-1 ring-white/10"
+            className="document-action-button w-full rounded-2xl bg-white/10 px-5 py-4 text-left font-black text-cyan-100 ring-1 ring-white/10"
           >
             {showDocuments ? "Dokumentumok elrejtése" : "Dokumentumok megjelenítése"}
           </button>
@@ -595,7 +590,7 @@ function MaintenanceHistory({
             <button
               type="button"
               onClick={() => onOpenDocumentPreview(maintenanceCustomerBase, "all_work_reports")}
-              className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-emerald-100 ring-1 ring-emerald-300/10"
+              className="document-action-button rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-emerald-100 ring-1 ring-emerald-300/10"
             >
               Összes munkalap
             </button>
@@ -629,7 +624,7 @@ function MaintenanceHistory({
                   <button
                     type="button"
                     onClick={() => onOpenDocumentPreview(customerForRow, "work_report", row.reportId)}
-                    className="shrink-0 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white/15"
+                    className="document-action-button shrink-0 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white/15"
                   >
                     Megtekintés
                   </button>
@@ -637,7 +632,7 @@ function MaintenanceHistory({
                   <button
                     type="button"
                     onClick={() => onOpenWorkReportFor(customerForRow, row.reportId)}
-                    className="shrink-0 rounded-xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/30"
+                    className="document-action-button shrink-0 rounded-xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/30"
                   >
                     Munkalap
                   </button>

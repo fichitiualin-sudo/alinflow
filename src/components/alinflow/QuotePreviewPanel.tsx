@@ -145,7 +145,6 @@ export function QuotePreviewPanel({
                   <h3 className="font-black">Belső számlázási bontás</h3>
                   <p className="mt-2">Adorján Alin E.V. – klímatelepítési munkadíj: {ft(installerAmount)}</p>
                   <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: {ft(materialAmount)}</p>
-                  <p className="mt-2 text-slate-600">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</p>
                 </div>
               )}
 
@@ -171,14 +170,8 @@ export function QuotePreviewPanel({
                   />
                   <span>
                     <span className="block text-base font-black text-slate-100">Ne adja össze a tételeket</span>
-                    <span className="mt-1 block text-slate-400">Bekapcsolva a klímák külön választható ajánlatként mennek ki.</span>
                   </span>
                 </label>
-                <p className="rounded-2xl bg-slate-950/60 p-4 text-sm leading-relaxed text-slate-300">
-                  {quoteIsAlternatives
-                    ? "Küldéskor az email/PDF kiemeli, hogy ezek alternatívák, nem összeadott csomag."
-                    : "Küldéskor az email/PDF egy közös végösszeget fog mutatni."}
-                </p>
                 <button onClick={onSendQuote} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
                   {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
                 </button>

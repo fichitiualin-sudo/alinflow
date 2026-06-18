@@ -2984,7 +2984,7 @@ export default function Home() {
     }
 
     setQuoteEmailBusy(true);
-    setMessage("Ajánlat email küldése folyamatban... Telefonról is ugyanígy működik.");
+    setMessage("Ajánlat email küldése folyamatban...");
 
     try {
       const issuedAt = view === "quotePreview" && quoteIssuedAt ? quoteIssuedAt : new Date().toISOString();
@@ -4544,16 +4544,13 @@ export default function Home() {
         <div className="print:hidden">
           {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
           {documentBackView === "documents" || isAppointmentPreview || isQuotePreview || isAllWorkReportsPreview ? (
-            <div className="mb-5"><button onClick={()=>window.print()} className="w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div>
+            <div className="mb-5"><button onClick={()=>window.print()} className="document-action-button w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div>
           ) : (
             <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button onClick={()=>openWorkReportFor(selected, documentPreviewReportId)} className="rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button>
-              <button onClick={()=>saveWorkReport(true)} className="rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button>
+              <button onClick={()=>openWorkReportFor(selected, documentPreviewReportId)} className="document-action-button rounded-2xl bg-emerald-400/20 px-5 py-4 font-black text-emerald-100">Munkalap szerkesztése / aláírás</button>
+              <button onClick={()=>saveWorkReport(true)} className="document-action-button rounded-2xl bg-blue-400/20 px-5 py-4 font-black text-blue-100">Mentés és email küldése</button>
             </div>
           )}
-          {!isAppointmentPreview && !isQuotePreview && !isAllWorkReportsPreview && !hasValidWorkReportSignature(report) ? (
-            <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-bold text-amber-100">A dokumentum még nincs érvényesen aláírva. A munkalap és a vásárlási nyilatkozat csak aláírásképpel és aláírási időponttal számít elkészültnek.</div>
-          ) : null}
         </div>
         <div className="print-document-area print:bg-white">
           {isAllWorkReportsPreview ? (
@@ -4589,9 +4586,9 @@ export default function Home() {
                   <option value="all">Összes státusz</option>
                   {STATUS_OPTIONS.map((status)=><option key={status} value={status}>{status}</option>)}
                 </select>
-                <button type="button" onClick={() => void refreshVisibleDocumentData()} disabled={dataLoading} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 disabled:opacity-60">{dataLoading ? "Frissítés..." : "Frissítés"}</button>
+                <button type="button" onClick={() => void refreshVisibleDocumentData()} disabled={dataLoading} className="document-action-button rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 disabled:opacity-60">{dataLoading ? "Frissítés..." : "Frissítés"}</button>
               </div>
-              {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
+              {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="document-action-button rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
                 {documentCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs találat.</div> : null}
                 {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerInquiryLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{[...documentRowsFor(customer), ...maintenanceDocumentRowsFor(customer, true)].map((row)=><div key={`${row.title}-${row.reportId || row.reportDateLabel || row.reportDate || row.action}` } className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
@@ -4935,9 +4932,6 @@ function ProductSelect({products,value,onChange,disabled=false}:{products:Climat
 function StatusControl({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
     <Card title="Státusz kezelése">
-      <p className="mb-4 text-sm text-slate-400">
-        A státusz automatikusan is változik a folyamat során, de itt kézzel is átállítható.
-      </p>
       <div className="grid grid-cols-1 gap-2">
         {STATUS_OPTIONS.map((status) => (
           <button
