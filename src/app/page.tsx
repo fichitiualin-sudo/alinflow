@@ -174,6 +174,11 @@ type WorkActionDates = {
   cancelled?: string;
 };
 
+type StockDeductionSnapshot = {
+  inventoryBefore: InventoryItem[];
+  materialInventoryBefore: any[];
+};
+
 type QuickAppointmentCustomerMode = "new" | "existing";
 
 type QuickAppointmentDraft = {
@@ -1089,7 +1094,7 @@ export default function Home() {
   function documentsForCustomerScope(customer: Pick<Customer, "activeAppointmentId">, docs: DocumentRecord[] = []) {
     if (!customer.activeAppointmentId) return docs;
     const scoped = docs.filter((doc) => doc.appointmentId === customer.activeAppointmentId);
-    return scoped.length ? scoped : docs.filter((doc) => !doc.appointmentId);
+    return scoped;
   }
 
   function workCustomersForScheduling(primaryCustomers: Customer[], historyByCustomer: Record<string, Customer[]>) {
@@ -2405,8 +2410,8 @@ export default function Home() {
     return "";
   }
 
-  async function deductStockIfNeeded() {
-    if (selected.stockDeducted) return;
+  async function deductStockIfNeeded(): Promise<StockDeductionSnapshot | undefined> {
+    if (selected.stockDeducted) return undefined;
 
     const changedInventory: InventoryItem[] = [];
     const nextInventory = inventory.map(item => {
@@ -2428,13 +2433,27 @@ export default function Home() {
       return nextItem;
     });
 
-    setInventory(nextInventory);
-    setMaterialInventory(nextMaterials);
-
     await Promise.all([
       ...changedInventory.map((item) => persistClimateStock(item.productId, item.stock)),
       ...changedMaterials.map((item) => persistMaterialStock(item)),
     ]);
+
+    setInventory(nextInventory);
+    setMaterialInventory(nextMaterials);
+    return {
+      inventoryBefore: inventory,
+      materialInventoryBefore: materialInventory,
+    };
+  }
+
+  async function restoreStockDeduction(snapshot?: StockDeductionSnapshot) {
+    if (!snapshot) return;
+    await Promise.all([
+      ...snapshot.inventoryBefore.map((item) => persistClimateStock(item.productId, item.stock)),
+      ...snapshot.materialInventoryBefore.map((item: any) => persistMaterialStock(item)),
+    ]);
+    setInventory(snapshot.inventoryBefore);
+    setMaterialInventory(snapshot.materialInventoryBefore);
   }
 
   async function markInstallationDone() {
@@ -2503,8 +2522,6 @@ export default function Home() {
       return;
     }
 
-    if (isInstallation) await deductStockIfNeeded();
-
     const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
@@ -2515,7 +2532,9 @@ export default function Home() {
       updatedAt: changedAt,
     };
 
+    let stockRollback: StockDeductionSnapshot | undefined;
     try {
+      if (isInstallation) stockRollback = await deductStockIfNeeded();
       await persistCustomerToDb(updated);
       await logDocument(updated, "installation_done", `${appointmentTypeLabel(updated.appointmentType)} kész – admin folyamatban`, "Kész", changedAt);
       setSelected(updated);
@@ -2524,6 +2543,14 @@ export default function Home() {
       setMessage(`${appointmentTypeLabel(updated.appointmentType)} kész ✅ Admin még folyamatban.`);
       replaceView("work");
     } catch (error: any) {
+      if (stockRollback) {
+        try {
+          await restoreStockDeduction(stockRollback);
+        } catch (restoreError: any) {
+          setMessage(`Mentési hiba: ${error.message}. A készlet visszaállítása sem sikerült: ${restoreError.message}`);
+          return;
+        }
+      }
       setMessage(`Mentési hiba: ${error.message}`);
     }
   }
@@ -2541,8 +2568,6 @@ export default function Home() {
       return;
     }
 
-    if (isInstallation) await deductStockIfNeeded();
-
     const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
@@ -2553,7 +2578,9 @@ export default function Home() {
       updatedAt: changedAt,
     };
 
+    let stockRollback: StockDeductionSnapshot | undefined;
     try {
+      if (isInstallation) stockRollback = await deductStockIfNeeded();
       await persistCustomerToDb(updated);
       await logDocument(updated, "work_closed", "Teljes lezárás", "Lezárva", changedAt);
       setSelected(updated);
@@ -2562,6 +2589,14 @@ export default function Home() {
       setMessage("Munka teljesen lezárva ✅ A naptárban sötétzöld lezárt munkaként megmarad.");
       returnToLastMenu();
     } catch (error: any) {
+      if (stockRollback) {
+        try {
+          await restoreStockDeduction(stockRollback);
+        } catch (restoreError: any) {
+          setMessage(`Mentési hiba: ${error.message}. A készlet visszaállítása sem sikerült: ${restoreError.message}`);
+          return;
+        }
+      }
       setMessage(`Mentési hiba: ${error.message}`);
     }
   }
@@ -3230,8 +3265,14 @@ export default function Home() {
   ): WorkChecklistState {
     if (!customer.id) return { ...workChecklist, completedAt: { ...(workChecklist.completedAt || {}) } };
 
-    const saved = checklistsMap[workScopeKey(customer)] || checklistsMap[customer.id] || EMPTY_WORK_CHECKLIST;
-    const report = reportsMap[customer.id] || reportsMap[workReportMapKey(customer.id, "installation")] || Object.values(reportsMap).find((item) => item.customerId === customer.id && normalizeAppointmentType(item.appointmentType) === "installation");
+    const saved = checklistsMap[workScopeKey(customer)] || (!customer.activeAppointmentId ? checklistsMap[customer.id] : undefined) || EMPTY_WORK_CHECKLIST;
+    const report = customer.activeAppointmentId
+      ? Object.values(reportsMap).find((item) => (
+          item.customerId === customer.id
+          && item.appointmentId === customer.activeAppointmentId
+          && normalizeAppointmentType(item.appointmentType) === "installation"
+        ))
+      : reportsMap[customer.id] || reportsMap[workReportMapKey(customer.id, "installation")] || Object.values(reportsMap).find((item) => item.customerId === customer.id && normalizeAppointmentType(item.appointmentType) === "installation");
     const docs = documentsForCustomerScope(customer, docsMap[customer.id] || []);
     const workDoc = docs.find((doc) => doc.type === "work_report");
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
@@ -3343,6 +3384,20 @@ export default function Home() {
         && normalizeAppointmentType(report.appointmentType) === normalizedType
       ));
       if (exact) return exact;
+
+      if (
+        workReport.customerId === customer.id
+        && workReport.appointmentId === customer.activeAppointmentId
+        && normalizeAppointmentType(workReport.appointmentType) === normalizedType
+      ) return workReport;
+
+      const dateMatchedLegacyReport = Object.values(workReportsByCustomer).find((report) => (
+        report.customerId === customer.id
+        && !report.appointmentId
+        && normalizeAppointmentType(report.appointmentType) === normalizedType
+        && sameReportAppointment(report, customer)
+      ));
+      return dateMatchedLegacyReport;
     }
 
     if (
@@ -4085,6 +4140,9 @@ export default function Home() {
     const declarations = purchaseDeclarationsFor(customer);
     if (documentPreviewDeclarationId) {
       return declarations.find((item) => item.id === documentPreviewDeclarationId);
+    }
+    if (customer.activeAppointmentId) {
+      return declarations.find((item) => item.appointmentId === customer.activeAppointmentId);
     }
     return declarations[0];
   }

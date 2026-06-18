@@ -9,6 +9,14 @@ alter table public.documents
 alter table public.work_checklists
   add column if not exists appointment_id uuid;
 
+alter table public.jobs
+  add column if not exists legacy_source_key text,
+  add column if not exists cancelled_at timestamp with time zone;
+
+create unique index if not exists jobs_legacy_source_key_uidx
+  on public.jobs (legacy_source_key)
+  where legacy_source_key is not null;
+
 do $$
 begin
   if not exists (
@@ -147,7 +155,7 @@ begin
   end if;
 
   if p_appointment_id is not null then
-    update public.appointments
+    update public.appointments a
       set quote_id = p_quote_id,
           title = p_title,
           scheduled_date = p_scheduled_date,
@@ -158,9 +166,9 @@ begin
           notes = p_notes,
           cancelled_at = null,
           updated_at = now()
-      where id = p_appointment_id
-        and customer_id = p_customer_id
-      returning id, legacy_source_key
+      where a.id = p_appointment_id
+        and a.customer_id = p_customer_id
+      returning a.id, a.legacy_source_key
       into v_appointment_id, v_legacy_source_key;
   end if;
 
@@ -201,7 +209,7 @@ begin
   if v_legacy_source_key ~ '^jobs:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     v_existing_job_id := substring(v_legacy_source_key from 6)::uuid;
 
-    update public.jobs
+    update public.jobs j
       set quote_id = p_quote_id,
           title = p_title,
           scheduled_date = p_scheduled_date,
@@ -212,18 +220,18 @@ begin
           notes = p_notes,
           cancelled_at = null,
           updated_at = now()
-      where id = v_existing_job_id
-      returning id
+      where j.id = v_existing_job_id
+      returning j.id
       into v_job_id;
   end if;
 
   if v_job_id is null then
     v_job_key := 'appointments:' || v_appointment_id::text;
 
-    select id
+    select j.id
       into v_job_id
-      from public.jobs
-      where legacy_source_key = v_job_key
+      from public.jobs j
+      where j.legacy_source_key = v_job_key
       limit 1;
 
     if v_job_id is null then
@@ -256,7 +264,7 @@ begin
       returning id
       into v_job_id;
     else
-      update public.jobs
+      update public.jobs j
         set quote_id = p_quote_id,
             title = p_title,
             scheduled_date = p_scheduled_date,
@@ -267,13 +275,13 @@ begin
             notes = p_notes,
             cancelled_at = null,
             updated_at = now()
-        where id = v_job_id;
+        where j.id = v_job_id;
     end if;
 
-    update public.appointments
+    update public.appointments a
       set legacy_source_key = 'jobs:' || v_job_id::text
-      where id = v_appointment_id
-        and legacy_source_key is null;
+      where a.id = v_appointment_id
+        and a.legacy_source_key is null;
   end if;
 
   return query select v_appointment_id, v_job_id;
