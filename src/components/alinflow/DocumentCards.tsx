@@ -51,25 +51,25 @@ export function DocumentLibraryActionButtons({
   if (row.action === "MunkalapNyilatkozat") {
     return (
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <button onClick={() => onPreview(actionCustomer, "work_report")} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Munkalap</button>
-        <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Nyilatkozat</button>
+        <button onClick={() => onPreview(actionCustomer, "work_report")} className="document-action-button rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Munkalap</button>
+        <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className="document-action-button rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Nyilatkozat</button>
       </div>
     );
   }
   if (row.action === "MaintenanceBundle") {
-    return <button onClick={() => onPreview(actionCustomer, "all_work_reports")} className="mt-3 w-full rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100">Összes munkalap megtekintése / nyomtatása</button>;
+    return <button onClick={() => onPreview(actionCustomer, "all_work_reports")} className="document-action-button mt-3 w-full rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100">Összes munkalap megtekintése / nyomtatása</button>;
   }
   if (row.action === "MaintenanceReport" || row.action === "Munkalap") {
-    return <button onClick={() => onPreview(actionCustomer, "work_report")} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
+    return <button onClick={() => onPreview(actionCustomer, "work_report")} className="document-action-button mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
   }
   if (row.action === "Nyilatkozat") {
-    return <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className="mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
+    return <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className="document-action-button mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
   }
   if (row.action === "Ajánlat") {
-    return <button onClick={() => onPreview(actionCustomer, "quote_document")} className="mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100">Ajánlat megtekintése</button>;
+    return <button onClick={() => onPreview(actionCustomer, "quote_document")} className="document-action-button mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100">Ajánlat megtekintése</button>;
   }
   if (row.action === "Időpont") {
-    return <button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className="mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Időpont megtekintése</button>;
+    return <button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className="document-action-button mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Időpont megtekintése</button>;
   }
 
   return null;
@@ -99,7 +99,7 @@ export function DocumentActionButtons({
   appointmentEmailBusy: boolean;
 }) {
   const actionCustomer = actionCustomerFor(customer, row);
-  const baseButton = "rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-wait disabled:opacity-60";
+  const baseButton = "document-action-button rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-wait disabled:opacity-60";
   const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
   const sendButton = `${baseButton} bg-blue-400/20 text-blue-100 hover:bg-blue-400/30`;
   const editButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
@@ -117,7 +117,7 @@ export function DocumentActionButtons({
     );
   }
   if (row.action === "MaintenanceBundle") {
-    return <button onClick={() => onPreview(actionCustomer, "all_work_reports")} className="mt-3 w-full rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/30">Összes munkalap letöltése / nyomtatása</button>;
+    return <button onClick={() => onPreview(actionCustomer, "all_work_reports")} className="document-action-button mt-3 w-full rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/30">Összes munkalap letöltése / nyomtatása</button>;
   }
   if (row.action === "MaintenanceReport") {
     return (

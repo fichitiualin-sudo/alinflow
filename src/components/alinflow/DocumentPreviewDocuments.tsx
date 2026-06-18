@@ -347,7 +347,6 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt }: { custome
         <h3 className="font-black">Belső számlázási bontás</h3>
         <p className="mt-3">Adorján Alin E.V. – klímatelepítési munkadíj: <strong>{ft(installerAmount)}</strong></p>
         <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: <strong>{ft(materialAmount)}</strong></p>
-        <p className="mt-2 text-xs">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</p>
       </div>
     )}
 

@@ -155,7 +155,6 @@ export function WorkReportPanel({
               <StepButton color="green" onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>
               <StepButton color="blue" onClick={()=>onSave(true)}>{workReportEmailBusy ? "Email küldése..." : isMaintenance ? "Karbantartási munkalap email" : "Mentés és email küldése"}</StepButton>
             </div>
-            <p className="mt-4 text-sm leading-relaxed text-slate-400">Az email telefonról és laptopról is ugyanazzal a Resend küldéssel megy ki. PDF nincs, így az ékezetek rendben maradnak.</p>
           </Card>
           <Card title="Email állapot">
             <InfoRow label="Ügyfél email" value={selected.email || "nincs megadva"}/>
@@ -278,7 +277,7 @@ function SignaturePad({ value, onChange }: { value?: string; onChange: (value: s
         onPointerCancel={finishSignature}
         onPointerLeave={() => { if (drawingRef.current) finishSignature(); }}
       />
-      <button onClick={clearSignature} className="mt-3 w-full rounded-2xl bg-slate-900 px-5 py-4 font-black text-white">Aláírás törlése</button>
+      <button onClick={clearSignature} className="document-action-button mt-3 w-full rounded-2xl bg-slate-900 px-5 py-4 font-black text-white">Aláírás törlése</button>
     </div>
   );
 }

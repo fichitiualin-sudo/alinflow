@@ -230,11 +230,7 @@ export function SchedulePanel({
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-bold text-amber-100">
-                  Ehhez az ügyfélhez még nincs rögzített klíma. A karbantartási időpont ettől függetlenül menthető.
-                </div>
-              )
+              ) : null
             ) : null}
 
             <InfoRow label="Időpont típusa" value={appointmentTypeLabel(appointmentType)} />
