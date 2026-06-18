@@ -4132,8 +4132,11 @@ export default function Home() {
     return savedReportFor(customer) || emptyWorkReport(customer);
   }
 
-  function purchaseDeclarationsFor(customer: Customer = selected) {
-    return customer.id ? (purchaseDeclarationsByCustomer[customer.id] || []) : [];
+  function purchaseDeclarationsFor(customer: Customer = selected, options: { includeAll?: boolean } = {}) {
+    if (!customer.id) return [];
+    const declarations = purchaseDeclarationsByCustomer[customer.id] || [];
+    if (options.includeAll || !customer.activeAppointmentId) return declarations;
+    return declarations.filter((item) => item.appointmentId === customer.activeAppointmentId);
   }
 
   function purchaseDeclarationForPreview(customer: Customer = selected) {
