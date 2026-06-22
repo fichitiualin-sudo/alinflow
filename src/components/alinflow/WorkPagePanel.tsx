@@ -21,6 +21,7 @@ import {
 } from "@/lib/alinflow/products";
 import type { View } from "@/lib/alinflow/types";
 import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
+import { billingUiConfig, type BillingInvoiceKind } from "@/lib/alinflow/billing";
 
 type MaterialItem = {
   name: string;
@@ -97,8 +98,8 @@ type WorkPagePanelProps = {
   onStartMaintenanceForCustomer: (customer: Customer) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
   onSetChecklistItem: (key: WorkChecklistItemKey, value: boolean) => void;
-  onCreateInvoice: (kind: "device" | "labor", amount: string) => void;
-  invoiceBusy: "device" | "labor" | null;
+  onCreateInvoice: (kind: BillingInvoiceKind, amount: string) => void;
+  invoiceBusy: BillingInvoiceKind | null;
   onOpenWorkVersion: (customer: Customer) => void;
 };
 
@@ -178,6 +179,7 @@ export function WorkPagePanel({
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
   const [deviceInvoiceAmount, setDeviceInvoiceAmount] = useState(String(defaultDeviceAmount));
+  const billingConfig = billingUiConfig();
   const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
   const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance");
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
@@ -468,6 +470,7 @@ export function WorkPagePanel({
                       onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount)}
                       onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount)}
                       invoiceBusy={invoiceBusy}
+                      billingConfig={billingConfig}
                     />
                   ) : null}
                 </>
@@ -498,6 +501,7 @@ function BillingPreparationPanel({
   onCreateLaborInvoice,
   onCreateDeviceInvoice,
   invoiceBusy,
+  billingConfig,
 }: {
   laborAmount: string;
   deviceAmount: string;
@@ -511,7 +515,8 @@ function BillingPreparationPanel({
   onSetDeviceDone: (value: boolean) => void;
   onCreateLaborInvoice: () => void;
   onCreateDeviceInvoice: () => void;
-  invoiceBusy: "device" | "labor" | null;
+  invoiceBusy: BillingInvoiceKind | null;
+  billingConfig: ReturnType<typeof billingUiConfig>;
 }) {
   const laborValue = parseAmount(laborAmount);
   const deviceValue = parseAmount(deviceAmount);
@@ -519,8 +524,8 @@ function BillingPreparationPanel({
   return (
     <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
       <InvoicePrepCard
-        title="Készülék és anyag"
-        seller="AMOVA 4U Kft. · áfás számla"
+        title={billingConfig.deviceTitle}
+        seller={billingConfig.deviceSellerLabel}
         amount={deviceAmount}
         parsedAmount={deviceValue}
         done={deviceDone}
@@ -531,8 +536,8 @@ function BillingPreparationPanel({
         invoiceBusy={invoiceBusy === "device"}
       />
       <InvoicePrepCard
-        title="Munkadíj"
-        seller="Adorján Alin E.V. · alanyi adómentes számla"
+        title={billingConfig.laborTitle}
+        seller={billingConfig.laborSellerLabel}
         amount={laborAmount}
         parsedAmount={laborValue}
         done={laborDone}

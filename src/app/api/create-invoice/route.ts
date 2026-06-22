@@ -1,12 +1,11 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
+import type { BillingInvoiceKind } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
 
-type InvoiceKind = "device" | "labor";
-
 type InvoiceRequest = {
-  kind: InvoiceKind;
+  kind: BillingInvoiceKind;
   amount: number;
   customer: Customer;
   quoteItems?: QuoteItem[];
@@ -49,33 +48,54 @@ function buyerAddress(customer: Customer) {
   };
 }
 
-function getAgentKey(kind: InvoiceKind) {
-  return kind === "device"
-    ? process.env.SZAMLAZZ_AMOVA_AGENT_KEY || ""
-    : process.env.SZAMLAZZ_ALIN_AGENT_KEY || "";
+function readEnv(name: string, fallback = "") {
+  return process.env[name] || fallback;
 }
 
-function invoiceLine(kind: InvoiceKind, amount: number, items: QuoteItem[]) {
-  if (kind === "labor") {
-    return {
-      name: "Klímaszerelési munkadíj",
-      vatKey: "AAM",
-      net: amount,
-      vat: 0,
-      gross: amount,
-      note: climateSummary(items),
-    };
-  }
+function agentKeyEnvName(kind: BillingInvoiceKind) {
+  return kind === "device" ? "SZAMLAZZ_DEVICE_AGENT_KEY" : "SZAMLAZZ_LABOR_AGENT_KEY";
+}
 
+function getAgentKey(kind: BillingInvoiceKind) {
+  return readEnv(agentKeyEnvName(kind));
+}
+
+function invoiceLineName(kind: BillingInvoiceKind) {
+  if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_LINE_NAME", "Klímaberendezés és szerelési anyagok");
+  return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Klímaszerelési munkadíj");
+}
+
+function invoiceVatKey(kind: BillingInvoiceKind) {
+  if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_VAT_KEY", "27");
+  return readEnv("SZAMLAZZ_LABOR_VAT_KEY", "AAM");
+}
+
+function invoiceComment(kind: BillingInvoiceKind) {
+  if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_COMMENT", "Készülék és szerelési anyagok számlája.");
+  return readEnv("SZAMLAZZ_LABOR_COMMENT", "Klímaszerelési munkadíj számlája.");
+}
+
+function invoicePrefix(kind: BillingInvoiceKind) {
+  return kind === "device" ? readEnv("SZAMLAZZ_DEVICE_INVOICE_PREFIX") : readEnv("SZAMLAZZ_LABOR_INVOICE_PREFIX");
+}
+
+function amountsFromGross(gross: number, vatKey: string) {
+  const numericVat = Number(String(vatKey).replace(",", "."));
+  if (Number.isFinite(numericVat) && numericVat > 0) {
+    const net = Math.round(gross / (1 + numericVat / 100));
+    return { net, vat: gross - net, gross };
+  }
+  return { net: gross, vat: 0, gross };
+}
+
+function invoiceLine(kind: BillingInvoiceKind, amount: number, items: QuoteItem[]) {
   const gross = amount;
-  const net = Math.round(gross / 1.27);
-  const vat = gross - net;
+  const vatKey = invoiceVatKey(kind);
+  const amounts = amountsFromGross(gross, vatKey);
   return {
-    name: "Klímaberendezés és szerelési anyagok",
-    vatKey: "27",
-    net,
-    vat,
-    gross,
+    name: invoiceLineName(kind),
+    vatKey,
+    ...amounts,
     note: climateSummary(items),
   };
 }
@@ -85,9 +105,7 @@ function buildInvoiceXml({ kind, amount, customer, quoteItems = [] }: InvoiceReq
   const buyer = buyerAddress(customer);
   const line = invoiceLine(kind, amount, quoteItems);
   const externalId = `alinflow-${kind}-${customer.activeAppointmentId || customer.id}`;
-  const comment = kind === "device"
-    ? "Készülék és szerelési anyagok számlája."
-    : "Klímaszerelési munkadíj számlája. Alanyi adómentes.";
+  const comment = invoiceComment(kind);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <xmlszamla xmlns="http://www.szamlazz.hu/xmlszamla" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.szamlazz.hu/xmlszamla https://www.szamlazz.hu/szamla/docs/xsds/agent/xmlszamla.xsd">
@@ -116,7 +134,7 @@ function buildInvoiceXml({ kind, amount, customer, quoteItems = [] }: InvoiceReq
     <helyesbitoszamla>false</helyesbitoszamla>
     <helyesbitettSzamlaszam></helyesbitettSzamlaszam>
     <dijbekero>false</dijbekero>
-    <szamlaszamElotag></szamlaszamElotag>
+    <szamlaszamElotag>${safeText(invoicePrefix(kind))}</szamlaszamElotag>
   </fejlec>
   <elado>
     <bank></bank>
@@ -196,7 +214,7 @@ export async function POST(request: Request) {
 
     const agentKey = getAgentKey(kind);
     if (!agentKey) {
-      const envName = kind === "device" ? "SZAMLAZZ_AMOVA_AGENT_KEY" : "SZAMLAZZ_ALIN_AGENT_KEY";
+      const envName = agentKeyEnvName(kind);
       return Response.json({ ok: false, error: `Hiányzik a ${envName} környezeti változó.` }, { status: 500 });
     }
 

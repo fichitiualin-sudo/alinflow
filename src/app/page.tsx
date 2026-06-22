@@ -140,6 +140,7 @@ import {
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
+import { billingKindLabel, billingUiConfig, type BillingInvoiceKind } from "@/lib/alinflow/billing";
 import { normalizePostalCodeInput, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
@@ -354,7 +355,7 @@ export default function Home() {
   const [quoteEmailBusy,setQuoteEmailBusy] = useState(false);
   const [appointmentEmailBusy,setAppointmentEmailBusy] = useState(false);
   const [thankYouEmailBusy,setThankYouEmailBusy] = useState(false);
-  const [invoiceBusy,setInvoiceBusy] = useState<"device" | "labor" | null>(null);
+  const [invoiceBusy,setInvoiceBusy] = useState<BillingInvoiceKind | null>(null);
   const [sendAppointmentNotice,setSendAppointmentNotice] = useState(true);
   const [workReport,setWorkReport] = useState<WorkReport>(emptyWorkReport());
   const [workReportsByCustomer,setWorkReportsByCustomer] = useState<Record<string, WorkReport>>({});
@@ -2082,7 +2083,7 @@ export default function Home() {
     }
   }
 
-  async function createInvoice(kind: "device" | "labor", amountValue: string) {
+  async function createInvoice(kind: BillingInvoiceKind, amountValue: string) {
     if (!selected.id) return;
     const amount = Number(String(amountValue || "").replace(/\s/g, ""));
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -2090,7 +2091,7 @@ export default function Home() {
       return;
     }
 
-    const label = kind === "device" ? "Készülék és anyag" : "Munkadíj";
+    const label = billingKindLabel(kind, billingUiConfig());
     const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel?`);
     if (!confirmed) return;
 
@@ -3654,9 +3655,10 @@ export default function Home() {
       });
     }
 
+    const billingConfig = billingUiConfig();
     rows.push(
-      { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
-      { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
+      { title: `${billingConfig.laborTitle} számla`, status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
+      { title: `${billingConfig.deviceTitle} számla`, status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
     );
 
     return rows;
