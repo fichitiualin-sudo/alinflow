@@ -728,7 +728,7 @@ export default function Home() {
       done: Boolean(currentWorkChecklist.worksheet && currentWorkChecklist.signature && currentWorkChecklist.purchaseDeclaration),
     },
     { label: "NKVH", done: Boolean(currentWorkChecklist.nkvh) },
-    { label: "Számlázás", done: Boolean(currentWorkChecklist.alinInvoice) },
+    { label: "Számlázás", done: Boolean(currentWorkChecklist.alinInvoice && currentWorkChecklist.amovaInvoice) },
   ];
   const missingChecklist = closeRequirementItems.filter((item) => !item.done).map((item) => item.label);
   const checklistReady = missingChecklist.length === 0;
@@ -2059,6 +2059,25 @@ export default function Home() {
     if (selected.id) {
       setWorkChecklistsByCustomer((prev) => ({ ...prev, [workScopeKey(selected)]: next }));
       await persistWorkChecklist(selected, next);
+    }
+  }
+
+  async function setChecklistItem(key: WorkChecklistItemKey, value: boolean) {
+    const base = selected.id ? effectiveChecklistFor(selected) : workChecklist;
+    if ((key === "worksheet" || key === "purchaseDeclaration") && value && !base.signature) {
+      setMessage("A munkalap és a vásárlási nyilatkozat csak ügyfélaláírás után jelölhető elkészültként.");
+      return;
+    }
+
+    if (base[key] === value) return;
+    const next = { [key]: value } as Partial<WorkChecklistState>;
+    if (selected.id) {
+      await updateChecklistForCustomer(selected, next);
+    } else {
+      const completedAt: WorkChecklistCompletedAt = { ...(base.completedAt || {}) };
+      if (value) completedAt[key] = completedAt[key] || new Date().toISOString();
+      else delete completedAt[key];
+      setWorkChecklist({ ...base, [key]: value, completedAt });
     }
   }
 
@@ -4795,6 +4814,7 @@ export default function Home() {
         onCancelAppointment={cancelAppointment}
         onStartMaintenanceForCustomer={startMaintenanceForCustomer}
         onToggleChecklist={toggleChecklist}
+        onSetChecklistItem={setChecklistItem}
         onOpenWorkVersion={openWorkVersion}
       />
     </Shell>

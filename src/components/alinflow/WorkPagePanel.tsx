@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
 import { Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
@@ -11,6 +11,7 @@ import {
   hasCustomProductPrice,
   isCustomQuoteItem,
   itemPriceLine,
+  quoteInstallTotal,
   itemTotal,
   itemUnitPrice,
   prod,
@@ -95,6 +96,7 @@ type WorkPagePanelProps = {
   onCancelAppointment: () => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
+  onSetChecklistItem: (key: WorkChecklistItemKey, value: boolean) => void;
   onOpenWorkVersion: (customer: Customer) => void;
 };
 
@@ -154,6 +156,7 @@ export function WorkPagePanel({
   onCancelAppointment,
   onStartMaintenanceForCustomer,
   onToggleChecklist,
+  onSetChecklistItem,
   onOpenWorkVersion,
 }: WorkPagePanelProps) {
   const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
@@ -166,6 +169,11 @@ export function WorkPagePanel({
   const [showMaterials, setShowMaterials] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
+  const [showBillingPrep, setShowBillingPrep] = useState(false);
+  const defaultLaborAmount = quoteInstallTotal(quoteItems);
+  const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
+  const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
+  const [deviceInvoiceAmount, setDeviceInvoiceAmount] = useState(String(defaultDeviceAmount));
   const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
   const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance");
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
@@ -174,6 +182,12 @@ export function WorkPagePanel({
     : isMaintenance
     ? "Karbantartott klímák"
     : "Időponthoz tartozó klímák";
+  const billingDone = Boolean(currentWorkChecklist.alinInvoice && currentWorkChecklist.amovaInvoice);
+
+  useEffect(() => {
+    setLaborInvoiceAmount(String(defaultLaborAmount));
+    setDeviceInvoiceAmount(String(defaultDeviceAmount));
+  }, [selected.id, selected.activeAppointmentId, defaultLaborAmount, defaultDeviceAmount]);
 
   return (
     <>
@@ -433,7 +447,23 @@ export function WorkPagePanel({
               ) : isMaintenance ? (
                 selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null
               ) : (
-                <ActionButton color="amber" onClick={() => onToggleChecklist("alinInvoice")} label="Számlázás" doneAt={currentWorkChecklist.alinInvoice ? checklistDates.alinInvoice : undefined} icon={currentWorkChecklist.alinInvoice ? "✓" : "○"} />
+                <>
+                  <ActionButton color="amber" onClick={() => setShowBillingPrep((open) => !open)} label="Számlázás" doneAt={billingDone ? checklistDates.alinInvoice || checklistDates.amovaInvoice : undefined} icon={billingDone ? "✓" : "○"} />
+                  {showBillingPrep ? (
+                    <BillingPreparationPanel
+                      laborAmount={laborInvoiceAmount}
+                      deviceAmount={deviceInvoiceAmount}
+                      laborDone={Boolean(currentWorkChecklist.alinInvoice)}
+                      deviceDone={Boolean(currentWorkChecklist.amovaInvoice)}
+                      laborDoneAt={checklistDates.alinInvoice}
+                      deviceDoneAt={checklistDates.amovaInvoice}
+                      onLaborAmountChange={setLaborInvoiceAmount}
+                      onDeviceAmountChange={setDeviceInvoiceAmount}
+                      onSetLaborDone={(value) => onSetChecklistItem("alinInvoice", value)}
+                      onSetDeviceDone={(value) => onSetChecklistItem("amovaInvoice", value)}
+                    />
+                  ) : null}
+                </>
               )}
               {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
               {selected.status !== "Lezárva" ? <ActionButton color="red" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} icon="×" /> : null}
@@ -446,6 +476,120 @@ export function WorkPagePanel({
   );
 }
 
+
+function BillingPreparationPanel({
+  laborAmount,
+  deviceAmount,
+  laborDone,
+  deviceDone,
+  laborDoneAt,
+  deviceDoneAt,
+  onLaborAmountChange,
+  onDeviceAmountChange,
+  onSetLaborDone,
+  onSetDeviceDone,
+}: {
+  laborAmount: string;
+  deviceAmount: string;
+  laborDone: boolean;
+  deviceDone: boolean;
+  laborDoneAt?: string;
+  deviceDoneAt?: string;
+  onLaborAmountChange: (value: string) => void;
+  onDeviceAmountChange: (value: string) => void;
+  onSetLaborDone: (value: boolean) => void;
+  onSetDeviceDone: (value: boolean) => void;
+}) {
+  const laborValue = parseAmount(laborAmount);
+  const deviceValue = parseAmount(deviceAmount);
+
+  return (
+    <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
+      <InvoicePrepCard
+        title="Készülék és anyag"
+        seller="AMOVA 4U Kft. · áfás számla"
+        amount={deviceAmount}
+        parsedAmount={deviceValue}
+        done={deviceDone}
+        doneAt={deviceDoneAt}
+        onAmountChange={onDeviceAmountChange}
+        onSetDone={onSetDeviceDone}
+      />
+      <InvoicePrepCard
+        title="Munkadíj"
+        seller="Adorján Alin E.V. · alanyi adómentes számla"
+        amount={laborAmount}
+        parsedAmount={laborValue}
+        done={laborDone}
+        doneAt={laborDoneAt}
+        onAmountChange={onLaborAmountChange}
+        onSetDone={onSetLaborDone}
+      />
+      <div className="rounded-2xl bg-slate-950/60 p-4 text-sm font-black text-slate-200">
+        Összesen számlázandó: {ft(laborValue + deviceValue)}
+      </div>
+    </div>
+  );
+}
+
+function InvoicePrepCard({
+  title,
+  seller,
+  amount,
+  parsedAmount,
+  done,
+  doneAt,
+  onAmountChange,
+  onSetDone,
+}: {
+  title: string;
+  seller: string;
+  amount: string;
+  parsedAmount: number;
+  done: boolean;
+  doneAt?: string;
+  onAmountChange: (value: string) => void;
+  onSetDone: (value: boolean) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-lg font-black text-slate-100">{title}</p>
+          <p className="mt-1 text-sm font-bold text-slate-400">{seller}</p>
+        </div>
+        <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
+          {done ? "Kész" : "Előkészítve"}
+        </span>
+      </div>
+      <label className="block rounded-2xl bg-slate-900/90 p-4">
+        <span className="text-sm font-bold text-slate-400">Számla összege</span>
+        <input
+          type="number"
+          min="0"
+          step="1000"
+          inputMode="numeric"
+          value={amount}
+          onChange={(event) => onAmountChange(event.target.value)}
+          className="mt-2 w-full bg-transparent text-2xl font-black text-slate-100 outline-none"
+        />
+        <span className="mt-1 block text-sm font-bold text-slate-400">{ft(parsedAmount)}</span>
+      </label>
+      <button
+        type="button"
+        onClick={() => onSetDone(!done)}
+        className={`mt-3 w-full rounded-2xl px-5 py-4 font-black ${done ? "bg-white/10 text-slate-100" : "bg-emerald-400 text-slate-950"}`}
+      >
+        {done ? `Készre jelölve${doneAt ? ` · ${formatDoneAt(doneAt)}` : ""}` : "Készre jelölés"}
+      </button>
+    </div>
+  );
+}
+
+function parseAmount(value: string) {
+  const amount = Number(String(value || "").replace(/\s/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+}
 
 
 function formatDoneAt(value?: string) {
