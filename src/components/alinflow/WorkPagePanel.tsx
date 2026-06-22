@@ -97,6 +97,8 @@ type WorkPagePanelProps = {
   onStartMaintenanceForCustomer: (customer: Customer) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
   onSetChecklistItem: (key: WorkChecklistItemKey, value: boolean) => void;
+  onCreateInvoice: (kind: "device" | "labor", amount: string) => void;
+  invoiceBusy: "device" | "labor" | null;
   onOpenWorkVersion: (customer: Customer) => void;
 };
 
@@ -157,6 +159,8 @@ export function WorkPagePanel({
   onStartMaintenanceForCustomer,
   onToggleChecklist,
   onSetChecklistItem,
+  onCreateInvoice,
+  invoiceBusy,
   onOpenWorkVersion,
 }: WorkPagePanelProps) {
   const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
@@ -461,6 +465,9 @@ export function WorkPagePanel({
                       onDeviceAmountChange={setDeviceInvoiceAmount}
                       onSetLaborDone={(value) => onSetChecklistItem("alinInvoice", value)}
                       onSetDeviceDone={(value) => onSetChecklistItem("amovaInvoice", value)}
+                      onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount)}
+                      onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount)}
+                      invoiceBusy={invoiceBusy}
                     />
                   ) : null}
                 </>
@@ -488,6 +495,9 @@ function BillingPreparationPanel({
   onDeviceAmountChange,
   onSetLaborDone,
   onSetDeviceDone,
+  onCreateLaborInvoice,
+  onCreateDeviceInvoice,
+  invoiceBusy,
 }: {
   laborAmount: string;
   deviceAmount: string;
@@ -499,6 +509,9 @@ function BillingPreparationPanel({
   onDeviceAmountChange: (value: string) => void;
   onSetLaborDone: (value: boolean) => void;
   onSetDeviceDone: (value: boolean) => void;
+  onCreateLaborInvoice: () => void;
+  onCreateDeviceInvoice: () => void;
+  invoiceBusy: "device" | "labor" | null;
 }) {
   const laborValue = parseAmount(laborAmount);
   const deviceValue = parseAmount(deviceAmount);
@@ -514,6 +527,8 @@ function BillingPreparationPanel({
         doneAt={deviceDoneAt}
         onAmountChange={onDeviceAmountChange}
         onSetDone={onSetDeviceDone}
+        onCreateInvoice={onCreateDeviceInvoice}
+        invoiceBusy={invoiceBusy === "device"}
       />
       <InvoicePrepCard
         title="Munkadíj"
@@ -524,6 +539,8 @@ function BillingPreparationPanel({
         doneAt={laborDoneAt}
         onAmountChange={onLaborAmountChange}
         onSetDone={onSetLaborDone}
+        onCreateInvoice={onCreateLaborInvoice}
+        invoiceBusy={invoiceBusy === "labor"}
       />
       <div className="rounded-2xl bg-slate-950/60 p-4 text-sm font-black text-slate-200">
         Összesen számlázandó: {ft(laborValue + deviceValue)}
@@ -541,6 +558,8 @@ function InvoicePrepCard({
   doneAt,
   onAmountChange,
   onSetDone,
+  onCreateInvoice,
+  invoiceBusy,
 }: {
   title: string;
   seller: string;
@@ -550,6 +569,8 @@ function InvoicePrepCard({
   doneAt?: string;
   onAmountChange: (value: string) => void;
   onSetDone: (value: boolean) => void;
+  onCreateInvoice: () => void;
+  invoiceBusy: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
@@ -575,6 +596,14 @@ function InvoicePrepCard({
         />
         <span className="mt-1 block text-sm font-bold text-slate-400">{ft(parsedAmount)}</span>
       </label>
+      <button
+        type="button"
+        onClick={onCreateInvoice}
+        disabled={invoiceBusy || parsedAmount <= 0}
+        className="mt-3 w-full rounded-2xl bg-blue-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {invoiceBusy ? "Számla készítése..." : "Számla létrehozása Számlázz.hu-ban"}
+      </button>
       <button
         type="button"
         onClick={() => onSetDone(!done)}

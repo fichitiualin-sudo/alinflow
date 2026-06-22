@@ -354,6 +354,7 @@ export default function Home() {
   const [quoteEmailBusy,setQuoteEmailBusy] = useState(false);
   const [appointmentEmailBusy,setAppointmentEmailBusy] = useState(false);
   const [thankYouEmailBusy,setThankYouEmailBusy] = useState(false);
+  const [invoiceBusy,setInvoiceBusy] = useState<"device" | "labor" | null>(null);
   const [sendAppointmentNotice,setSendAppointmentNotice] = useState(true);
   const [workReport,setWorkReport] = useState<WorkReport>(emptyWorkReport());
   const [workReportsByCustomer,setWorkReportsByCustomer] = useState<Record<string, WorkReport>>({});
@@ -2078,6 +2079,44 @@ export default function Home() {
       if (value) completedAt[key] = completedAt[key] || new Date().toISOString();
       else delete completedAt[key];
       setWorkChecklist({ ...base, [key]: value, completedAt });
+    }
+  }
+
+  async function createInvoice(kind: "device" | "labor", amountValue: string) {
+    if (!selected.id) return;
+    const amount = Number(String(amountValue || "").replace(/\s/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMessage("Számla készítéséhez adj meg érvényes összeget.");
+      return;
+    }
+
+    const label = kind === "device" ? "Készülék és anyag" : "Munkadíj";
+    const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel?`);
+    if (!confirmed) return;
+
+    setInvoiceBusy(kind);
+    setMessage(`${label} számla készítése folyamatban...`);
+
+    try {
+      const response = await fetch("/api/create-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind,
+          amount: Math.round(amount),
+          customer: selected,
+          quoteItems,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.ok) throw new Error(result?.error || "A Számlázz.hu számlakészítés sikertelen.");
+
+      await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
+      setMessage(`${label} számla elkészült ✅${result.invoiceNumber ? ` Számlaszám: ${result.invoiceNumber}` : ""}`);
+    } catch (error: any) {
+      setMessage(`Számlázási hiba: ${error.message}`);
+    } finally {
+      setInvoiceBusy(null);
     }
   }
 
@@ -4774,6 +4813,7 @@ export default function Home() {
         quoteEmailBusy={quoteEmailBusy}
         appointmentEmailBusy={appointmentEmailBusy}
         thankYouEmailBusy={thankYouEmailBusy}
+        invoiceBusy={invoiceBusy}
         currentWorkChecklist={currentWorkChecklist}
         checklistDates={currentWorkChecklist.completedAt || {}}
         actionDates={workActionDatesFor(selected)}
@@ -4815,6 +4855,7 @@ export default function Home() {
         onStartMaintenanceForCustomer={startMaintenanceForCustomer}
         onToggleChecklist={toggleChecklist}
         onSetChecklistItem={setChecklistItem}
+        onCreateInvoice={createInvoice}
         onOpenWorkVersion={openWorkVersion}
       />
     </Shell>
