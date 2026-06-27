@@ -1,12 +1,13 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
-import type { BillingInvoiceKind } from "@/lib/alinflow/billing";
+import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
 
 type InvoiceRequest = {
   kind: BillingInvoiceKind;
   amount: number;
+  paymentMethod?: BillingPaymentMethod;
   customer: Customer;
   quoteItems?: QuoteItem[];
 };
@@ -105,12 +106,23 @@ function invoiceLine(kind: BillingInvoiceKind, amount: number, items: QuoteItem[
   };
 }
 
-function buildInvoiceXml({ kind, amount, customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
+function normalizePaymentMethod(value: unknown): BillingPaymentMethod {
+  return value === "cash" ? "cash" : "transfer";
+}
+
+function szamlazzPaymentMethodName(method: BillingPaymentMethod) {
+  return method === "cash" ? "Készpénz" : "Átutalás";
+}
+
+function buildInvoiceXml({ kind, amount, paymentMethod = "transfer", customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
   const date = todayIso();
+  const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
+  const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`));
   const buyer = buyerAddress(customer);
   const line = invoiceLine(kind, amount, quoteItems);
   const externalId = `alinflow-${kind}-${customer.activeAppointmentId || customer.id}`;
   const comment = invoiceComment(kind);
+  const paymentLabel = szamlazzPaymentMethodName(normalizedPaymentMethod);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <xmlszamla xmlns="http://www.szamlazz.hu/xmlszamla" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.szamlazz.hu/xmlszamla https://www.szamlazz.hu/szamla/docs/xsds/agent/xmlszamla.xsd">
@@ -125,8 +137,8 @@ function buildInvoiceXml({ kind, amount, customer, quoteItems = [] }: InvoiceReq
   <fejlec>
     <keltDatum>${date}</keltDatum>
     <teljesitesDatum>${date}</teljesitesDatum>
-    <fizetesiHataridoDatum>${date}</fizetesiHataridoDatum>
-    <fizmod>Átutalás</fizmod>
+    <fizetesiHataridoDatum>${dueDate}</fizetesiHataridoDatum>
+    <fizmod>${safeText(paymentLabel)}</fizmod>
     <penznem>HUF</penznem>
     <szamlaNyelve>hu</szamlaNyelve>
     <megjegyzes>${safeText(comment)}</megjegyzes>

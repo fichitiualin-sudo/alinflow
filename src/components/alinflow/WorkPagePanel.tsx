@@ -21,7 +21,7 @@ import {
 } from "@/lib/alinflow/products";
 import type { View } from "@/lib/alinflow/types";
 import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
-import { billingUiConfig, type BillingInvoiceKind } from "@/lib/alinflow/billing";
+import { billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 type MaterialItem = {
   name: string;
@@ -97,8 +97,7 @@ type WorkPagePanelProps = {
   onCancelAppointment: () => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
-  onSetChecklistItem: (key: WorkChecklistItemKey, value: boolean) => void;
-  onCreateInvoice: (kind: BillingInvoiceKind, amount: string) => void;
+  onCreateInvoice: (kind: BillingInvoiceKind, amount: string, paymentMethod: BillingPaymentMethod) => void;
   invoiceBusy: BillingInvoiceKind | null;
   onOpenWorkVersion: (customer: Customer) => void;
 };
@@ -159,7 +158,6 @@ export function WorkPagePanel({
   onCancelAppointment,
   onStartMaintenanceForCustomer,
   onToggleChecklist,
-  onSetChecklistItem,
   onCreateInvoice,
   invoiceBusy,
   onOpenWorkVersion,
@@ -178,6 +176,7 @@ export function WorkPagePanel({
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
   const [deviceInvoiceAmount, setDeviceInvoiceAmount] = useState(String(defaultDeviceAmount));
+  const [invoicePaymentMethod, setInvoicePaymentMethod] = useState<BillingPaymentMethod>("transfer");
   const billingConfig = billingUiConfig();
   const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
   const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance");
@@ -462,10 +461,10 @@ export function WorkPagePanel({
                   billingDone={billingDone}
                   onLaborAmountChange={setLaborInvoiceAmount}
                   onDeviceAmountChange={setDeviceInvoiceAmount}
-                  onSetLaborDone={(value) => onSetChecklistItem("alinInvoice", value)}
-                  onSetDeviceDone={(value) => onSetChecklistItem("amovaInvoice", value)}
-                  onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount)}
-                  onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount)}
+                  paymentMethod={invoicePaymentMethod}
+                  onPaymentMethodChange={setInvoicePaymentMethod}
+                  onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount, invoicePaymentMethod)}
+                  onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount, invoicePaymentMethod)}
                   invoiceBusy={invoiceBusy}
                   billingConfig={billingConfig}
                 />
@@ -490,10 +489,10 @@ function BillingPreparationPanel({
   laborDoneAt,
   deviceDoneAt,
   billingDone,
+  paymentMethod,
   onLaborAmountChange,
   onDeviceAmountChange,
-  onSetLaborDone,
-  onSetDeviceDone,
+  onPaymentMethodChange,
   onCreateLaborInvoice,
   onCreateDeviceInvoice,
   invoiceBusy,
@@ -506,10 +505,10 @@ function BillingPreparationPanel({
   laborDoneAt?: string;
   deviceDoneAt?: string;
   billingDone: boolean;
+  paymentMethod: BillingPaymentMethod;
   onLaborAmountChange: (value: string) => void;
   onDeviceAmountChange: (value: string) => void;
-  onSetLaborDone: (value: boolean) => void;
-  onSetDeviceDone: (value: boolean) => void;
+  onPaymentMethodChange: (value: BillingPaymentMethod) => void;
   onCreateLaborInvoice: () => void;
   onCreateDeviceInvoice: () => void;
   invoiceBusy: BillingInvoiceKind | null;
@@ -517,17 +516,34 @@ function BillingPreparationPanel({
 }) {
   const laborValue = parseAmount(laborAmount);
   const deviceValue = parseAmount(deviceAmount);
+  const dueDate = billingDueDateIso(paymentMethod);
 
   return (
     <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-lg font-black text-amber-100">Számlázás</p>
-          <p className="mt-1 text-sm font-bold text-slate-300">Először ellenőrizd vagy módosítsd az összegeket, majd hozd létre a két számlát.</p>
+          <p className="mt-1 text-sm font-bold text-slate-300">Ellenőrizd az előnézetet, majd hozd létre a két számlát.</p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${billingDone ? "bg-emerald-400 text-slate-950" : "bg-amber-300 text-slate-950"}`}>
           {billingDone ? "Kész" : "Folyamatban"}
         </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-950/60 p-2">
+        <button
+          type="button"
+          onClick={() => onPaymentMethodChange("cash")}
+          className={`rounded-xl px-4 py-3 font-black ${paymentMethod === "cash" ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-100"}`}
+        >
+          KP
+        </button>
+        <button
+          type="button"
+          onClick={() => onPaymentMethodChange("transfer")}
+          className={`rounded-xl px-4 py-3 font-black ${paymentMethod === "transfer" ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-100"}`}
+        >
+          Utalás
+        </button>
       </div>
       <InvoicePrepCard
         title={billingConfig.deviceTitle}
@@ -536,8 +552,9 @@ function BillingPreparationPanel({
         parsedAmount={deviceValue}
         done={deviceDone}
         doneAt={deviceDoneAt}
+        paymentMethod={paymentMethod}
+        dueDate={dueDate}
         onAmountChange={onDeviceAmountChange}
-        onSetDone={onSetDeviceDone}
         onCreateInvoice={onCreateDeviceInvoice}
         invoiceBusy={invoiceBusy === "device"}
       />
@@ -548,8 +565,9 @@ function BillingPreparationPanel({
         parsedAmount={laborValue}
         done={laborDone}
         doneAt={laborDoneAt}
+        paymentMethod={paymentMethod}
+        dueDate={dueDate}
         onAmountChange={onLaborAmountChange}
-        onSetDone={onSetLaborDone}
         onCreateInvoice={onCreateLaborInvoice}
         invoiceBusy={invoiceBusy === "labor"}
       />
@@ -567,8 +585,9 @@ function InvoicePrepCard({
   parsedAmount,
   done,
   doneAt,
+  paymentMethod,
+  dueDate,
   onAmountChange,
-  onSetDone,
   onCreateInvoice,
   invoiceBusy,
 }: {
@@ -578,8 +597,9 @@ function InvoicePrepCard({
   parsedAmount: number;
   done: boolean;
   doneAt?: string;
+  paymentMethod: BillingPaymentMethod;
+  dueDate: string;
   onAmountChange: (value: string) => void;
-  onSetDone: (value: boolean) => void;
   onCreateInvoice: () => void;
   invoiceBusy: boolean;
 }) {
@@ -607,20 +627,21 @@ function InvoicePrepCard({
         />
         <span className="mt-1 block text-sm font-bold text-slate-400">{ft(parsedAmount)}</span>
       </label>
+      <div className="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-slate-200">
+        <p className="font-black text-cyan-100">Előnézet</p>
+        <p className="mt-2">Tétel: {title}</p>
+        <p>Fizetési mód: {billingPaymentMethodLabel(paymentMethod)}</p>
+        <p>Fizetési határidő: {dueDate.replaceAll("-", ".")}</p>
+        <p>Bruttó összeg: {ft(parsedAmount)}</p>
+        {doneAt ? <p>Elkészült: {formatDoneAt(doneAt)}</p> : null}
+      </div>
       <button
         type="button"
         onClick={onCreateInvoice}
-        disabled={invoiceBusy || parsedAmount <= 0}
+        disabled={done || invoiceBusy || parsedAmount <= 0}
         className="mt-3 w-full rounded-2xl bg-blue-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {invoiceBusy ? "Számla készítése..." : "Számla létrehozása Számlázz.hu-ban"}
-      </button>
-      <button
-        type="button"
-        onClick={() => onSetDone(!done)}
-        className={`mt-3 w-full rounded-2xl px-5 py-4 font-black ${done ? "bg-white/10 text-slate-100" : "bg-emerald-400 text-slate-950"}`}
-      >
-        {done ? `Készre jelölve${doneAt ? ` · ${formatDoneAt(doneAt)}` : ""}` : "Készre jelölés"}
+        {done ? "Számla elkészült" : invoiceBusy ? "Számla készítése..." : "Számla létrehozása Számlázz.hu-ban"}
       </button>
     </div>
   );

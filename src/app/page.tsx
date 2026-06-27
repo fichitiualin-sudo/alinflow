@@ -140,7 +140,7 @@ import {
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
-import { billingKindLabel, billingUiConfig, type BillingInvoiceKind } from "@/lib/alinflow/billing";
+import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { normalizePostalCodeInput, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
@@ -2083,7 +2083,7 @@ export default function Home() {
     }
   }
 
-  async function createInvoice(kind: BillingInvoiceKind, amountValue: string) {
+  async function createInvoice(kind: BillingInvoiceKind, amountValue: string, paymentMethod: BillingPaymentMethod) {
     if (!selected.id) return;
     const amount = Number(String(amountValue || "").replace(/\s/g, ""));
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -2092,7 +2092,7 @@ export default function Home() {
     }
 
     const label = billingKindLabel(kind, billingUiConfig());
-    const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel?`);
+    const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel, fizetési mód: ${billingPaymentMethodLabel(paymentMethod)}?`);
     if (!confirmed) return;
 
     setInvoiceBusy(kind);
@@ -2105,6 +2105,7 @@ export default function Home() {
         body: JSON.stringify({
           kind,
           amount: Math.round(amount),
+          paymentMethod,
           customer: selected,
           quoteItems,
         }),
@@ -4856,7 +4857,6 @@ export default function Home() {
         onCancelAppointment={cancelAppointment}
         onStartMaintenanceForCustomer={startMaintenanceForCustomer}
         onToggleChecklist={toggleChecklist}
-        onSetChecklistItem={setChecklistItem}
         onCreateInvoice={createInvoice}
         onOpenWorkVersion={openWorkVersion}
       />
