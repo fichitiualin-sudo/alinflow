@@ -8,13 +8,9 @@ import { DocumentActionButtons, documentStatusClass } from "@/components/alinflo
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
   climateSummary,
-  cleanQuoteItems,
   hasCustomProductPrice,
   isCustomQuoteItem,
-  itemInstallPrice,
-  itemName,
   itemPriceLine,
-  itemQuantity,
   quoteInstallTotal,
   itemTotal,
   itemUnitPrice,
@@ -532,8 +528,8 @@ function BillingPreparationPanel({
   const deviceValue = parseAmount(deviceAmount);
   const laborDueDate = billingDueDateIso(laborPaymentMethod);
   const deviceDueDate = billingDueDateIso(devicePaymentMethod);
-  const deviceInvoiceLines = invoicePreviewLines("device", deviceValue, quoteItems, billingConfig);
-  const laborInvoiceLines = invoicePreviewLines("labor", laborValue, quoteItems, billingConfig);
+  const deviceInvoiceLines = invoicePreviewLines("device", quoteItems, billingConfig);
+  const laborInvoiceLines = invoicePreviewLines("labor", quoteItems, billingConfig);
 
   return (
     <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
@@ -674,26 +670,12 @@ function parseAmount(value: string) {
   return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
 }
 
-function invoicePreviewLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
+function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
   if (kind === "labor") return [config.laborLineName];
 
-  const itemLines = cleanQuoteItems(items)
-    .map((item) => {
-      const quantity = itemQuantity(item);
-      const gross = Math.max(0, (itemUnitPrice(item) - itemInstallPrice(item)) * quantity);
-      return {
-        name: quantity > 1 ? `${quantity} db ${itemName(item)}` : itemName(item),
-        gross,
-      };
-    })
-    .filter((line) => line.name && line.gross > 0);
-
-  if (!itemLines.length) return [config.deviceLineName];
-
-  const lineNames = itemLines.map((line) => line.name);
-  const itemGrossTotal = itemLines.reduce((sum, line) => sum + line.gross, 0);
-  if (amount > itemGrossTotal) lineNames.push(config.deviceMaterialLineName);
-  return lineNames;
+  const summary = climateSummary(items);
+  const climateName = summary === "Nincs klíma megadva" ? config.deviceLineName : summary;
+  return [`${climateName} + szerelési anyagok`];
 }
 
 

@@ -1,5 +1,5 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
-import { cleanQuoteItems, climateSummary, itemInstallPrice, itemName, itemQuantity, itemUnitPrice } from "@/lib/alinflow/products";
+import { climateSummary } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
@@ -94,24 +94,14 @@ function amountsFromGross(gross: number, vatKey: string) {
   return { net: gross, vat: 0, gross };
 }
 
-function invoiceLine(kind: BillingInvoiceKind, amount: number, items: QuoteItem[]) {
-  const gross = amount;
-  const vatKey = invoiceVatKey(kind);
-  const amounts = amountsFromGross(gross, vatKey);
-  return {
-    name: invoiceLineName(kind),
-    vatKey,
-    ...amounts,
-    note: climateSummary(items),
-  };
-}
-
-function deviceMaterialLineName() {
-  return readEnv("SZAMLAZZ_DEVICE_MATERIAL_LINE_NAME", "Szereléshez szükséges anyagok");
-}
-
 function laborInvoiceLineName() {
   return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés");
+}
+
+function deviceInvoiceLineName(items: QuoteItem[]) {
+  const summary = climateSummary(items);
+  const climateName = summary === "Nincs klíma megadva" ? invoiceLineName("device") : summary;
+  return `${climateName} + szerelési anyagok`;
 }
 
 function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: number, note = "") {
@@ -125,54 +115,12 @@ function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: num
   };
 }
 
-function distributeGross(totalGross: number, weights: number[]) {
-  const weightSum = weights.reduce((sum, value) => sum + Math.max(0, value), 0);
-  if (!weightSum) return weights.map(() => 0);
-
-  let remaining = totalGross;
-  return weights.map((weight, index) => {
-    if (index === weights.length - 1) return remaining;
-    const value = Math.min(remaining, Math.round(totalGross * (Math.max(0, weight) / weightSum)));
-    remaining -= value;
-    return value;
-  });
-}
-
 function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[]) {
   if (kind === "labor") {
     return [invoiceLineFromGross(kind, laborInvoiceLineName(), amount, climateSummary(items))];
   }
 
-  const itemLines = cleanQuoteItems(items)
-    .map((item) => {
-      const quantity = itemQuantity(item);
-      const gross = Math.max(0, (itemUnitPrice(item) - itemInstallPrice(item)) * quantity);
-      return {
-        name: quantity > 1 ? `${quantity} db ${itemName(item)}` : itemName(item),
-        gross,
-      };
-    })
-    .filter((line) => line.name && line.gross > 0);
-
-  if (!itemLines.length) {
-    return [invoiceLine(kind, amount, items)];
-  }
-
-  const itemGrossTotal = itemLines.reduce((sum, line) => sum + line.gross, 0);
-  const itemGrossValues = amount < itemGrossTotal
-    ? distributeGross(amount, itemLines.map((line) => line.gross))
-    : itemLines.map((line) => line.gross);
-
-  const lines = itemLines
-    .map((line, index) => invoiceLineFromGross(kind, line.name, itemGrossValues[index]))
-    .filter((line) => line.gross > 0);
-
-  const materialGross = amount - itemGrossValues.reduce((sum, value) => sum + value, 0);
-  if (materialGross > 0) {
-    lines.push(invoiceLineFromGross(kind, deviceMaterialLineName(), materialGross));
-  }
-
-  return lines;
+  return [invoiceLineFromGross(kind, deviceInvoiceLineName(items), amount, "")];
 }
 
 function normalizePaymentMethod(value: unknown): BillingPaymentMethod {
@@ -213,7 +161,7 @@ function buildInvoiceXml({ kind, amount, paymentMethod = "transfer", customer, q
     <megjegyzes>${safeText(comment)}</megjegyzes>
     <arfolyamBank></arfolyamBank>
     <arfolyam>0.0</arfolyam>
-    <rendelesSzam>${safeText(externalId)}</rendelesSzam>
+    <rendelesSzam></rendelesSzam>
     <dijbekeroSzamlaszam></dijbekeroSzamlaszam>
     <elolegszamla>false</elolegszamla>
     <vegszamla>false</vegszamla>
