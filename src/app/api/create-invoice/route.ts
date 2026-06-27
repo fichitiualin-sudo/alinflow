@@ -1,5 +1,5 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
-import { cleanQuoteItems, climateSummary, itemInstallTotal, itemName, itemQuantity, itemTotal } from "@/lib/alinflow/products";
+import { cleanQuoteItems, climateSummary, itemDeviceTotal, itemInstallTotal, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
@@ -151,7 +151,7 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
       const quantity = itemQuantity(item);
       return {
         name: `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`,
-        weight: itemTotal(item),
+        weight: itemDeviceTotal(item),
       };
     })
     .filter((line) => line.name && line.weight > 0);

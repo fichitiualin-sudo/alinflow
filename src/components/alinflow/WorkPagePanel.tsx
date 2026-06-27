@@ -13,6 +13,7 @@ import {
   isCustomQuoteItem,
   itemName,
   itemQuantity,
+  itemDeviceTotal,
   itemInstallTotal,
   quoteInstallTotal,
   itemTotal,
@@ -320,19 +321,33 @@ export function WorkPagePanel({
                       <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Db</span>
                       <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", numericInputValue(event.target.value))} />
                     </label>
-                    <InlineAmount label="Készülék ár" value={ft(Math.max(0, itemTotal(it) - itemInstallTotal(it)))} />
-                    <InlineAmount label="Munkadíj" value={ft(itemInstallTotal(it))} />
                     <label className="block">
-                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Összesen</span>
+                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Készülék ár</span>
                       <input
                         className="input disabled:cursor-not-allowed disabled:opacity-60"
                         type="number"
                         min={0}
                         disabled={!canEditWorkResources}
-                        value={itemTotal(it)}
-                        onChange={(event) => onUpdateQuoteItem(i, "customPrice", totalPriceInputValue(event.target.value, it))}
+                        value={itemDeviceTotal(it)}
+                        onChange={(event) => onUpdateQuoteItem(i, "customPrice", unitPriceFromLineTotals(amountInputValue(event.target.value), itemInstallTotal(it), it))}
                       />
                     </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Munkadíj</span>
+                      <input
+                        className="input disabled:cursor-not-allowed disabled:opacity-60"
+                        type="number"
+                        min={0}
+                        disabled={!canEditWorkResources}
+                        value={itemInstallTotal(it)}
+                        onChange={(event) => {
+                          const laborTotal = amountInputValue(event.target.value);
+                          onUpdateQuoteItem(i, "customInstallPrice", unitPriceFromTotal(laborTotal, it));
+                          onUpdateQuoteItem(i, "customPrice", unitPriceFromLineTotals(itemDeviceTotal(it), laborTotal, it));
+                        }}
+                      />
+                    </label>
+                    <InlineAmount label="Összesen" value={ft(itemTotal(it))} />
                     <button className="min-h-[48px] rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(i)}>×</button>
                   </div>
                   {hasCustomProductPrice(it) ? <p className="mt-2 text-xs font-bold text-amber-200">Kézzel módosított ár</p> : null}
@@ -999,9 +1014,15 @@ function numericInputValue(value: string) {
   return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
 }
 
-function totalPriceInputValue(value: string, item: QuoteItem) {
-  if (value === "") return "";
+function amountInputValue(value: string) {
   const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return "";
-  return Math.round(Math.max(0, numeric) / itemQuantity(item));
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+}
+
+function unitPriceFromTotal(totalValue: number, item: QuoteItem) {
+  return Math.round(Math.max(0, totalValue) / itemQuantity(item));
+}
+
+function unitPriceFromLineTotals(deviceTotal: number, laborTotal: number, item: QuoteItem) {
+  return unitPriceFromTotal(deviceTotal + laborTotal, item);
 }

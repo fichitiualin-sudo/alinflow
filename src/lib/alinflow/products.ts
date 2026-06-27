@@ -78,6 +78,7 @@ export function cleanQuoteItems(items?: QuoteItem[]) {
     productId: isKnownProductId(item.productId) ? item.productId : "",
     customName: item.customName?.trim() || undefined,
     customPrice: item.customPrice === "" ? undefined : item.customPrice,
+    customInstallPrice: item.customInstallPrice === "" ? undefined : item.customInstallPrice,
     isManual: item.isManual || !isKnownProductId(item.productId),
   }));
 }
@@ -109,6 +110,10 @@ export function itemUnitPrice(item: QuoteItem) {
 
 export function itemInstallPrice(item: QuoteItem) {
   if (!isQuoteItemFilled(item)) return 0;
+  const customInstallPrice = Number(item.customInstallPrice);
+  if (item.customInstallPrice !== undefined && item.customInstallPrice !== "" && Number.isFinite(customInstallPrice)) {
+    return Math.max(0, Math.min(customInstallPrice, itemUnitPrice(item)));
+  }
   if (isCustomQuoteItem(item)) return Math.min(DEFAULT_INSTALL_PRICE, itemUnitPrice(item));
   return Math.min(prod(item.productId).installPrice || DEFAULT_INSTALL_PRICE, itemUnitPrice(item));
 }
@@ -119,6 +124,10 @@ export function itemTotal(item: QuoteItem) {
 
 export function itemInstallTotal(item: QuoteItem) {
   return itemInstallPrice(item) * itemQuantity(item);
+}
+
+export function itemDeviceTotal(item: QuoteItem) {
+  return Math.max(0, itemTotal(item) - itemInstallTotal(item));
 }
 
 export function total(items: QuoteItem[]) {
@@ -137,7 +146,9 @@ export function itemPriceLine(item: QuoteItem) {
 }
 
 export function hasCustomProductPrice(item: QuoteItem) {
-  return isKnownProductId(item.productId) && !item.isManual && itemUnitPrice(item) !== prod(item.productId).price;
+  if (!isKnownProductId(item.productId) || item.isManual) return false;
+  const product = prod(item.productId);
+  return itemUnitPrice(item) !== product.price || itemInstallPrice(item) !== product.installPrice;
 }
 
 export function occupiedSlots(customer: Customer) {
@@ -153,7 +164,8 @@ export function occupiedSlots(customer: Customer) {
 }
 
 export function quoteItemFromRow(row: any): QuoteItem {
-  const productById = ACTIVE_PRODUCTS.find((product) => product.id === row.description);
+  const description = parseQuoteItemDescription(row.description);
+  const productById = ACTIVE_PRODUCTS.find((product) => product.id === description.productId);
   const productByName = ACTIVE_PRODUCTS.find((product) => product.name === row.product_name);
   const matchedProduct = productById || productByName;
 
@@ -161,16 +173,34 @@ export function quoteItemFromRow(row: any): QuoteItem {
     productId: matchedProduct?.id || "",
     quantity: Number(row.quantity || 1),
     customPrice: Number(row.unit_price || matchedProduct?.price || 0),
+    customInstallPrice: description.installPrice,
     customName: matchedProduct ? undefined : row.product_name,
     isManual: !matchedProduct,
   };
+}
+
+function parseQuoteItemDescription(value: unknown) {
+  const raw = String(value || "");
+  const [productId, ...parts] = raw.split("|");
+  const installPart = parts.find((part) => part.startsWith("install_price="));
+  const installPrice = installPart ? Number(installPart.replace("install_price=", "")) : undefined;
+  return {
+    productId,
+    installPrice: Number.isFinite(installPrice) ? installPrice : undefined,
+  };
+}
+
+function quoteItemDescription(item: QuoteItem) {
+  const productId = item.productId || "";
+  const installPrice = itemInstallPrice(item);
+  return `${productId}|install_price=${installPrice}`;
 }
 
 export function quoteItemToRow(item: QuoteItem, quoteId: string) {
   return {
     quote_id: quoteId,
     product_name: itemName(item),
-    description: item.productId,
+    description: quoteItemDescription(item),
     quantity: itemQuantity(item),
     unit_price: itemUnitPrice(item),
     total_price: itemTotal(item),

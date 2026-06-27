@@ -2317,10 +2317,11 @@ export default function Home() {
       isManual: !isKnownProductId(productId),
       customName: isKnownProductId(productId) ? undefined : it.customName,
       customPrice: isKnownProductId(productId) ? prod(productId).price : (it.customPrice ?? 0),
+      customInstallPrice: isKnownProductId(productId) ? prod(productId).installPrice : (it.customInstallPrice ?? DEFAULT_INSTALL_PRICE),
     } : it));
   }
   function syncQuoteItemPrice(i:number) {
-    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: prod(it.productId).price } : it));
+    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: prod(it.productId).price, customInstallPrice: prod(it.productId).installPrice } : it));
   }
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
