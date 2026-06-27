@@ -63,6 +63,7 @@ function getAgentKey(kind: BillingInvoiceKind) {
 
 function invoiceLineName(kind: BillingInvoiceKind) {
   if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_LINE_NAME", "Klímaberendezés");
+  if (kind === "maintenance") return readEnv("SZAMLAZZ_MAINTENANCE_LINE_NAME", "Légkondicionáló karbantartás");
   return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés");
 }
 
@@ -73,6 +74,7 @@ function invoiceVatKey(kind: BillingInvoiceKind) {
 
 function invoiceComment(kind: BillingInvoiceKind) {
   if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_COMMENT", "Készülék és szerelési anyagok számlája.");
+  if (kind === "maintenance") return readEnv("SZAMLAZZ_MAINTENANCE_COMMENT", "Légkondicionáló karbantartás számlája.");
   return readEnv("SZAMLAZZ_LABOR_COMMENT", "Klímaszerelési munkadíj számlája.");
 }
 
@@ -96,6 +98,10 @@ function amountsFromGross(gross: number, vatKey: string) {
 
 function laborInvoiceLineName() {
   return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés");
+}
+
+function maintenanceInvoiceLineName() {
+  return readEnv("SZAMLAZZ_MAINTENANCE_LINE_NAME", "Légkondicionáló karbantartás");
 }
 
 function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: number, note = "") {
@@ -124,6 +130,10 @@ function distributeGross(totalGross: number, weights: number[]) {
 
 function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[]) {
   const cleanItems = cleanQuoteItems(items);
+
+  if (kind === "maintenance") {
+    return [invoiceLineFromGross(kind, maintenanceInvoiceLineName(), amount, climateSummary(items))];
+  }
 
   if (kind === "labor") {
     const itemLines = cleanItems
@@ -167,14 +177,14 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
 }
 
 function normalizePaymentMethod(value: unknown): BillingPaymentMethod {
-  return value === "cash" ? "cash" : "transfer";
+  return value === "transfer" ? "transfer" : "cash";
 }
 
 function szamlazzPaymentMethodName(method: BillingPaymentMethod) {
   return method === "cash" ? "Készpénz" : "Átutalás";
 }
 
-function buildInvoiceXml({ kind, amount, paymentMethod = "transfer", customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
+function buildInvoiceXml({ kind, amount, paymentMethod = "cash", customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
   const date = todayIso();
   const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
   const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`));
@@ -281,7 +291,7 @@ async function sendInvoiceXml(xml: string) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as InvoiceRequest;
-    const kind = body.kind === "device" || body.kind === "labor" ? body.kind : null;
+    const kind = body.kind === "device" || body.kind === "labor" || body.kind === "maintenance" ? body.kind : null;
     const amount = parseAmount(body.amount);
     const customer = body.customer;
 

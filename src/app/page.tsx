@@ -1367,7 +1367,12 @@ export default function Home() {
     const activeWorkPriority = (row: any) => {
       const type = normalizeAppointmentType(row.appointment_type);
       const status = normalizeStatus(row.status || "");
-      if (type === "maintenance" || status === "Lemondva") return 99;
+      if (status === "Lemondva") return 99;
+      if (type === "maintenance") {
+        if (status === "Időpont foglalva" || status === "Szerelés folyamatban") return 0;
+        if (status === "Lezárva") return 4;
+        return 1;
+      }
       if (status === "Időpont foglalva" || status === "Szerelés folyamatban") return 0;
       if (status === "Ajánlat elküldve" || status === "Visszahívandó") return 1;
       if (status === "Szerelés kész – admin folyamatban") return 2;
@@ -1386,7 +1391,7 @@ export default function Home() {
     const primaryAppointmentFor = (customerId: string) => {
       const rows = appointmentHistoryMap.get(customerId) || [];
       return [...rows]
-        .filter((row: any) => normalizeAppointmentType(row.appointment_type) !== "maintenance" && normalizeStatus(row.status || "") !== "Lemondva")
+        .filter((row: any) => normalizeStatus(row.status || "") !== "Lemondva")
         .sort(comparePrimaryWork)[0]
         || currentAppointmentMap.get(customerId);
     };

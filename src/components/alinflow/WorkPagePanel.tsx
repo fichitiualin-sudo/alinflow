@@ -180,11 +180,13 @@ export function WorkPagePanel({
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
   const [deviceInvoiceAmount, setDeviceInvoiceAmount] = useState(String(defaultDeviceAmount));
-  const [laborPaymentMethod, setLaborPaymentMethod] = useState<BillingPaymentMethod>("transfer");
-  const [devicePaymentMethod, setDevicePaymentMethod] = useState<BillingPaymentMethod>("transfer");
+  const [maintenanceInvoiceAmount, setMaintenanceInvoiceAmount] = useState("0");
+  const [laborPaymentMethod, setLaborPaymentMethod] = useState<BillingPaymentMethod>("cash");
+  const [devicePaymentMethod, setDevicePaymentMethod] = useState<BillingPaymentMethod>("cash");
+  const [maintenancePaymentMethod, setMaintenancePaymentMethod] = useState<BillingPaymentMethod>("cash");
   const billingConfig = billingUiConfig();
   const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
-  const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance");
+  const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance" && work.activeAppointmentId !== selected.activeAppointmentId);
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
@@ -192,11 +194,16 @@ export function WorkPagePanel({
     ? "Karbantartott klímák"
     : "Időponthoz tartozó klímák";
   const billingDone = Boolean(currentWorkChecklist.alinInvoice && currentWorkChecklist.amovaInvoice);
+  const maintenanceBillingDone = Boolean(currentWorkChecklist.alinInvoice);
 
   useEffect(() => {
     setLaborInvoiceAmount(String(defaultLaborAmount));
     setDeviceInvoiceAmount(String(defaultDeviceAmount));
   }, [selected.id, selected.activeAppointmentId, defaultLaborAmount, defaultDeviceAmount]);
+
+  useEffect(() => {
+    if (isMaintenance) setMaintenanceInvoiceAmount("0");
+  }, [selected.id, selected.activeAppointmentId, isMaintenance]);
 
   return (
     <>
@@ -488,7 +495,21 @@ export function WorkPagePanel({
               {isSurvey ? (
                 <ActionButton color="green" onClick={onMarkInstallationDone} label="Felmérés kész – árajánlat készítése" doneAt={actionDates.surveyDone} />
               ) : isMaintenance ? (
-                selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null
+                <>
+                  <MaintenanceBillingPanel
+                    amount={maintenanceInvoiceAmount}
+                    done={maintenanceBillingDone}
+                    doneAt={checklistDates.alinInvoice}
+                    paymentMethod={maintenancePaymentMethod}
+                    onAmountChange={setMaintenanceInvoiceAmount}
+                    onPaymentMethodChange={setMaintenancePaymentMethod}
+                    onCreateInvoice={() => onCreateInvoice("maintenance", maintenanceInvoiceAmount, maintenancePaymentMethod)}
+                    invoiceBusy={invoiceBusy}
+                    billingConfig={billingConfig}
+                    quoteItems={quoteItems}
+                  />
+                  {selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null}
+                </>
               ) : (
                 <BillingPreparationPanel
                   laborAmount={laborInvoiceAmount}
@@ -624,6 +645,61 @@ function BillingPreparationPanel({
   );
 }
 
+function MaintenanceBillingPanel({
+  amount,
+  done,
+  doneAt,
+  paymentMethod,
+  onAmountChange,
+  onPaymentMethodChange,
+  onCreateInvoice,
+  invoiceBusy,
+  billingConfig,
+  quoteItems,
+}: {
+  amount: string;
+  done: boolean;
+  doneAt?: string;
+  paymentMethod: BillingPaymentMethod;
+  onAmountChange: (value: string) => void;
+  onPaymentMethodChange: (value: BillingPaymentMethod) => void;
+  onCreateInvoice: () => void;
+  invoiceBusy: BillingInvoiceKind | null;
+  billingConfig: ReturnType<typeof billingUiConfig>;
+  quoteItems: QuoteItem[];
+}) {
+  const parsedAmount = parseAmount(amount);
+  const dueDate = billingDueDateIso(paymentMethod);
+  const invoiceLines = invoicePreviewLines("maintenance", quoteItems, billingConfig);
+
+  return (
+    <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-lg font-black text-amber-100">Számlázás</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-amber-300 text-slate-950"}`}>
+          {done ? "Kész" : "Folyamatban"}
+        </span>
+      </div>
+      <InvoicePrepCard
+        title={billingConfig.maintenanceTitle}
+        invoiceLineNames={invoiceLines}
+        amount={amount}
+        parsedAmount={parsedAmount}
+        done={done}
+        doneAt={doneAt}
+        paymentMethod={paymentMethod}
+        dueDate={dueDate}
+        onAmountChange={onAmountChange}
+        onPaymentMethodChange={onPaymentMethodChange}
+        onCreateInvoice={onCreateInvoice}
+        invoiceBusy={invoiceBusy === "maintenance"}
+      />
+    </div>
+  );
+}
+
 function InvoicePrepCard({
   title,
   invoiceLineNames,
@@ -719,6 +795,8 @@ function parseAmount(value: string) {
 }
 
 function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
+  if (kind === "maintenance") return [config.maintenanceLineName];
+
   if (kind === "labor") {
     const lines = cleanQuoteItems(items).map((item) => {
       const quantity = itemQuantity(item);
