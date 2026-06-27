@@ -174,7 +174,6 @@ export function WorkPagePanel({
   const [showMaterials, setShowMaterials] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
-  const [showBillingPrep, setShowBillingPrep] = useState(false);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
@@ -453,27 +452,23 @@ export function WorkPagePanel({
               ) : isMaintenance ? (
                 selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null
               ) : (
-                <>
-                  <ActionButton color="amber" onClick={() => setShowBillingPrep((open) => !open)} label="Számlázás" doneAt={billingDone ? checklistDates.alinInvoice || checklistDates.amovaInvoice : undefined} icon={billingDone ? "✓" : "○"} />
-                  {showBillingPrep ? (
-                    <BillingPreparationPanel
-                      laborAmount={laborInvoiceAmount}
-                      deviceAmount={deviceInvoiceAmount}
-                      laborDone={Boolean(currentWorkChecklist.alinInvoice)}
-                      deviceDone={Boolean(currentWorkChecklist.amovaInvoice)}
-                      laborDoneAt={checklistDates.alinInvoice}
-                      deviceDoneAt={checklistDates.amovaInvoice}
-                      onLaborAmountChange={setLaborInvoiceAmount}
-                      onDeviceAmountChange={setDeviceInvoiceAmount}
-                      onSetLaborDone={(value) => onSetChecklistItem("alinInvoice", value)}
-                      onSetDeviceDone={(value) => onSetChecklistItem("amovaInvoice", value)}
-                      onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount)}
-                      onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount)}
-                      invoiceBusy={invoiceBusy}
-                      billingConfig={billingConfig}
-                    />
-                  ) : null}
-                </>
+                <BillingPreparationPanel
+                  laborAmount={laborInvoiceAmount}
+                  deviceAmount={deviceInvoiceAmount}
+                  laborDone={Boolean(currentWorkChecklist.alinInvoice)}
+                  deviceDone={Boolean(currentWorkChecklist.amovaInvoice)}
+                  laborDoneAt={checklistDates.alinInvoice}
+                  deviceDoneAt={checklistDates.amovaInvoice}
+                  billingDone={billingDone}
+                  onLaborAmountChange={setLaborInvoiceAmount}
+                  onDeviceAmountChange={setDeviceInvoiceAmount}
+                  onSetLaborDone={(value) => onSetChecklistItem("alinInvoice", value)}
+                  onSetDeviceDone={(value) => onSetChecklistItem("amovaInvoice", value)}
+                  onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount)}
+                  onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount)}
+                  invoiceBusy={invoiceBusy}
+                  billingConfig={billingConfig}
+                />
               )}
               {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
               {selected.status !== "Lezárva" ? <ActionButton color="red" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} icon="×" /> : null}
@@ -494,6 +489,7 @@ function BillingPreparationPanel({
   deviceDone,
   laborDoneAt,
   deviceDoneAt,
+  billingDone,
   onLaborAmountChange,
   onDeviceAmountChange,
   onSetLaborDone,
@@ -509,6 +505,7 @@ function BillingPreparationPanel({
   deviceDone: boolean;
   laborDoneAt?: string;
   deviceDoneAt?: string;
+  billingDone: boolean;
   onLaborAmountChange: (value: string) => void;
   onDeviceAmountChange: (value: string) => void;
   onSetLaborDone: (value: boolean) => void;
@@ -523,6 +520,15 @@ function BillingPreparationPanel({
 
   return (
     <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-lg font-black text-amber-100">Számlázás</p>
+          <p className="mt-1 text-sm font-bold text-slate-300">Először ellenőrizd vagy módosítsd az összegeket, majd hozd létre a két számlát.</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${billingDone ? "bg-emerald-400 text-slate-950" : "bg-amber-300 text-slate-950"}`}>
+          {billingDone ? "Kész" : "Folyamatban"}
+        </span>
+      </div>
       <InvoicePrepCard
         title={billingConfig.deviceTitle}
         seller={billingConfig.deviceSellerLabel}
