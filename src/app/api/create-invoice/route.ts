@@ -79,6 +79,11 @@ function invoicePrefix(kind: BillingInvoiceKind) {
   return kind === "device" ? readEnv("SZAMLAZZ_DEVICE_INVOICE_PREFIX") : readEnv("SZAMLAZZ_LABOR_INVOICE_PREFIX");
 }
 
+function invoicePrefixXml(kind: BillingInvoiceKind) {
+  const prefix = invoicePrefix(kind).trim();
+  return prefix ? `    <szamlaszamElotag>${safeText(prefix)}</szamlaszamElotag>` : "";
+}
+
 function amountsFromGross(gross: number, vatKey: string) {
   const numericVat = Number(String(vatKey).replace(",", "."));
   if (Number.isFinite(numericVat) && numericVat > 0) {
@@ -134,7 +139,7 @@ function buildInvoiceXml({ kind, amount, customer, quoteItems = [] }: InvoiceReq
     <helyesbitoszamla>false</helyesbitoszamla>
     <helyesbitettSzamlaszam></helyesbitettSzamlaszam>
     <dijbekero>false</dijbekero>
-    <szamlaszamElotag>${safeText(invoicePrefix(kind))}</szamlaszamElotag>
+${invoicePrefixXml(kind)}
   </fejlec>
   <elado>
     <bank></bank>
