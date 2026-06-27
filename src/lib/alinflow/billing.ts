@@ -3,17 +3,17 @@ export type BillingPaymentMethod = "cash" | "transfer";
 
 export type BillingUiConfig = {
   deviceTitle: string;
-  deviceSellerLabel: string;
+  deviceLineName: string;
   laborTitle: string;
-  laborSellerLabel: string;
+  laborLineName: string;
 };
 
 export function billingUiConfig(): BillingUiConfig {
   return {
     deviceTitle: process.env.NEXT_PUBLIC_BILLING_DEVICE_TITLE || "Készülék és anyag",
-    deviceSellerLabel: process.env.NEXT_PUBLIC_BILLING_DEVICE_SELLER_LABEL || "Készülék/anyag számla · áfás",
+    deviceLineName: process.env.NEXT_PUBLIC_BILLING_DEVICE_LINE_NAME || "Klímaberendezés és szerelési anyagok",
     laborTitle: process.env.NEXT_PUBLIC_BILLING_LABOR_TITLE || "Munkadíj",
-    laborSellerLabel: process.env.NEXT_PUBLIC_BILLING_LABOR_SELLER_LABEL || "Munkadíj számla · alanyi adómentes",
+    laborLineName: process.env.NEXT_PUBLIC_BILLING_LABOR_LINE_NAME || "Klímaszerelési munkadíj",
   };
 }
 
