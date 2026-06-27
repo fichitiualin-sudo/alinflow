@@ -14,7 +14,6 @@ import {
   itemName,
   itemQuantity,
   itemInstallTotal,
-  itemPriceLine,
   quoteInstallTotal,
   itemTotal,
   itemUnitPrice,
@@ -305,25 +304,38 @@ export function WorkPagePanel({
             {isInstallation ? <div className="space-y-3">
               {quoteItems.map((it, i) => (
                 <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_120px_150px_44px]">
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(220px,1.4fr)_90px_130px_120px_150px_44px] xl:items-end">
                     {isCustomQuoteItem(it) ? (
-                      <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={(event) => onUpdateQuoteItem(i, "customName", event.target.value)} placeholder="Klíma megnevezése" />
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Klíma</span>
+                        <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={(event) => onUpdateQuoteItem(i, "customName", event.target.value)} placeholder="Klíma megnevezése" />
+                      </label>
                     ) : (
-                      <ProductSelect products={products} value={it.productId} onChange={(value) => onUpdateQuoteProduct(i, value)} disabled={!canEditWorkResources} />
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Klíma</span>
+                        <ProductSelect products={products} value={it.productId} onChange={(value) => onUpdateQuoteProduct(i, value)} disabled={!canEditWorkResources} />
+                      </label>
                     )}
-                    <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", numericInputValue(event.target.value))} />
-                    <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={0} disabled={!canEditWorkResources} value={it.customPrice ?? itemUnitPrice(it)} onChange={(event) => onUpdateQuoteItem(i, "customPrice", priceInputValue(event.target.value))} />
-                    <button className="rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(i)}>×</button>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Db</span>
+                      <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", numericInputValue(event.target.value))} />
+                    </label>
+                    <InlineAmount label="Készülék ár" value={ft(Math.max(0, itemTotal(it) - itemInstallTotal(it)))} />
+                    <InlineAmount label="Munkadíj" value={ft(itemInstallTotal(it))} />
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Összesen</span>
+                      <input
+                        className="input disabled:cursor-not-allowed disabled:opacity-60"
+                        type="number"
+                        min={0}
+                        disabled={!canEditWorkResources}
+                        value={itemTotal(it)}
+                        onChange={(event) => onUpdateQuoteItem(i, "customPrice", totalPriceInputValue(event.target.value, it))}
+                      />
+                    </label>
+                    <button className="min-h-[48px] rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(i)}>×</button>
                   </div>
-                  <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
-                    <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
-                    <b>{ft(itemTotal(it))}</b>
-                  </div>
-                  <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-                    <AmountPill label="Készülék + anyag" value={ft(Math.max(0, itemTotal(it) - itemInstallTotal(it)))} />
-                    <AmountPill label="Munkadíj" value={ft(itemInstallTotal(it))} />
-                    <AmountPill label="Teljes összeg" value={ft(itemTotal(it))} strong />
-                  </div>
+                  {hasCustomProductPrice(it) ? <p className="mt-2 text-xs font-bold text-amber-200">Kézzel módosított ár</p> : null}
                   {hasCustomProductPrice(it) ? (
                     <button type="button" disabled={!canEditWorkResources} onClick={() => onSyncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
                       Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
@@ -335,16 +347,6 @@ export function WorkPagePanel({
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <b className="text-xl">Teljes összeg</b>
                   <b className="text-2xl">{ft(total(quoteItems))}</b>
-                </div>
-                <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                  <div className="rounded-2xl bg-white/45 p-3">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-700">Készülék + anyag</p>
-                    <p className="mt-1 text-lg font-black">{ft(defaultDeviceAmount)}</p>
-                  </div>
-                  <div className="rounded-2xl bg-white/45 p-3">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-700">Munkadíj</p>
-                    <p className="mt-1 text-lg font-black">{ft(defaultLaborAmount)}</p>
-                  </div>
                 </div>
               </div>
             </div> : null}
@@ -506,9 +508,9 @@ export function WorkPagePanel({
 }
 
 
-function AmountPill({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function InlineAmount({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`rounded-2xl p-3 ${strong ? "bg-cyan-300/15 text-cyan-100 ring-1 ring-cyan-200/20" : "bg-white/5 text-slate-200"}`}>
+    <div className="rounded-2xl bg-white/5 px-3 py-2 text-slate-200 ring-1 ring-white/10">
       <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-1 font-black">{value}</p>
     </div>
@@ -997,8 +999,9 @@ function numericInputValue(value: string) {
   return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
 }
 
-function priceInputValue(value: string) {
+function totalPriceInputValue(value: string, item: QuoteItem) {
   if (value === "") return "";
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.max(0, numeric) : "";
+  if (!Number.isFinite(numeric)) return "";
+  return Math.round(Math.max(0, numeric) / itemQuantity(item));
 }
