@@ -41,6 +41,7 @@ export type QuoteItem = {
   productId: string;
   quantity: number | "";
   customPrice?: number | "";
+  customInstallPrice?: number | "";
   customName?: string;
   isManual?: boolean;
 };

@@ -140,6 +140,7 @@ import {
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
+import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { normalizePostalCodeInput, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
@@ -354,6 +355,7 @@ export default function Home() {
   const [quoteEmailBusy,setQuoteEmailBusy] = useState(false);
   const [appointmentEmailBusy,setAppointmentEmailBusy] = useState(false);
   const [thankYouEmailBusy,setThankYouEmailBusy] = useState(false);
+  const [invoiceBusy,setInvoiceBusy] = useState<BillingInvoiceKind | null>(null);
   const [sendAppointmentNotice,setSendAppointmentNotice] = useState(true);
   const [workReport,setWorkReport] = useState<WorkReport>(emptyWorkReport());
   const [workReportsByCustomer,setWorkReportsByCustomer] = useState<Record<string, WorkReport>>({});
@@ -728,7 +730,7 @@ export default function Home() {
       done: Boolean(currentWorkChecklist.worksheet && currentWorkChecklist.signature && currentWorkChecklist.purchaseDeclaration),
     },
     { label: "NKVH", done: Boolean(currentWorkChecklist.nkvh) },
-    { label: "Számlázás", done: Boolean(currentWorkChecklist.alinInvoice) },
+    { label: "Számlázás", done: Boolean(currentWorkChecklist.alinInvoice && currentWorkChecklist.amovaInvoice) },
   ];
   const missingChecklist = closeRequirementItems.filter((item) => !item.done).map((item) => item.label);
   const checklistReady = missingChecklist.length === 0;
@@ -2062,6 +2064,64 @@ export default function Home() {
     }
   }
 
+  async function setChecklistItem(key: WorkChecklistItemKey, value: boolean) {
+    const base = selected.id ? effectiveChecklistFor(selected) : workChecklist;
+    if ((key === "worksheet" || key === "purchaseDeclaration") && value && !base.signature) {
+      setMessage("A munkalap és a vásárlási nyilatkozat csak ügyfélaláírás után jelölhető elkészültként.");
+      return;
+    }
+
+    if (base[key] === value) return;
+    const next = { [key]: value } as Partial<WorkChecklistState>;
+    if (selected.id) {
+      await updateChecklistForCustomer(selected, next);
+    } else {
+      const completedAt: WorkChecklistCompletedAt = { ...(base.completedAt || {}) };
+      if (value) completedAt[key] = completedAt[key] || new Date().toISOString();
+      else delete completedAt[key];
+      setWorkChecklist({ ...base, [key]: value, completedAt });
+    }
+  }
+
+  async function createInvoice(kind: BillingInvoiceKind, amountValue: string, paymentMethod: BillingPaymentMethod) {
+    if (!selected.id) return;
+    const amount = Number(String(amountValue || "").replace(/\s/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMessage("Számla készítéséhez adj meg érvényes összeget.");
+      return;
+    }
+
+    const label = billingKindLabel(kind, billingUiConfig());
+    const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel, fizetési mód: ${billingPaymentMethodLabel(paymentMethod)}?`);
+    if (!confirmed) return;
+
+    setInvoiceBusy(kind);
+    setMessage(`${label} számla készítése folyamatban...`);
+
+    try {
+      const response = await fetch("/api/create-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind,
+          amount: Math.round(amount),
+          paymentMethod,
+          customer: selected,
+          quoteItems,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.ok) throw new Error(result?.error || "A Számlázz.hu számlakészítés sikertelen.");
+
+      await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
+      setMessage(`${label} számla elkészült ✅${result.invoiceNumber ? ` Számlaszám: ${result.invoiceNumber}` : ""}`);
+    } catch (error: any) {
+      setMessage(`Számlázási hiba: ${error.message}`);
+    } finally {
+      setInvoiceBusy(null);
+    }
+  }
+
   async function saveCustomer(nextView: View = "quote") {
     const now = new Date().toISOString();
     const autoStatus =
@@ -2257,10 +2317,11 @@ export default function Home() {
       isManual: !isKnownProductId(productId),
       customName: isKnownProductId(productId) ? undefined : it.customName,
       customPrice: isKnownProductId(productId) ? prod(productId).price : (it.customPrice ?? 0),
+      customInstallPrice: isKnownProductId(productId) ? prod(productId).installPrice : (it.customInstallPrice ?? DEFAULT_INSTALL_PRICE),
     } : it));
   }
   function syncQuoteItemPrice(i:number) {
-    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: prod(it.productId).price } : it));
+    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: prod(it.productId).price, customInstallPrice: prod(it.productId).installPrice } : it));
   }
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
@@ -3596,9 +3657,10 @@ export default function Home() {
       });
     }
 
+    const billingConfig = billingUiConfig();
     rows.push(
-      { title: "Adorján Alin E.V. számla", status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
-      { title: "AMOVA 4U Kft. számla", status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
+      { title: `${billingConfig.laborTitle} számla`, status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
+      { title: `${billingConfig.deviceTitle} számla`, status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
     );
 
     return rows;
@@ -4755,6 +4817,7 @@ export default function Home() {
         quoteEmailBusy={quoteEmailBusy}
         appointmentEmailBusy={appointmentEmailBusy}
         thankYouEmailBusy={thankYouEmailBusy}
+        invoiceBusy={invoiceBusy}
         currentWorkChecklist={currentWorkChecklist}
         checklistDates={currentWorkChecklist.completedAt || {}}
         actionDates={workActionDatesFor(selected)}
@@ -4795,6 +4858,7 @@ export default function Home() {
         onCancelAppointment={cancelAppointment}
         onStartMaintenanceForCustomer={startMaintenanceForCustomer}
         onToggleChecklist={toggleChecklist}
+        onCreateInvoice={createInvoice}
         onOpenWorkVersion={openWorkVersion}
       />
     </Shell>

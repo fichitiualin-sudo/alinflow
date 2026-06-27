@@ -1,16 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
 import { Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
+  cleanQuoteItems,
   climateSummary,
   hasCustomProductPrice,
   isCustomQuoteItem,
-  itemPriceLine,
+  itemName,
+  itemQuantity,
+  itemDeviceTotal,
+  itemInstallTotal,
+  quoteInstallTotal,
   itemTotal,
   itemUnitPrice,
   prod,
@@ -20,6 +25,7 @@ import {
 } from "@/lib/alinflow/products";
 import type { View } from "@/lib/alinflow/types";
 import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
+import { billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 type MaterialItem = {
   name: string;
@@ -95,6 +101,8 @@ type WorkPagePanelProps = {
   onCancelAppointment: () => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
+  onCreateInvoice: (kind: BillingInvoiceKind, amount: string, paymentMethod: BillingPaymentMethod) => void;
+  invoiceBusy: BillingInvoiceKind | null;
   onOpenWorkVersion: (customer: Customer) => void;
 };
 
@@ -154,6 +162,8 @@ export function WorkPagePanel({
   onCancelAppointment,
   onStartMaintenanceForCustomer,
   onToggleChecklist,
+  onCreateInvoice,
+  invoiceBusy,
   onOpenWorkVersion,
 }: WorkPagePanelProps) {
   const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
@@ -166,6 +176,13 @@ export function WorkPagePanel({
   const [showMaterials, setShowMaterials] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
+  const defaultLaborAmount = quoteInstallTotal(quoteItems);
+  const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
+  const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
+  const [deviceInvoiceAmount, setDeviceInvoiceAmount] = useState(String(defaultDeviceAmount));
+  const [laborPaymentMethod, setLaborPaymentMethod] = useState<BillingPaymentMethod>("transfer");
+  const [devicePaymentMethod, setDevicePaymentMethod] = useState<BillingPaymentMethod>("transfer");
+  const billingConfig = billingUiConfig();
   const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
   const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance");
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
@@ -174,6 +191,12 @@ export function WorkPagePanel({
     : isMaintenance
     ? "Karbantartott klímák"
     : "Időponthoz tartozó klímák";
+  const billingDone = Boolean(currentWorkChecklist.alinInvoice && currentWorkChecklist.amovaInvoice);
+
+  useEffect(() => {
+    setLaborInvoiceAmount(String(defaultLaborAmount));
+    setDeviceInvoiceAmount(String(defaultDeviceAmount));
+  }, [selected.id, selected.activeAppointmentId, defaultLaborAmount, defaultDeviceAmount]);
 
   return (
     <>
@@ -282,20 +305,52 @@ export function WorkPagePanel({
             {isInstallation ? <div className="space-y-3">
               {quoteItems.map((it, i) => (
                 <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_120px_150px_44px]">
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(220px,1.4fr)_90px_130px_120px_150px_44px] xl:items-end">
                     {isCustomQuoteItem(it) ? (
-                      <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={(event) => onUpdateQuoteItem(i, "customName", event.target.value)} placeholder="Klíma megnevezése" />
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Klíma</span>
+                        <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={(event) => onUpdateQuoteItem(i, "customName", event.target.value)} placeholder="Klíma megnevezése" />
+                      </label>
                     ) : (
-                      <ProductSelect products={products} value={it.productId} onChange={(value) => onUpdateQuoteProduct(i, value)} disabled={!canEditWorkResources} />
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Klíma</span>
+                        <ProductSelect products={products} value={it.productId} onChange={(value) => onUpdateQuoteProduct(i, value)} disabled={!canEditWorkResources} />
+                      </label>
                     )}
-                    <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", numericInputValue(event.target.value))} />
-                    <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={0} disabled={!canEditWorkResources} value={it.customPrice ?? itemUnitPrice(it)} onChange={(event) => onUpdateQuoteItem(i, "customPrice", priceInputValue(event.target.value))} />
-                    <button className="rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(i)}>×</button>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Db</span>
+                      <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", numericInputValue(event.target.value))} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Készülék ár</span>
+                      <input
+                        className="input disabled:cursor-not-allowed disabled:opacity-60"
+                        type="number"
+                        min={0}
+                        disabled={!canEditWorkResources}
+                        value={itemDeviceTotal(it)}
+                        onChange={(event) => onUpdateQuoteItem(i, "customPrice", unitPriceFromLineTotals(amountInputValue(event.target.value), itemInstallTotal(it), it))}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Munkadíj</span>
+                      <input
+                        className="input disabled:cursor-not-allowed disabled:opacity-60"
+                        type="number"
+                        min={0}
+                        disabled={!canEditWorkResources}
+                        value={itemInstallTotal(it)}
+                        onChange={(event) => {
+                          const laborTotal = amountInputValue(event.target.value);
+                          onUpdateQuoteItem(i, "customInstallPrice", unitPriceFromTotal(laborTotal, it));
+                          onUpdateQuoteItem(i, "customPrice", unitPriceFromLineTotals(itemDeviceTotal(it), laborTotal, it));
+                        }}
+                      />
+                    </label>
+                    <InlineAmount label="Összesen" value={ft(itemTotal(it))} />
+                    <button className="min-h-[48px] rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(i)}>×</button>
                   </div>
-                  <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/5 p-3 text-sm md:flex-row md:items-center md:justify-between">
-                    <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
-                    <b>{ft(itemTotal(it))}</b>
-                  </div>
+                  {hasCustomProductPrice(it) ? <p className="mt-2 text-xs font-bold text-amber-200">Kézzel módosított ár</p> : null}
                   {hasCustomProductPrice(it) ? (
                     <button type="button" disabled={!canEditWorkResources} onClick={() => onSyncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
                       Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
@@ -303,9 +358,11 @@ export function WorkPagePanel({
                   ) : null}
                 </div>
               ))}
-              <div className="flex flex-col gap-2 rounded-3xl bg-cyan-300 p-5 text-slate-950 md:flex-row md:items-center md:justify-between">
-                <b className="text-xl">Összesen</b>
-                <b className="text-2xl">{ft(total(quoteItems))}</b>
+              <div className="rounded-3xl bg-cyan-300 p-5 text-slate-950">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <b className="text-xl">Teljes összeg</b>
+                  <b className="text-2xl">{ft(total(quoteItems))}</b>
+                </div>
               </div>
             </div> : null}
             {isInstallation ? <div className="mt-4 flex flex-col gap-3 md:flex-row">
@@ -433,7 +490,26 @@ export function WorkPagePanel({
               ) : isMaintenance ? (
                 selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null
               ) : (
-                <ActionButton color="amber" onClick={() => onToggleChecklist("alinInvoice")} label="Számlázás" doneAt={currentWorkChecklist.alinInvoice ? checklistDates.alinInvoice : undefined} icon={currentWorkChecklist.alinInvoice ? "✓" : "○"} />
+                <BillingPreparationPanel
+                  laborAmount={laborInvoiceAmount}
+                  deviceAmount={deviceInvoiceAmount}
+                  laborDone={Boolean(currentWorkChecklist.alinInvoice)}
+                  deviceDone={Boolean(currentWorkChecklist.amovaInvoice)}
+                  laborDoneAt={checklistDates.alinInvoice}
+                  deviceDoneAt={checklistDates.amovaInvoice}
+                  billingDone={billingDone}
+                  onLaborAmountChange={setLaborInvoiceAmount}
+                  onDeviceAmountChange={setDeviceInvoiceAmount}
+                  laborPaymentMethod={laborPaymentMethod}
+                  devicePaymentMethod={devicePaymentMethod}
+                  onLaborPaymentMethodChange={setLaborPaymentMethod}
+                  onDevicePaymentMethodChange={setDevicePaymentMethod}
+                  onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount, laborPaymentMethod)}
+                  onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount, devicePaymentMethod)}
+                  invoiceBusy={invoiceBusy}
+                  billingConfig={billingConfig}
+                  quoteItems={quoteItems}
+                />
               )}
               {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
               {selected.status !== "Lezárva" ? <ActionButton color="red" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} icon="×" /> : null}
@@ -446,6 +522,217 @@ export function WorkPagePanel({
   );
 }
 
+
+function InlineAmount({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-white/5 px-3 py-2 text-slate-200 ring-1 ring-white/10">
+      <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 font-black">{value}</p>
+    </div>
+  );
+}
+
+
+function BillingPreparationPanel({
+  laborAmount,
+  deviceAmount,
+  laborDone,
+  deviceDone,
+  laborDoneAt,
+  deviceDoneAt,
+  billingDone,
+  laborPaymentMethod,
+  devicePaymentMethod,
+  onLaborAmountChange,
+  onDeviceAmountChange,
+  onLaborPaymentMethodChange,
+  onDevicePaymentMethodChange,
+  onCreateLaborInvoice,
+  onCreateDeviceInvoice,
+  invoiceBusy,
+  billingConfig,
+  quoteItems,
+}: {
+  laborAmount: string;
+  deviceAmount: string;
+  laborDone: boolean;
+  deviceDone: boolean;
+  laborDoneAt?: string;
+  deviceDoneAt?: string;
+  billingDone: boolean;
+  laborPaymentMethod: BillingPaymentMethod;
+  devicePaymentMethod: BillingPaymentMethod;
+  onLaborAmountChange: (value: string) => void;
+  onDeviceAmountChange: (value: string) => void;
+  onLaborPaymentMethodChange: (value: BillingPaymentMethod) => void;
+  onDevicePaymentMethodChange: (value: BillingPaymentMethod) => void;
+  onCreateLaborInvoice: () => void;
+  onCreateDeviceInvoice: () => void;
+  invoiceBusy: BillingInvoiceKind | null;
+  billingConfig: ReturnType<typeof billingUiConfig>;
+  quoteItems: QuoteItem[];
+}) {
+  const laborValue = parseAmount(laborAmount);
+  const deviceValue = parseAmount(deviceAmount);
+  const laborDueDate = billingDueDateIso(laborPaymentMethod);
+  const deviceDueDate = billingDueDateIso(devicePaymentMethod);
+  const deviceInvoiceLines = invoicePreviewLines("device", quoteItems, billingConfig);
+  const laborInvoiceLines = invoicePreviewLines("labor", quoteItems, billingConfig);
+
+  return (
+    <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-lg font-black text-amber-100">Számlázás</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${billingDone ? "bg-emerald-400 text-slate-950" : "bg-amber-300 text-slate-950"}`}>
+          {billingDone ? "Kész" : "Folyamatban"}
+        </span>
+      </div>
+      <InvoicePrepCard
+        title={billingConfig.deviceTitle}
+        invoiceLineNames={deviceInvoiceLines}
+        amount={deviceAmount}
+        parsedAmount={deviceValue}
+        done={deviceDone}
+        doneAt={deviceDoneAt}
+        paymentMethod={devicePaymentMethod}
+        dueDate={deviceDueDate}
+        onAmountChange={onDeviceAmountChange}
+        onPaymentMethodChange={onDevicePaymentMethodChange}
+        onCreateInvoice={onCreateDeviceInvoice}
+        invoiceBusy={invoiceBusy === "device"}
+      />
+      <InvoicePrepCard
+        title={billingConfig.laborTitle}
+        invoiceLineNames={laborInvoiceLines}
+        amount={laborAmount}
+        parsedAmount={laborValue}
+        done={laborDone}
+        doneAt={laborDoneAt}
+        paymentMethod={laborPaymentMethod}
+        dueDate={laborDueDate}
+        onAmountChange={onLaborAmountChange}
+        onPaymentMethodChange={onLaborPaymentMethodChange}
+        onCreateInvoice={onCreateLaborInvoice}
+        invoiceBusy={invoiceBusy === "labor"}
+      />
+      <div className="rounded-2xl bg-slate-950/60 p-4 text-sm font-black text-slate-200">
+        Összesen számlázandó: {ft(laborValue + deviceValue)}
+      </div>
+    </div>
+  );
+}
+
+function InvoicePrepCard({
+  title,
+  invoiceLineNames,
+  amount,
+  parsedAmount,
+  done,
+  doneAt,
+  paymentMethod,
+  dueDate,
+  onAmountChange,
+  onPaymentMethodChange,
+  onCreateInvoice,
+  invoiceBusy,
+}: {
+  title: string;
+  invoiceLineNames: string[];
+  amount: string;
+  parsedAmount: number;
+  done: boolean;
+  doneAt?: string;
+  paymentMethod: BillingPaymentMethod;
+  dueDate: string;
+  onAmountChange: (value: string) => void;
+  onPaymentMethodChange: (value: BillingPaymentMethod) => void;
+  onCreateInvoice: () => void;
+  invoiceBusy: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-lg font-black text-slate-100">{title}</p>
+        </div>
+        <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
+          {done ? "Kész" : "Előkészítve"}
+        </span>
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-900/90 p-2">
+        <button
+          type="button"
+          onClick={() => onPaymentMethodChange("cash")}
+          className={`rounded-xl px-4 py-3 font-black ${paymentMethod === "cash" ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-100"}`}
+        >
+          KP
+        </button>
+        <button
+          type="button"
+          onClick={() => onPaymentMethodChange("transfer")}
+          className={`rounded-xl px-4 py-3 font-black ${paymentMethod === "transfer" ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-100"}`}
+        >
+          Utalás
+        </button>
+      </div>
+      <label className="block rounded-2xl bg-slate-900/90 p-4">
+        <span className="text-sm font-bold text-slate-400">Számla összege</span>
+        <input
+          type="number"
+          min="0"
+          step="1000"
+          inputMode="numeric"
+          value={amount}
+          onChange={(event) => onAmountChange(event.target.value)}
+          className="mt-2 w-full bg-transparent text-2xl font-black text-slate-100 outline-none"
+        />
+      </label>
+      <div className="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-slate-200">
+        <p className="font-black text-cyan-100">Előnézet</p>
+        <div className="mt-2">
+          <p>Tételek:</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {invoiceLineNames.map((lineName, index) => <li key={`${lineName}-${index}`}>{lineName}</li>)}
+          </ul>
+        </div>
+        <p>Fizetési mód: {billingPaymentMethodLabel(paymentMethod)}</p>
+        <p>Fizetési határidő: {dueDate.replaceAll("-", ".")}</p>
+        {doneAt ? <p>Elkészült: {formatDoneAt(doneAt)}</p> : null}
+      </div>
+      <button
+        type="button"
+        onClick={onCreateInvoice}
+        disabled={done || invoiceBusy || parsedAmount <= 0}
+        className="mt-3 w-full rounded-2xl bg-blue-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {done ? "Számla elkészült" : invoiceBusy ? "Számla készítése..." : "Számla létrehozása Számlázz.hu-ban"}
+      </button>
+    </div>
+  );
+}
+
+function parseAmount(value: string) {
+  const amount = Number(String(value || "").replace(/\s/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+}
+
+function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
+  if (kind === "labor") {
+    const lines = cleanQuoteItems(items).map((item) => {
+      const quantity = itemQuantity(item);
+      return `${quantity > 1 ? `${quantity} db ` : ""}${config.laborLineName}`;
+    });
+    return lines.length ? lines : [config.laborLineName];
+  }
+
+  const lines = cleanQuoteItems(items).map((item) => {
+    const quantity = itemQuantity(item);
+    return `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`;
+  });
+  return lines.length ? lines : [`${config.deviceLineName} + szerelési anyagok`];
+}
 
 
 function formatDoneAt(value?: string) {
@@ -727,8 +1014,15 @@ function numericInputValue(value: string) {
   return Number.isFinite(numeric) ? Math.max(1, numeric) : "";
 }
 
-function priceInputValue(value: string) {
-  if (value === "") return "";
+function amountInputValue(value: string) {
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.max(0, numeric) : "";
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+}
+
+function unitPriceFromTotal(totalValue: number, item: QuoteItem) {
+  return Math.round(Math.max(0, totalValue) / itemQuantity(item));
+}
+
+function unitPriceFromLineTotals(deviceTotal: number, laborTotal: number, item: QuoteItem) {
+  return unitPriceFromTotal(deviceTotal + laborTotal, item);
 }
