@@ -7,9 +7,12 @@ import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
+  cleanQuoteItems,
   climateSummary,
   hasCustomProductPrice,
   isCustomQuoteItem,
+  itemName,
+  itemQuantity,
   itemPriceLine,
   quoteInstallTotal,
   itemTotal,
@@ -673,9 +676,11 @@ function parseAmount(value: string) {
 function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
   if (kind === "labor") return [config.laborLineName];
 
-  const summary = climateSummary(items);
-  const climateName = summary === "Nincs klíma megadva" ? config.deviceLineName : summary;
-  return [`${climateName} + szerelési anyagok`];
+  const lines = cleanQuoteItems(items).map((item) => {
+    const quantity = itemQuantity(item);
+    return `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`;
+  });
+  return lines.length ? lines : [`${config.deviceLineName} + szerelési anyagok`];
 }
 
 

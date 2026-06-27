@@ -1,5 +1,5 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
-import { climateSummary } from "@/lib/alinflow/products";
+import { cleanQuoteItems, climateSummary, itemName, itemQuantity, itemTotal } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
@@ -98,12 +98,6 @@ function laborInvoiceLineName() {
   return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés");
 }
 
-function deviceInvoiceLineName(items: QuoteItem[]) {
-  const summary = climateSummary(items);
-  const climateName = summary === "Nincs klíma megadva" ? invoiceLineName("device") : summary;
-  return `${climateName} + szerelési anyagok`;
-}
-
 function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: number, note = "") {
   const vatKey = invoiceVatKey(kind);
   const amounts = amountsFromGross(gross, vatKey);
@@ -115,12 +109,42 @@ function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: num
   };
 }
 
+function distributeGross(totalGross: number, weights: number[]) {
+  const weightSum = weights.reduce((sum, value) => sum + Math.max(0, value), 0);
+  if (!weightSum) return weights.map(() => 0);
+
+  let remaining = totalGross;
+  return weights.map((weight, index) => {
+    if (index === weights.length - 1) return remaining;
+    const value = Math.min(remaining, Math.round(totalGross * (Math.max(0, weight) / weightSum)));
+    remaining -= value;
+    return value;
+  });
+}
+
 function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[]) {
   if (kind === "labor") {
     return [invoiceLineFromGross(kind, laborInvoiceLineName(), amount, climateSummary(items))];
   }
 
-  return [invoiceLineFromGross(kind, deviceInvoiceLineName(items), amount, "")];
+  const itemLines = cleanQuoteItems(items)
+    .map((item) => {
+      const quantity = itemQuantity(item);
+      return {
+        name: `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`,
+        weight: itemTotal(item),
+      };
+    })
+    .filter((line) => line.name && line.weight > 0);
+
+  if (!itemLines.length) {
+    return [invoiceLineFromGross(kind, `${invoiceLineName("device")} + szerelési anyagok`, amount, "")];
+  }
+
+  const grossValues = distributeGross(amount, itemLines.map((line) => line.weight));
+  return itemLines
+    .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], ""))
+    .filter((line) => line.gross > 0);
 }
 
 function normalizePaymentMethod(value: unknown): BillingPaymentMethod {
