@@ -1,4 +1,4 @@
-export type BillingInvoiceKind = "device" | "labor";
+export type BillingInvoiceKind = "device" | "labor" | "maintenance";
 export type BillingPaymentMethod = "cash" | "transfer";
 
 export type BillingUiConfig = {
@@ -6,6 +6,8 @@ export type BillingUiConfig = {
   deviceLineName: string;
   laborTitle: string;
   laborLineName: string;
+  maintenanceTitle: string;
+  maintenanceLineName: string;
 };
 
 export function billingUiConfig(): BillingUiConfig {
@@ -14,11 +16,15 @@ export function billingUiConfig(): BillingUiConfig {
     deviceLineName: process.env.NEXT_PUBLIC_BILLING_DEVICE_LINE_NAME || "Klímaberendezés",
     laborTitle: process.env.NEXT_PUBLIC_BILLING_LABOR_TITLE || "Munkadíj",
     laborLineName: process.env.NEXT_PUBLIC_BILLING_LABOR_LINE_NAME || "Légkondicionáló telepítés és beüzemelés",
+    maintenanceTitle: process.env.NEXT_PUBLIC_BILLING_MAINTENANCE_TITLE || "Karbantartási számla",
+    maintenanceLineName: process.env.NEXT_PUBLIC_BILLING_MAINTENANCE_LINE_NAME || "Légkondicionáló karbantartás",
   };
 }
 
 export function billingKindLabel(kind: BillingInvoiceKind, config = billingUiConfig()) {
-  return kind === "device" ? config.deviceTitle : config.laborTitle;
+  if (kind === "device") return config.deviceTitle;
+  if (kind === "maintenance") return config.maintenanceTitle;
+  return config.laborTitle;
 }
 
 export function billingPaymentMethodLabel(method: BillingPaymentMethod) {
