@@ -1,5 +1,5 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
-import { cleanQuoteItems, climateSummary, itemName, itemQuantity, itemTotal } from "@/lib/alinflow/products";
+import { cleanQuoteItems, climateSummary, itemInstallTotal, itemName, itemQuantity, itemTotal } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
@@ -123,11 +123,30 @@ function distributeGross(totalGross: number, weights: number[]) {
 }
 
 function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[]) {
+  const cleanItems = cleanQuoteItems(items);
+
   if (kind === "labor") {
-    return [invoiceLineFromGross(kind, laborInvoiceLineName(), amount, climateSummary(items))];
+    const itemLines = cleanItems
+      .map((item) => {
+        const quantity = itemQuantity(item);
+        return {
+          name: `${quantity > 1 ? `${quantity} db ` : ""}${laborInvoiceLineName()}`,
+          weight: itemInstallTotal(item),
+        };
+      })
+      .filter((line) => line.name && line.weight > 0);
+
+    if (!itemLines.length) {
+      return [invoiceLineFromGross(kind, laborInvoiceLineName(), amount, climateSummary(items))];
+    }
+
+    const grossValues = distributeGross(amount, itemLines.map((line) => line.weight));
+    return itemLines
+      .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], ""))
+      .filter((line) => line.gross > 0);
   }
 
-  const itemLines = cleanQuoteItems(items)
+  const itemLines = cleanItems
     .map((item) => {
       const quantity = itemQuantity(item);
       return {

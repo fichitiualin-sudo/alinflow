@@ -13,6 +13,7 @@ import {
   isCustomQuoteItem,
   itemName,
   itemQuantity,
+  itemInstallTotal,
   itemPriceLine,
   quoteInstallTotal,
   itemTotal,
@@ -318,6 +319,11 @@ export function WorkPagePanel({
                     <span>{itemPriceLine(it)}{hasCustomProductPrice(it) ? " · kézzel módosított ár" : ""}</span>
                     <b>{ft(itemTotal(it))}</b>
                   </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+                    <AmountPill label="Készülék + anyag" value={ft(Math.max(0, itemTotal(it) - itemInstallTotal(it)))} />
+                    <AmountPill label="Munkadíj" value={ft(itemInstallTotal(it))} />
+                    <AmountPill label="Teljes összeg" value={ft(itemTotal(it))} strong />
+                  </div>
                   {hasCustomProductPrice(it) ? (
                     <button type="button" disabled={!canEditWorkResources} onClick={() => onSyncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
                       Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
@@ -325,9 +331,21 @@ export function WorkPagePanel({
                   ) : null}
                 </div>
               ))}
-              <div className="flex flex-col gap-2 rounded-3xl bg-cyan-300 p-5 text-slate-950 md:flex-row md:items-center md:justify-between">
-                <b className="text-xl">Összesen</b>
-                <b className="text-2xl">{ft(total(quoteItems))}</b>
+              <div className="rounded-3xl bg-cyan-300 p-5 text-slate-950">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <b className="text-xl">Teljes összeg</b>
+                  <b className="text-2xl">{ft(total(quoteItems))}</b>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                  <div className="rounded-2xl bg-white/45 p-3">
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-700">Készülék + anyag</p>
+                    <p className="mt-1 text-lg font-black">{ft(defaultDeviceAmount)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/45 p-3">
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-700">Munkadíj</p>
+                    <p className="mt-1 text-lg font-black">{ft(defaultLaborAmount)}</p>
+                  </div>
+                </div>
               </div>
             </div> : null}
             {isInstallation ? <div className="mt-4 flex flex-col gap-3 md:flex-row">
@@ -484,6 +502,16 @@ export function WorkPagePanel({
         </Side>
       </Layout>
     </>
+  );
+}
+
+
+function AmountPill({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className={`rounded-2xl p-3 ${strong ? "bg-cyan-300/15 text-cyan-100 ring-1 ring-cyan-200/20" : "bg-white/5 text-slate-200"}`}>
+      <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 font-black">{value}</p>
+    </div>
   );
 }
 
@@ -649,7 +677,7 @@ function InvoicePrepCard({
         <div className="mt-2">
           <p>Tételek:</p>
           <ul className="mt-1 list-disc space-y-1 pl-5">
-            {invoiceLineNames.map((lineName) => <li key={lineName}>{lineName}</li>)}
+            {invoiceLineNames.map((lineName, index) => <li key={`${lineName}-${index}`}>{lineName}</li>)}
           </ul>
         </div>
         <p>Fizetési mód: {billingPaymentMethodLabel(paymentMethod)}</p>
@@ -674,7 +702,13 @@ function parseAmount(value: string) {
 }
 
 function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
-  if (kind === "labor") return [config.laborLineName];
+  if (kind === "labor") {
+    const lines = cleanQuoteItems(items).map((item) => {
+      const quantity = itemQuantity(item);
+      return `${quantity > 1 ? `${quantity} db ` : ""}${config.laborLineName}`;
+    });
+    return lines.length ? lines : [config.laborLineName];
+  }
 
   const lines = cleanQuoteItems(items).map((item) => {
     const quantity = itemQuantity(item);
