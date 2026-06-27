@@ -8,9 +8,13 @@ import { DocumentActionButtons, documentStatusClass } from "@/components/alinflo
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
   climateSummary,
+  cleanQuoteItems,
   hasCustomProductPrice,
   isCustomQuoteItem,
+  itemInstallPrice,
+  itemName,
   itemPriceLine,
+  itemQuantity,
   quoteInstallTotal,
   itemTotal,
   itemUnitPrice,
@@ -470,6 +474,7 @@ export function WorkPagePanel({
                   onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount, devicePaymentMethod)}
                   invoiceBusy={invoiceBusy}
                   billingConfig={billingConfig}
+                  quoteItems={quoteItems}
                 />
               )}
               {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
@@ -502,6 +507,7 @@ function BillingPreparationPanel({
   onCreateDeviceInvoice,
   invoiceBusy,
   billingConfig,
+  quoteItems,
 }: {
   laborAmount: string;
   deviceAmount: string;
@@ -520,11 +526,14 @@ function BillingPreparationPanel({
   onCreateDeviceInvoice: () => void;
   invoiceBusy: BillingInvoiceKind | null;
   billingConfig: ReturnType<typeof billingUiConfig>;
+  quoteItems: QuoteItem[];
 }) {
   const laborValue = parseAmount(laborAmount);
   const deviceValue = parseAmount(deviceAmount);
   const laborDueDate = billingDueDateIso(laborPaymentMethod);
   const deviceDueDate = billingDueDateIso(devicePaymentMethod);
+  const deviceInvoiceLines = invoicePreviewLines("device", deviceValue, quoteItems, billingConfig);
+  const laborInvoiceLines = invoicePreviewLines("labor", laborValue, quoteItems, billingConfig);
 
   return (
     <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
@@ -538,7 +547,7 @@ function BillingPreparationPanel({
       </div>
       <InvoicePrepCard
         title={billingConfig.deviceTitle}
-        invoiceLineName={billingConfig.deviceLineName}
+        invoiceLineNames={deviceInvoiceLines}
         amount={deviceAmount}
         parsedAmount={deviceValue}
         done={deviceDone}
@@ -552,7 +561,7 @@ function BillingPreparationPanel({
       />
       <InvoicePrepCard
         title={billingConfig.laborTitle}
-        invoiceLineName={billingConfig.laborLineName}
+        invoiceLineNames={laborInvoiceLines}
         amount={laborAmount}
         parsedAmount={laborValue}
         done={laborDone}
@@ -573,7 +582,7 @@ function BillingPreparationPanel({
 
 function InvoicePrepCard({
   title,
-  invoiceLineName,
+  invoiceLineNames,
   amount,
   parsedAmount,
   done,
@@ -586,7 +595,7 @@ function InvoicePrepCard({
   invoiceBusy,
 }: {
   title: string;
-  invoiceLineName: string;
+  invoiceLineNames: string[];
   amount: string;
   parsedAmount: number;
   done: boolean;
@@ -638,7 +647,12 @@ function InvoicePrepCard({
       </label>
       <div className="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-slate-200">
         <p className="font-black text-cyan-100">Előnézet</p>
-        <p className="mt-2">Tétel: {invoiceLineName}</p>
+        <div className="mt-2">
+          <p>Tételek:</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {invoiceLineNames.map((lineName) => <li key={lineName}>{lineName}</li>)}
+          </ul>
+        </div>
         <p>Fizetési mód: {billingPaymentMethodLabel(paymentMethod)}</p>
         <p>Fizetési határidő: {dueDate.replaceAll("-", ".")}</p>
         {doneAt ? <p>Elkészült: {formatDoneAt(doneAt)}</p> : null}
@@ -658,6 +672,28 @@ function InvoicePrepCard({
 function parseAmount(value: string) {
   const amount = Number(String(value || "").replace(/\s/g, ""));
   return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+}
+
+function invoicePreviewLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
+  if (kind === "labor") return [config.laborLineName];
+
+  const itemLines = cleanQuoteItems(items)
+    .map((item) => {
+      const quantity = itemQuantity(item);
+      const gross = Math.max(0, (itemUnitPrice(item) - itemInstallPrice(item)) * quantity);
+      return {
+        name: quantity > 1 ? `${quantity} db ${itemName(item)}` : itemName(item),
+        gross,
+      };
+    })
+    .filter((line) => line.name && line.gross > 0);
+
+  if (!itemLines.length) return [config.deviceLineName];
+
+  const lineNames = itemLines.map((line) => line.name);
+  const itemGrossTotal = itemLines.reduce((sum, line) => sum + line.gross, 0);
+  if (amount > itemGrossTotal) lineNames.push(config.deviceMaterialLineName);
+  return lineNames;
 }
 
 

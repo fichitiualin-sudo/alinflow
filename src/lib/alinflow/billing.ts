@@ -4,6 +4,7 @@ export type BillingPaymentMethod = "cash" | "transfer";
 export type BillingUiConfig = {
   deviceTitle: string;
   deviceLineName: string;
+  deviceMaterialLineName: string;
   laborTitle: string;
   laborLineName: string;
 };
@@ -11,9 +12,10 @@ export type BillingUiConfig = {
 export function billingUiConfig(): BillingUiConfig {
   return {
     deviceTitle: process.env.NEXT_PUBLIC_BILLING_DEVICE_TITLE || "Készülék és anyag",
-    deviceLineName: process.env.NEXT_PUBLIC_BILLING_DEVICE_LINE_NAME || "Klímaberendezés és szerelési anyagok",
+    deviceLineName: process.env.NEXT_PUBLIC_BILLING_DEVICE_LINE_NAME || "Klímaberendezés",
+    deviceMaterialLineName: process.env.NEXT_PUBLIC_BILLING_DEVICE_MATERIAL_LINE_NAME || "Szereléshez szükséges anyagok",
     laborTitle: process.env.NEXT_PUBLIC_BILLING_LABOR_TITLE || "Munkadíj",
-    laborLineName: process.env.NEXT_PUBLIC_BILLING_LABOR_LINE_NAME || "Klímaszerelési munkadíj",
+    laborLineName: process.env.NEXT_PUBLIC_BILLING_LABOR_LINE_NAME || "Légkondicionáló telepítés és beüzemelés",
   };
 }
 

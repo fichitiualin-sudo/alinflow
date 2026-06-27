@@ -1,5 +1,5 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
-import { climateSummary } from "@/lib/alinflow/products";
+import { cleanQuoteItems, climateSummary, itemInstallPrice, itemName, itemQuantity, itemUnitPrice } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
@@ -62,8 +62,8 @@ function getAgentKey(kind: BillingInvoiceKind) {
 }
 
 function invoiceLineName(kind: BillingInvoiceKind) {
-  if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_LINE_NAME", "Klímaberendezés és szerelési anyagok");
-  return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Klímaszerelési munkadíj");
+  if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_LINE_NAME", "Klímaberendezés");
+  return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés");
 }
 
 function invoiceVatKey(kind: BillingInvoiceKind) {
@@ -106,6 +106,75 @@ function invoiceLine(kind: BillingInvoiceKind, amount: number, items: QuoteItem[
   };
 }
 
+function deviceMaterialLineName() {
+  return readEnv("SZAMLAZZ_DEVICE_MATERIAL_LINE_NAME", "Szereléshez szükséges anyagok");
+}
+
+function laborInvoiceLineName() {
+  return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés");
+}
+
+function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: number, note = "") {
+  const vatKey = invoiceVatKey(kind);
+  const amounts = amountsFromGross(gross, vatKey);
+  return {
+    name,
+    vatKey,
+    ...amounts,
+    note,
+  };
+}
+
+function distributeGross(totalGross: number, weights: number[]) {
+  const weightSum = weights.reduce((sum, value) => sum + Math.max(0, value), 0);
+  if (!weightSum) return weights.map(() => 0);
+
+  let remaining = totalGross;
+  return weights.map((weight, index) => {
+    if (index === weights.length - 1) return remaining;
+    const value = Math.min(remaining, Math.round(totalGross * (Math.max(0, weight) / weightSum)));
+    remaining -= value;
+    return value;
+  });
+}
+
+function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[]) {
+  if (kind === "labor") {
+    return [invoiceLineFromGross(kind, laborInvoiceLineName(), amount, climateSummary(items))];
+  }
+
+  const itemLines = cleanQuoteItems(items)
+    .map((item) => {
+      const quantity = itemQuantity(item);
+      const gross = Math.max(0, (itemUnitPrice(item) - itemInstallPrice(item)) * quantity);
+      return {
+        name: quantity > 1 ? `${quantity} db ${itemName(item)}` : itemName(item),
+        gross,
+      };
+    })
+    .filter((line) => line.name && line.gross > 0);
+
+  if (!itemLines.length) {
+    return [invoiceLine(kind, amount, items)];
+  }
+
+  const itemGrossTotal = itemLines.reduce((sum, line) => sum + line.gross, 0);
+  const itemGrossValues = amount < itemGrossTotal
+    ? distributeGross(amount, itemLines.map((line) => line.gross))
+    : itemLines.map((line) => line.gross);
+
+  const lines = itemLines
+    .map((line, index) => invoiceLineFromGross(kind, line.name, itemGrossValues[index]))
+    .filter((line) => line.gross > 0);
+
+  const materialGross = amount - itemGrossValues.reduce((sum, value) => sum + value, 0);
+  if (materialGross > 0) {
+    lines.push(invoiceLineFromGross(kind, deviceMaterialLineName(), materialGross));
+  }
+
+  return lines;
+}
+
 function normalizePaymentMethod(value: unknown): BillingPaymentMethod {
   return value === "cash" ? "cash" : "transfer";
 }
@@ -119,7 +188,7 @@ function buildInvoiceXml({ kind, amount, paymentMethod = "transfer", customer, q
   const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
   const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`));
   const buyer = buyerAddress(customer);
-  const line = invoiceLine(kind, amount, quoteItems);
+  const lines = invoiceLines(kind, amount, quoteItems);
   const externalId = `alinflow-${kind}-${customer.activeAppointmentId || customer.id}`;
   const comment = invoiceComment(kind);
   const paymentLabel = szamlazzPaymentMethodName(normalizedPaymentMethod);
@@ -177,7 +246,7 @@ ${invoicePrefixXml(kind)}
     <megjegyzes></megjegyzes>
   </vevo>
   <tetelek>
-    <tetel>
+${lines.map((line) => `    <tetel>
       <megnevezes>${safeText(line.name)}</megnevezes>
       <mennyiseg>1.0</mennyiseg>
       <mennyisegiEgyseg>db</mennyisegiEgyseg>
@@ -187,7 +256,7 @@ ${invoicePrefixXml(kind)}
       <afaErtek>${line.vat}</afaErtek>
       <bruttoErtek>${line.gross}</bruttoErtek>
       <megjegyzes>${safeText(line.note)}</megjegyzes>
-    </tetel>
+    </tetel>`).join("\n")}
   </tetelek>
 </xmlszamla>`;
 }
