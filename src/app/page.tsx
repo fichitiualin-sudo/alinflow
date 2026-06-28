@@ -3667,8 +3667,8 @@ export default function Home() {
 
     const billingConfig = billingUiConfig();
     rows.push(
-      { title: `${billingConfig.laborTitle} számla`, status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
-      { title: `${billingConfig.deviceTitle} számla`, status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Számlázz.hu később", action: "Számla", appointmentType: "installation" as AppointmentType },
+      { title: `${billingConfig.laborTitle} számla`, status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Nincs kiállítva", action: "Számla", appointmentType: "installation" as AppointmentType },
+      { title: `${billingConfig.deviceTitle} számla`, status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Nincs kiállítva", action: "Számla", appointmentType: "installation" as AppointmentType },
     );
 
     return rows;
