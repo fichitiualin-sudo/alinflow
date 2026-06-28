@@ -47,7 +47,7 @@ export function DocumentLibraryActionButtons({
   if (!ready && row.action !== "MaintenanceBundle") return null;
 
   const actionCustomer = actionCustomerFor(customer, row);
-  const buttonRow = "mt-3 flex flex-wrap items-center gap-2";
+  const buttonRow = "flex flex-wrap items-center gap-2";
   const baseButton = "document-action-button rounded-xl px-3 py-2 text-xs font-black transition";
   const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
   const bundleButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;

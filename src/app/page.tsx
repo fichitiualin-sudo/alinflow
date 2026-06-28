@@ -4658,11 +4658,13 @@ export default function Home() {
   function renderDocumentLibraryRow(customer: Customer, row: PageDocumentRow) {
     return (
       <div key={`${row.title}-${row.reportId || row.purchaseDeclarationId || row.reportDateLabel || row.reportDate || row.action}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <p className="font-black leading-tight">{row.title}</p>
-          <span className={`w-fit shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="min-w-0 font-black leading-tight md:flex-1">{row.title}</p>
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            <DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/>
+            <span className={`w-fit shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span>
+          </div>
         </div>
-        <DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/>
       </div>
     );
   }
