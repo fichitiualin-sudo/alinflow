@@ -458,9 +458,8 @@ export default function Home() {
   const installer = quoteInstallTotal(quoteItems);
   const materialPrice = Math.max(0, t-installer);
   const normalizedScheduleAppointmentType = normalizeAppointmentType(scheduleAppointmentType);
-  const isMultiDayJob = isInstallationAppointment(normalizedScheduleAppointmentType) && q >= 2;
   const normalizedScheduleTime = normalizeAppointmentTimeInput(scheduleTime) || "08:00";
-  const scheduleStoredTime = isMultiDayJob ? "08:00 + 12:00" : normalizedScheduleTime;
+  const scheduleStoredTime = normalizedScheduleTime;
   const shownTime = appointmentTimeRangeLabel({ appointmentType: normalizedScheduleAppointmentType, time: scheduleStoredTime, quoteItems }, normalizedScheduleTime);
   const sortedCustomers = sortCustomersByCreatedAtDesc(customers);
   const allWorkCustomers = workCustomersForScheduling(sortedCustomers, workHistoryByCustomer);
@@ -1705,7 +1704,7 @@ export default function Home() {
   function updateScheduleAppointmentType(value: AppointmentType) {
     const nextType = normalizeAppointmentType(value);
     setScheduleAppointmentType(nextType);
-    const slots = isInstallationAppointment(nextType) && qty(quoteItems) >= 2 ? ["08:00"] : appointmentSlotOptions(nextType, quoteItems);
+    const slots = appointmentSlotOptions(nextType, quoteItems);
     setScheduleTime((previous) => normalizeAppointmentTimeInput(previous) || slots[0] || "08:00");
   }
 
@@ -2331,7 +2330,7 @@ export default function Home() {
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
     const wasExistingSchedule = Boolean(selected.date);
-    const slotToValidate = isMultiDayJob ? scheduleStoredTime : normalizeAppointmentTimeInput(scheduleTime);
+    const slotToValidate = normalizeAppointmentTimeInput(scheduleTime);
     if (!slotToValidate) {
       setMessage("Adj meg érvényes időpontot, például 10:00 vagy 13:30.");
       return;
@@ -2400,8 +2399,7 @@ export default function Home() {
     }
 
     const updatedQuoteItems = cleanQuoteItems(quoteItems);
-    const newQty = qty(updatedQuoteItems);
-    const updatedTime = isInstallationAppointment(selected.appointmentType) && newQty >= 2 ? "08:00 + 12:00" : firstAppointmentTime(selected.time || scheduleTime || "08:00");
+    const updatedTime = firstAppointmentTime(selected.time || scheduleTime || "08:00");
     const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
@@ -4823,7 +4821,6 @@ export default function Home() {
         scheduleTime={scheduleTime}
         shownTime={shownTime}
         appointmentType={normalizedScheduleAppointmentType}
-        isMultiDayJob={isMultiDayJob}
         freeSlots={free}
         quoteItems={quoteItems}
         products={products}

@@ -1,6 +1,6 @@
 import type { ClimateProduct, Customer, QuoteItem, QuotePricingMode } from "./types";
 import { DEFAULT_INSTALL_PRICE, EMPTY_PRODUCT, PRODUCTS } from "./constants";
-import { appointmentInterval, intervalsOverlap, ONE_HOUR_APPOINTMENT_SLOTS, timeToMinutes } from "./appointments";
+import { appointmentInterval, intervalsOverlap, RECOMMENDED_APPOINTMENT_SLOTS, slotInterval } from "./appointments";
 import { ft } from "./format";
 
 export function productSlug(value: string) {
@@ -156,10 +156,9 @@ export function occupiedSlots(customer: Customer) {
   const interval = appointmentInterval(customer);
   if (!interval) return [];
 
-  return ONE_HOUR_APPOINTMENT_SLOTS.filter((slot) => {
-    const start = timeToMinutes(slot);
-    if (start === null) return false;
-    return intervalsOverlap(interval, { start, end: start + 60 });
+  return RECOMMENDED_APPOINTMENT_SLOTS.filter((slot) => {
+    const slotCandidate = slotInterval(slot, customer.appointmentType, customer.quoteItems || []);
+    return slotCandidate ? intervalsOverlap(interval, slotCandidate) : false;
   });
 }
 

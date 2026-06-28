@@ -17,7 +17,6 @@ type SchedulePanelProps = {
   scheduleTime: string;
   shownTime: string;
   appointmentType: AppointmentType;
-  isMultiDayJob: boolean;
   freeSlots: string[];
   quoteItems: QuoteItem[];
   products: ClimateProduct[];
@@ -65,7 +64,6 @@ function priceInputValue(value: string) {
 }
 
 function slotLabel(slot: string, appointmentType: AppointmentType, items: QuoteItem[]) {
-  if (slot === "16:00" && appointmentType === "installation") return `+1 · ${appointmentTimeLabel(appointmentType, slot, items)}`;
   return appointmentTimeLabel(appointmentType, slot, items);
 }
 
@@ -80,7 +78,6 @@ export function SchedulePanel({
   scheduleTime,
   shownTime,
   appointmentType,
-  isMultiDayJob,
   freeSlots,
   quoteItems,
   products,
@@ -135,43 +132,31 @@ export function SchedulePanel({
             onOpen={onOpenCustomer}
           />
           <Card title="Ajánlott időpontok">
-            {isMultiDayJob ? (
-              freeSlots.length ? (
-                <div className="rounded-2xl bg-emerald-400/20 p-4 font-black text-emerald-100">
-                  Szerelésnél 2 vagy több klíma esetén automatikusan a teljes délelőtti és déli sávval számolunk.
-                </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              {freeSlots.length === 0 ? (
+                <div className="rounded-2xl bg-amber-400/15 p-4 font-black text-amber-100 md:col-span-4">Nincs szabad ajánlott idősáv. Kézzel megadhatsz másik időpontot.</div>
               ) : (
-                <div className="rounded-2xl bg-red-500/20 p-4 font-black text-red-200">Erre a napra a 08:00–16:00 idősáv már foglalt.</div>
-              )
-            ) : (
-              <>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  {freeSlots.length === 0 ? (
-                    <div className="rounded-2xl bg-amber-400/15 p-4 font-black text-amber-100 md:col-span-3">Nincs szabad ajánlott idősáv. Kézzel megadhatsz másik időpontot.</div>
-                  ) : (
-                    freeSlots.map((slot) => (
-                      <button key={slot} className={normalizeAppointmentTimeInput(scheduleTime) === normalizeAppointmentTimeInput(slot) ? "slot-active" : "slot"} onClick={() => onSetScheduleTime(slot)}>
-                        {slotLabel(slot, appointmentType, quoteItems)}
-                      </button>
-                    ))
-                  )}
-                </div>
-                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                  <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Egyedi időpont</label>
-                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-[180px_1fr] sm:items-center">
-                    <input
-                      type="time"
-                      step={300}
-                      className="input"
-                      value={manualTimeValue}
-                      onChange={(event) => onSetScheduleTime(event.target.value)}
-                      onBlur={(event) => onSetScheduleTime(normalizeAppointmentTimeInput(event.target.value) || event.target.value)}
-                    />
-                    <p className="text-sm font-bold text-slate-300">Kiválasztva: <span className="text-cyan-100">{selectedTimeLabel}</span></p>
-                  </div>
-                </div>
-              </>
-            )}
+                freeSlots.map((slot) => (
+                  <button key={slot} className={normalizeAppointmentTimeInput(scheduleTime) === normalizeAppointmentTimeInput(slot) ? "slot-active" : "slot"} onClick={() => onSetScheduleTime(slot)}>
+                    {slotLabel(slot, appointmentType, quoteItems)}
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+              <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Egyedi időpont</label>
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-[180px_1fr] sm:items-center">
+                <input
+                  type="time"
+                  step={300}
+                  className="input"
+                  value={manualTimeValue}
+                  onChange={(event) => onSetScheduleTime(event.target.value)}
+                  onBlur={(event) => onSetScheduleTime(normalizeAppointmentTimeInput(event.target.value) || event.target.value)}
+                />
+                <p className="text-sm font-bold text-slate-300">Kiválasztva: <span className="text-cyan-100">{selectedTimeLabel}</span></p>
+              </div>
+            </div>
           </Card>
         </Main>
         <Side>
