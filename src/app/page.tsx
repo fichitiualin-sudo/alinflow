@@ -4689,7 +4689,7 @@ export default function Home() {
     const sections = documentLibrarySectionsFor(customer);
 
     return (
-      <div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+      <div key={customer.id} className="document-customer-card rounded-3xl border bg-slate-900/80 p-4">
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p>
