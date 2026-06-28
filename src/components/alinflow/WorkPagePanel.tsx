@@ -753,7 +753,7 @@ function InvoicePrepCard({
           Utalás
         </button>
       </div>
-      <label className="block rounded-2xl bg-slate-900/90 p-4">
+      <label className="invoice-amount-field block rounded-2xl bg-slate-900/90 p-4">
         <span className="text-sm font-bold text-slate-400">Számla összege</span>
         <input
           type="number"
@@ -762,7 +762,7 @@ function InvoicePrepCard({
           inputMode="numeric"
           value={amount}
           onChange={(event) => onAmountChange(event.target.value)}
-          className="mt-2 w-full bg-transparent text-2xl font-black text-slate-100 outline-none"
+          className="invoice-amount-input mt-2 w-full bg-transparent text-2xl font-black text-slate-100 outline-none"
         />
       </label>
       <div className="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-slate-200">
