@@ -47,29 +47,35 @@ export function DocumentLibraryActionButtons({
   if (!ready && row.action !== "MaintenanceBundle") return null;
 
   const actionCustomer = actionCustomerFor(customer, row);
+  const buttonRow = "mt-3 flex flex-wrap items-center gap-2";
+  const baseButton = "document-action-button rounded-xl px-3 py-2 text-xs font-black transition";
+  const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
+  const bundleButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
+  const quoteButton = `${baseButton} bg-blue-400/20 text-blue-100 hover:bg-blue-400/30`;
+  const appointmentButton = `${baseButton} bg-cyan-300/15 text-cyan-100 hover:bg-cyan-300/25`;
 
   if (row.action === "MunkalapNyilatkozat") {
     return (
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <button onClick={() => onPreview(actionCustomer, "work_report")} className="document-action-button rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Munkalap</button>
-        <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className="document-action-button rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Nyilatkozat</button>
+      <div className={buttonRow}>
+        <button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Munkalap</button>
+        <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Nyilatkozat</button>
       </div>
     );
   }
   if (row.action === "MaintenanceBundle") {
-    return <button onClick={() => onPreview(actionCustomer, "all_work_reports")} className="document-action-button mt-3 w-full rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100">Összes munkalap megtekintése / nyomtatása</button>;
+    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "all_work_reports")} className={bundleButton}>Összes munkalap megtekintése / nyomtatása</button></div>;
   }
   if (row.action === "MaintenanceReport" || row.action === "Munkalap") {
-    return <button onClick={() => onPreview(actionCustomer, "work_report")} className="document-action-button mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
+    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Megtekintés / nyomtatás</button></div>;
   }
   if (row.action === "Nyilatkozat") {
-    return <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className="document-action-button mt-3 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-black text-white">Megtekintés / nyomtatás</button>;
+    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés / nyomtatás</button></div>;
   }
   if (row.action === "Ajánlat") {
-    return <button onClick={() => onPreview(actionCustomer, "quote_document")} className="document-action-button mt-3 w-full rounded-2xl bg-blue-400/20 px-4 py-3 text-sm font-black text-blue-100">Ajánlat megtekintése</button>;
+    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={quoteButton}>Ajánlat megtekintése</button></div>;
   }
   if (row.action === "Időpont") {
-    return <button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className="document-action-button mt-3 w-full rounded-2xl bg-cyan-300/15 px-4 py-3 text-sm font-black text-cyan-100">Időpont megtekintése</button>;
+    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className={appointmentButton}>Időpont megtekintése</button></div>;
   }
 
   return null;
