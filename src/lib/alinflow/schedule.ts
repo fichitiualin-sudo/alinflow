@@ -3,10 +3,8 @@ import {
   appointmentInterval,
   appointmentSlotOptions,
   intervalsOverlap,
-  isInstallationAppointment,
   slotInterval,
 } from "./appointments";
-import { qty } from "./products";
 
 export function appointmentIntervalsForDay(customers: Customer[], date: string, selectedCustomerId?: string, selectedAppointmentId?: string) {
   const dayCustomers = customers.filter((customer) => {
@@ -56,7 +54,7 @@ export function availableAppointmentSlots({
   selectedCustomerId?: string;
   selectedAppointmentId?: string;
 }) {
-  const slots = isInstallationAppointment(appointmentType) && qty(items) >= 2 ? ["08:00 + 12:00"] : appointmentSlotOptions(appointmentType, items);
+  const slots = appointmentSlotOptions(appointmentType, items);
   return slots.filter((slot) => appointmentTimeAvailable({ customers, date, appointmentType, items, selectedCustomerId, selectedAppointmentId, time: slot }));
 }
 

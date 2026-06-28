@@ -24,18 +24,11 @@ export const APPOINTMENT_TYPES: { value: AppointmentType; label: string; shortLa
 ];
 
 export const APPOINTMENT_TYPE_OPTIONS = APPOINTMENT_TYPES;
-export const RECOMMENDED_APPOINTMENT_SLOTS = ["08:00", "12:00", "16:00"];
+export const RECOMMENDED_APPOINTMENT_SLOTS = ["08:00", "11:00", "14:00", "17:00"];
 export const ONE_HOUR_APPOINTMENT_SLOTS = RECOMMENDED_APPOINTMENT_SLOTS;
 export const INSTALLATION_APPOINTMENT_SLOTS = RECOMMENDED_APPOINTMENT_SLOTS;
 
 export type AppointmentInterval = { start: number; end: number };
-
-function quantity(items?: QuoteItem[]) {
-  return (items || []).reduce((sum, item) => {
-    const numeric = Number(item.quantity);
-    return sum + (Number.isFinite(numeric) && numeric > 0 ? numeric : 1);
-  }, 0);
-}
 
 export function normalizeAppointmentType(value?: string | null): AppointmentType {
   const normalized = String(value || "").trim().toLowerCase();
@@ -134,10 +127,7 @@ export function addHoursToTime(value: string, hours: number) {
   return addMinutesToTime(value, hours * 60);
 }
 
-export function appointmentDurationMinutes(type?: string | null, items: QuoteItem[] = [], time?: string) {
-  const appointmentType = normalizeAppointmentType(type);
-  if (isOneHourAppointment(appointmentType)) return 60;
-  if (quantity(items) >= 2 || String(time || "").includes("+")) return 8 * 60;
+export function appointmentDurationMinutes(_type?: string | null, _items: QuoteItem[] = [], _time?: string) {
   return 3 * 60;
 }
 
@@ -160,9 +150,7 @@ export function intervalsOverlap(first: AppointmentInterval, second: Appointment
   return first.start < second.end && second.start < first.end;
 }
 
-export function appointmentSlotOptions(type?: string | null, items: QuoteItem[] = []) {
-  if (isOneHourAppointment(type)) return ONE_HOUR_APPOINTMENT_SLOTS;
-  if (quantity(items) >= 2) return ["08:00 + 12:00"];
+export function appointmentSlotOptions(_type?: string | null, _items: QuoteItem[] = []) {
   return INSTALLATION_APPOINTMENT_SLOTS;
 }
 
