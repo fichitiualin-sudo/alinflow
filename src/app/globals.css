@@ -87,6 +87,22 @@ html[data-theme="light"] .tab {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
+html[data-theme="light"] input,
+html[data-theme="light"] textarea,
+html[data-theme="light"] select {
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f766e;
+  color-scheme: light;
+}
+
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder {
+  color: #64748b !important;
+  -webkit-text-fill-color: #64748b;
+  opacity: 1;
+}
+
 html[data-theme="light"] .tab-active,
 html[data-theme="light"] .slot-active {
   background: #34d399 !important;
