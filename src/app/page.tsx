@@ -3642,16 +3642,19 @@ export default function Home() {
       { title: "Munkalap és vásárlási nyilatkozat", status: workAndDeclarationStatus(customer, "installation"), action: "MunkalapNyilatkozat", appointmentType: "installation" as AppointmentType },
     ];
 
-    purchaseDeclarationsFor(customer).forEach((declaration) => {
-      rows.push({
-        title: `Vásárlási nyilatkozat – ${declaration.sellerName}`,
-        status: declaration.signedAt ? "Aláírva" : "Aláírásra vár",
-        action: "Nyilatkozat",
-        appointmentType: "installation" as AppointmentType,
-        reportId: declaration.workReportId,
-        purchaseDeclarationId: declaration.id,
+    const declarations = purchaseDeclarationsFor(customer);
+    if (declarations.length > 1) {
+      declarations.forEach((declaration) => {
+        rows.push({
+          title: `Vásárlási nyilatkozat – ${declaration.sellerName}`,
+          status: declaration.signedAt ? "Aláírva" : "Aláírásra vár",
+          action: "Nyilatkozat",
+          appointmentType: "installation" as AppointmentType,
+          reportId: declaration.workReportId,
+          purchaseDeclarationId: declaration.id,
+        });
       });
-    });
+    }
 
     if (installationDone) {
       rows.push({
@@ -3703,7 +3706,7 @@ export default function Home() {
     const rows = [...currentRows, ...reportRows, ...maintenanceCancellationRowsFor(customer)]
       .sort((a, b) => maintenanceRowSortValue(b).localeCompare(maintenanceRowSortValue(a)));
     const savedRows = reportRows.filter((row) => Boolean(row.reportId));
-    if (includeBundle && savedRows.length) {
+    if (includeBundle && savedRows.length > 1) {
       return [
         {
           title: `Összes karbantartási munkalap (${savedRows.length} db)`,
@@ -4637,6 +4640,73 @@ export default function Home() {
   }
 
 
+  function documentLibrarySectionsFor(customer: Customer) {
+    const rows = documentRowsFor(customer);
+    const coreRows = rows.filter((row) => row.action !== "Számla" && row.action !== "Nyilatkozat");
+    const declarationRows = rows.filter((row) => row.action === "Nyilatkozat");
+    const invoiceRows = rows.filter((row) => row.action === "Számla");
+    const maintenanceRows = maintenanceDocumentRowsFor(customer, true);
+
+    return [
+      { title: "Alap dokumentumok", rows: coreRows },
+      { title: "Eladói nyilatkozatok", rows: declarationRows },
+      { title: "Számlák", rows: invoiceRows },
+      { title: "Karbantartási munkalapok", rows: maintenanceRows },
+    ].filter((section) => section.rows.length);
+  }
+
+  function renderDocumentLibraryRow(customer: Customer, row: PageDocumentRow) {
+    return (
+      <div key={`${row.title}-${row.reportId || row.purchaseDeclarationId || row.reportDateLabel || row.reportDate || row.action}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="min-w-0 font-black leading-tight md:flex-1">{row.title}</p>
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            <DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/>
+            <span className={`w-fit shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderDocumentLibrarySection(customer: Customer, title: string, rows: PageDocumentRow[]) {
+    if (!rows.length) return null;
+
+    return (
+      <div key={title} className="rounded-3xl border border-white/10 bg-slate-950/40 p-3">
+        <div className="mb-2 flex items-center justify-between gap-3 px-1">
+          <p className="text-sm font-black uppercase tracking-wide text-slate-400">{title}</p>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-black text-slate-300">{rows.length} db</span>
+        </div>
+        <div className="space-y-2">
+          {rows.map((row) => renderDocumentLibraryRow(customer, row))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderDocumentLibraryCustomerCard(customer: Customer) {
+    const sections = documentLibrarySectionsFor(customer);
+
+    return (
+      <div key={customer.id} className="document-customer-card rounded-3xl border bg-slate-900/80 p-4">
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p>
+            <p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p>
+            <p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
+            {customerInquiryLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(customer)}</p> : null}
+          </div>
+          <button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button>
+        </div>
+        <div className="space-y-3">
+          {sections.map((section) => renderDocumentLibrarySection(customer, section.title, section.rows))}
+        </div>
+      </div>
+    );
+  }
+
+
   if (view==="documents") {
     const documentCustomers = filteredCustomers;
     const documentPagination = documentCustomerPagination;
@@ -4658,7 +4728,7 @@ export default function Home() {
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="document-action-button rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
                 {documentCustomers.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs találat.</div> : null}
-                {visibleDocumentCustomers.map((customer)=><div key={customer.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4"><div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xl font-black">{customer.name || "Névtelen ügyfél"}</p><p className="mt-1 text-sm text-slate-400">{fullCustomerAddress(customer)}{customer.date ? ` · ${customer.date.replaceAll("-", ".")} ${customer.time || ""}` : ""}</p><p className="mt-1 text-xs font-bold text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>{customerInquiryLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(customer)}</p> : null}</div><button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2">{[...documentRowsFor(customer), ...maintenanceDocumentRowsFor(customer, true)].map((row)=><div key={`${row.title}-${row.reportId || row.reportDateLabel || row.reportDate || row.action}` } className="rounded-2xl bg-white/5 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{row.title}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span></div><DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/></div>)}</div></div>)}
+                {visibleDocumentCustomers.map((customer)=>renderDocumentLibraryCustomerCard(customer))}
               </div>
               <PaginationControls currentPage={documentPagination.currentPage} pageCount={documentPagination.pageCount} totalCount={documentCustomers.length} label="ügyfél" onPageChange={setDocumentPage} />
             </Card>
