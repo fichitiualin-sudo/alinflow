@@ -2094,6 +2094,10 @@ export default function Home() {
       setMessage("Számla készítéséhez adj meg érvényes összeget.");
       return;
     }
+    const invoiceQuoteItems = cleanQuoteItems(quoteItems.length ? quoteItems : selected.quoteItems || EMPTY_QUOTE_ITEMS).map((item) => ({
+      ...item,
+      customName: itemName(item),
+    }));
 
     const label = billingKindLabel(kind, billingUiConfig());
     const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel, fizetési mód: ${billingPaymentMethodLabel(paymentMethod)}?`);
@@ -2111,7 +2115,7 @@ export default function Home() {
           amount: Math.round(amount),
           paymentMethod,
           customer: selected,
-          quoteItems,
+          quoteItems: invoiceQuoteItems,
         }),
       });
       const result = await response.json().catch(() => ({}));
