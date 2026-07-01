@@ -181,6 +181,7 @@ export function WorkPagePanel({
   const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
   const [deviceInvoiceAmount, setDeviceInvoiceAmount] = useState(String(defaultDeviceAmount));
   const [maintenanceInvoiceAmount, setMaintenanceInvoiceAmount] = useState("0");
+  const [lineAmountDrafts, setLineAmountDrafts] = useState<Record<string, string>>({});
   const [laborPaymentMethod, setLaborPaymentMethod] = useState<BillingPaymentMethod>("cash");
   const [devicePaymentMethod, setDevicePaymentMethod] = useState<BillingPaymentMethod>("cash");
   const [maintenancePaymentMethod, setMaintenancePaymentMethod] = useState<BillingPaymentMethod>("cash");
@@ -204,6 +205,35 @@ export function WorkPagePanel({
   useEffect(() => {
     if (isMaintenance) setMaintenanceInvoiceAmount("0");
   }, [selected.id, selected.activeAppointmentId, isMaintenance]);
+
+  useEffect(() => {
+    setLineAmountDrafts({});
+  }, [selected.id, selected.activeAppointmentId]);
+
+  function lineAmountDraftKey(index: number, kind: "device" | "labor") {
+    return `${selected.activeAppointmentId || selected.id || "work"}:${index}:${kind}`;
+  }
+
+  function lineAmountValue(index: number, kind: "device" | "labor", fallback: number) {
+    const key = lineAmountDraftKey(index, kind);
+    return lineAmountDrafts[key] ?? String(fallback);
+  }
+
+  function updateLineAmount(index: number, kind: "device" | "labor", value: string, applyValue: (amount: number) => void) {
+    const key = lineAmountDraftKey(index, kind);
+    setLineAmountDrafts((prev) => ({ ...prev, [key]: value }));
+    if (value === "") return;
+    applyValue(amountInputValue(value));
+  }
+
+  function clearLineAmountDraft(index: number, kind: "device" | "labor") {
+    const key = lineAmountDraftKey(index, kind);
+    setLineAmountDrafts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
 
   return (
     <>
@@ -335,8 +365,11 @@ export function WorkPagePanel({
                         type="number"
                         min={0}
                         disabled={!canEditWorkResources}
-                        value={itemDeviceTotal(it)}
-                        onChange={(event) => onUpdateQuoteItem(i, "customPrice", unitPriceFromLineTotals(amountInputValue(event.target.value), itemInstallTotal(it), it))}
+                        value={lineAmountValue(i, "device", itemDeviceTotal(it))}
+                        onChange={(event) => updateLineAmount(i, "device", event.target.value, (deviceTotal) => {
+                          onUpdateQuoteItem(i, "customPrice", unitPriceFromLineTotals(deviceTotal, itemInstallTotal(it), it));
+                        })}
+                        onBlur={() => clearLineAmountDraft(i, "device")}
                       />
                     </label>
                     <label className="block">
@@ -346,12 +379,12 @@ export function WorkPagePanel({
                         type="number"
                         min={0}
                         disabled={!canEditWorkResources}
-                        value={itemInstallTotal(it)}
-                        onChange={(event) => {
-                          const laborTotal = amountInputValue(event.target.value);
+                        value={lineAmountValue(i, "labor", itemInstallTotal(it))}
+                        onChange={(event) => updateLineAmount(i, "labor", event.target.value, (laborTotal) => {
                           onUpdateQuoteItem(i, "customInstallPrice", unitPriceFromTotal(laborTotal, it));
                           onUpdateQuoteItem(i, "customPrice", unitPriceFromLineTotals(itemDeviceTotal(it), laborTotal, it));
-                        }}
+                        })}
+                        onBlur={() => clearLineAmountDraft(i, "labor")}
                       />
                     </label>
                     <InlineAmount label="Összesen" value={ft(itemTotal(it))} />
