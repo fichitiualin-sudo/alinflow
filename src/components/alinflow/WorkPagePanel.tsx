@@ -68,7 +68,7 @@ function WorkSectionToggleButton({
   const isSolidOrange = tone === "orange";
   const buttonClass = isSolidOrange
     ? "relative flex min-h-[72px] w-full items-center justify-between gap-4 overflow-hidden rounded-3xl bg-[#ff8a3d] px-5 py-4 text-left font-black text-slate-950 shadow-xl shadow-[#ff5a1f]/20 ring-1 ring-[#c2410c]/25 transition hover:-translate-y-0.5 hover:bg-[#ff9f5f] focus:outline-none focus:ring-2 focus:ring-[#ff5a1f]/60 focus:ring-offset-2 focus:ring-offset-slate-950"
-    : "document-action-button relative flex min-h-[72px] w-full items-center justify-between gap-4 overflow-hidden rounded-3xl border border-white/10 bg-white/10 px-5 py-4 pl-7 text-left font-black text-cyan-100 shadow-xl ring-1 ring-white/10 transition hover:-translate-y-0.5 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-cyan-200/60 focus:ring-offset-2 focus:ring-offset-slate-950";
+    : "document-action-button flex min-h-[72px] w-full items-center justify-between gap-4 rounded-3xl border border-white/10 bg-white/10 px-5 py-4 text-left font-black text-cyan-100 shadow-xl ring-1 ring-white/10 transition hover:-translate-y-0.5 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-cyan-200/60 focus:ring-offset-2 focus:ring-offset-slate-950";
 
   return (
     <button
@@ -76,8 +76,10 @@ function WorkSectionToggleButton({
       onClick={onClick}
       className={buttonClass}
     >
-      {!isSolidOrange ? <span className={`absolute left-4 top-1/2 h-9 w-1 -translate-y-1/2 rounded-full ${toneClass.accent}`} /> : null}
-      <span className="min-w-0 leading-tight">{label}</span>
+      <span className="flex min-w-0 items-center gap-4">
+        {!isSolidOrange ? <span className={`h-11 w-11 shrink-0 rounded-2xl shadow-sm ring-1 ring-white/20 ${toneClass.accent}`} /> : null}
+        <span className="min-w-0 leading-tight">{label}</span>
+      </span>
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg font-black text-slate-950 ring-1 ${isSolidOrange ? "bg-white/35 ring-white/40" : toneClass.icon}`}>
         {open ? "-" : "+"}
       </span>
