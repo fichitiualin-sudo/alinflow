@@ -101,7 +101,7 @@ type WorkPagePanelProps = {
   onCancelAppointment: () => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
-  onCreateInvoice: (kind: BillingInvoiceKind, amount: string, paymentMethod: BillingPaymentMethod) => void;
+  onCreateInvoice: (kind: BillingInvoiceKind, amount: string, paymentMethod: BillingPaymentMethod, sendEmail: boolean) => void;
   invoiceBusy: BillingInvoiceKind | null;
   onOpenWorkVersion: (customer: Customer) => void;
 };
@@ -185,6 +185,9 @@ export function WorkPagePanel({
   const [laborPaymentMethod, setLaborPaymentMethod] = useState<BillingPaymentMethod>("cash");
   const [devicePaymentMethod, setDevicePaymentMethod] = useState<BillingPaymentMethod>("cash");
   const [maintenancePaymentMethod, setMaintenancePaymentMethod] = useState<BillingPaymentMethod>("cash");
+  const [laborInvoiceSendEmail, setLaborInvoiceSendEmail] = useState(true);
+  const [deviceInvoiceSendEmail, setDeviceInvoiceSendEmail] = useState(true);
+  const [maintenanceInvoiceSendEmail, setMaintenanceInvoiceSendEmail] = useState(true);
   const billingConfig = billingUiConfig();
   const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
   const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance" && work.activeAppointmentId !== selected.activeAppointmentId);
@@ -534,12 +537,15 @@ export function WorkPagePanel({
                     done={maintenanceBillingDone}
                     doneAt={checklistDates.alinInvoice}
                     paymentMethod={maintenancePaymentMethod}
+                    sendEmail={maintenanceInvoiceSendEmail}
                     onAmountChange={setMaintenanceInvoiceAmount}
                     onPaymentMethodChange={setMaintenancePaymentMethod}
-                    onCreateInvoice={() => onCreateInvoice("maintenance", maintenanceInvoiceAmount, maintenancePaymentMethod)}
+                    onSendEmailChange={setMaintenanceInvoiceSendEmail}
+                    onCreateInvoice={() => onCreateInvoice("maintenance", maintenanceInvoiceAmount, maintenancePaymentMethod, maintenanceInvoiceSendEmail)}
                     invoiceBusy={invoiceBusy}
                     billingConfig={billingConfig}
                     quoteItems={quoteItems}
+                    customerEmail={selected.email}
                   />
                   {selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null}
                 </>
@@ -556,13 +562,18 @@ export function WorkPagePanel({
                   onDeviceAmountChange={setDeviceInvoiceAmount}
                   laborPaymentMethod={laborPaymentMethod}
                   devicePaymentMethod={devicePaymentMethod}
+                  laborSendEmail={laborInvoiceSendEmail}
+                  deviceSendEmail={deviceInvoiceSendEmail}
                   onLaborPaymentMethodChange={setLaborPaymentMethod}
                   onDevicePaymentMethodChange={setDevicePaymentMethod}
-                  onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount, laborPaymentMethod)}
-                  onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount, devicePaymentMethod)}
+                  onLaborSendEmailChange={setLaborInvoiceSendEmail}
+                  onDeviceSendEmailChange={setDeviceInvoiceSendEmail}
+                  onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount, laborPaymentMethod, laborInvoiceSendEmail)}
+                  onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount, devicePaymentMethod, deviceInvoiceSendEmail)}
                   invoiceBusy={invoiceBusy}
                   billingConfig={billingConfig}
                   quoteItems={quoteItems}
+                  customerEmail={selected.email}
                 />
               )}
               {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
@@ -597,15 +608,20 @@ function BillingPreparationPanel({
   billingDone,
   laborPaymentMethod,
   devicePaymentMethod,
+  laborSendEmail,
+  deviceSendEmail,
   onLaborAmountChange,
   onDeviceAmountChange,
   onLaborPaymentMethodChange,
   onDevicePaymentMethodChange,
+  onLaborSendEmailChange,
+  onDeviceSendEmailChange,
   onCreateLaborInvoice,
   onCreateDeviceInvoice,
   invoiceBusy,
   billingConfig,
   quoteItems,
+  customerEmail,
 }: {
   laborAmount: string;
   deviceAmount: string;
@@ -616,15 +632,20 @@ function BillingPreparationPanel({
   billingDone: boolean;
   laborPaymentMethod: BillingPaymentMethod;
   devicePaymentMethod: BillingPaymentMethod;
+  laborSendEmail: boolean;
+  deviceSendEmail: boolean;
   onLaborAmountChange: (value: string) => void;
   onDeviceAmountChange: (value: string) => void;
   onLaborPaymentMethodChange: (value: BillingPaymentMethod) => void;
   onDevicePaymentMethodChange: (value: BillingPaymentMethod) => void;
+  onLaborSendEmailChange: (value: boolean) => void;
+  onDeviceSendEmailChange: (value: boolean) => void;
   onCreateLaborInvoice: () => void;
   onCreateDeviceInvoice: () => void;
   invoiceBusy: BillingInvoiceKind | null;
   billingConfig: ReturnType<typeof billingUiConfig>;
   quoteItems: QuoteItem[];
+  customerEmail: string;
 }) {
   const laborValue = parseAmount(laborAmount);
   const deviceValue = parseAmount(deviceAmount);
@@ -655,11 +676,14 @@ function BillingPreparationPanel({
             done={deviceDone}
             doneAt={deviceDoneAt}
             paymentMethod={devicePaymentMethod}
+            sendEmail={deviceSendEmail}
             dueDate={deviceDueDate}
             onAmountChange={onDeviceAmountChange}
             onPaymentMethodChange={onDevicePaymentMethodChange}
+            onSendEmailChange={onDeviceSendEmailChange}
             onCreateInvoice={onCreateDeviceInvoice}
             invoiceBusy={invoiceBusy === "device"}
+            customerEmail={customerEmail}
           />
           <InvoicePrepCard
             title={billingConfig.laborTitle}
@@ -669,11 +693,14 @@ function BillingPreparationPanel({
             done={laborDone}
             doneAt={laborDoneAt}
             paymentMethod={laborPaymentMethod}
+            sendEmail={laborSendEmail}
             dueDate={laborDueDate}
             onAmountChange={onLaborAmountChange}
             onPaymentMethodChange={onLaborPaymentMethodChange}
+            onSendEmailChange={onLaborSendEmailChange}
             onCreateInvoice={onCreateLaborInvoice}
             invoiceBusy={invoiceBusy === "labor"}
+            customerEmail={customerEmail}
           />
           <div className="rounded-2xl bg-slate-950/60 p-4 text-sm font-black text-slate-200">
             Összesen számlázandó: {ft(laborValue + deviceValue)}
@@ -689,23 +716,29 @@ function MaintenanceBillingPanel({
   done,
   doneAt,
   paymentMethod,
+  sendEmail,
   onAmountChange,
   onPaymentMethodChange,
+  onSendEmailChange,
   onCreateInvoice,
   invoiceBusy,
   billingConfig,
   quoteItems,
+  customerEmail,
 }: {
   amount: string;
   done: boolean;
   doneAt?: string;
   paymentMethod: BillingPaymentMethod;
+  sendEmail: boolean;
   onAmountChange: (value: string) => void;
   onPaymentMethodChange: (value: BillingPaymentMethod) => void;
+  onSendEmailChange: (value: boolean) => void;
   onCreateInvoice: () => void;
   invoiceBusy: BillingInvoiceKind | null;
   billingConfig: ReturnType<typeof billingUiConfig>;
   quoteItems: QuoteItem[];
+  customerEmail: string;
 }) {
   const parsedAmount = parseAmount(amount);
   const dueDate = billingDueDateIso(paymentMethod);
@@ -732,11 +765,14 @@ function MaintenanceBillingPanel({
           done={done}
           doneAt={doneAt}
           paymentMethod={paymentMethod}
+          sendEmail={sendEmail}
           dueDate={dueDate}
           onAmountChange={onAmountChange}
           onPaymentMethodChange={onPaymentMethodChange}
+          onSendEmailChange={onSendEmailChange}
           onCreateInvoice={onCreateInvoice}
           invoiceBusy={invoiceBusy === "maintenance"}
+          customerEmail={customerEmail}
         />
       ) : null}
     </div>
@@ -751,11 +787,14 @@ function InvoicePrepCard({
   done,
   doneAt,
   paymentMethod,
+  sendEmail,
   dueDate,
   onAmountChange,
   onPaymentMethodChange,
+  onSendEmailChange,
   onCreateInvoice,
   invoiceBusy,
+  customerEmail,
 }: {
   title: string;
   invoiceLineNames: string[];
@@ -764,12 +803,17 @@ function InvoicePrepCard({
   done: boolean;
   doneAt?: string;
   paymentMethod: BillingPaymentMethod;
+  sendEmail: boolean;
   dueDate: string;
   onAmountChange: (value: string) => void;
   onPaymentMethodChange: (value: BillingPaymentMethod) => void;
+  onSendEmailChange: (value: boolean) => void;
   onCreateInvoice: () => void;
   invoiceBusy: boolean;
+  customerEmail: string;
 }) {
+  const hasCustomerEmail = Boolean(customerEmail?.trim());
+
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -807,6 +851,19 @@ function InvoicePrepCard({
           onChange={(event) => onAmountChange(event.target.value)}
           className="invoice-amount-input mt-2 w-full bg-transparent text-2xl font-black text-slate-100 outline-none"
         />
+      </label>
+      <label className={`mt-3 flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm font-bold ${hasCustomerEmail ? "text-slate-200" : "text-slate-500"}`}>
+        <input
+          type="checkbox"
+          className="mt-1 h-5 w-5 accent-[#ff5a1f]"
+          checked={hasCustomerEmail && sendEmail}
+          disabled={!hasCustomerEmail || done || invoiceBusy}
+          onChange={(event) => onSendEmailChange(event.target.checked)}
+        />
+        <span>
+          <span className="block font-black">Számla küldése emailben</span>
+          <span className="mt-1 block text-xs">{hasCustomerEmail ? customerEmail : "Nincs email cím megadva, a számla csak elkészül."}</span>
+        </span>
       </label>
       <div className="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-slate-200">
         <p className="font-black text-cyan-100">Előnézet</p>

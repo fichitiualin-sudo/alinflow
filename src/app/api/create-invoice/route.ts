@@ -8,6 +8,7 @@ type InvoiceRequest = {
   kind: BillingInvoiceKind;
   amount: number;
   paymentMethod?: BillingPaymentMethod;
+  sendEmail?: boolean;
   customer: Customer;
   quoteItems?: QuoteItem[];
 };
@@ -184,7 +185,7 @@ function szamlazzPaymentMethodName(method: BillingPaymentMethod) {
   return method === "cash" ? "Készpénz" : "Átutalás";
 }
 
-function buildInvoiceXml({ kind, amount, paymentMethod = "cash", customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
+function buildInvoiceXml({ kind, amount, paymentMethod = "cash", sendEmail = false, customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
   const date = todayIso();
   const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
   const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`));
@@ -193,6 +194,7 @@ function buildInvoiceXml({ kind, amount, paymentMethod = "cash", customer, quote
   const externalId = `alinflow-${kind}-${customer.activeAppointmentId || customer.id}`;
   const comment = invoiceComment(kind);
   const paymentLabel = szamlazzPaymentMethodName(normalizedPaymentMethod);
+  const shouldSendEmail = Boolean(sendEmail && customer.email?.trim());
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <xmlszamla xmlns="http://www.szamlazz.hu/xmlszamla" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.szamlazz.hu/xmlszamla https://www.szamlazz.hu/szamla/docs/xsds/agent/xmlszamla.xsd">
@@ -236,7 +238,7 @@ ${invoicePrefixXml(kind)}
     <telepules>${safeText(buyer.city)}</telepules>
     <cim>${safeText(buyer.address)}</cim>
     <email>${safeText(customer.email)}</email>
-    <sendEmail>false</sendEmail>
+    <sendEmail>${shouldSendEmail ? "true" : "false"}</sendEmail>
     <adoszam></adoszam>
     <postazasiNev></postazasiNev>
     <postazasiIrsz></postazasiIrsz>
@@ -305,8 +307,9 @@ export async function POST(request: Request) {
       return Response.json({ ok: false, error: `Hiányzik a ${envName} környezeti változó.` }, { status: 500 });
     }
 
-    const result = await sendInvoiceXml(buildInvoiceXml({ ...body, kind, amount, customer }, agentKey));
-    return Response.json({ ok: true, ...result });
+    const sendEmail = Boolean(body.sendEmail && customer.email?.trim());
+    const result = await sendInvoiceXml(buildInvoiceXml({ ...body, kind, amount, customer, sendEmail }, agentKey));
+    return Response.json({ ok: true, ...result, emailSent: sendEmail });
   } catch (error: any) {
     return Response.json({ ok: false, error: error.message || "Számlázási hiba." }, { status: 500 });
   }
