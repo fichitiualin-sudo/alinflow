@@ -632,48 +632,54 @@ function BillingPreparationPanel({
   const deviceDueDate = billingDueDateIso(devicePaymentMethod);
   const deviceInvoiceLines = invoicePreviewLines("device", quoteItems, billingConfig);
   const laborInvoiceLines = invoicePreviewLines("labor", quoteItems, billingConfig);
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
-      <div className="flex items-start justify-between gap-3">
+      <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
         <div>
           <p className="text-lg font-black text-amber-100">Számlázás</p>
+          <p className="mt-1 text-sm font-bold text-amber-100/80">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${billingDone ? "bg-emerald-400 text-slate-950" : "bg-amber-300 text-slate-950"}`}>
           {billingDone ? "Kész" : "Folyamatban"}
         </span>
-      </div>
-      <InvoicePrepCard
-        title={billingConfig.deviceTitle}
-        invoiceLineNames={deviceInvoiceLines}
-        amount={deviceAmount}
-        parsedAmount={deviceValue}
-        done={deviceDone}
-        doneAt={deviceDoneAt}
-        paymentMethod={devicePaymentMethod}
-        dueDate={deviceDueDate}
-        onAmountChange={onDeviceAmountChange}
-        onPaymentMethodChange={onDevicePaymentMethodChange}
-        onCreateInvoice={onCreateDeviceInvoice}
-        invoiceBusy={invoiceBusy === "device"}
-      />
-      <InvoicePrepCard
-        title={billingConfig.laborTitle}
-        invoiceLineNames={laborInvoiceLines}
-        amount={laborAmount}
-        parsedAmount={laborValue}
-        done={laborDone}
-        doneAt={laborDoneAt}
-        paymentMethod={laborPaymentMethod}
-        dueDate={laborDueDate}
-        onAmountChange={onLaborAmountChange}
-        onPaymentMethodChange={onLaborPaymentMethodChange}
-        onCreateInvoice={onCreateLaborInvoice}
-        invoiceBusy={invoiceBusy === "labor"}
-      />
-      <div className="rounded-2xl bg-slate-950/60 p-4 text-sm font-black text-slate-200">
-        Összesen számlázandó: {ft(laborValue + deviceValue)}
-      </div>
+      </button>
+      {isOpen ? (
+        <>
+          <InvoicePrepCard
+            title={billingConfig.deviceTitle}
+            invoiceLineNames={deviceInvoiceLines}
+            amount={deviceAmount}
+            parsedAmount={deviceValue}
+            done={deviceDone}
+            doneAt={deviceDoneAt}
+            paymentMethod={devicePaymentMethod}
+            dueDate={deviceDueDate}
+            onAmountChange={onDeviceAmountChange}
+            onPaymentMethodChange={onDevicePaymentMethodChange}
+            onCreateInvoice={onCreateDeviceInvoice}
+            invoiceBusy={invoiceBusy === "device"}
+          />
+          <InvoicePrepCard
+            title={billingConfig.laborTitle}
+            invoiceLineNames={laborInvoiceLines}
+            amount={laborAmount}
+            parsedAmount={laborValue}
+            done={laborDone}
+            doneAt={laborDoneAt}
+            paymentMethod={laborPaymentMethod}
+            dueDate={laborDueDate}
+            onAmountChange={onLaborAmountChange}
+            onPaymentMethodChange={onLaborPaymentMethodChange}
+            onCreateInvoice={onCreateLaborInvoice}
+            invoiceBusy={invoiceBusy === "labor"}
+          />
+          <div className="rounded-2xl bg-slate-950/60 p-4 text-sm font-black text-slate-200">
+            Összesen számlázandó: {ft(laborValue + deviceValue)}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -704,31 +710,35 @@ function MaintenanceBillingPanel({
   const parsedAmount = parseAmount(amount);
   const dueDate = billingDueDateIso(paymentMethod);
   const invoiceLines = invoicePreviewLines("maintenance", quoteItems, billingConfig);
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
-      <div className="flex items-start justify-between gap-3">
+      <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
         <div>
           <p className="text-lg font-black text-amber-100">Számlázás</p>
+          <p className="mt-1 text-sm font-bold text-amber-100/80">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-amber-300 text-slate-950"}`}>
           {done ? "Kész" : "Folyamatban"}
         </span>
-      </div>
-      <InvoicePrepCard
-        title={billingConfig.maintenanceTitle}
-        invoiceLineNames={invoiceLines}
-        amount={amount}
-        parsedAmount={parsedAmount}
-        done={done}
-        doneAt={doneAt}
-        paymentMethod={paymentMethod}
-        dueDate={dueDate}
-        onAmountChange={onAmountChange}
-        onPaymentMethodChange={onPaymentMethodChange}
-        onCreateInvoice={onCreateInvoice}
-        invoiceBusy={invoiceBusy === "maintenance"}
-      />
+      </button>
+      {isOpen ? (
+        <InvoicePrepCard
+          title={billingConfig.maintenanceTitle}
+          invoiceLineNames={invoiceLines}
+          amount={amount}
+          parsedAmount={parsedAmount}
+          done={done}
+          doneAt={doneAt}
+          paymentMethod={paymentMethod}
+          dueDate={dueDate}
+          onAmountChange={onAmountChange}
+          onPaymentMethodChange={onPaymentMethodChange}
+          onCreateInvoice={onCreateInvoice}
+          invoiceBusy={invoiceBusy === "maintenance"}
+        />
+      ) : null}
     </div>
   );
 }
