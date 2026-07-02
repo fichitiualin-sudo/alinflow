@@ -4916,7 +4916,6 @@ export default function Home() {
         onUpdateQuoteItem={updateQuoteItem}
         onUpdateQuoteProduct={updateQuoteProduct}
         onRemoveQuoteItem={removeQuoteItem}
-        onSyncQuoteItemPrice={syncQuoteItemPrice}
         onAddQuoteItem={addQuoteItem}
         onSetAllowWorkResourceEdit={setAllowWorkResourceEdit}
         onSaveWorkChanges={saveWorkChanges}

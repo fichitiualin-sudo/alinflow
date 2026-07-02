@@ -9,7 +9,6 @@ import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/
 import {
   cleanQuoteItems,
   climateSummary,
-  hasCustomProductPrice,
   isCustomQuoteItem,
   itemName,
   itemQuantity,
@@ -81,7 +80,6 @@ type WorkPagePanelProps = {
   onUpdateQuoteItem: (index: number, key: keyof QuoteItem, value: string | number | boolean) => void;
   onUpdateQuoteProduct: (index: number, productId: string) => void;
   onRemoveQuoteItem: (index: number) => void;
-  onSyncQuoteItemPrice: (index: number) => void;
   onAddQuoteItem: () => void;
   onSetAllowWorkResourceEdit: (value: boolean) => void;
   onSaveWorkChanges: () => void;
@@ -142,7 +140,6 @@ export function WorkPagePanel({
   onUpdateQuoteItem,
   onUpdateQuoteProduct,
   onRemoveQuoteItem,
-  onSyncQuoteItemPrice,
   onAddQuoteItem,
   onSetAllowWorkResourceEdit,
   onSaveWorkChanges,
@@ -176,6 +173,7 @@ export function WorkPagePanel({
   const [showMaterials, setShowMaterials] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
+  const [showWorkItems, setShowWorkItems] = useState(false);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
@@ -197,6 +195,7 @@ export function WorkPagePanel({
     : isMaintenance
     ? "Karbantartott klímák"
     : "Időponthoz tartozó klímák";
+  const workStatusValue = selected.status === "Szerelés kész – admin folyamatban" ? `${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban` : selected.status || "Folyamatban";
   const billingDone = Boolean(currentWorkChecklist.alinInvoice && currentWorkChecklist.amovaInvoice);
   const maintenanceBillingDone = Boolean(currentWorkChecklist.alinInvoice);
 
@@ -308,7 +307,21 @@ export function WorkPagePanel({
             </Card>
           ) : null}
 
-          <Card title={workItemsTitle}>
+          <div className="xl:hidden">
+            <Gradient title="Munka státusz" value={workStatusValue} />
+          </div>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setShowWorkItems((open) => !open)}
+              className="document-action-button rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
+            >
+              {showWorkItems ? `${workItemsTitle} elrejtése` : `${workItemsTitle} megjelenítése`}
+            </button>
+          </div>
+
+          {showWorkItems ? <Card title={workItemsTitle}>
             {selected.date ? (
               <div className="mb-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -393,12 +406,6 @@ export function WorkPagePanel({
                     <InlineAmount label="Összesen" value={ft(itemTotal(it))} />
                     <button className="min-h-[48px] rounded-xl bg-white/10 font-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditWorkResources} onClick={() => onRemoveQuoteItem(i)}>×</button>
                   </div>
-                  {hasCustomProductPrice(it) ? <p className="mt-2 text-xs font-bold text-amber-200">Kézzel módosított ár</p> : null}
-                  {hasCustomProductPrice(it) ? (
-                    <button type="button" disabled={!canEditWorkResources} onClick={() => onSyncQuoteItemPrice(i)} className="mt-2 w-full rounded-2xl bg-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">
-                      Ár frissítése a klíma listaárára: {ft(prod(it.productId).price)}
-                    </button>
-                  ) : null}
                 </div>
               ))}
               <div className="rounded-3xl bg-cyan-300 p-5 text-slate-950">
@@ -413,7 +420,7 @@ export function WorkPagePanel({
               {workResourceEditLocked && !allowWorkResourceEdit ? <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={() => onSetAllowWorkResourceEdit(true)}>Módosítás engedélyezése</button> : null}
               {canEditWorkResources && isInstallation ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={onSaveWorkChanges}>Módosítás mentése az időpontra</button> : null}
             </div> : null}
-          </Card>
+          </Card> : null}
 
           {isInstallation ? (
             <div className="mt-4">
@@ -467,7 +474,9 @@ export function WorkPagePanel({
         </Main>
 
         <Side>
-          <Gradient title="Munka státusz" value={selected.status === "Szerelés kész – admin folyamatban" ? `${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban` : selected.status || "Folyamatban"} />
+          <div className="hidden xl:block">
+            <Gradient title="Munka státusz" value={workStatusValue} />
+          </div>
 
           <button
             type="button"
