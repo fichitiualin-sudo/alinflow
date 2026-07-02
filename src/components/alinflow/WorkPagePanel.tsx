@@ -44,6 +44,39 @@ type WorkActionDates = {
   cancelled?: string;
 };
 
+type WorkSectionToggleTone = "violet" | "fuchsia" | "pink";
+
+const workSectionToggleToneClass: Record<WorkSectionToggleTone, string> = {
+  violet: "bg-violet-300 ring-violet-500/25 shadow-violet-500/20 hover:bg-violet-200",
+  fuchsia: "bg-fuchsia-300 ring-fuchsia-500/25 shadow-fuchsia-500/20 hover:bg-fuchsia-200",
+  pink: "bg-pink-300 ring-pink-500/25 shadow-pink-500/20 hover:bg-pink-200",
+};
+
+function WorkSectionToggleButton({
+  label,
+  open,
+  onClick,
+  tone,
+}: {
+  label: string;
+  open: boolean;
+  onClick: () => void;
+  tone: WorkSectionToggleTone;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-h-[72px] w-full items-center justify-between gap-4 rounded-3xl px-5 py-4 text-left font-black text-slate-950 shadow-xl ring-1 transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 ${workSectionToggleToneClass[tone]}`}
+    >
+      <span className="min-w-0 leading-tight">{label}</span>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/35 text-lg font-black text-slate-950 ring-1 ring-white/40">
+        {open ? "-" : "+"}
+      </span>
+    </button>
+  );
+}
+
 type WorkPagePanelProps = {
   selected: Customer;
   scheduleDate: string;
@@ -312,13 +345,12 @@ export function WorkPagePanel({
           </div>
 
           <div className="mt-4">
-            <button
-              type="button"
+            <WorkSectionToggleButton
+              label={showWorkItems ? `${workItemsTitle} elrejtése` : `${workItemsTitle} megjelenítése`}
+              open={showWorkItems}
               onClick={() => setShowWorkItems((open) => !open)}
-              className="document-action-button rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
-            >
-              {showWorkItems ? `${workItemsTitle} elrejtése` : `${workItemsTitle} megjelenítése`}
-            </button>
+              tone="violet"
+            />
           </div>
 
           {showWorkItems ? <Card title={workItemsTitle}>
@@ -424,13 +456,12 @@ export function WorkPagePanel({
 
           {isInstallation ? (
             <div className="mt-4">
-              <button
-                type="button"
+              <WorkSectionToggleButton
+                label={showMaterials ? "Felhasznált anyagok elrejtése" : "Felhasznált anyagok megjelenítése"}
+                open={showMaterials}
                 onClick={() => setShowMaterials((open) => !open)}
-                className="document-action-button rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
-              >
-                {showMaterials ? "Felhasznált anyagok elrejtése" : "Felhasznált anyagok megjelenítése"}
-              </button>
+                tone="fuchsia"
+              />
             </div>
           ) : null}
 
@@ -478,13 +509,12 @@ export function WorkPagePanel({
             <Gradient title="Munka státusz" value={workStatusValue} />
           </div>
 
-          <button
-            type="button"
+          <WorkSectionToggleButton
+            label={showDocuments ? "Dokumentumok elrejtése" : "Dokumentumok megjelenítése"}
+            open={showDocuments}
             onClick={() => setShowDocuments((open) => !open)}
-            className="document-action-button w-full rounded-2xl bg-white/10 px-5 py-4 text-left font-black text-cyan-100 ring-1 ring-white/10"
-          >
-            {showDocuments ? "Dokumentumok elrejtése" : "Dokumentumok megjelenítése"}
-          </button>
+            tone="pink"
+          />
 
           {showDocuments ? <Card title="Dokumentumok">
             <div className="space-y-3">
