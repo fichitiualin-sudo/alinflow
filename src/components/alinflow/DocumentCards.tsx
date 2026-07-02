@@ -140,7 +140,7 @@ export function DocumentActionButtons({
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={helperButton}>Aláíráshoz</button></div>;
   }
   if (row.action === "Ajánlat") {
-    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={viewButton}>Megtekintés</button><button onClick={onSendQuote} disabled={quoteEmailBusy} className={sendButton}>{quoteEmailBusy ? "Küldés..." : "Küldés"}</button></div>;
+    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={viewButton}>Megtekintés</button><button onClick={onSendQuote} disabled={quoteEmailBusy} className={sendButton}>{quoteEmailBusy ? "Küldés..." : "Email"}</button></div>;
   }
   if (row.action === "Időpont") {
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className={viewButton}>Megtekintés</button><button onClick={() => onSendAppointment(actionCustomer)} disabled={appointmentEmailBusy} className={helperButton}>{appointmentEmailBusy ? "Küldés..." : "Email"}</button></div>;
