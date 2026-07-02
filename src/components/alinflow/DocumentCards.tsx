@@ -107,7 +107,6 @@ export function DocumentActionButtons({
   const actionCustomer = actionCustomerFor(customer, row);
   const baseButton = "document-action-button rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-wait disabled:opacity-60";
   const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
-  const sendButton = `${baseButton} bg-blue-400/20 text-blue-100 hover:bg-blue-400/30`;
   const editButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
   const helperButton = `${baseButton} bg-cyan-300/15 text-cyan-100 hover:bg-cyan-300/25`;
   const thankButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
@@ -140,10 +139,10 @@ export function DocumentActionButtons({
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={helperButton}>Aláíráshoz</button></div>;
   }
   if (row.action === "Ajánlat") {
-    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={viewButton}>Megtekintés</button><button onClick={onSendQuote} disabled={quoteEmailBusy} className={sendButton}>{quoteEmailBusy ? "Küldés..." : "Email"}</button></div>;
+    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={viewButton}>Megtekintés</button><button onClick={onSendQuote} disabled={quoteEmailBusy} className={viewButton}>{quoteEmailBusy ? "Küldés..." : "Email"}</button></div>;
   }
   if (row.action === "Időpont") {
-    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className={viewButton}>Megtekintés</button><button onClick={() => onSendAppointment(actionCustomer)} disabled={appointmentEmailBusy} className={helperButton}>{appointmentEmailBusy ? "Küldés..." : "Email"}</button></div>;
+    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className={viewButton}>Megtekintés</button><button onClick={() => onSendAppointment(actionCustomer)} disabled={appointmentEmailBusy} className={viewButton}>{appointmentEmailBusy ? "Küldés..." : "Email"}</button></div>;
   }
   if (row.action === "KoszonoEmail") {
     return <button onClick={() => onSendThankYou?.(actionCustomer)} disabled={thankYouEmailBusy} className={`mt-3 w-full ${thankButton}`}>{thankYouEmailBusy ? "Küldés..." : "Köszönő email küldése"}</button>;
