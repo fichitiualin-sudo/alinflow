@@ -44,43 +44,23 @@ type WorkActionDates = {
   cancelled?: string;
 };
 
-type WorkSectionToggleTone = "violet" | "green" | "brown" | "orange";
-
-const workSectionToggleToneClass: Record<WorkSectionToggleTone, { accent: string; icon: string }> = {
-  violet: { accent: "bg-violet-400", icon: "bg-white/35 ring-violet-300/40" },
-  green: { accent: "bg-lime-400", icon: "bg-white/35 ring-lime-300/40" },
-  brown: { accent: "bg-[#8b5e34]", icon: "bg-white/35 ring-[#8b5e34]/40" },
-  orange: { accent: "bg-[#ff5a1f]", icon: "bg-white/35 ring-[#ff5a1f]/40" },
-};
-
 function WorkSectionToggleButton({
   label,
   open,
   onClick,
-  tone,
 }: {
   label: string;
   open: boolean;
   onClick: () => void;
-  tone: WorkSectionToggleTone;
 }) {
-  const toneClass = workSectionToggleToneClass[tone];
-  const isSolidOrange = tone === "orange";
-  const buttonClass = isSolidOrange
-    ? "relative flex min-h-[72px] w-full items-center justify-between gap-4 overflow-hidden rounded-3xl bg-[#ff8a3d] px-5 py-4 text-left font-black text-slate-950 shadow-xl shadow-[#ff5a1f]/20 ring-1 ring-[#c2410c]/25 transition hover:-translate-y-0.5 hover:bg-[#ff9f5f] focus:outline-none focus:ring-2 focus:ring-[#ff5a1f]/60 focus:ring-offset-2 focus:ring-offset-slate-950"
-    : "document-action-button flex min-h-[72px] w-full items-center justify-between gap-4 rounded-3xl border border-white/10 bg-white/10 px-5 py-4 text-left font-black text-cyan-100 shadow-xl ring-1 ring-white/10 transition hover:-translate-y-0.5 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-cyan-200/60 focus:ring-offset-2 focus:ring-offset-slate-950";
-
   return (
     <button
       type="button"
       onClick={onClick}
-      className={buttonClass}
+      className="group flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-cyan-300 to-sky-400 px-5 py-4 text-left font-black text-slate-950 shadow-xl shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]"
     >
-      <span className="flex min-w-0 items-center gap-4">
-        {!isSolidOrange ? <span className={`h-11 w-11 shrink-0 rounded-2xl shadow-sm ring-1 ring-white/20 ${toneClass.accent}`} /> : null}
-        <span className="min-w-0 leading-tight">{label}</span>
-      </span>
-      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg font-black text-slate-950 ring-1 ${isSolidOrange ? "bg-white/35 ring-white/40" : toneClass.icon}`}>
+      <span className="min-w-0 leading-tight">{label}</span>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 text-lg font-black text-slate-950 transition group-hover:translate-x-1">
         {open ? "-" : "+"}
       </span>
     </button>
@@ -358,7 +338,6 @@ export function WorkPagePanel({
               label={showWorkItems ? `${workItemsTitle} elrejtése` : `${workItemsTitle} megjelenítése`}
               open={showWorkItems}
               onClick={() => setShowWorkItems((open) => !open)}
-              tone="violet"
             />
           </div>
 
@@ -469,7 +448,6 @@ export function WorkPagePanel({
                 label={showMaterials ? "Felhasznált anyagok elrejtése" : "Felhasznált anyagok megjelenítése"}
                 open={showMaterials}
                 onClick={() => setShowMaterials((open) => !open)}
-                tone="green"
               />
             </div>
           ) : null}
@@ -522,7 +500,6 @@ export function WorkPagePanel({
             label={showDocuments ? "Dokumentumok elrejtése" : "Dokumentumok megjelenítése"}
             open={showDocuments}
             onClick={() => setShowDocuments((open) => !open)}
-            tone="brown"
           />
 
           {showDocuments ? <Card title="Dokumentumok">
@@ -706,7 +683,6 @@ function BillingPreparationPanel({
         label={isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}
         open={isOpen}
         onClick={() => setIsOpen((value) => !value)}
-        tone="orange"
       />
       {isOpen ? (
         <>
@@ -793,7 +769,6 @@ function MaintenanceBillingPanel({
         label={isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}
         open={isOpen}
         onClick={() => setIsOpen((value) => !value)}
-        tone="orange"
       />
       {isOpen ? (
         <InvoicePrepCard
