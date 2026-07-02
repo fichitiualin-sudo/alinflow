@@ -107,7 +107,7 @@ export function DocumentActionButtons({
   const actionCustomer = actionCustomerFor(customer, row);
   const baseButton = "document-action-button rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-wait disabled:opacity-60";
   const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
-  const editButton = `${baseButton} bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
+  const editButton = `${baseButton} email-action-button bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
   const helperButton = `${baseButton} bg-cyan-300/15 text-cyan-100 hover:bg-cyan-300/25`;
   const thankButton = `${baseButton} email-action-button bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30`;
   const gridClass = "mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2";
