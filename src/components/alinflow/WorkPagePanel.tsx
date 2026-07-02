@@ -44,12 +44,12 @@ type WorkActionDates = {
   cancelled?: string;
 };
 
-type WorkSectionToggleTone = "violet" | "fuchsia" | "pink";
+type WorkSectionToggleTone = "violet" | "fuchsia" | "brown";
 
 const workSectionToggleToneClass: Record<WorkSectionToggleTone, string> = {
   violet: "bg-violet-300 ring-violet-500/25 shadow-violet-500/20 hover:bg-violet-200",
   fuchsia: "bg-fuchsia-300 ring-fuchsia-500/25 shadow-fuchsia-500/20 hover:bg-fuchsia-200",
-  pink: "bg-pink-300 ring-pink-500/25 shadow-pink-500/20 hover:bg-pink-200",
+  brown: "bg-[#c9a27b] ring-[#8b5e34]/25 shadow-[#8b5e34]/20 hover:bg-[#d8b895]",
 };
 
 function WorkSectionToggleButton({
@@ -513,7 +513,7 @@ export function WorkPagePanel({
             label={showDocuments ? "Dokumentumok elrejtése" : "Dokumentumok megjelenítése"}
             open={showDocuments}
             onClick={() => setShowDocuments((open) => !open)}
-            tone="pink"
+            tone="brown"
           />
 
           {showDocuments ? <Card title="Dokumentumok">
