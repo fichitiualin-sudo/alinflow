@@ -393,6 +393,17 @@ html[data-theme="light"] .document-action-button:hover {
   color: #020617 !important;
 }
 
+html[data-theme="light"] .document-action-button.email-action-button {
+  border-color: rgba(16, 185, 129, 0.35) !important;
+  background: #dcfce7 !important;
+  color: #065f46 !important;
+}
+
+html[data-theme="light"] .document-action-button.email-action-button:hover {
+  background: #bbf7d0 !important;
+  color: #064e3b !important;
+}
+
 html[data-theme="light"] .document-action-button:disabled {
   background: #e2e8f0 !important;
   color: #64748b !important;
