@@ -2087,7 +2087,7 @@ export default function Home() {
     }
   }
 
-  async function createInvoice(kind: BillingInvoiceKind, amountValue: string, paymentMethod: BillingPaymentMethod) {
+  async function createInvoice(kind: BillingInvoiceKind, amountValue: string, paymentMethod: BillingPaymentMethod, sendEmail = false) {
     if (!selected.id) return;
     const amount = Number(String(amountValue || "").replace(/\s/g, ""));
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -2098,9 +2098,10 @@ export default function Home() {
       ...item,
       customName: itemName(item),
     }));
+    const shouldSendEmail = Boolean(sendEmail && selected.email?.trim());
 
     const label = billingKindLabel(kind, billingUiConfig());
-    const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel, fizetési mód: ${billingPaymentMethodLabel(paymentMethod)}?`);
+    const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel, fizetési mód: ${billingPaymentMethodLabel(paymentMethod)}${shouldSendEmail ? ", emailküldéssel" : ""}?`);
     if (!confirmed) return;
 
     setInvoiceBusy(kind);
@@ -2114,6 +2115,7 @@ export default function Home() {
           kind,
           amount: Math.round(amount),
           paymentMethod,
+          sendEmail: shouldSendEmail,
           customer: selected,
           quoteItems: invoiceQuoteItems,
         }),
@@ -2122,7 +2124,7 @@ export default function Home() {
       if (!response.ok || !result?.ok) throw new Error(result?.error || "A Számlázz.hu számlakészítés sikertelen.");
 
       await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
-      setMessage(`${label} számla elkészült ✅${result.invoiceNumber ? ` Számlaszám: ${result.invoiceNumber}` : ""}`);
+      setMessage(`${label} számla elkészült ✅${result.invoiceNumber ? ` Számlaszám: ${result.invoiceNumber}` : ""}${result.emailSent ? " Emailben elküldve." : ""}`);
     } catch (error: any) {
       setMessage(`Számlázási hiba: ${error.message}`);
     } finally {
