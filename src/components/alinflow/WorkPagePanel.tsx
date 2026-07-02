@@ -44,12 +44,13 @@ type WorkActionDates = {
   cancelled?: string;
 };
 
-type WorkSectionToggleTone = "violet" | "green" | "brown";
+type WorkSectionToggleTone = "violet" | "green" | "brown" | "orange";
 
 const workSectionToggleToneClass: Record<WorkSectionToggleTone, string> = {
   violet: "bg-violet-300 ring-violet-500/25 shadow-violet-500/20 hover:bg-violet-200",
   green: "bg-lime-200 ring-lime-500/25 shadow-lime-500/20 hover:bg-lime-100",
   brown: "bg-[#c9a27b] ring-[#8b5e34]/25 shadow-[#8b5e34]/20 hover:bg-[#d8b895]",
+  orange: "bg-[#ff8a3d] ring-[#c2410c]/25 shadow-[#ff5a1f]/20 hover:bg-[#ff9f5f]",
 };
 
 function WorkSectionToggleButton({
@@ -229,7 +230,6 @@ export function WorkPagePanel({
     ? "Karbantartott klímák"
     : "Időponthoz tartozó klímák";
   const workStatusValue = selected.status === "Szerelés kész – admin folyamatban" ? `${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban` : selected.status || "Folyamatban";
-  const billingDone = Boolean(currentWorkChecklist.alinInvoice && currentWorkChecklist.amovaInvoice);
   const maintenanceBillingDone = Boolean(currentWorkChecklist.alinInvoice);
 
   useEffect(() => {
@@ -596,7 +596,6 @@ export function WorkPagePanel({
                   deviceDone={Boolean(currentWorkChecklist.amovaInvoice)}
                   laborDoneAt={checklistDates.alinInvoice}
                   deviceDoneAt={checklistDates.amovaInvoice}
-                  billingDone={billingDone}
                   onLaborAmountChange={setLaborInvoiceAmount}
                   onDeviceAmountChange={setDeviceInvoiceAmount}
                   laborPaymentMethod={laborPaymentMethod}
@@ -644,7 +643,6 @@ function BillingPreparationPanel({
   deviceDone,
   laborDoneAt,
   deviceDoneAt,
-  billingDone,
   laborPaymentMethod,
   devicePaymentMethod,
   laborSendEmail,
@@ -668,7 +666,6 @@ function BillingPreparationPanel({
   deviceDone: boolean;
   laborDoneAt?: string;
   deviceDoneAt?: string;
-  billingDone: boolean;
   laborPaymentMethod: BillingPaymentMethod;
   devicePaymentMethod: BillingPaymentMethod;
   laborSendEmail: boolean;
@@ -695,16 +692,13 @@ function BillingPreparationPanel({
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-3xl border border-[#ff5a1f]/40 bg-[#ff5a1f]/10 p-4 shadow-[0_12px_35px_rgba(255,90,31,0.12)]">
-      <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-[#ff8a3d] px-5 py-4 text-left text-slate-950 shadow-xl shadow-[#ff5a1f]/20 ring-1 ring-[#c2410c]/25 transition hover:-translate-y-0.5 hover:bg-[#ff9f5f]">
-        <div>
-          <p className="text-lg font-black text-slate-950">Számlázás</p>
-          <p className="mt-1 text-sm font-bold text-slate-900/80">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-white/35 px-3 py-1 text-xs font-black text-slate-950 ring-1 ring-white/40">
-          {billingDone ? "Kész" : "Folyamatban"}
-        </span>
-      </button>
+    <div className="space-y-3">
+      <WorkSectionToggleButton
+        label={isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}
+        open={isOpen}
+        onClick={() => setIsOpen((value) => !value)}
+        tone="orange"
+      />
       {isOpen ? (
         <>
           <InvoicePrepCard
@@ -785,16 +779,13 @@ function MaintenanceBillingPanel({
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-3xl border border-[#ff5a1f]/40 bg-[#ff5a1f]/10 p-4 shadow-[0_12px_35px_rgba(255,90,31,0.12)]">
-      <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-[#ff8a3d] px-5 py-4 text-left text-slate-950 shadow-xl shadow-[#ff5a1f]/20 ring-1 ring-[#c2410c]/25 transition hover:-translate-y-0.5 hover:bg-[#ff9f5f]">
-        <div>
-          <p className="text-lg font-black text-slate-950">Számlázás</p>
-          <p className="mt-1 text-sm font-bold text-slate-900/80">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-white/35 px-3 py-1 text-xs font-black text-slate-950 ring-1 ring-white/40">
-          {done ? "Kész" : "Folyamatban"}
-        </span>
-      </button>
+    <div className="space-y-3">
+      <WorkSectionToggleButton
+        label={isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}
+        open={isOpen}
+        onClick={() => setIsOpen((value) => !value)}
+        tone="orange"
+      />
       {isOpen ? (
         <InvoicePrepCard
           title={billingConfig.maintenanceTitle}
