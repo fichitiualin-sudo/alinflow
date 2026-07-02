@@ -635,13 +635,13 @@ function BillingPreparationPanel({
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
+    <div className="space-y-3 rounded-3xl border border-[#ff5a1f]/50 bg-[#ff5a1f]/15 p-4 shadow-[0_12px_35px_rgba(255,90,31,0.12)]">
       <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
         <div>
-          <p className="text-lg font-black text-amber-100">Számlázás</p>
-          <p className="mt-1 text-sm font-bold text-amber-100/80">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
+          <p className="text-lg font-black text-[#c2410c]">Számlázás</p>
+          <p className="mt-1 text-sm font-bold text-[#ea580c]">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${billingDone ? "bg-emerald-400 text-slate-950" : "bg-amber-300 text-slate-950"}`}>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${billingDone ? "bg-emerald-400 text-slate-950" : "bg-[#ff5a1f] text-white"}`}>
           {billingDone ? "Kész" : "Folyamatban"}
         </span>
       </button>
@@ -713,13 +713,13 @@ function MaintenanceBillingPanel({
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-3xl border border-amber-300/30 bg-amber-300/10 p-4">
+    <div className="space-y-3 rounded-3xl border border-[#ff5a1f]/50 bg-[#ff5a1f]/15 p-4 shadow-[0_12px_35px_rgba(255,90,31,0.12)]">
       <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
         <div>
-          <p className="text-lg font-black text-amber-100">Számlázás</p>
-          <p className="mt-1 text-sm font-bold text-amber-100/80">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
+          <p className="text-lg font-black text-[#c2410c]">Számlázás</p>
+          <p className="mt-1 text-sm font-bold text-[#ea580c]">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-amber-300 text-slate-950"}`}>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-[#ff5a1f] text-white"}`}>
           {done ? "Kész" : "Folyamatban"}
         </span>
       </button>
