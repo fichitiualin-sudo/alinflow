@@ -3104,10 +3104,12 @@ export default function Home() {
     setAppointmentEmailBusy(true);
 
     try {
+      const appointmentType = normalizeAppointmentType(customer.appointmentType);
+      const appointmentQuoteItems = customer.quoteItems || quoteItems;
       const response = await fetch("/api/send-appointment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(quotePayload(customer, customer.quoteItems || quoteItems)),
+        body: JSON.stringify(quotePayload(customer, appointmentQuoteItems)),
       });
       const result = await response.json().catch(() => ({}));
 
@@ -3116,8 +3118,11 @@ export default function Home() {
       }
 
       const appointmentEmailSentAt = new Date().toISOString();
-      if (normalizeAppointmentType(customer.appointmentType) !== "maintenance") {
-        await logDocument(customer, appointmentEmailDocumentType(customer.appointmentType), appointmentDocumentTitle(customer.appointmentType), "Elküldve", appointmentEmailSentAt);
+      if (appointmentType !== "maintenance") {
+        if (appointmentType === "installation" && appointmentQuoteItems.some(isQuoteItemFilled)) {
+          await logDocument(customer, "quote_email", "Ajánlat email", "Elküldve", appointmentEmailSentAt);
+        }
+        await logDocument(customer, appointmentEmailDocumentType(appointmentType), appointmentDocumentTitle(appointmentType), "Elküldve", appointmentEmailSentAt);
       }
       setMessage("Időpont tájékoztató email elküldve ✅");
       return true;
@@ -3499,13 +3504,30 @@ export default function Home() {
     return date.toLocaleString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
   }
 
+  function sentDocumentTimestamp(doc?: DocumentRecord) {
+    if (!doc) return undefined;
+    if (!doc.sentAt && !statusMeansSent(doc.status)) return undefined;
+    return doc.sentAt || doc.updatedAt || doc.createdAt || undefined;
+  }
+
+  function appointmentEmailCarriesQuote(customer: Customer) {
+    return isInstallationAppointment(customer.appointmentType) && (customer.quoteItems || []).some(isQuoteItemFilled);
+  }
+
   function quoteSentAtFor(customer: Customer) {
-    const doc = docFor(customer, "quote_email");
-    return doc?.sentAt || doc?.updatedAt || doc?.createdAt || customer.quoteSentAt;
+    const quoteDoc = docFor(customer, "quote_email");
+    const appointmentQuoteDoc = appointmentEmailCarriesQuote(customer) ? docFor(customer, appointmentEmailDocumentType("installation")) : undefined;
+    return sentDocumentTimestamp(quoteDoc)
+      || sentDocumentTimestamp(appointmentQuoteDoc)
+      || (normalizeStatus(customer.status) === "Ajánlat elküldve" ? customer.quoteSentAt : undefined);
   }
 
   function customerHasSentQuote(customer: Customer) {
-    return normalizeStatus(customer.status) === "Ajánlat elküldve";
+    const quoteDoc = docFor(customer, "quote_email");
+    const appointmentQuoteDoc = appointmentEmailCarriesQuote(customer) ? docFor(customer, appointmentEmailDocumentType("installation")) : undefined;
+    return normalizeStatus(customer.status) === "Ajánlat elküldve"
+      || Boolean(sentDocumentTimestamp(quoteDoc))
+      || Boolean(sentDocumentTimestamp(appointmentQuoteDoc));
   }
 
   function customerStatusLabel(customer: Customer) {
@@ -3630,7 +3652,7 @@ export default function Home() {
     const currentAppointmentType = normalizeAppointmentType(customer.appointmentType);
     const quoteDoc = docFor(customer, "quote_email");
     const quoteSentAt = quoteSentAtFor(customer);
-    const quoteBaseStatus = quoteDoc?.status || (customer.status === "Ajánlat elküldve" ? "Elküldve" : "Nincs elküldve");
+    const quoteBaseStatus = quoteDoc?.status || (customerHasSentQuote(customer) ? "Elküldve" : "Nincs elküldve");
     const quoteDisplayStatus = quoteBaseStatus.includes("Elküld") && quoteSentAt ? `${quoteBaseStatus} · ${formatQuoteSentAt(quoteSentAt)}` : quoteBaseStatus;
 
     const installationDone = customer.status === "Szerelés kész – admin folyamatban" || customer.status === "Lezárva" || Boolean(customer.stockDeducted) || Boolean(savedReportFor(customer, "installation")?.id);
