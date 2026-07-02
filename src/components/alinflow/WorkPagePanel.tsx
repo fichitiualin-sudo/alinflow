@@ -44,11 +44,11 @@ type WorkActionDates = {
   cancelled?: string;
 };
 
-type WorkSectionToggleTone = "violet" | "fuchsia" | "brown";
+type WorkSectionToggleTone = "violet" | "green" | "brown";
 
 const workSectionToggleToneClass: Record<WorkSectionToggleTone, string> = {
   violet: "bg-violet-300 ring-violet-500/25 shadow-violet-500/20 hover:bg-violet-200",
-  fuchsia: "bg-fuchsia-300 ring-fuchsia-500/25 shadow-fuchsia-500/20 hover:bg-fuchsia-200",
+  green: "bg-lime-200 ring-lime-500/25 shadow-lime-500/20 hover:bg-lime-100",
   brown: "bg-[#c9a27b] ring-[#8b5e34]/25 shadow-[#8b5e34]/20 hover:bg-[#d8b895]",
 };
 
@@ -460,7 +460,7 @@ export function WorkPagePanel({
                 label={showMaterials ? "Felhasznált anyagok elrejtése" : "Felhasznált anyagok megjelenítése"}
                 open={showMaterials}
                 onClick={() => setShowMaterials((open) => !open)}
-                tone="fuchsia"
+                tone="green"
               />
             </div>
           ) : null}
@@ -695,13 +695,13 @@ function BillingPreparationPanel({
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-3xl border border-[#ff5a1f]/50 bg-[#ff5a1f]/15 p-4 shadow-[0_12px_35px_rgba(255,90,31,0.12)]">
-      <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
+    <div className="space-y-3 rounded-3xl border border-[#ff5a1f]/40 bg-[#ff5a1f]/10 p-4 shadow-[0_12px_35px_rgba(255,90,31,0.12)]">
+      <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-[#ff8a3d] px-5 py-4 text-left text-slate-950 shadow-xl shadow-[#ff5a1f]/20 ring-1 ring-[#c2410c]/25 transition hover:-translate-y-0.5 hover:bg-[#ff9f5f]">
         <div>
-          <p className="text-lg font-black text-[#c2410c]">Számlázás</p>
-          <p className="mt-1 text-sm font-bold text-[#ea580c]">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
+          <p className="text-lg font-black text-slate-950">Számlázás</p>
+          <p className="mt-1 text-sm font-bold text-slate-900/80">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${billingDone ? "bg-emerald-400 text-slate-950" : "bg-[#ff5a1f] text-white"}`}>
+        <span className="shrink-0 rounded-full bg-white/35 px-3 py-1 text-xs font-black text-slate-950 ring-1 ring-white/40">
           {billingDone ? "Kész" : "Folyamatban"}
         </span>
       </button>
@@ -785,13 +785,13 @@ function MaintenanceBillingPanel({
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-3xl border border-[#ff5a1f]/50 bg-[#ff5a1f]/15 p-4 shadow-[0_12px_35px_rgba(255,90,31,0.12)]">
-      <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
+    <div className="space-y-3 rounded-3xl border border-[#ff5a1f]/40 bg-[#ff5a1f]/10 p-4 shadow-[0_12px_35px_rgba(255,90,31,0.12)]">
+      <button type="button" onClick={() => setIsOpen((value) => !value)} className="flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-[#ff8a3d] px-5 py-4 text-left text-slate-950 shadow-xl shadow-[#ff5a1f]/20 ring-1 ring-[#c2410c]/25 transition hover:-translate-y-0.5 hover:bg-[#ff9f5f]">
         <div>
-          <p className="text-lg font-black text-[#c2410c]">Számlázás</p>
-          <p className="mt-1 text-sm font-bold text-[#ea580c]">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
+          <p className="text-lg font-black text-slate-950">Számlázás</p>
+          <p className="mt-1 text-sm font-bold text-slate-900/80">{isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-[#ff5a1f] text-white"}`}>
+        <span className="shrink-0 rounded-full bg-white/35 px-3 py-1 text-xs font-black text-slate-950 ring-1 ring-white/40">
           {done ? "Kész" : "Folyamatban"}
         </span>
       </button>
