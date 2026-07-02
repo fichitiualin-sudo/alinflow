@@ -46,11 +46,11 @@ type WorkActionDates = {
 
 type WorkSectionToggleTone = "violet" | "green" | "brown" | "orange";
 
-const workSectionToggleToneClass: Record<WorkSectionToggleTone, string> = {
-  violet: "bg-violet-300 ring-violet-500/25 shadow-violet-500/20 hover:bg-violet-200",
-  green: "bg-lime-200 ring-lime-500/25 shadow-lime-500/20 hover:bg-lime-100",
-  brown: "bg-[#c9a27b] ring-[#8b5e34]/25 shadow-[#8b5e34]/20 hover:bg-[#d8b895]",
-  orange: "bg-[#ff8a3d] ring-[#c2410c]/25 shadow-[#ff5a1f]/20 hover:bg-[#ff9f5f]",
+const workSectionToggleToneClass: Record<WorkSectionToggleTone, { accent: string; icon: string }> = {
+  violet: { accent: "bg-violet-400", icon: "bg-white/35 ring-violet-300/40" },
+  green: { accent: "bg-lime-400", icon: "bg-white/35 ring-lime-300/40" },
+  brown: { accent: "bg-[#8b5e34]", icon: "bg-white/35 ring-[#8b5e34]/40" },
+  orange: { accent: "bg-[#ff5a1f]", icon: "bg-white/35 ring-[#ff5a1f]/40" },
 };
 
 function WorkSectionToggleButton({
@@ -64,14 +64,17 @@ function WorkSectionToggleButton({
   onClick: () => void;
   tone: WorkSectionToggleTone;
 }) {
+  const toneClass = workSectionToggleToneClass[tone];
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-[72px] w-full items-center justify-between gap-4 rounded-3xl px-5 py-4 text-left font-black text-slate-950 shadow-xl ring-1 transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 ${workSectionToggleToneClass[tone]}`}
+      className="document-action-button relative flex min-h-[72px] w-full items-center justify-between gap-4 overflow-hidden rounded-3xl border border-white/10 bg-white/10 px-5 py-4 pl-7 text-left font-black text-cyan-100 shadow-xl ring-1 ring-white/10 transition hover:-translate-y-0.5 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-cyan-200/60 focus:ring-offset-2 focus:ring-offset-slate-950"
     >
+      <span className={`absolute left-4 top-1/2 h-9 w-1 -translate-y-1/2 rounded-full ${toneClass.accent}`} />
       <span className="min-w-0 leading-tight">{label}</span>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/35 text-lg font-black text-slate-950 ring-1 ring-white/40">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg font-black text-slate-950 ring-1 ${toneClass.icon}`}>
         {open ? "-" : "+"}
       </span>
     </button>
