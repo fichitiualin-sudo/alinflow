@@ -211,7 +211,7 @@ function buildInvoiceXml({ kind, amount, paymentMethod = "cash", sendEmail = fal
     <teljesitesDatum>${date}</teljesitesDatum>
     <fizetesiHataridoDatum>${dueDate}</fizetesiHataridoDatum>
     <fizmod>${safeText(paymentLabel)}</fizmod>
-    <penznem>HUF</penznem>
+    <penznem>Ft</penznem>
     <szamlaNyelve>hu</szamlaNyelve>
     <megjegyzes>${safeText(comment)}</megjegyzes>
     <arfolyamBank></arfolyamBank>
