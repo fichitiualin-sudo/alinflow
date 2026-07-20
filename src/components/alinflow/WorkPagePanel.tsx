@@ -920,11 +920,8 @@ function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], confi
   if (kind === "maintenance") return [config.maintenanceLineName];
 
   if (kind === "labor") {
-    const lines = cleanQuoteItems(items).map((item) => {
-      const quantity = itemQuantity(item);
-      return `${quantity > 1 ? `${quantity} db ` : ""}${config.laborLineName}`;
-    });
-    return lines.length ? lines : [config.laborLineName];
+    const quantity = cleanQuoteItems(items).reduce((sum, item) => sum + itemQuantity(item), 0);
+    return [`${quantity > 1 ? `${quantity} db ` : ""}${config.laborLineName}`];
   }
 
   const lines = cleanQuoteItems(items).map((item) => {
