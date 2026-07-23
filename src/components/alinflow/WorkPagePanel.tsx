@@ -25,6 +25,7 @@ import {
 import type { View } from "@/lib/alinflow/types";
 import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
+import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 
 type MaterialItem = {
   name: string;
@@ -95,6 +96,7 @@ type WorkPagePanelProps = {
   documentRows: DocumentRow[];
   maintenanceRows: DocumentRow[];
   workHistory: Customer[];
+  workspaceSettings: WorkspaceSettings;
   onBack: () => void;
   onCloseWork: () => void;
   onRememberExternalCustomer: (customer: Customer, returnView?: View) => void;
@@ -155,6 +157,7 @@ export function WorkPagePanel({
   documentRows,
   maintenanceRows,
   workHistory,
+  workspaceSettings,
   onBack,
   onCloseWork,
   onRememberExternalCustomer,
@@ -205,17 +208,21 @@ export function WorkPagePanel({
   const [showWorkItems, setShowWorkItems] = useState(false);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
+  const defaultCombinedAmount = total(quoteItems);
   const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
   const [deviceInvoiceAmount, setDeviceInvoiceAmount] = useState(String(defaultDeviceAmount));
+  const [combinedInvoiceAmount, setCombinedInvoiceAmount] = useState(String(defaultCombinedAmount));
   const [maintenanceInvoiceAmount, setMaintenanceInvoiceAmount] = useState("0");
   const [lineAmountDrafts, setLineAmountDrafts] = useState<Record<string, string>>({});
-  const [laborPaymentMethod, setLaborPaymentMethod] = useState<BillingPaymentMethod>("cash");
-  const [devicePaymentMethod, setDevicePaymentMethod] = useState<BillingPaymentMethod>("cash");
-  const [maintenancePaymentMethod, setMaintenancePaymentMethod] = useState<BillingPaymentMethod>("cash");
-  const [laborInvoiceSendEmail, setLaborInvoiceSendEmail] = useState(true);
-  const [deviceInvoiceSendEmail, setDeviceInvoiceSendEmail] = useState(true);
-  const [maintenanceInvoiceSendEmail, setMaintenanceInvoiceSendEmail] = useState(true);
-  const billingConfig = billingUiConfig();
+  const defaultPaymentMethod = workspaceSettings.billingSettings.defaultPaymentMethod;
+  const defaultInvoiceEmail = workspaceSettings.billingSettings.sendInvoiceEmailByDefault;
+  const [laborPaymentMethod, setLaborPaymentMethod] = useState<BillingPaymentMethod>(defaultPaymentMethod);
+  const [devicePaymentMethod, setDevicePaymentMethod] = useState<BillingPaymentMethod>(defaultPaymentMethod);
+  const [maintenancePaymentMethod, setMaintenancePaymentMethod] = useState<BillingPaymentMethod>(defaultPaymentMethod);
+  const [laborInvoiceSendEmail, setLaborInvoiceSendEmail] = useState(defaultInvoiceEmail);
+  const [deviceInvoiceSendEmail, setDeviceInvoiceSendEmail] = useState(defaultInvoiceEmail);
+  const [maintenanceInvoiceSendEmail, setMaintenanceInvoiceSendEmail] = useState(defaultInvoiceEmail);
+  const billingConfig = billingUiConfig(workspaceSettings);
   const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
   const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance" && work.activeAppointmentId !== selected.activeAppointmentId);
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
@@ -230,7 +237,8 @@ export function WorkPagePanel({
   useEffect(() => {
     setLaborInvoiceAmount(String(defaultLaborAmount));
     setDeviceInvoiceAmount(String(defaultDeviceAmount));
-  }, [selected.id, selected.activeAppointmentId, defaultLaborAmount, defaultDeviceAmount]);
+    setCombinedInvoiceAmount(String(defaultCombinedAmount));
+  }, [selected.id, selected.activeAppointmentId, defaultLaborAmount, defaultDeviceAmount, defaultCombinedAmount]);
 
   useEffect(() => {
     if (isMaintenance) setMaintenanceInvoiceAmount("0");
@@ -239,6 +247,15 @@ export function WorkPagePanel({
   useEffect(() => {
     setLineAmountDrafts({});
   }, [selected.id, selected.activeAppointmentId]);
+
+  useEffect(() => {
+    setLaborPaymentMethod(defaultPaymentMethod);
+    setDevicePaymentMethod(defaultPaymentMethod);
+    setMaintenancePaymentMethod(defaultPaymentMethod);
+    setLaborInvoiceSendEmail(defaultInvoiceEmail);
+    setDeviceInvoiceSendEmail(defaultInvoiceEmail);
+    setMaintenanceInvoiceSendEmail(defaultInvoiceEmail);
+  }, [selected.id, selected.activeAppointmentId, defaultPaymentMethod, defaultInvoiceEmail]);
 
   function lineAmountDraftKey(index: number, kind: "device" | "labor") {
     return `${selected.activeAppointmentId || selected.id || "work"}:${index}:${kind}`;
@@ -584,12 +601,14 @@ export function WorkPagePanel({
                 <BillingPreparationPanel
                   laborAmount={laborInvoiceAmount}
                   deviceAmount={deviceInvoiceAmount}
+                  combinedAmount={combinedInvoiceAmount}
                   laborDone={Boolean(currentWorkChecklist.alinInvoice)}
                   deviceDone={Boolean(currentWorkChecklist.amovaInvoice)}
                   laborDoneAt={checklistDates.alinInvoice}
                   deviceDoneAt={checklistDates.amovaInvoice}
                   onLaborAmountChange={setLaborInvoiceAmount}
                   onDeviceAmountChange={setDeviceInvoiceAmount}
+                  onCombinedAmountChange={setCombinedInvoiceAmount}
                   laborPaymentMethod={laborPaymentMethod}
                   devicePaymentMethod={devicePaymentMethod}
                   laborSendEmail={laborInvoiceSendEmail}
@@ -600,6 +619,7 @@ export function WorkPagePanel({
                   onDeviceSendEmailChange={setDeviceInvoiceSendEmail}
                   onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount, laborPaymentMethod, laborInvoiceSendEmail)}
                   onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount, devicePaymentMethod, deviceInvoiceSendEmail)}
+                  onCreateCombinedInvoice={() => onCreateInvoice("combined", combinedInvoiceAmount, devicePaymentMethod, deviceInvoiceSendEmail)}
                   invoiceBusy={invoiceBusy}
                   billingConfig={billingConfig}
                   quoteItems={quoteItems}
@@ -631,6 +651,7 @@ function InlineAmount({ label, value }: { label: string; value: string }) {
 function BillingPreparationPanel({
   laborAmount,
   deviceAmount,
+  combinedAmount,
   laborDone,
   deviceDone,
   laborDoneAt,
@@ -641,12 +662,14 @@ function BillingPreparationPanel({
   deviceSendEmail,
   onLaborAmountChange,
   onDeviceAmountChange,
+  onCombinedAmountChange,
   onLaborPaymentMethodChange,
   onDevicePaymentMethodChange,
   onLaborSendEmailChange,
   onDeviceSendEmailChange,
   onCreateLaborInvoice,
   onCreateDeviceInvoice,
+  onCreateCombinedInvoice,
   invoiceBusy,
   billingConfig,
   quoteItems,
@@ -654,6 +677,7 @@ function BillingPreparationPanel({
 }: {
   laborAmount: string;
   deviceAmount: string;
+  combinedAmount: string;
   laborDone: boolean;
   deviceDone: boolean;
   laborDoneAt?: string;
@@ -664,12 +688,14 @@ function BillingPreparationPanel({
   deviceSendEmail: boolean;
   onLaborAmountChange: (value: string) => void;
   onDeviceAmountChange: (value: string) => void;
+  onCombinedAmountChange: (value: string) => void;
   onLaborPaymentMethodChange: (value: BillingPaymentMethod) => void;
   onDevicePaymentMethodChange: (value: BillingPaymentMethod) => void;
   onLaborSendEmailChange: (value: boolean) => void;
   onDeviceSendEmailChange: (value: boolean) => void;
   onCreateLaborInvoice: () => void;
   onCreateDeviceInvoice: () => void;
+  onCreateCombinedInvoice: () => void;
   invoiceBusy: BillingInvoiceKind | null;
   billingConfig: ReturnType<typeof billingUiConfig>;
   quoteItems: QuoteItem[];
@@ -677,11 +703,15 @@ function BillingPreparationPanel({
 }) {
   const laborValue = parseAmount(laborAmount);
   const deviceValue = parseAmount(deviceAmount);
-  const laborDueDate = billingDueDateIso(laborPaymentMethod);
-  const deviceDueDate = billingDueDateIso(devicePaymentMethod);
+  const combinedValue = parseAmount(combinedAmount);
+  const laborDueDate = billingDueDateIso(laborPaymentMethod, new Date(), billingConfig.transferDueDays);
+  const deviceDueDate = billingDueDateIso(devicePaymentMethod, new Date(), billingConfig.transferDueDays);
   const deviceInvoiceLines = invoicePreviewLines("device", quoteItems, billingConfig);
   const laborInvoiceLines = invoicePreviewLines("labor", quoteItems, billingConfig);
+  const combinedInvoiceLines = invoicePreviewLines("combined", quoteItems, billingConfig);
   const [isOpen, setIsOpen] = useState(false);
+  const combinedDone = laborDone && deviceDone;
+  const combinedDoneAt = deviceDoneAt || laborDoneAt;
 
   return (
     <div className="space-y-3">
@@ -692,6 +722,25 @@ function BillingPreparationPanel({
         color="orange"
       />
       {isOpen ? (
+        billingConfig.invoiceMode === "single" ? (
+          <InvoicePrepCard
+            title={billingConfig.combinedTitle}
+            invoiceLineNames={combinedInvoiceLines}
+            amount={combinedAmount}
+            parsedAmount={combinedValue}
+            done={combinedDone}
+            doneAt={combinedDoneAt}
+            paymentMethod={devicePaymentMethod}
+            sendEmail={deviceSendEmail}
+            dueDate={deviceDueDate}
+            onAmountChange={onCombinedAmountChange}
+            onPaymentMethodChange={onDevicePaymentMethodChange}
+            onSendEmailChange={onDeviceSendEmailChange}
+            onCreateInvoice={onCreateCombinedInvoice}
+            invoiceBusy={invoiceBusy === "combined"}
+            customerEmail={customerEmail}
+          />
+        ) : (
         <>
           <InvoicePrepCard
             title={billingConfig.deviceTitle}
@@ -731,6 +780,7 @@ function BillingPreparationPanel({
             Összesen számlázandó: {ft(laborValue + deviceValue)}
           </div>
         </>
+        )
       ) : null}
     </div>
   );
@@ -766,7 +816,7 @@ function MaintenanceBillingPanel({
   customerEmail: string;
 }) {
   const parsedAmount = parseAmount(amount);
-  const dueDate = billingDueDateIso(paymentMethod);
+  const dueDate = billingDueDateIso(paymentMethod, new Date(), billingConfig.transferDueDays);
   const invoiceLines = invoicePreviewLines("maintenance", quoteItems, billingConfig);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -922,6 +972,18 @@ function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], confi
   if (kind === "labor") {
     const quantity = cleanQuoteItems(items).reduce((sum, item) => sum + itemQuantity(item), 0);
     return [`${quantity > 1 ? `${quantity} db ` : ""}${config.laborLineName}`];
+  }
+
+  if (kind === "combined") {
+    const cleanItems = cleanQuoteItems(items);
+    const deviceLines = cleanItems.map((item) => {
+      const quantity = itemQuantity(item);
+      return `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`;
+    });
+    const laborQuantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
+    const laborLine = laborQuantity ? `${laborQuantity > 1 ? `${laborQuantity} db ` : ""}${config.laborLineName}` : "";
+    const lines = [...deviceLines, laborLine].filter(Boolean);
+    return lines.length ? lines : [config.combinedLineName];
   }
 
   const lines = cleanQuoteItems(items).map((item) => {

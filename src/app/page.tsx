@@ -2954,7 +2954,8 @@ export default function Home() {
     }));
     const shouldSendEmail = Boolean(sendEmail && selected.email?.trim());
 
-    const label = billingKindLabel(kind, billingUiConfig());
+    const billingConfig = billingUiConfig(workspaceSettings);
+    const label = billingKindLabel(kind, billingConfig);
     const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel, fizetési mód: ${billingPaymentMethodLabel(paymentMethod)}${shouldSendEmail ? ", emailküldéssel" : ""}?`);
     if (!confirmed) return;
 
@@ -2969,6 +2970,13 @@ export default function Home() {
           kind,
           amount: Math.round(amount),
           paymentMethod,
+          transferDueDays: workspaceSettings.billingSettings.transferDueDays,
+          billingLabels: {
+            deviceLineName: billingConfig.deviceLineName,
+            laborLineName: billingConfig.laborLineName,
+            maintenanceLineName: billingConfig.maintenanceLineName,
+            combinedLineName: billingConfig.combinedLineName,
+          },
           sendEmail: shouldSendEmail,
           customer: selected,
           quoteItems: invoiceQuoteItems,
@@ -2977,7 +2985,11 @@ export default function Home() {
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result?.ok) throw new Error(result?.error || "A Számlázz.hu számlakészítés sikertelen.");
 
-      await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
+      if (kind === "combined") {
+        await updateChecklistForCustomer(selected, { amovaInvoice: true, alinInvoice: true });
+      } else {
+        await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
+      }
       setMessage(`${label} számla elkészült ✅${result.invoiceNumber ? ` Számlaszám: ${result.invoiceNumber}` : ""}${result.emailSent ? " Emailben elküldve." : ""}`);
     } catch (error: any) {
       setMessage(`Számlázási hiba: ${error.message}`);
@@ -3734,6 +3746,34 @@ export default function Home() {
     }
   }
 
+  async function addMaterialInventoryItem(item: { name: string; stock: number; unit: string; lowAt: number }) {
+    const name = item.name.trim();
+    if (!name) {
+      setMessage("Add meg az anyag nevét.");
+      return;
+    }
+    if (materialInventory.some((current: any) => current.name.toLocaleLowerCase("hu-HU") === name.toLocaleLowerCase("hu-HU"))) {
+      setMessage("Ez az anyag már szerepel a raktárban.");
+      return;
+    }
+
+    const nextItem = {
+      name,
+      stock: Math.max(0, Math.round(Number(item.stock || 0) * 10) / 10),
+      unit: item.unit.trim() || "db",
+      lowAt: Math.max(0, Math.round(Number(item.lowAt || 0) * 10) / 10),
+    };
+
+    try {
+      await persistMaterialStock(nextItem);
+      setMaterialInventory((prev: any[]) => [...prev, nextItem].sort((a, b) => a.name.localeCompare(b.name, "hu", { sensitivity: "base" })));
+      setMessage("Anyag hozzáadva ✓");
+    } catch (error: any) {
+      setMessage(`Anyag mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
+      throw error;
+    }
+  }
+
 
   function climateCountForMaterials() {
     return Math.max(1, qty(quoteItems));
@@ -3862,6 +3902,7 @@ export default function Home() {
         addStock={addStock}
         materialReserved={materialReserved}
         addMaterialStock={addMaterialStock}
+        onAddMaterialItem={addMaterialInventoryItem}
       />
     );
   }
@@ -4566,11 +4607,16 @@ export default function Home() {
       });
     }
 
-    const billingConfig = billingUiConfig();
-    rows.push(
-      { title: `${billingConfig.laborTitle} számla`, status: effectiveChecklistFor(customer).alinInvoice ? "Kész" : "Nincs kiállítva", action: "Számla", appointmentType: "installation" as AppointmentType },
-      { title: `${billingConfig.deviceTitle} számla`, status: effectiveChecklistFor(customer).amovaInvoice ? "Kész" : "Nincs kiállítva", action: "Számla", appointmentType: "installation" as AppointmentType },
-    );
+    const billingConfig = billingUiConfig(workspaceSettings);
+    const checklist = effectiveChecklistFor(customer);
+    if (billingConfig.invoiceMode === "single") {
+      rows.push({ title: `${billingConfig.combinedTitle} számla`, status: checklist.alinInvoice && checklist.amovaInvoice ? "Kész" : "Nincs kiállítva", action: "Számla", appointmentType: "installation" as AppointmentType });
+    } else {
+      rows.push(
+        { title: `${billingConfig.laborTitle} számla`, status: checklist.alinInvoice ? "Kész" : "Nincs kiállítva", action: "Számla", appointmentType: "installation" as AppointmentType },
+        { title: `${billingConfig.deviceTitle} számla`, status: checklist.amovaInvoice ? "Kész" : "Nincs kiállítva", action: "Számla", appointmentType: "installation" as AppointmentType },
+      );
+    }
 
     return rows;
   }
@@ -5800,6 +5846,7 @@ export default function Home() {
         documentRows={documentRowsFor(selected)}
         maintenanceRows={maintenanceDocumentRowsFor(selected)}
         workHistory={workHistoryByCustomer[selected.id] || []}
+        workspaceSettings={workspaceSettings}
         onBack={()=>goBack()}
         onCloseWork={closeWork}
         onRememberExternalCustomer={rememberExternalCustomer}

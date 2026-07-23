@@ -69,11 +69,17 @@ function fullAddress(cityValue?: string, addressValue?: string, fallback = "ninc
   return address || location || fallback;
 }
 
-const DEFAULT_GOOGLE_REVIEW_URL = "https://g.page/r/CaTB2608T1bZEBM/review";
-const DEFAULT_FACEBOOK_REVIEW_URL = "https://www.facebook.com/100094506956317/reviews/";
+function reviewLinks(settings: WorkspaceSettings) {
+  const googleUrl = safeText(settings.emailSettings.googleReviewUrl);
+  const facebookUrl = safeText(settings.emailSettings.facebookReviewUrl);
+  const customUrl = safeText(settings.emailSettings.customReviewUrl);
+  const customLabel = safeText(settings.emailSettings.customReviewLabel) || "Értékelés";
 
-function reviewUrl(envName: string, fallback: string) {
-  return safeText(process.env[envName]) || fallback;
+  return [
+    googleUrl ? { label: "Google értékelés", url: googleUrl, color: "#0f172a" } : null,
+    facebookUrl ? { label: "Facebook értékelés", url: facebookUrl, color: "#1877f2" } : null,
+    customUrl ? { label: customLabel, url: customUrl, color: "#0f766e" } : null,
+  ].filter(Boolean) as Array<{ label: string; url: string; color: string }>;
 }
 
 function itemLines(items: QuoteItem[]) {
@@ -93,8 +99,7 @@ function thankYouEmailHtml(customer: Customer, items: QuoteItem[], workspaceSett
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const address = escapeHtml(fullAddress(customer.city, customer.address, "", customer.postalCode));
   const installationDate = escapeHtml(formatDate(customer.date));
-  const googleReviewUrl = escapeHtml(reviewUrl("KLIMALIN_GOOGLE_REVIEW_URL", DEFAULT_GOOGLE_REVIEW_URL));
-  const facebookReviewUrl = escapeHtml(reviewUrl("KLIMALIN_FACEBOOK_REVIEW_URL", DEFAULT_FACEBOOK_REVIEW_URL));
+  const links = reviewLinks(settings);
 
   return `<!doctype html>
 <html lang="hu">
@@ -141,14 +146,13 @@ function thankYouEmailHtml(customer: Customer, items: QuoteItem[], workspaceSett
             A garancia megőrzéséhez javasolt évente legalább egy karbantartást elvégezni. A karbantartási munkalapokat rendszerünkben dátum szerint megőrizzük, így szükség esetén később is visszakereshetők.
           </div>
 
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:18px 20px;margin-bottom:18px;color:#334155;font-size:15px;line-height:1.65">
+          ${links.length ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:18px 20px;margin-bottom:18px;color:#334155;font-size:15px;line-height:1.65">
             <strong style="color:#020617">Értékelnének minket?</strong><br>
             Nagyon sokat jelent számunkra, ha pár mondatban megírják a tapasztalatukat. Ezzel másoknak is segítenek a döntésben.
             <div style="margin-top:14px;display:block">
-              <a href="${googleReviewUrl}" style="display:inline-block;margin:0 8px 8px 0;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 16px;font-weight:800;font-size:14px">Google értékelés</a>
-              <a href="${facebookReviewUrl}" style="display:inline-block;margin:0 0 8px 0;background:#1877f2;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 16px;font-weight:800;font-size:14px">Facebook értékelés</a>
+              ${links.map((link) => `<a href="${escapeHtml(link.url)}" style="display:inline-block;margin:0 8px 8px 0;background:${link.color};color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 16px;font-weight:800;font-size:14px">${escapeHtml(link.label)}</a>`).join("")}
             </div>
-          </div>
+          </div>` : ""}
 
           <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:22px;color:#334155;font-size:15px;line-height:1.65">
             <strong style="color:#020617">Ha bármi kérdés felmerül</strong><br>

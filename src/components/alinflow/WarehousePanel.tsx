@@ -33,6 +33,7 @@ type WarehousePanelProps = {
   addStock: (productId: string, amount: number) => void | Promise<void>;
   materialReserved: (materialName: string) => number;
   addMaterialStock: (materialName: string, amount: number) => void | Promise<void>;
+  onAddMaterialItem: (item: MaterialInventoryItem) => void | Promise<void>;
 };
 
 function productDevicePrice(product: ClimateProduct) {
@@ -90,9 +91,16 @@ export function WarehousePanel({
   addStock,
   materialReserved,
   addMaterialStock,
+  onAddMaterialItem,
 }: WarehousePanelProps) {
   const [productPage, setProductPage] = useState(1);
   const [materialPage, setMaterialPage] = useState(1);
+  const [showMaterialManager, setShowMaterialManager] = useState(false);
+  const [newMaterialName, setNewMaterialName] = useState("");
+  const [newMaterialUnit, setNewMaterialUnit] = useState("db");
+  const [newMaterialStock, setNewMaterialStock] = useState("0");
+  const [newMaterialLowAt, setNewMaterialLowAt] = useState("1");
+  const [materialMessage, setMaterialMessage] = useState("");
   const productPagination = paginate(products, productPage);
   const materialPagination = paginate(materialInventory, materialPage);
 
@@ -103,6 +111,34 @@ export function WarehousePanel({
   useEffect(() => {
     setMaterialPage(1);
   }, [materialInventory.length]);
+
+  async function addMaterialItem() {
+    const name = newMaterialName.trim();
+    if (!name) {
+      setMaterialMessage("Add meg az anyag nevét.");
+      return;
+    }
+    if (materialInventory.some((item) => item.name.toLocaleLowerCase("hu-HU") === name.toLocaleLowerCase("hu-HU"))) {
+      setMaterialMessage("Ez az anyag már szerepel a raktárban.");
+      return;
+    }
+
+    try {
+      await onAddMaterialItem({
+        name,
+        unit: newMaterialUnit.trim() || "db",
+        stock: Math.max(0, Number(newMaterialStock || 0)),
+        lowAt: Math.max(0, Number(newMaterialLowAt || 0)),
+      });
+      setNewMaterialName("");
+      setNewMaterialUnit("db");
+      setNewMaterialStock("0");
+      setNewMaterialLowAt("1");
+      setMaterialMessage("Anyag hozzáadva ✓");
+    } catch (error: any) {
+      setMaterialMessage(`Anyag mentési hiba: ${error.message || "ismeretlen hiba"}`);
+    }
+  }
 
   return (
     <Shell>
@@ -175,6 +211,38 @@ export function WarehousePanel({
           </Card>
 
           <Card title="Szerelési anyagok">
+            <button
+              type="button"
+              onClick={() => setShowMaterialManager((open) => !open)}
+              className="mb-5 w-full rounded-2xl bg-emerald-300 px-5 py-4 font-black text-slate-950"
+            >
+              {showMaterialManager ? "Anyag hozzáadás elrejtése" : "Új szerelési anyag hozzáadása"}
+            </button>
+
+            {showMaterialManager ? (
+              <div className="mb-5 rounded-3xl border border-emerald-300/20 bg-emerald-300/10 p-4">
+                <p className="mb-3 text-lg font-black">Új szerelési anyag</p>
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_120px_120px_120px_auto] lg:items-end">
+                  <Field label="Anyag neve">
+                    <input className="input" value={newMaterialName} onChange={(event) => setNewMaterialName(event.target.value)} placeholder="pl. 5 eres kábel" />
+                  </Field>
+                  <Field label="Egység">
+                    <input className="input" value={newMaterialUnit} onChange={(event) => setNewMaterialUnit(event.target.value)} placeholder="m / db" />
+                  </Field>
+                  <Field label="Készlet">
+                    <input className="input" type="number" min={0} step="0.1" value={newMaterialStock} onChange={(event) => setNewMaterialStock(event.target.value)} />
+                  </Field>
+                  <Field label="Alacsony szint">
+                    <input className="input" type="number" min={0} step="0.1" value={newMaterialLowAt} onChange={(event) => setNewMaterialLowAt(event.target.value)} />
+                  </Field>
+                  <button type="button" onClick={() => void addMaterialItem()} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">
+                    + Hozzáadás
+                  </button>
+                </div>
+                {materialMessage ? <p className="mt-3 text-sm font-bold text-emerald-100">{materialMessage}</p> : null}
+              </div>
+            ) : null}
+
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {materialPagination.items.map((item) => {
                 const reserved = materialReserved(item.name);
