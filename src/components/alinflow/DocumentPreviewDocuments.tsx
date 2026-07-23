@@ -1,11 +1,11 @@
 import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
-import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
+import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, total } from "@/lib/alinflow/products";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { DEFAULT_SELLER_COMPANY } from "@/lib/alinflow/purchase-declarations";
-import { defaultWorkspaceSettings, settingsBrandName, settingsContactLine, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
+import { defaultWorkspaceSettings, settingsBrandName, settingsContactLine, settingsContentLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 
 function formatDocumentDate(value?: string) {
   if (!value) return "nincs megadva";
@@ -268,8 +268,6 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems, sell
 export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSettings }: { customer: Customer; quoteItems: QuoteItem[]; quoteIssuedAt?: string; workspaceSettings?: WorkspaceSettings }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const sum = total(items);
-  const installerAmount = quoteInstallTotal(items);
-  const materialAmount = Math.max(0, sum - installerAmount);
   const quoteIsAlternatives = isQuoteAlternatives(customer.quotePricingMode);
   const shownQuoteIssuedAt = formatQuoteIssuedAt(quoteIssuedAt);
   const settings = workspaceSettings || defaultWorkspaceSettings(null);
@@ -279,6 +277,8 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
   const contactLine = settingsContactLine(settings);
   const primaryContact = settingsPrimaryContact(settings);
   const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
+  const installationLines = settingsContentLines(quote.installationSectionContent);
+  const qualityLines = settingsContentLines(quote.qualitySectionContent);
 
   return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
     <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
@@ -330,38 +330,18 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
     </div>
 
     <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
-      <h3 className="text-lg font-black">Alapszerelés tartalma</h3>
+      <h3 className="text-lg font-black">{quote.installationSectionTitle}</h3>
       <ul className="mt-3 list-disc space-y-2 pl-5">
-        <li>max. 3 m szigetelt rézcső-pár / klíma</li>
-        <li>1 db faláttörés, tömítés és esztétikus lezárás</li>
-        <li>kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint</li>
-        <li>kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással</li>
-        <li>kábelcsatorna és rögzítők a szükséges mértékben</li>
-        <li>betáp kábel max. 5 m-ig</li>
-        <li>nyomáspróba + vákuumozás + beüzemelés, működési teszt</li>
-        <li>felhasználói betanítás, rendrakás</li>
+        {installationLines.map((line) => <li key={line}>{line}</li>)}
       </ul>
     </div>
 
     <div className="mt-4 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
-      <h3 className="text-lg font-black">Minőségi kivitelezés</h3>
+      <h3 className="text-lg font-black">{quote.qualitySectionTitle}</h3>
       <ul className="mt-3 list-disc space-y-2 pl-5">
-        <li>Alukasírozott, hőszigetelt rézcső-pár.</li>
-        <li>Időjárásálló gumikábel a teljes nyomvonalon.</li>
-        <li>Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.</li>
-        <li>Szakszerű faláttörés, tömítés és esztétikus lezárás.</li>
-        <li>Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.</li>
-        <li>Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.</li>
+        {qualityLines.map((line) => <li key={line}>{line}</li>)}
       </ul>
     </div>
-
-    {quoteIsAlternatives ? null : (
-      <div className="mt-4 rounded-2xl bg-amber-50 p-5 text-sm leading-relaxed text-slate-800">
-        <h3 className="font-black">Belső számlázási bontás</h3>
-        <p className="mt-3">{quote.laborProviderName || "Munkadíj"} – {quote.laborDescription}: <strong>{ft(installerAmount)}</strong></p>
-        <p>{quote.deviceProviderName || "Készülék és anyag"} – {quote.deviceDescription}: <strong>{ft(materialAmount)}</strong></p>
-      </div>
-    )}
 
     <div className="mt-8 text-sm text-slate-700">
       <p>Üdvözlettel,</p>

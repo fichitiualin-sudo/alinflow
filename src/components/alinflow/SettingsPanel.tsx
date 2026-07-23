@@ -139,13 +139,13 @@ export function SettingsPanel({
                   <TextField label="Érvényesség napokban" type="number" value={draft.quoteSettings.validityDays} onChange={(value) => updateSection("quoteSettings", "validityDays", Number(value || 1))} />
                   <TextField label="Alcím" value={draft.quoteSettings.subtitle} onChange={(value) => updateSection("quoteSettings", "subtitle", value)} />
                   <TextField label="Email feladó név" value={draft.emailSettings.senderName} onChange={(value) => updateSection("emailSettings", "senderName", value)} />
-                  <TextField label="Munkadíj számlázó neve" value={draft.quoteSettings.laborProviderName} onChange={(value) => updateSection("quoteSettings", "laborProviderName", value)} />
-                  <TextField label="Készülék / anyag számlázó neve" value={draft.quoteSettings.deviceProviderName} onChange={(value) => updateSection("quoteSettings", "deviceProviderName", value)} />
-                  <TextField label="Munkadíj bontás megnevezése" value={draft.quoteSettings.laborDescription} onChange={(value) => updateSection("quoteSettings", "laborDescription", value)} />
-                  <TextField label="Készülék / anyag bontás megnevezése" value={draft.quoteSettings.deviceDescription} onChange={(value) => updateSection("quoteSettings", "deviceDescription", value)} />
+                  <TextField label="Alapszerelés blokk címe" value={draft.quoteSettings.installationSectionTitle} onChange={(value) => updateSection("quoteSettings", "installationSectionTitle", value)} />
+                  <TextField label="Minőségi kivitelezés blokk címe" value={draft.quoteSettings.qualitySectionTitle} onChange={(value) => updateSection("quoteSettings", "qualitySectionTitle", value)} />
                 </div>
                 <TextArea label="Normál ajánlat bevezető szövege" value={draft.quoteSettings.bundleIntro} onChange={(value) => updateSection("quoteSettings", "bundleIntro", value)} />
                 <TextArea label="Alternatív ajánlat bevezető szövege" value={draft.quoteSettings.alternativesIntro} onChange={(value) => updateSection("quoteSettings", "alternativesIntro", value)} />
+                <TextArea label="Alapszerelés tartalma" rows={8} value={draft.quoteSettings.installationSectionContent} onChange={(value) => updateSection("quoteSettings", "installationSectionContent", value)} />
+                <TextArea label="Minőségi kivitelezés tartalma" rows={6} value={draft.quoteSettings.qualitySectionContent} onChange={(value) => updateSection("quoteSettings", "qualitySectionContent", value)} />
                 <TextArea label="Ajánlat elfogadási szöveg" value={draft.quoteSettings.acceptanceText} onChange={(value) => updateSection("quoteSettings", "acceptanceText", value)} />
                 <TextArea label="Ajánlat lábléc" value={draft.quoteSettings.footerText} onChange={(value) => updateSection("quoteSettings", "footerText", value)} />
               </section>

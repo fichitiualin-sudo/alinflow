@@ -2,15 +2,13 @@ import type { Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { displayAddress, ft } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemPriceLine, itemQuantity, itemTotal } from "@/lib/alinflow/products";
-import { settingsContactLine, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
+import { settingsContactLine, settingsContentLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuotePreviewPanelProps = {
   selected: Customer;
   quoteItems: QuoteItem[];
   totalAmount: number;
-  installerAmount: number;
-  materialAmount: number;
   quoteEmailBusy: boolean;
   quoteIssuedAt: string;
   workspaceSettings: WorkspaceSettings;
@@ -38,8 +36,6 @@ export function QuotePreviewPanel({
   selected,
   quoteItems,
   totalAmount,
-  installerAmount,
-  materialAmount,
   quoteEmailBusy,
   quoteIssuedAt,
   workspaceSettings,
@@ -57,6 +53,8 @@ export function QuotePreviewPanel({
   const contactLine = settingsContactLine(workspaceSettings);
   const primaryContact = settingsPrimaryContact(workspaceSettings);
   const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
+  const installationLines = settingsContentLines(quote.installationSectionContent);
+  const qualityLines = settingsContentLines(quote.qualitySectionContent);
 
   return (
     <Shell>
@@ -125,38 +123,18 @@ export function QuotePreviewPanel({
               </div>
 
               <div className="quote-second-page mt-6 rounded-2xl bg-slate-100 p-5">
-                <h3 className="text-xl font-black">Alapszerelés tartalma</h3>
+                <h3 className="text-xl font-black">{quote.installationSectionTitle}</h3>
                 <div className="mt-3 space-y-2 text-sm leading-relaxed">
-                  <p>• max. 3 m szigetelt rézcső-pár / klíma</p>
-                  <p>• 1 db faláttörés, tömítés és esztétikus lezárás</p>
-                  <p>• kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint</p>
-                  <p>• kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással</p>
-                  <p>• kábelcsatorna és rögzítők a szükséges mértékben</p>
-                  <p>• betáp kábel max. 5 m-ig</p>
-                  <p>• nyomáspróba + vákuumozás + beüzemelés, működési teszt</p>
-                  <p>• felhasználói betanítás, rendrakás</p>
+                  {installationLines.map((line) => <p key={line}>• {line}</p>)}
                 </div>
               </div>
 
               <div className="mt-6 rounded-2xl bg-slate-100 p-5">
-                <h3 className="text-xl font-black">Minőségi kivitelezés</h3>
+                <h3 className="text-xl font-black">{quote.qualitySectionTitle}</h3>
                 <div className="mt-3 space-y-2 text-sm leading-relaxed">
-                  <p>• Alukasírozott, hőszigetelt rézcső-pár.</p>
-                  <p>• Időjárásálló gumikábel a teljes nyomvonalon.</p>
-                  <p>• Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.</p>
-                  <p>• Szakszerű faláttörés, tömítés és esztétikus lezárás.</p>
-                  <p>• Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.</p>
-                  <p>• Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.</p>
+                  {qualityLines.map((line) => <p key={line}>• {line}</p>)}
                 </div>
               </div>
-
-              {quoteIsAlternatives ? null : (
-                <div className="mt-6 rounded-2xl bg-amber-50 p-5 text-sm text-slate-800">
-                  <h3 className="font-black">Belső számlázási bontás</h3>
-                  <p className="mt-2">{quote.laborProviderName || "Munkadíj"} – {quote.laborDescription}: {ft(installerAmount)}</p>
-                  <p>{quote.deviceProviderName || "Készülék és anyag"} – {quote.deviceDescription}: {ft(materialAmount)}</p>
-                </div>
-              )}
 
               <div className="mt-6 text-sm text-slate-600">
                 <p>Üdvözlettel,</p>
