@@ -1,5 +1,5 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
-import { cleanQuoteItems, climateSummary, itemDeviceTotal, itemName, itemQuantity } from "@/lib/alinflow/products";
+import { cleanQuoteItems, climateSummary, itemDeviceTotal, itemInstallTotal, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
@@ -8,6 +8,13 @@ type InvoiceRequest = {
   kind: BillingInvoiceKind;
   amount: number;
   paymentMethod?: BillingPaymentMethod;
+  transferDueDays?: number;
+  billingLabels?: {
+    deviceLineName?: string;
+    laborLineName?: string;
+    maintenanceLineName?: string;
+    combinedLineName?: string;
+  };
   sendEmail?: boolean;
   customer: Customer;
   quoteItems?: QuoteItem[];
@@ -55,31 +62,42 @@ function readEnv(name: string, fallback = "") {
 }
 
 function agentKeyEnvName(kind: BillingInvoiceKind) {
+  if (kind === "combined") return "SZAMLAZZ_COMBINED_AGENT_KEY";
   return kind === "device" ? "SZAMLAZZ_DEVICE_AGENT_KEY" : "SZAMLAZZ_LABOR_AGENT_KEY";
 }
 
 function getAgentKey(kind: BillingInvoiceKind) {
+  if (kind === "combined") return readEnv("SZAMLAZZ_COMBINED_AGENT_KEY") || readEnv("SZAMLAZZ_DEVICE_AGENT_KEY");
   return readEnv(agentKeyEnvName(kind));
 }
 
-function invoiceLineName(kind: BillingInvoiceKind) {
-  if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_LINE_NAME", "Klímaberendezés");
-  if (kind === "maintenance") return readEnv("SZAMLAZZ_MAINTENANCE_LINE_NAME", "Légkondicionáló karbantartás");
-  return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés");
+function configuredLabel(value: unknown, fallback: string) {
+  const label = String(value || "").trim();
+  return label || fallback;
+}
+
+function invoiceLineName(kind: BillingInvoiceKind, labels?: InvoiceRequest["billingLabels"]) {
+  if (kind === "combined") return configuredLabel(labels?.combinedLineName, readEnv("SZAMLAZZ_COMBINED_LINE_NAME", "Klímaszerelés készülékkel, anyaggal és munkadíjjal"));
+  if (kind === "device") return configuredLabel(labels?.deviceLineName, readEnv("SZAMLAZZ_DEVICE_LINE_NAME", "Klímaberendezés"));
+  if (kind === "maintenance") return configuredLabel(labels?.maintenanceLineName, readEnv("SZAMLAZZ_MAINTENANCE_LINE_NAME", "Légkondicionáló karbantartás"));
+  return configuredLabel(labels?.laborLineName, readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés"));
 }
 
 function invoiceVatKey(kind: BillingInvoiceKind) {
   if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_VAT_KEY", "27");
+  if (kind === "combined") return readEnv("SZAMLAZZ_COMBINED_VAT_KEY", readEnv("SZAMLAZZ_DEVICE_VAT_KEY", "27"));
   return readEnv("SZAMLAZZ_LABOR_VAT_KEY", "AAM");
 }
 
 function invoiceComment(kind: BillingInvoiceKind) {
+  if (kind === "combined") return readEnv("SZAMLAZZ_COMBINED_COMMENT", "Készülék, szerelési anyagok és munkadíj számlája.");
   if (kind === "device") return readEnv("SZAMLAZZ_DEVICE_COMMENT", "Készülék és szerelési anyagok számlája.");
   if (kind === "maintenance") return readEnv("SZAMLAZZ_MAINTENANCE_COMMENT", "Légkondicionáló karbantartás számlája.");
   return readEnv("SZAMLAZZ_LABOR_COMMENT", "Klímaszerelési munkadíj számlája.");
 }
 
 function invoicePrefix(kind: BillingInvoiceKind) {
+  if (kind === "combined") return readEnv("SZAMLAZZ_COMBINED_INVOICE_PREFIX", readEnv("SZAMLAZZ_DEVICE_INVOICE_PREFIX"));
   return kind === "device" ? readEnv("SZAMLAZZ_DEVICE_INVOICE_PREFIX") : readEnv("SZAMLAZZ_LABOR_INVOICE_PREFIX");
 }
 
@@ -97,12 +115,12 @@ function amountsFromGross(gross: number, vatKey: string) {
   return { net: gross, vat: 0, gross };
 }
 
-function laborInvoiceLineName() {
-  return readEnv("SZAMLAZZ_LABOR_LINE_NAME", "Légkondicionáló telepítés és beüzemelés");
+function laborInvoiceLineName(labels?: InvoiceRequest["billingLabels"]) {
+  return invoiceLineName("labor", labels);
 }
 
-function maintenanceInvoiceLineName() {
-  return readEnv("SZAMLAZZ_MAINTENANCE_LINE_NAME", "Légkondicionáló karbantartás");
+function maintenanceInvoiceLineName(labels?: InvoiceRequest["billingLabels"]) {
+  return invoiceLineName("maintenance", labels);
 }
 
 function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: number, note = "") {
@@ -129,21 +147,51 @@ function distributeGross(totalGross: number, weights: number[]) {
   });
 }
 
-function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[]) {
+function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[], labels?: InvoiceRequest["billingLabels"]) {
   const cleanItems = cleanQuoteItems(items);
 
   if (kind === "maintenance") {
-    return [invoiceLineFromGross(kind, maintenanceInvoiceLineName(), amount, climateSummary(items))];
+    return [invoiceLineFromGross(kind, maintenanceInvoiceLineName(labels), amount, climateSummary(items))];
   }
 
   if (kind === "labor") {
     const quantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
 
     if (!quantity) {
-      return [invoiceLineFromGross(kind, laborInvoiceLineName(), amount, climateSummary(items))];
+      return [invoiceLineFromGross(kind, laborInvoiceLineName(labels), amount, climateSummary(items))];
     }
 
-    return [invoiceLineFromGross(kind, `${quantity > 1 ? `${quantity} db ` : ""}${laborInvoiceLineName()}`, amount, "")];
+    return [invoiceLineFromGross(kind, `${quantity > 1 ? `${quantity} db ` : ""}${laborInvoiceLineName(labels)}`, amount, "")];
+  }
+
+  if (kind === "combined") {
+    const itemLines = cleanItems
+      .map((item) => {
+        const quantity = itemQuantity(item);
+        return {
+          name: `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`,
+          weight: itemDeviceTotal(item),
+        };
+      })
+      .filter((line) => line.name && line.weight > 0);
+    const laborQuantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
+    const laborWeight = cleanItems.reduce((sum, item) => sum + itemInstallTotal(item), 0);
+    const combinedLines = [
+      ...itemLines,
+      laborWeight > 0 ? {
+        name: `${laborQuantity > 1 ? `${laborQuantity} db ` : ""}${laborInvoiceLineName(labels)}`,
+        weight: laborWeight,
+      } : null,
+    ].filter(Boolean) as Array<{ name: string; weight: number }>;
+
+    if (!combinedLines.length) {
+      return [invoiceLineFromGross(kind, invoiceLineName("combined", labels), amount, climateSummary(items))];
+    }
+
+    const grossValues = distributeGross(amount, combinedLines.map((line) => line.weight));
+    return combinedLines
+      .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], ""))
+      .filter((line) => line.gross > 0);
   }
 
   const itemLines = cleanItems
@@ -157,7 +205,7 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
     .filter((line) => line.name && line.weight > 0);
 
   if (!itemLines.length) {
-    return [invoiceLineFromGross(kind, `${invoiceLineName("device")} + szerelési anyagok`, amount, "")];
+    return [invoiceLineFromGross(kind, `${invoiceLineName("device", labels)} + szerelési anyagok`, amount, "")];
   }
 
   const grossValues = distributeGross(amount, itemLines.map((line) => line.weight));
@@ -174,12 +222,12 @@ function szamlazzPaymentMethodName(method: BillingPaymentMethod) {
   return method === "cash" ? "Készpénz" : "Átutalás";
 }
 
-function buildInvoiceXml({ kind, amount, paymentMethod = "cash", sendEmail = false, customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
+function buildInvoiceXml({ kind, amount, paymentMethod = "cash", transferDueDays = 2, billingLabels, sendEmail = false, customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
   const date = todayIso();
   const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
-  const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`));
+  const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`), transferDueDays);
   const buyer = buyerAddress(customer);
-  const lines = invoiceLines(kind, amount, quoteItems);
+  const lines = invoiceLines(kind, amount, quoteItems, billingLabels);
   const externalId = `alinflow-${kind}-${customer.activeAppointmentId || customer.id}`;
   const comment = invoiceComment(kind);
   const paymentLabel = szamlazzPaymentMethodName(normalizedPaymentMethod);
@@ -282,7 +330,7 @@ async function sendInvoiceXml(xml: string) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as InvoiceRequest;
-    const kind = body.kind === "device" || body.kind === "labor" || body.kind === "maintenance" ? body.kind : null;
+    const kind = body.kind === "device" || body.kind === "labor" || body.kind === "maintenance" || body.kind === "combined" ? body.kind : null;
     const amount = parseAmount(body.amount);
     const customer = body.customer;
 
@@ -292,7 +340,7 @@ export async function POST(request: Request) {
 
     const agentKey = getAgentKey(kind);
     if (!agentKey) {
-      const envName = agentKeyEnvName(kind);
+      const envName = kind === "combined" ? "SZAMLAZZ_COMBINED_AGENT_KEY vagy SZAMLAZZ_DEVICE_AGENT_KEY" : agentKeyEnvName(kind);
       return Response.json({ ok: false, error: `Hiányzik a ${envName} környezeti változó.` }, { status: 500 });
     }
 

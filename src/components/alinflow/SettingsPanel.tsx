@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Workspace } from "@/lib/alinflow/types";
-import type { PaymentMethod, WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
+import type { BillingInvoiceMode, PaymentMethod, WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type SettingsPanelProps = {
@@ -140,12 +140,12 @@ export function SettingsPanel({
                   <TextField label="Alcím" value={draft.quoteSettings.subtitle} onChange={(value) => updateSection("quoteSettings", "subtitle", value)} />
                   <TextField label="Email feladó név" value={draft.emailSettings.senderName} onChange={(value) => updateSection("emailSettings", "senderName", value)} />
                   <TextField label="Alapszerelés blokk címe" value={draft.quoteSettings.installationSectionTitle} onChange={(value) => updateSection("quoteSettings", "installationSectionTitle", value)} />
-                  <TextField label="Minőségi kivitelezés blokk címe" value={draft.quoteSettings.qualitySectionTitle} onChange={(value) => updateSection("quoteSettings", "qualitySectionTitle", value)} />
+                  <TextField label="Kivitelezés blokk címe" value={draft.quoteSettings.qualitySectionTitle} onChange={(value) => updateSection("quoteSettings", "qualitySectionTitle", value)} />
                 </div>
                 <TextArea label="Normál ajánlat bevezető szövege" value={draft.quoteSettings.bundleIntro} onChange={(value) => updateSection("quoteSettings", "bundleIntro", value)} />
                 <TextArea label="Alternatív ajánlat bevezető szövege" value={draft.quoteSettings.alternativesIntro} onChange={(value) => updateSection("quoteSettings", "alternativesIntro", value)} />
                 <TextArea label="Alapszerelés tartalma" rows={8} value={draft.quoteSettings.installationSectionContent} onChange={(value) => updateSection("quoteSettings", "installationSectionContent", value)} />
-                <TextArea label="Minőségi kivitelezés tartalma" rows={6} value={draft.quoteSettings.qualitySectionContent} onChange={(value) => updateSection("quoteSettings", "qualitySectionContent", value)} />
+                <TextArea label="Kivitelezés tartalma" rows={6} value={draft.quoteSettings.qualitySectionContent} onChange={(value) => updateSection("quoteSettings", "qualitySectionContent", value)} />
                 <TextArea label="Ajánlat elfogadási szöveg" value={draft.quoteSettings.acceptanceText} onChange={(value) => updateSection("quoteSettings", "acceptanceText", value)} />
                 <TextArea label="Ajánlat lábléc" value={draft.quoteSettings.footerText} onChange={(value) => updateSection("quoteSettings", "footerText", value)} />
               </section>
@@ -154,7 +154,14 @@ export function SettingsPanel({
                 <h3 className="text-xl font-black">Email és dokumentum</h3>
                 <TextArea label="Email lábléc" value={draft.emailSettings.footerText} onChange={(value) => updateSection("emailSettings", "footerText", value)} />
                 <TextArea label="Munkalap lábléc" value={draft.documentSettings.workReportFooterText} onChange={(value) => updateSection("documentSettings", "workReportFooterText", value)} />
+                <TextField label="Köszönő email címe" value={draft.emailSettings.thankYouTitle} onChange={(value) => updateSection("emailSettings", "thankYouTitle", value)} />
                 <TextArea label="Köszönő email első szövege" value={draft.emailSettings.thankYouIntro} onChange={(value) => updateSection("emailSettings", "thankYouIntro", value)} />
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <TextField label="Google értékelési link" value={draft.emailSettings.googleReviewUrl} onChange={(value) => updateSection("emailSettings", "googleReviewUrl", value)} />
+                  <TextField label="Facebook értékelési link" value={draft.emailSettings.facebookReviewUrl} onChange={(value) => updateSection("emailSettings", "facebookReviewUrl", value)} />
+                  <TextField label="Egyéb értékelési link neve" value={draft.emailSettings.customReviewLabel} onChange={(value) => updateSection("emailSettings", "customReviewLabel", value)} />
+                  <TextField label="Egyéb értékelési link" value={draft.emailSettings.customReviewUrl} onChange={(value) => updateSection("emailSettings", "customReviewUrl", value)} />
+                </div>
               </section>
 
               <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4">
@@ -171,10 +178,22 @@ export function SettingsPanel({
                       <option value="transfer">Utalás</option>
                     </select>
                   </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-slate-300">Számlázási mód</span>
+                    <select
+                      value={draft.billingSettings.invoiceMode}
+                      onChange={(event) => updateSection("billingSettings", "invoiceMode", event.target.value as BillingInvoiceMode)}
+                      className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 font-bold text-slate-50 outline-none transition focus:border-cyan-300"
+                    >
+                      <option value="split">Két számla: készülék/anyag + munkadíj</option>
+                      <option value="single">Egy számla: minden egyben</option>
+                    </select>
+                  </label>
                   <TextField label="Utalás fizetési határidő napokban" type="number" value={draft.billingSettings.transferDueDays} onChange={(value) => updateSection("billingSettings", "transferDueDays", Number(value || 1))} />
                   <TextField label="Készülék / anyag számla blokk neve" value={draft.billingSettings.deviceInvoiceLabel} onChange={(value) => updateSection("billingSettings", "deviceInvoiceLabel", value)} />
                   <TextField label="Munkadíj számla blokk neve" value={draft.billingSettings.laborInvoiceLabel} onChange={(value) => updateSection("billingSettings", "laborInvoiceLabel", value)} />
                   <TextField label="Karbantartási számla tétel neve" value={draft.billingSettings.maintenanceInvoiceLabel} onChange={(value) => updateSection("billingSettings", "maintenanceInvoiceLabel", value)} />
+                  <TextField label="Egy számlás mód blokk neve" value={draft.billingSettings.combinedInvoiceLabel} onChange={(value) => updateSection("billingSettings", "combinedInvoiceLabel", value)} />
                 </div>
                 <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
                   <input

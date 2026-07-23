@@ -1,4 +1,5 @@
 export type PaymentMethod = "cash" | "transfer";
+export type BillingInvoiceMode = "split" | "single";
 
 export type WorkspaceSettings = {
   companyProfile: {
@@ -30,13 +31,19 @@ export type WorkspaceSettings = {
     appointmentHeaderText: string;
     thankYouTitle: string;
     thankYouIntro: string;
+    googleReviewUrl: string;
+    facebookReviewUrl: string;
+    customReviewUrl: string;
+    customReviewLabel: string;
   };
   billingSettings: {
     defaultPaymentMethod: PaymentMethod;
     transferDueDays: number;
+    invoiceMode: BillingInvoiceMode;
     deviceInvoiceLabel: string;
     laborInvoiceLabel: string;
     maintenanceInvoiceLabel: string;
+    combinedInvoiceLabel: string;
     sendInvoiceEmailByDefault: boolean;
   };
   documentSettings: {
@@ -110,13 +117,19 @@ const GENERIC_SETTINGS: WorkspaceSettings = {
     appointmentHeaderText: "időpont visszaigazolás",
     thankYouTitle: "Köszönjük, hogy minket választottak!",
     thankYouIntro: "Köszönjük a bizalmat és a korrekt együttműködést.",
+    googleReviewUrl: "",
+    facebookReviewUrl: "",
+    customReviewUrl: "",
+    customReviewLabel: "Értékelés",
   },
   billingSettings: {
     defaultPaymentMethod: "cash",
     transferDueDays: 2,
+    invoiceMode: "split",
     deviceInvoiceLabel: "Készülék és anyag",
     laborInvoiceLabel: "Munkadíj",
     maintenanceInvoiceLabel: "Légkondicionáló karbantartás",
+    combinedInvoiceLabel: "Készülék, anyag és munkadíj",
     sendInvoiceEmailByDefault: true,
   },
   documentSettings: {
@@ -155,13 +168,19 @@ const KLIMALIN_SETTINGS: WorkspaceSettings = {
     appointmentHeaderText: "időpont visszaigazolás",
     thankYouTitle: "Köszönjük, hogy minket választottak!",
     thankYouIntro: "Örülünk, hogy ránk bízták a klíma telepítését. Használják egészséggel, sok kellemesen hűvös napot kívánunk!",
+    googleReviewUrl: "https://g.page/r/CaTB2608T1bZEBM/review",
+    facebookReviewUrl: "https://www.facebook.com/100094506956317/reviews/",
+    customReviewUrl: "",
+    customReviewLabel: "Értékelés",
   },
   billingSettings: {
     defaultPaymentMethod: "cash",
     transferDueDays: 2,
+    invoiceMode: "split",
     deviceInvoiceLabel: "Készülék és anyag",
     laborInvoiceLabel: "Munkadíj",
     maintenanceInvoiceLabel: "Légkondicionáló karbantartás",
+    combinedInvoiceLabel: "Készülék, anyag és munkadíj",
     sendInvoiceEmailByDefault: true,
   },
   documentSettings: {
@@ -192,6 +211,10 @@ function normalizedDays(value: unknown, fallback: number) {
 
 function normalizedPaymentMethod(value: unknown, fallback: PaymentMethod): PaymentMethod {
   return value === "transfer" ? "transfer" : fallback;
+}
+
+function normalizedBillingInvoiceMode(value: unknown, fallback: BillingInvoiceMode): BillingInvoiceMode {
+  return value === "single" ? "single" : fallback;
 }
 
 function workspaceUsesLegacyKlimalinDefaults(workspace: WorkspaceLike) {
@@ -240,13 +263,19 @@ export function normalizeWorkspaceSettings(value: unknown, fallback = defaultWor
       appointmentHeaderText: normalizedText(source.emailSettings?.appointmentHeaderText, fallback.emailSettings.appointmentHeaderText),
       thankYouTitle: normalizedText(source.emailSettings?.thankYouTitle, fallback.emailSettings.thankYouTitle),
       thankYouIntro: normalizedText(source.emailSettings?.thankYouIntro, fallback.emailSettings.thankYouIntro),
+      googleReviewUrl: optionalText(source.emailSettings?.googleReviewUrl, fallback.emailSettings.googleReviewUrl),
+      facebookReviewUrl: optionalText(source.emailSettings?.facebookReviewUrl, fallback.emailSettings.facebookReviewUrl),
+      customReviewUrl: optionalText(source.emailSettings?.customReviewUrl, fallback.emailSettings.customReviewUrl),
+      customReviewLabel: normalizedText(source.emailSettings?.customReviewLabel, fallback.emailSettings.customReviewLabel),
     },
     billingSettings: {
       defaultPaymentMethod: normalizedPaymentMethod(source.billingSettings?.defaultPaymentMethod, fallback.billingSettings.defaultPaymentMethod),
       transferDueDays: normalizedDays(source.billingSettings?.transferDueDays, fallback.billingSettings.transferDueDays),
+      invoiceMode: normalizedBillingInvoiceMode(source.billingSettings?.invoiceMode, fallback.billingSettings.invoiceMode),
       deviceInvoiceLabel: normalizedText(source.billingSettings?.deviceInvoiceLabel, fallback.billingSettings.deviceInvoiceLabel),
       laborInvoiceLabel: normalizedText(source.billingSettings?.laborInvoiceLabel, fallback.billingSettings.laborInvoiceLabel),
       maintenanceInvoiceLabel: normalizedText(source.billingSettings?.maintenanceInvoiceLabel, fallback.billingSettings.maintenanceInvoiceLabel),
+      combinedInvoiceLabel: normalizedText(source.billingSettings?.combinedInvoiceLabel, fallback.billingSettings.combinedInvoiceLabel),
       sendInvoiceEmailByDefault: typeof source.billingSettings?.sendInvoiceEmailByDefault === "boolean" ? source.billingSettings.sendInvoiceEmailByDefault : fallback.billingSettings.sendInvoiceEmailByDefault,
     },
     documentSettings: {
