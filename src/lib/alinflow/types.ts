@@ -18,6 +18,12 @@ export type QuotePricingMode = "bundle" | "alternatives";
 export type AppointmentType = "installation" | "survey" | "maintenance";
 export type CustomerTimelineTone = "emerald" | "cyan" | "violet" | "blue" | "amber" | "slate";
 
+export type Workspace = {
+  id: string;
+  name: string;
+  slug?: string;
+};
+
 export type CustomerTimelineItem = {
   label: string;
   value?: string;
