@@ -4,6 +4,7 @@ import {
   normalizeWorkspaceSettings,
   settingsBrandName,
   settingsContactLine,
+  settingsContentLines,
   settingsFooterLines,
   settingsPrimaryContact,
 } from "@/lib/alinflow/workspace-settings";
@@ -124,7 +125,7 @@ function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePri
     .join("");
 }
 
-function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number, pricingMode: QuotePricingMode = "bundle", quoteIssuedAt = "", workspaceSettings?: WorkspaceSettings) {
+function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, pricingMode: QuotePricingMode = "bundle", quoteIssuedAt = "", workspaceSettings?: WorkspaceSettings) {
   const settings = workspaceSettings || defaultWorkspaceSettings(null);
   const quote = settings.quoteSettings;
   const company = settings.companyProfile;
@@ -138,6 +139,8 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
   const phone = customerLine(customer.phone);
   const quoteIsAlternatives = isAlternativesPricing(pricingMode);
   const shownQuoteIssuedAt = escapeHtml(formatQuoteIssuedAt(quoteIssuedAt));
+  const installationLines = settingsContentLines(quote.installationSectionContent);
+  const qualityLines = settingsContentLines(quote.qualitySectionContent);
 
   return `<!doctype html>
 <html lang="hu">
@@ -193,39 +196,18 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
 
         <div class="section" style="padding:0 32px 28px 32px">
           <div style="background:#f1f5f9;border-radius:20px;padding:20px;margin-bottom:18px">
-            <h2 style="margin:0 0 14px 0;font-size:20px;line-height:1.25;color:#020617">Alapszerelés tartalma</h2>
+            <h2 style="margin:0 0 14px 0;font-size:20px;line-height:1.25;color:#020617">${escapeHtml(quote.installationSectionTitle)}</h2>
             <ul style="margin:0;padding-left:20px;color:#111827;font-size:15px;line-height:1.75">
-              <li>max. 3 m szigetelt rézcső-pár / klíma</li>
-              <li>1 db faláttörés, tömítés és esztétikus lezárás</li>
-              <li>kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint</li>
-              <li>kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással</li>
-              <li>kábelcsatorna és rögzítők a szükséges mértékben</li>
-              <li>betáp kábel max. 5 m-ig</li>
-              <li>nyomáspróba + vákuumozás + beüzemelés, működési teszt</li>
-              <li>felhasználói betanítás, rendrakás</li>
+              ${installationLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
             </ul>
           </div>
 
           <div style="background:#f1f5f9;border-radius:20px;padding:20px;margin-bottom:18px">
-            <h2 style="margin:0 0 14px 0;font-size:20px;line-height:1.25;color:#020617">Minőségi kivitelezés</h2>
+            <h2 style="margin:0 0 14px 0;font-size:20px;line-height:1.25;color:#020617">${escapeHtml(quote.qualitySectionTitle)}</h2>
             <ul style="margin:0;padding-left:20px;color:#111827;font-size:15px;line-height:1.75">
-              <li>Alukasírozott, hőszigetelt rézcső-pár.</li>
-              <li>Időjárásálló gumikábel a teljes nyomvonalon.</li>
-              <li>Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.</li>
-              <li>Szakszerű faláttörés, tömítés és esztétikus lezárás.</li>
-              <li>Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.</li>
-              <li>Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.</li>
+              ${qualityLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
             </ul>
           </div>
-
-          ${quoteIsAlternatives ? "" : `
-            <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:22px;color:#334155;font-size:15px;line-height:1.55">
-              <div style="font-weight:900;margin-bottom:8px">Belső számlázási bontás</div>
-              <div>${escapeHtml(quote.laborProviderName || "Munkadíj")} – ${escapeHtml(quote.laborDescription)}: ${ft(installerAmount)}</div>
-              <div>${escapeHtml(quote.deviceProviderName || "Készülék és anyag")} – ${escapeHtml(quote.deviceDescription)}: ${ft(materialAmount)}</div>
-              <div style="margin-top:8px;color:#64748b">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</div>
-            </div>
-          `}
 
           <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">${escapeHtml(quote.acceptanceText)}</p>
           <p style="margin:18px 0 0 0;font-size:15px;line-height:1.6;color:#334155">${footerHtml(settings)}</p>
@@ -248,8 +230,6 @@ export async function POST(request: Request) {
     const customer: QuoteCustomer = body.customer || {};
     const items: QuoteItem[] = Array.isArray(body.items) ? body.items : [];
     const totalAmount = Number(body.totalAmount || 0);
-    const installerAmount = Number(body.installerAmount || 0);
-    const materialAmount = Number(body.materialAmount || 0);
     const pricingMode: QuotePricingMode = body.pricingMode === "alternatives" ? "alternatives" : "bundle";
     const quoteIssuedAt = safeText(body.quoteIssuedAt) || new Date().toISOString();
     const workspaceSettings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
@@ -274,7 +254,7 @@ export async function POST(request: Request) {
         headers: {
           "X-Entity-Ref-ID": uniqueEmailRef("alinflow-quote"),
         },
-        html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount, pricingMode, quoteIssuedAt, workspaceSettings),
+        html: quoteEmailHtml(customer, items, totalAmount, pricingMode, quoteIssuedAt, workspaceSettings),
       }),
     });
 

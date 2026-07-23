@@ -151,10 +151,10 @@ select
     'bundleIntro', 'A telefonos / online egyeztetés alapján az alábbi klímás ajánlatot küldjük. Az árak bruttó összegek, és alapszereléssel együtt értendők.',
     'alternativesIntro', 'A telefonos / online egyeztetés alapján az alábbi választható klímás ajánlatokat küldjük. Az árak bruttó összegek, alapszereléssel együtt, és külön-külön értendők.',
     'acceptanceText', 'Amennyiben megfelel Önnek az ajánlat, válasz emailben vagy telefonon tudunk időpontot egyeztetni.',
-    'laborProviderName', 'Adorján Alin E.V.',
-    'deviceProviderName', 'AMOVA 4U Kft.',
-    'laborDescription', 'klímatelepítési munkadíj',
-    'deviceDescription', 'klímaberendezés + szerelési anyagok',
+    'installationSectionTitle', 'Alapszerelés tartalma',
+    'installationSectionContent', 'max. 3 m szigetelt rézcső-pár / klíma' || chr(10) || '1 db faláttörés, tömítés és esztétikus lezárás' || chr(10) || 'kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint' || chr(10) || 'kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással' || chr(10) || 'kábelcsatorna és rögzítők a szükséges mértékben' || chr(10) || 'betáp kábel max. 5 m-ig' || chr(10) || 'nyomáspróba + vákuumozás + beüzemelés, működési teszt' || chr(10) || 'felhasználói betanítás, rendrakás',
+    'qualitySectionTitle', 'Minőségi kivitelezés',
+    'qualitySectionContent', 'Alukasírozott, hőszigetelt rézcső-pár.' || chr(10) || 'Időjárásálló gumikábel a teljes nyomvonalon.' || chr(10) || 'Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.' || chr(10) || 'Szakszerű faláttörés, tömítés és esztétikus lezárás.' || chr(10) || 'Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.' || chr(10) || 'Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.',
     'footerText', 'Adorján Alin · KLIMAlin' || chr(10) || 'klimalin.hu · legkondikalkulator.hu · 06 30 700 4908'
   ),
   jsonb_build_object(
@@ -207,10 +207,10 @@ select
     'bundleIntro', 'A telefonos / online egyeztetés alapján az alábbi klímás ajánlatot küldjük. Az árak bruttó összegek, és alapszereléssel együtt értendők.',
     'alternativesIntro', 'A telefonos / online egyeztetés alapján az alábbi választható klímás ajánlatokat küldjük. Az árak bruttó összegek, alapszereléssel együtt, és külön-külön értendők.',
     'acceptanceText', 'Amennyiben megfelel Önnek az ajánlat, válasz emailben vagy telefonon tudunk időpontot egyeztetni.',
-    'laborProviderName', '',
-    'deviceProviderName', '',
-    'laborDescription', 'klímatelepítési munkadíj',
-    'deviceDescription', 'klímaberendezés + szerelési anyagok',
+    'installationSectionTitle', 'Alapszerelés tartalma',
+    'installationSectionContent', 'max. 3 m szigetelt rézcső-pár / klíma' || chr(10) || '1 db faláttörés, tömítés és esztétikus lezárás' || chr(10) || 'kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint' || chr(10) || 'kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással' || chr(10) || 'kábelcsatorna és rögzítők a szükséges mértékben' || chr(10) || 'betáp kábel max. 5 m-ig' || chr(10) || 'nyomáspróba + vákuumozás + beüzemelés, működési teszt' || chr(10) || 'felhasználói betanítás, rendrakás',
+    'qualitySectionTitle', 'Minőségi kivitelezés',
+    'qualitySectionContent', 'Alukasírozott, hőszigetelt rézcső-pár.' || chr(10) || 'Időjárásálló gumikábel a teljes nyomvonalon.' || chr(10) || 'Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.' || chr(10) || 'Szakszerű faláttörés, tömítés és esztétikus lezárás.' || chr(10) || 'Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.' || chr(10) || 'Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.',
     'footerText', ''
   ),
   jsonb_build_object(

@@ -18,10 +18,10 @@ export type WorkspaceSettings = {
     bundleIntro: string;
     alternativesIntro: string;
     acceptanceText: string;
-    laborProviderName: string;
-    deviceProviderName: string;
-    laborDescription: string;
-    deviceDescription: string;
+    installationSectionTitle: string;
+    installationSectionContent: string;
+    qualitySectionTitle: string;
+    qualitySectionContent: string;
     footerText: string;
   };
   emailSettings: {
@@ -60,6 +60,26 @@ type WorkspaceLike = {
   slug?: string;
 } | null | undefined;
 
+const DEFAULT_INSTALLATION_SECTION_CONTENT = [
+  "max. 3 m szigetelt rézcső-pár / klíma",
+  "1 db faláttörés, tömítés és esztétikus lezárás",
+  "kondenzvíz elvezetés kialakítása gravitációsan, megfelelő lejtéssel, adottság szerint",
+  "kültéri fali konzol vastag rezgéscsillapítókkal, max. 4 m szerelési magasságig, létraállással",
+  "kábelcsatorna és rögzítők a szükséges mértékben",
+  "betáp kábel max. 5 m-ig",
+  "nyomáspróba + vákuumozás + beüzemelés, működési teszt",
+  "felhasználói betanítás, rendrakás",
+].join("\n");
+
+const DEFAULT_QUALITY_SECTION_CONTENT = [
+  "Alukasírozott, hőszigetelt rézcső-pár.",
+  "Időjárásálló gumikábel a teljes nyomvonalon.",
+  "Stabil konzol + vastag rezgéscsillapítók a kültéri egységnél.",
+  "Szakszerű faláttörés, tömítés és esztétikus lezárás.",
+  "Nyomáspróba + vákuumozás, majd beüzemelés és működési teszt.",
+  "Betanítás, szűrőtisztítás ismertetése + rendrakás a végén.",
+].join("\n");
+
 const GENERIC_SETTINGS: WorkspaceSettings = {
   companyProfile: {
     displayName: "AlinFlow",
@@ -78,10 +98,10 @@ const GENERIC_SETTINGS: WorkspaceSettings = {
     bundleIntro: "A telefonos / online egyeztetés alapján az alábbi klímás ajánlatot küldjük. Az árak bruttó összegek, és alapszereléssel együtt értendők.",
     alternativesIntro: "A telefonos / online egyeztetés alapján az alábbi választható klímás ajánlatokat küldjük. Az árak bruttó összegek, alapszereléssel együtt, és külön-külön értendők.",
     acceptanceText: "Amennyiben megfelel Önnek az ajánlat, válasz emailben vagy telefonon tudunk időpontot egyeztetni.",
-    laborProviderName: "",
-    deviceProviderName: "",
-    laborDescription: "klímatelepítési munkadíj",
-    deviceDescription: "klímaberendezés + szerelési anyagok",
+    installationSectionTitle: "Alapszerelés tartalma",
+    installationSectionContent: DEFAULT_INSTALLATION_SECTION_CONTENT,
+    qualitySectionTitle: "Minőségi kivitelezés",
+    qualitySectionContent: DEFAULT_QUALITY_SECTION_CONTENT,
     footerText: "",
   },
   emailSettings: {
@@ -123,10 +143,10 @@ const KLIMALIN_SETTINGS: WorkspaceSettings = {
     bundleIntro: "A telefonos / online egyeztetés alapján az alábbi klímás ajánlatot küldjük. Az árak bruttó összegek, és alapszereléssel együtt értendők.",
     alternativesIntro: "A telefonos / online egyeztetés alapján az alábbi választható klímás ajánlatokat küldjük. Az árak bruttó összegek, alapszereléssel együtt, és külön-külön értendők.",
     acceptanceText: "Amennyiben megfelel Önnek az ajánlat, válasz emailben vagy telefonon tudunk időpontot egyeztetni.",
-    laborProviderName: "Adorján Alin E.V.",
-    deviceProviderName: "AMOVA 4U Kft.",
-    laborDescription: "klímatelepítési munkadíj",
-    deviceDescription: "klímaberendezés + szerelési anyagok",
+    installationSectionTitle: "Alapszerelés tartalma",
+    installationSectionContent: DEFAULT_INSTALLATION_SECTION_CONTENT,
+    qualitySectionTitle: "Minőségi kivitelezés",
+    qualitySectionContent: DEFAULT_QUALITY_SECTION_CONTENT,
     footerText: "Adorján Alin · KLIMAlin\nklimalin.hu · legkondikalkulator.hu · 06 30 700 4908",
   },
   emailSettings: {
@@ -208,10 +228,10 @@ export function normalizeWorkspaceSettings(value: unknown, fallback = defaultWor
       bundleIntro: normalizedText(source.quoteSettings?.bundleIntro, fallback.quoteSettings.bundleIntro),
       alternativesIntro: normalizedText(source.quoteSettings?.alternativesIntro, fallback.quoteSettings.alternativesIntro),
       acceptanceText: normalizedText(source.quoteSettings?.acceptanceText, fallback.quoteSettings.acceptanceText),
-      laborProviderName: optionalText(source.quoteSettings?.laborProviderName, fallback.quoteSettings.laborProviderName),
-      deviceProviderName: optionalText(source.quoteSettings?.deviceProviderName, fallback.quoteSettings.deviceProviderName),
-      laborDescription: normalizedText(source.quoteSettings?.laborDescription, fallback.quoteSettings.laborDescription),
-      deviceDescription: normalizedText(source.quoteSettings?.deviceDescription, fallback.quoteSettings.deviceDescription),
+      installationSectionTitle: normalizedText(source.quoteSettings?.installationSectionTitle, fallback.quoteSettings.installationSectionTitle),
+      installationSectionContent: normalizedText(source.quoteSettings?.installationSectionContent, fallback.quoteSettings.installationSectionContent),
+      qualitySectionTitle: normalizedText(source.quoteSettings?.qualitySectionTitle, fallback.quoteSettings.qualitySectionTitle),
+      qualitySectionContent: normalizedText(source.quoteSettings?.qualitySectionContent, fallback.quoteSettings.qualitySectionContent),
       footerText: optionalText(source.quoteSettings?.footerText, fallback.quoteSettings.footerText),
     },
     emailSettings: {
@@ -287,4 +307,11 @@ export function settingsContactLine(settings: WorkspaceSettings) {
 
 export function settingsPrimaryContact(settings: WorkspaceSettings) {
   return settings.companyProfile.phone || settings.companyProfile.email || settings.companyProfile.website || "";
+}
+
+export function settingsContentLines(value: string) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[•\-*]\s*/, ""))
+    .filter(Boolean);
 }

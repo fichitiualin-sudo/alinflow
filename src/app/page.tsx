@@ -5691,8 +5691,6 @@ export default function Home() {
         selected={selected}
         quoteItems={quoteItems}
         totalAmount={t}
-        installerAmount={installer}
-        materialAmount={materialPrice}
         quoteEmailBusy={quoteEmailBusy}
         quoteIssuedAt={quoteIssuedAt}
         workspaceSettings={workspaceSettings}
