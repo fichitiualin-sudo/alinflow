@@ -5739,13 +5739,15 @@ export default function Home() {
     <Shell>
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1>
+            <ThemeToggle compact />
+          </div>
           {workspaceSchemaAvailable && activeWorkspace ? (
             <p className="mt-1 text-sm font-black text-cyan-200">{activeWorkspace.name}</p>
           ) : null}
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3">
-          <ThemeToggle />
+        <div className="grid grid-cols-3 gap-2 [&>button]:min-w-0 [&>button]:px-2 [&>button]:py-3 [&>button]:text-center [&>button]:text-sm [&>button]:leading-tight sm:flex sm:flex-wrap sm:gap-3 sm:[&>button]:px-5 sm:[&>button]:py-4 sm:[&>button]:text-base">
           <Btn onClick={startNewCustomer}>+ Új ügyfél</Btn>
           <Btn color="blue" onClick={() => navigateToView("documents")}>Dokumentumok</Btn>
           <Btn color="green" onClick={() => navigateToView("warehouse")}>Raktár</Btn>

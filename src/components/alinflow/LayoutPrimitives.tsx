@@ -7,7 +7,7 @@ type ThemeMode = "dark" | "light";
 
 const THEME_STORAGE_KEY = "alinflow-theme";
 
-export function ThemeToggle() {
+export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const [theme, setTheme] = useState<ThemeMode>("dark");
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={() => updateTheme(theme === "dark" ? "light" : "dark")}
-      className="theme-toggle no-print rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-black text-cyan-100 shadow-xl backdrop-blur transition hover:bg-white/15"
+      className={`theme-toggle no-print rounded-2xl border border-white/10 bg-white/10 font-black text-cyan-100 shadow-xl backdrop-blur transition hover:bg-white/15 ${compact ? "px-3 py-2 text-xs" : "px-4 py-3 text-sm"}`}
       title={theme === "dark" ? "Világos mód bekapcsolása" : "Sötét mód bekapcsolása"}
     >
       {theme === "dark" ? "Világos" : "Sötét"}
