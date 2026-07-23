@@ -151,6 +151,15 @@ import {
   sellerCompanyToRow,
   sellerSnapshot,
 } from "@/lib/alinflow/purchase-declarations";
+import {
+  buildPurchaseDeclarationHtml,
+  buildSignedDocumentsIndex,
+  buildWorkReportHtml,
+  downloadSignedDocumentZip,
+  safeExportFilePart,
+  type SignedDocumentExportFile,
+  type SignedDocumentIndexItem,
+} from "@/lib/alinflow/signed-document-export";
 import { downloadSpreadsheetWorkbook, type SpreadsheetSheet } from "@/lib/alinflow/spreadsheet-export";
 
 const DASHBOARD_WAREHOUSE_LIMIT = 10;
@@ -350,6 +359,7 @@ export default function Home() {
   const [authLoading,setAuthLoading] = useState(true);
   const [dataLoading,setDataLoading] = useState(false);
   const [documentExportBusy,setDocumentExportBusy] = useState(false);
+  const [signedDocumentArchiveBusy,setSignedDocumentArchiveBusy] = useState(false);
   const [initialDataReady,setInitialDataReady] = useState(false);
   const [loginEmail,setLoginEmail] = useState("");
   const [loginPassword,setLoginPassword] = useState("");
@@ -1334,6 +1344,37 @@ export default function Home() {
     return [type, date, time].filter(Boolean).join(" - ");
   }
 
+  function exportCustomerFromRow(row: any, appointment: any, items: QuoteItem[] = []): Customer {
+    return {
+      id: row?.id || "",
+      name: row?.name || "",
+      city: row?.city || "",
+      postalCode: postalCodeFromCustomerData(row?.city, row?.postal_code, row?.address),
+      phone: row?.phone || "",
+      email: row?.email || "",
+      address: row?.address || appointment?.address || "",
+      source: row?.source || "",
+      status: normalizeStatus(appointment?.status || row?.status || ""),
+      need: row?.need || "",
+      notes: row?.notes || "",
+      date: appointment?.scheduled_date || undefined,
+      time: appointment?.scheduled_time || undefined,
+      appointmentType: normalizeAppointmentType(appointment?.appointment_type),
+      activeAppointmentId: appointment?.id || undefined,
+      activeQuoteId: appointment?.quote_id || undefined,
+      createdAt: row?.created_at || undefined,
+      updatedAt: row?.updated_at || undefined,
+      quoteItems: items.length ? items : EMPTY_QUOTE_ITEMS,
+    };
+  }
+
+  function hasValidPurchaseDeclarationSignature(declaration: PurchaseDeclaration) {
+    const signatureDataUrl = declaration.signatureDataUrl?.trim();
+    const signedAt = declaration.signedAt?.trim();
+    if (!signatureDataUrl || !signedAt) return false;
+    return !Number.isNaN(new Date(signedAt).getTime());
+  }
+
   function exportChecklistDate(checklist: WorkChecklistState, key: WorkChecklistItemKey) {
     return exportDate(checklist.completedAt?.[key]);
   }
@@ -1743,6 +1784,126 @@ export default function Home() {
       setMessage(`Excel export hiba: ${error?.message || error}`);
     } finally {
       setDocumentExportBusy(false);
+    }
+  }
+
+  async function exportSignedDocumentArchive() {
+    if (!user || signedDocumentArchiveBusy) return;
+
+    setSignedDocumentArchiveBusy(true);
+    setMessage("Aláírt dokumentumok mentése ZIP-be...");
+
+    try {
+      const [
+        customerRows,
+        appointmentRows,
+        jobRows,
+        quoteRows,
+        quoteItemRows,
+        workReportRows,
+        purchaseDeclarationRows,
+      ] = await Promise.all([
+        fetchAllExportRows("customers"),
+        fetchAllExportRows("appointments"),
+        fetchAllExportRows("jobs"),
+        fetchAllExportRows("quotes"),
+        fetchAllExportRows("quote_items", null),
+        fetchAllExportRows("work_reports"),
+        fetchOptionalExportRows("purchase_declarations"),
+      ]);
+
+      const customersById = new Map(customerRows.filter((row) => row.id).map((row) => [String(row.id), row]));
+      const compatibleAppointments = compatibleAppointmentRows(appointmentRows, jobRows, { jobsReadSucceeded: true });
+      const appointmentsById = new Map(compatibleAppointments.filter((row) => row.id).map((row) => [String(row.id), row]));
+      const quotesById = new Map(quoteRows.filter((row) => row.id).map((row) => [String(row.id), row]));
+      const quotesByCustomer = new Map<string, any>();
+      const quotesByAppointment = new Map<string, any[]>();
+      const quoteItemsByQuote = new Map<string, any[]>();
+
+      quoteRows.forEach((quote) => {
+        if (quote.customer_id && !quotesByCustomer.has(String(quote.customer_id))) quotesByCustomer.set(String(quote.customer_id), quote);
+        if (!quote.appointment_id) return;
+        const key = String(quote.appointment_id);
+        quotesByAppointment.set(key, [...(quotesByAppointment.get(key) || []), quote]);
+      });
+
+      quoteItemRows.forEach((item) => {
+        if (!item.quote_id) return;
+        const key = String(item.quote_id);
+        quoteItemsByQuote.set(key, [...(quoteItemsByQuote.get(key) || []), item]);
+      });
+
+      const appointmentFor = (appointmentId?: string | null) => appointmentId ? appointmentsById.get(String(appointmentId)) : undefined;
+      const quoteItemsForQuote = (quoteId?: string | null) => (quoteId ? (quoteItemsByQuote.get(String(quoteId)) || []) : []).map(quoteItemFromRow);
+      const quoteForAppointment = (appointment: any) => {
+        if (!appointment) return undefined;
+        if (appointment.quote_id && quotesById.has(String(appointment.quote_id))) return quotesById.get(String(appointment.quote_id));
+        return (quotesByAppointment.get(String(appointment.id)) || [])[0];
+      };
+      const quoteForCustomer = (customerId?: string | null) => customerId ? quotesByCustomer.get(String(customerId)) : undefined;
+
+      const files: SignedDocumentExportFile[] = [];
+      const indexItems: SignedDocumentIndexItem[] = [];
+
+      workReportRows
+        .map(workReportFromRow)
+        .filter(hasValidWorkReportSignature)
+        .forEach((report) => {
+          const customerRow = customersById.get(String(report.customerId || ""));
+          const appointment = appointmentFor(report.appointmentId);
+          const quote = quoteForAppointment(appointment) || quoteForCustomer(report.customerId);
+          const items = quoteItemsForQuote(quote?.id);
+          const customer = exportCustomerFromRow(customerRow, appointment, items);
+          const datePart = safeExportFilePart(report.workDate || report.signedAt?.slice(0, 10) || report.createdAt?.slice(0, 10));
+          const namePart = safeExportFilePart(customer.name || report.signerName);
+          const reportIdPart = safeExportFilePart(report.id);
+          const path = `munkalapok/${datePart}_${namePart}_${reportIdPart}.html`;
+
+          files.push({ path, content: buildWorkReportHtml(customer, report, items) });
+          indexItems.push({
+            title: workReportTitle(report.appointmentType),
+            type: "Munkalap",
+            customerName: customer.name || report.signerName || "Névtelen ügyfél",
+            signedAt: report.signedAt,
+            path,
+          });
+        });
+
+      purchaseDeclarationRows
+        .map(declarationFromRow)
+        .filter(hasValidPurchaseDeclarationSignature)
+        .forEach((declaration) => {
+          const customerRow = customersById.get(String(declaration.customerId || ""));
+          const appointment = appointmentFor(declaration.appointmentId);
+          const items = cleanQuoteItems(declaration.quoteItems || []);
+          const customer = exportCustomerFromRow(customerRow, appointment, items);
+          const datePart = safeExportFilePart(declaration.signedAt?.slice(0, 10) || declaration.createdAt?.slice(0, 10));
+          const namePart = safeExportFilePart(customer.name || declaration.signerName);
+          const declarationIdPart = safeExportFilePart(declaration.id);
+          const path = `vasarlasi-nyilatkozatok/${datePart}_${namePart}_${declarationIdPart}.html`;
+
+          files.push({ path, content: buildPurchaseDeclarationHtml(customer, declaration) });
+          indexItems.push({
+            title: `Vásárlási nyilatkozat - ${declaration.sellerName}`,
+            type: "Vásárlási nyilatkozat",
+            customerName: customer.name || declaration.signerName || "Névtelen ügyfél",
+            signedAt: declaration.signedAt,
+            path,
+          });
+        });
+
+      if (!files.length) {
+        setMessage("Nincs ténylegesen aláírt munkalap vagy vásárlási nyilatkozat az exporthoz.");
+        return;
+      }
+
+      files.unshift({ path: "index.html", content: buildSignedDocumentsIndex(indexItems) });
+      downloadSignedDocumentZip(`alinflow_alairt_dokumentumok_${todayIso()}.zip`, files);
+      setMessage(`Aláírt dokumentumok ZIP elkészült: ${indexItems.length} dokumentum.`);
+    } catch (error: any) {
+      setMessage(`Aláírt dokumentum export hiba: ${error?.message || error}`);
+    } finally {
+      setSignedDocumentArchiveBusy(false);
     }
   }
 
@@ -5215,7 +5376,7 @@ export default function Home() {
         <Layout>
           <Main>
             <Card title="Dokumentumok ügyfelenként">
-              <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto_auto]">
+              <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto_auto_auto]">
                 <input className="input" value={customerSearch} onChange={(event)=>setCustomerSearch(event.target.value)} placeholder="Keresés név, telefon, település, cím vagy klíma alapján..." />
                 <select className="input" value={customerStatusFilter} onChange={(event)=>setCustomerStatusFilter(event.target.value)}>
                   <option value="all">Összes státusz</option>
@@ -5223,6 +5384,7 @@ export default function Home() {
                 </select>
                 <button type="button" onClick={() => void refreshVisibleDocumentData()} disabled={dataLoading} className="document-action-button rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 disabled:opacity-60">{dataLoading ? "Frissítés..." : "Frissítés"}</button>
                 <button type="button" onClick={() => void exportAllDocumentData()} disabled={documentExportBusy || dataLoading} className="document-action-button rounded-2xl bg-emerald-300 px-5 py-4 font-black text-slate-950 disabled:opacity-60">{documentExportBusy ? "Export..." : "Teljes Excel export"}</button>
+                <button type="button" onClick={() => void exportSignedDocumentArchive()} disabled={signedDocumentArchiveBusy || dataLoading} className="document-action-button rounded-2xl bg-orange-400 px-5 py-4 font-black text-slate-950 disabled:opacity-60">{signedDocumentArchiveBusy ? "Mentés..." : "Aláírt doksik ZIP"}</button>
               </div>
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="document-action-button rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
