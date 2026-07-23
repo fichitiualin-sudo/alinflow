@@ -10,6 +10,7 @@ export type View =
   | "tasks"
   | "archive"
   | "documents"
+  | "settings"
   | "documentPreview";
 
 export type CalendarMode = "week" | "month";

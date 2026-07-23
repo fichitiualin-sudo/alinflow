@@ -4,6 +4,8 @@ import { fullCustomerAddress } from "./format";
 import { cleanQuoteItems, itemName, itemQuantity } from "./products";
 import { DEFAULT_SELLER_COMPANY } from "./purchase-declarations";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "./work-report";
+import type { WorkspaceSettings } from "./workspace-settings";
+import { defaultWorkspaceSettings, settingsFooterLines } from "./workspace-settings";
 
 export type SignedDocumentExportFile = {
   path: string;
@@ -40,6 +42,14 @@ function formatDocumentDate(value?: string) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("hu-HU", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
+}
+
+function workReportFooterHtml(workspaceSettings?: WorkspaceSettings) {
+  const lines = settingsFooterLines(workspaceSettings || defaultWorkspaceSettings(null), "workReport");
+  if (!lines.length) return "";
+  const [title, ...details] = lines;
+  const detailHtml = details.length ? `<br>${details.map((line) => escapeHtml(line)).join("<br>")}` : "";
+  return `Üdvözlettel,<br><strong>${escapeHtml(title)}</strong>${detailHtml}`;
 }
 
 function documentShell(title: string, body: string) {
@@ -97,7 +107,7 @@ export function buildSignedDocumentsIndex(items: SignedDocumentIndexItem[]) {
   </article>`);
 }
 
-export function buildWorkReportHtml(customer: Customer, report: WorkReport, quoteItems: QuoteItem[]) {
+export function buildWorkReportHtml(customer: Customer, report: WorkReport, quoteItems: QuoteItem[], workspaceSettings?: WorkspaceSettings) {
   const reportCustomer = {
     ...customer,
     appointmentType: report.appointmentType || customer.appointmentType,
@@ -165,7 +175,7 @@ export function buildWorkReportHtml(customer: Customer, report: WorkReport, quot
       </div>
     </section>
 
-    <div class="footer">Üdvözlettel,<br><strong>Adorján Alin - KLIMAlin</strong><br>klimalin.hu - legkondikalkulator.hu - 06 30 700 4908</div>
+    <div class="footer">${workReportFooterHtml(workspaceSettings)}</div>
   </article>`);
 }
 
