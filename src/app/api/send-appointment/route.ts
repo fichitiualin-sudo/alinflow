@@ -1,12 +1,18 @@
 import {
   appointmentEmailIntro,
-  appointmentEmailSubject,
   appointmentTimeRangeLabel,
   appointmentTypeLabel,
   appointmentWorkLabel,
   isInstallationAppointment,
   normalizeAppointmentType,
 } from "@/lib/alinflow/appointments";
+import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
+import {
+  defaultWorkspaceSettings,
+  normalizeWorkspaceSettings,
+  settingsBrandName,
+  settingsFooterLines,
+} from "@/lib/alinflow/workspace-settings";
 
 export const runtime = "nodejs";
 
@@ -57,6 +63,13 @@ function escapeHtml(value: unknown) {
 
 function uniqueEmailRef(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function footerHtml(settings: WorkspaceSettings) {
+  const lines = settingsFooterLines(settings, "email");
+  if (!lines.length) return "";
+  const [firstLine, ...rest] = lines;
+  return `Üdvözlettel,<br><strong style="color:#020617">${escapeHtml(firstLine)}</strong>${rest.length ? `<br>${rest.map(escapeHtml).join("<br>")}` : ""}`;
 }
 
 function ft(value: number) {
@@ -115,7 +128,9 @@ function importantNotesHtml(appointmentType?: string) {
   return notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("");
 }
 
-function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
+function appointmentEmailHtml(customer: Customer, items: QuoteItem[], workspaceSettings?: WorkspaceSettings) {
+  const settings = workspaceSettings || defaultWorkspaceSettings(null);
+  const brandName = settingsBrandName(settings);
   const type = normalizeAppointmentType(customer.appointmentType);
   const appointmentLabel = appointmentTypeLabel(type);
   const name = escapeHtml(customer.name || "Ügyfelünk");
@@ -144,7 +159,7 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
     <div class="outer" style="background:#f6f7fb;padding:28px 14px">
       <div class="card" style="max-width:680px;width:100%;margin:0 auto;background:#ffffff;border-radius:28px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 18px 45px rgba(15,23,42,.10)">
         <div class="section" style="padding:30px 32px 22px 32px;background:#050816;color:#ffffff">
-          <div style="font-size:14px;font-weight:800;color:#67e8f9;margin-bottom:8px">KLIMAlin ${escapeHtml(appointmentLabel)} időpont visszaigazolás</div>
+          <div style="font-size:14px;font-weight:800;color:#67e8f9;margin-bottom:8px">${escapeHtml(brandName)} ${escapeHtml(appointmentLabel)} időpont visszaigazolás</div>
           <h1 class="title" style="margin:0;font-size:30px;line-height:1.15;font-weight:900">Sikeres időpont-egyeztetés</h1>
           <p style="margin:12px 0 0 0;color:#cbd5e1;font-size:15px;line-height:1.55">Köszönjük a bizalmat, az alábbi ${escapeHtml(appointmentLabel.toLowerCase())} időpontot rögzítettük.</p>
         </div>
@@ -183,7 +198,7 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
             </ul>
           </div>
 
-          <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">Üdvözlettel,<br><strong style="color:#020617">Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+          <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">${footerHtml(settings)}</p>
         </div>
       </div>
     </div>
@@ -194,14 +209,18 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[]) {
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.RESEND_API_KEY;
-    const from = process.env.EMAIL_FROM || "KLIMAlin <info@alinflow.hu>";
-    const replyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
+    const configuredFrom = process.env.EMAIL_FROM;
+    const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
 
     if (!apiKey) return Response.json({ error: "Hiányzik a RESEND_API_KEY környezeti változó." }, { status: 500 });
 
     const body = await request.json();
     const customer: Customer = body.customer || {};
     const items: QuoteItem[] = Array.isArray(body.items) ? body.items : [];
+    const workspaceSettings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
+    const brandName = settingsBrandName(workspaceSettings);
+    const from = configuredFrom || `${brandName} <info@alinflow.hu>`;
+    const replyTo = workspaceSettings.companyProfile.email || configuredReplyTo;
     const to = safeText(customer.email);
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
@@ -216,11 +235,11 @@ export async function POST(request: Request) {
         from,
         to: [to],
         reply_to: replyTo,
-        subject: appointmentEmailSubject(customer.appointmentType),
+        subject: `${appointmentTypeLabel(customer.appointmentType)} időpont visszaigazolás – ${brandName}`,
         headers: {
-          "X-Entity-Ref-ID": uniqueEmailRef("klimalin-appointment"),
+          "X-Entity-Ref-ID": uniqueEmailRef("alinflow-appointment"),
         },
-        html: appointmentEmailHtml(customer, items),
+        html: appointmentEmailHtml(customer, items, workspaceSettings),
       }),
     });
 

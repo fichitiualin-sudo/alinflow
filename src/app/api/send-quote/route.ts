@@ -1,3 +1,13 @@
+import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
+import {
+  defaultWorkspaceSettings,
+  normalizeWorkspaceSettings,
+  settingsBrandName,
+  settingsContactLine,
+  settingsFooterLines,
+  settingsPrimaryContact,
+} from "@/lib/alinflow/workspace-settings";
+
 export const runtime = "nodejs";
 
 type QuoteCustomer = {
@@ -60,6 +70,13 @@ function customerLine(value?: string) {
   return text ? `<div style="margin:3px 0;line-height:1.45">${text}</div>` : "";
 }
 
+function footerHtml(settings: WorkspaceSettings) {
+  const lines = settingsFooterLines(settings, "email");
+  if (!lines.length) return "";
+  const [firstLine, ...rest] = lines;
+  return `Üdvözlettel,<br><strong style="color:#020617">${escapeHtml(firstLine)}</strong>${rest.length ? `<br>${rest.map(escapeHtml).join("<br>")}` : ""}`;
+}
+
 function isAlternativesPricing(mode?: string) {
   return mode === "alternatives";
 }
@@ -107,7 +124,14 @@ function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePri
     .join("");
 }
 
-function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number, pricingMode: QuotePricingMode = "bundle", quoteIssuedAt = "") {
+function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount: number, installerAmount: number, materialAmount: number, pricingMode: QuotePricingMode = "bundle", quoteIssuedAt = "", workspaceSettings?: WorkspaceSettings) {
+  const settings = workspaceSettings || defaultWorkspaceSettings(null);
+  const quote = settings.quoteSettings;
+  const company = settings.companyProfile;
+  const brandName = settingsBrandName(settings);
+  const quoteTitle = quote.title || `${company.displayName || brandName} árajánlat`;
+  const primaryContact = settingsPrimaryContact(settings);
+  const contactLine = settingsContactLine(settings);
   const customerName = escapeHtml(customer.name || "Ügyfelünk");
   const address = customerLine(fullAddress(customer.city, customer.address, "nincs megadva", customer.postalCode));
   const email = customerLine(customer.email);
@@ -135,20 +159,20 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
     <div class="outer" style="background:#f6f7fb;padding:28px 14px">
       <div class="card" style="max-width:720px;width:100%;margin:0 auto;background:#ffffff;border-radius:28px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 18px 45px rgba(15,23,42,.10)">
         <div class="section" style="padding:30px 32px 22px 32px;background:#ffffff;border-bottom:1px solid #e5e7eb">
-          <div style="font-size:14px;font-weight:800;color:#0891b2;margin-bottom:8px">KLIMAlin</div>
-          <h1 class="title" style="margin:0;font-size:32px;line-height:1.15;color:#020617;font-weight:900">KLIMAlin árajánlat</h1>
-          <p style="margin:10px 0 0 0;color:#64748b;font-size:15px;line-height:1.5">Klímaberendezés alapszereléssel együtt</p>
+          <div style="font-size:14px;font-weight:800;color:#0891b2;margin-bottom:8px">${escapeHtml(brandName)}</div>
+          <h1 class="title" style="margin:0;font-size:32px;line-height:1.15;color:#020617;font-weight:900">${escapeHtml(quoteTitle)}</h1>
+          <p style="margin:10px 0 0 0;color:#64748b;font-size:15px;line-height:1.5">${escapeHtml(quote.subtitle)}</p>
           <div style="margin-top:24px;color:#64748b;font-size:15px;line-height:1.55">
             <div><strong>Árajánlat időpontja:</strong> ${shownQuoteIssuedAt}</div>
-            <div><strong>Ajánlat érvényessége:</strong> 7 nap</div>
-            <div><strong>Kapcsolat:</strong> 06 30 700 4908</div>
-            <div>klimalin.hu</div>
+            <div><strong>Ajánlat érvényessége:</strong> ${escapeHtml(quote.validityDays)} nap</div>
+            ${primaryContact ? `<div><strong>Kapcsolat:</strong> ${escapeHtml(primaryContact)}</div>` : ""}
+            ${contactLine ? `<div>${escapeHtml(contactLine)}</div>` : ""}
           </div>
         </div>
 
         <div class="section" style="padding:26px 32px">
           <p style="margin:0 0 18px 0;font-size:16px;line-height:1.6">Tisztelt ${customerName}!</p>
-          <p style="margin:0 0 24px 0;font-size:16px;line-height:1.6;color:#334155">${quoteIsAlternatives ? "A telefonos / online egyeztetés alapján az alábbi választható klímás ajánlatokat küldjük. Az árak bruttó összegek, alapszereléssel együtt, és külön-külön értendők." : "A telefonos / online egyeztetés alapján az alábbi klímás ajánlatot küldjük. Az árak bruttó összegek, és alapszereléssel együtt értendők."}</p>
+          <p style="margin:0 0 24px 0;font-size:16px;line-height:1.6;color:#334155">${escapeHtml(quoteIsAlternatives ? quote.alternativesIntro : quote.bundleIntro)}</p>
 
           <div style="background:#f1f5f9;border-radius:20px;padding:18px 20px;margin:0 0 18px 0">
             <div style="font-size:14px;color:#64748b;margin-bottom:7px">Ügyfél</div>
@@ -197,14 +221,14 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
           ${quoteIsAlternatives ? "" : `
             <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:22px;color:#334155;font-size:15px;line-height:1.55">
               <div style="font-weight:900;margin-bottom:8px">Belső számlázási bontás</div>
-              <div>Adorján Alin E.V. – klímatelepítési munkadíj: ${ft(installerAmount)}</div>
-              <div>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: ${ft(materialAmount)}</div>
+              <div>${escapeHtml(quote.laborProviderName || "Munkadíj")} – ${escapeHtml(quote.laborDescription)}: ${ft(installerAmount)}</div>
+              <div>${escapeHtml(quote.deviceProviderName || "Készülék és anyag")} – ${escapeHtml(quote.deviceDescription)}: ${ft(materialAmount)}</div>
               <div style="margin-top:8px;color:#64748b">Ez a bontás az ügyfél által fizetendő végösszeget nem módosítja.</div>
             </div>
           `}
 
-          <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">Amennyiben megfelel Önnek az ajánlat, válasz emailben vagy telefonon tudunk időpontot egyeztetni.</p>
-          <p style="margin:18px 0 0 0;font-size:15px;line-height:1.6;color:#334155">Üdvözlettel,<br><strong style="color:#020617">Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+          <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155">${escapeHtml(quote.acceptanceText)}</p>
+          <p style="margin:18px 0 0 0;font-size:15px;line-height:1.6;color:#334155">${footerHtml(settings)}</p>
         </div>
       </div>
     </div>
@@ -215,8 +239,8 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.RESEND_API_KEY;
-    const from = process.env.EMAIL_FROM || "KLIMAlin <info@alinflow.hu>";
-    const replyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
+    const configuredFrom = process.env.EMAIL_FROM;
+    const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
 
     if (!apiKey) return Response.json({ error: "Hiányzik a RESEND_API_KEY környezeti változó." }, { status: 500 });
 
@@ -228,6 +252,10 @@ export async function POST(request: Request) {
     const materialAmount = Number(body.materialAmount || 0);
     const pricingMode: QuotePricingMode = body.pricingMode === "alternatives" ? "alternatives" : "bundle";
     const quoteIssuedAt = safeText(body.quoteIssuedAt) || new Date().toISOString();
+    const workspaceSettings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
+    const brandName = settingsBrandName(workspaceSettings);
+    const from = configuredFrom || `${brandName} <info@alinflow.hu>`;
+    const replyTo = workspaceSettings.companyProfile.email || configuredReplyTo;
     const to = safeText(customer.email);
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
@@ -242,11 +270,11 @@ export async function POST(request: Request) {
         from,
         to: [to],
         reply_to: replyTo,
-        subject: pricingMode === "alternatives" ? "Klíma ajánlat – választható lehetőségek – KLIMAlin" : "Klíma ajánlat – KLIMAlin",
+        subject: pricingMode === "alternatives" ? `Klíma ajánlat – választható lehetőségek – ${brandName}` : `Klíma ajánlat – ${brandName}`,
         headers: {
-          "X-Entity-Ref-ID": uniqueEmailRef("klimalin-quote"),
+          "X-Entity-Ref-ID": uniqueEmailRef("alinflow-quote"),
         },
-        html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount, pricingMode, quoteIssuedAt),
+        html: quoteEmailHtml(customer, items, totalAmount, installerAmount, materialAmount, pricingMode, quoteIssuedAt, workspaceSettings),
       }),
     });
 

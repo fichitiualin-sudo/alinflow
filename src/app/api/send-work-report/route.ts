@@ -1,4 +1,11 @@
 import { appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, isInstallationAppointment } from "@/lib/alinflow/appointments";
+import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
+import {
+  defaultWorkspaceSettings,
+  normalizeWorkspaceSettings,
+  settingsBrandName,
+  settingsFooterLines,
+} from "@/lib/alinflow/workspace-settings";
 
 export const runtime = "nodejs";
 
@@ -187,6 +194,13 @@ function uniqueEmailRef(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function footerHtml(settings: WorkspaceSettings) {
+  const lines = settingsFooterLines(settings, "workReport");
+  if (!lines.length) return "";
+  const [firstLine, ...rest] = lines;
+  return `Üdvözlettel,<br><strong>${escapeHtml(firstLine)}</strong>${rest.length ? `<br>${rest.map(escapeHtml).join("<br>")}` : ""}`;
+}
+
 function itemsHtml(items: QuoteItem[]) {
   if (!items.length) {
     return `<div style="padding:14px 0;border-bottom:1px solid #e5e7eb"><strong>Klímatelepítés</strong><br><span style="color:#64748b">Szereléssel együtt, egyeztetés szerint.</span></div>`;
@@ -204,7 +218,8 @@ function itemsHtml(items: QuoteItem[]) {
   }).join("");
 }
 
-function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: WorkReport, purchaseDeclaration?: { seller?: SellerCompany; items?: QuoteItem[] }) {
+function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: WorkReport, purchaseDeclaration?: { seller?: SellerCompany; items?: QuoteItem[] }, workspaceSettings?: WorkspaceSettings) {
+  const settings = workspaceSettings || defaultWorkspaceSettings(null);
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const rawName = customer.name || report.signerName || "";
   const address = escapeHtml(fullAddress(customer.city, customer.address, "nincs megadva", customer.postalCode));
@@ -317,7 +332,7 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
         </div>
 
         <div style="border-top:1px solid #111;margin-top:7px;padding-top:3px;font-size:8.8px;line-height:1.1">
-          Üdvözlettel,<br><strong>Adorján Alin · KLIMAlin</strong><br>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908
+          ${footerHtml(settings)}
         </div>
       </div>
 
@@ -329,8 +344,8 @@ function workReportEmailHtml(customer: Customer, items: QuoteItem[], report: Wor
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.RESEND_API_KEY;
-    const from = process.env.EMAIL_FROM || "KLIMAlin <info@alinflow.hu>";
-    const replyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
+    const configuredFrom = process.env.EMAIL_FROM;
+    const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
 
     if (!apiKey) return Response.json({ error: "Hiányzik a RESEND_API_KEY környezeti változó." }, { status: 500 });
 
@@ -339,6 +354,10 @@ export async function POST(request: Request) {
     const items: QuoteItem[] = Array.isArray(body.items) ? body.items : [];
     const purchaseDeclaration = body.purchaseDeclaration || {};
     const report: WorkReport = body.report || {};
+    const workspaceSettings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
+    const brandName = settingsBrandName(workspaceSettings);
+    const from = configuredFrom || `${brandName} <info@alinflow.hu>`;
+    const replyTo = workspaceSettings.companyProfile.email || configuredReplyTo;
     const to = safeText(customer.email);
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
@@ -358,11 +377,11 @@ export async function POST(request: Request) {
         from,
         to: [to],
         reply_to: replyTo,
-        subject: isInstallationAppointment(customer.appointmentType) ? `${appointmentTypeLabel(customer.appointmentType)} munkalap és vásárlási nyilatkozat – KLIMAlin` : `${appointmentTypeLabel(customer.appointmentType)} munkalap – KLIMAlin`,
+        subject: isInstallationAppointment(customer.appointmentType) ? `${appointmentTypeLabel(customer.appointmentType)} munkalap és vásárlási nyilatkozat – ${brandName}` : `${appointmentTypeLabel(customer.appointmentType)} munkalap – ${brandName}`,
         headers: {
-          "X-Entity-Ref-ID": uniqueEmailRef("klimalin-work-report"),
+          "X-Entity-Ref-ID": uniqueEmailRef("alinflow-work-report"),
         },
-        html: workReportEmailHtml(customer, items, report, purchaseDeclaration),
+        html: workReportEmailHtml(customer, items, report, purchaseDeclaration, workspaceSettings),
         attachments,
       }),
     });

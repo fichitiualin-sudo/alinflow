@@ -1,9 +1,11 @@
 import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
+import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, quoteInstallTotal, total } from "@/lib/alinflow/products";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { DEFAULT_SELLER_COMPANY } from "@/lib/alinflow/purchase-declarations";
+import { defaultWorkspaceSettings, settingsBrandName, settingsContactLine, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 
 function formatDocumentDate(value?: string) {
   if (!value) return "nincs megadva";
@@ -59,10 +61,11 @@ function customerWithReportDate(customer: Customer, report: WorkReport): Custome
   };
 }
 
-export function WorkReportDocument({ customer, report, quoteItems }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[] }) {
+export function WorkReportDocument({ customer, report, quoteItems, workspaceSettings }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[]; workspaceSettings?: WorkspaceSettings }) {
   const reportCustomer = customerWithReportDate(customer, report);
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
+  const footerLines = settingsFooterLines(workspaceSettings || defaultWorkspaceSettings(null), "workReport");
   const workType = appointmentTypeLabel(reportCustomer.appointmentType);
   const workTime = reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, items) : appointmentTimeRangeLabel(reportCustomer);
   const workTitle = workReportTitle(reportCustomer.appointmentType);
@@ -139,14 +142,17 @@ export function WorkReportDocument({ customer, report, quoteItems }: { customer:
         </section>
 
         <div className="border-t border-slate-900 pt-1 text-[10px] leading-tight print:text-[8.5px]">
-          Üdvözlettel,<br /><strong>Adorján Alin · KLIMAlin</strong><br />klimalin.hu · legkondikalkulator.hu · 06 30 700 4908
+          Üdvözlettel,<br />
+          {footerLines.map((line, index) => (
+            <span key={`${line}-${index}`}>{index === 0 ? <strong>{line}</strong> : line}{index < footerLines.length - 1 ? <br /> : null}</span>
+          ))}
         </div>
       </div>
     </article>
   );
 }
 
-export function AllWorkReportsDocument({ customer, reports, quoteItems }: { customer: Customer; reports: WorkReport[]; quoteItems: QuoteItem[] }) {
+export function AllWorkReportsDocument({ customer, reports, quoteItems, workspaceSettings }: { customer: Customer; reports: WorkReport[]; quoteItems: QuoteItem[]; workspaceSettings?: WorkspaceSettings }) {
   const sortedReports = [...reports].sort((a, b) => {
     const aDate = `${a.workDate || ""}T${a.workTime || "00:00"}`;
     const bDate = `${b.workDate || ""}T${b.workTime || "00:00"}`;
@@ -184,7 +190,7 @@ export function AllWorkReportsDocument({ customer, reports, quoteItems }: { cust
         </div>
       </article>
       {sortedReports.map((report, index) => (
-        <WorkReportDocument key={report.id || `${report.workDate}-${report.workTime}-${index}`} customer={customer} report={report} quoteItems={quoteItems} />
+        <WorkReportDocument key={report.id || `${report.workDate}-${report.workTime}-${index}`} customer={customer} report={report} quoteItems={quoteItems} workspaceSettings={workspaceSettings} />
       ))}
     </>
   );
@@ -259,28 +265,35 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems, sell
   );
 }
 
-export function QuoteDocument({ customer, quoteItems, quoteIssuedAt }: { customer: Customer; quoteItems: QuoteItem[]; quoteIssuedAt?: string }) {
+export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSettings }: { customer: Customer; quoteItems: QuoteItem[]; quoteIssuedAt?: string; workspaceSettings?: WorkspaceSettings }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const sum = total(items);
   const installerAmount = quoteInstallTotal(items);
   const materialAmount = Math.max(0, sum - installerAmount);
   const quoteIsAlternatives = isQuoteAlternatives(customer.quotePricingMode);
   const shownQuoteIssuedAt = formatQuoteIssuedAt(quoteIssuedAt);
+  const settings = workspaceSettings || defaultWorkspaceSettings(null);
+  const quote = settings.quoteSettings;
+  const company = settings.companyProfile;
+  const footerLines = settingsFooterLines(settings, "quote");
+  const contactLine = settingsContactLine(settings);
+  const primaryContact = settingsPrimaryContact(settings);
+  const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
 
   return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
     <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
       <div className="flex items-start gap-4">
-        <img src="/alin-klima-logo.png" alt="KLIMAlin logo" className="h-16 w-auto object-contain" />
+        {company.logoUrl ? <img src={company.logoUrl} alt={`${company.displayName || "AlinFlow"} logo`} className="h-16 w-auto object-contain" /> : null}
         <div>
-          <h2 className="text-3xl font-black">KLIMAlin árajánlat</h2>
-          <p className="mt-2 text-sm text-slate-600">Klímaberendezés alapszereléssel együtt</p>
+          <h2 className="text-3xl font-black">{quoteTitle}</h2>
+          <p className="mt-2 text-sm text-slate-600">{quote.subtitle}</p>
         </div>
       </div>
       <div className="text-sm text-slate-600 md:text-right">
         <p>Árajánlat időpontja: {shownQuoteIssuedAt}</p>
-        <p>Ajánlat érvényessége: 7 nap</p>
-        <p>Kapcsolat: 06 30 700 4908</p>
-        <p>klimalin.hu</p>
+        <p>Ajánlat érvényessége: {quote.validityDays} nap</p>
+        {primaryContact ? <p>Kapcsolat: {primaryContact}</p> : null}
+        {contactLine ? <p>{contactLine}</p> : null}
       </div>
     </div>
 
@@ -345,22 +358,29 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt }: { custome
     {quoteIsAlternatives ? null : (
       <div className="mt-4 rounded-2xl bg-amber-50 p-5 text-sm leading-relaxed text-slate-800">
         <h3 className="font-black">Belső számlázási bontás</h3>
-        <p className="mt-3">Adorján Alin E.V. – klímatelepítési munkadíj: <strong>{ft(installerAmount)}</strong></p>
-        <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: <strong>{ft(materialAmount)}</strong></p>
+        <p className="mt-3">{quote.laborProviderName || "Munkadíj"} – {quote.laborDescription}: <strong>{ft(installerAmount)}</strong></p>
+        <p>{quote.deviceProviderName || "Készülék és anyag"} – {quote.deviceDescription}: <strong>{ft(materialAmount)}</strong></p>
       </div>
     )}
 
     <div className="mt-8 text-sm text-slate-700">
       <p>Üdvözlettel,</p>
-      <p className="font-black">Adorján Alin · KLIMAlin</p>
-      <p>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+      {footerLines.map((line, index) => (
+        <p key={`${line}-${index}`} className={index === 0 ? "font-black" : undefined}>{line}</p>
+      ))}
     </div>
   </article>;
 }
 
-export function AppointmentConfirmationDocument({ customer, quoteItems }: { customer: Customer; quoteItems: QuoteItem[] }) {
+export function AppointmentConfirmationDocument({ customer, quoteItems, workspaceSettings }: { customer: Customer; quoteItems: QuoteItem[]; workspaceSettings?: WorkspaceSettings }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
-  const appointmentTitle = appointmentDocumentTitle(customer.appointmentType);
+  const settings = workspaceSettings || defaultWorkspaceSettings(null);
+  const company = settings.companyProfile;
+  const brandName = settingsBrandName(settings);
+  const footerLines = settingsFooterLines(settings, "email");
+  const contactLine = settingsContactLine(settings);
+  const primaryContact = settingsPrimaryContact(settings);
+  const appointmentTitle = appointmentDocumentTitle(customer.appointmentType).replace("KLIMAlin", brandName);
   const appointmentLabel = appointmentTypeLabel(customer.appointmentType);
   const appointmentTime = appointmentTimeRangeLabel(customer);
   const workLabel = appointmentWorkLabel(customer.appointmentType);
@@ -368,15 +388,15 @@ export function AppointmentConfirmationDocument({ customer, quoteItems }: { cust
   return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
     <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
       <div className="flex items-start gap-4">
-        <img src="/alin-klima-logo.png" alt="KLIMAlin logo" className="h-16 w-auto object-contain" />
+        {company.logoUrl ? <img src={company.logoUrl} alt={`${company.displayName || "AlinFlow"} logo`} className="h-16 w-auto object-contain" /> : null}
         <div>
           <h2 className="text-3xl font-black">{appointmentTitle}</h2>
           <p className="mt-2 text-sm text-slate-600">{appointmentLabel} időpont és helyszín összesítő</p>
         </div>
       </div>
       <div className="text-sm text-slate-600 md:text-right">
-        <p>Kapcsolat: 06 30 700 4908</p>
-        <p>klimalin.hu</p>
+        {primaryContact ? <p>Kapcsolat: {primaryContact}</p> : null}
+        {contactLine ? <p>{contactLine}</p> : null}
       </div>
     </div>
 
@@ -423,8 +443,9 @@ export function AppointmentConfirmationDocument({ customer, quoteItems }: { cust
 
     <div className="mt-8 text-sm text-slate-700">
       <p>Üdvözlettel,</p>
-      <p className="font-black">Adorján Alin · KLIMAlin</p>
-      <p>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+      {footerLines.map((line, index) => (
+        <p key={`${line}-${index}`} className={index === 0 ? "font-black" : undefined}>{line}</p>
+      ))}
     </div>
   </article>;
 }

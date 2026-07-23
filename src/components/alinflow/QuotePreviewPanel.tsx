@@ -1,6 +1,8 @@
 import type { Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types";
+import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { displayAddress, ft } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemPriceLine, itemQuantity, itemTotal } from "@/lib/alinflow/products";
+import { settingsContactLine, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuotePreviewPanelProps = {
@@ -11,6 +13,7 @@ type QuotePreviewPanelProps = {
   materialAmount: number;
   quoteEmailBusy: boolean;
   quoteIssuedAt: string;
+  workspaceSettings: WorkspaceSettings;
   onBack: () => void;
   onPrint: () => void;
   onSendQuote: () => void;
@@ -39,6 +42,7 @@ export function QuotePreviewPanel({
   materialAmount,
   quoteEmailBusy,
   quoteIssuedAt,
+  workspaceSettings,
   onBack,
   onPrint,
   onSendQuote,
@@ -47,6 +51,12 @@ export function QuotePreviewPanel({
 }: QuotePreviewPanelProps) {
   const quoteIsAlternatives = isQuoteAlternatives(selected.quotePricingMode);
   const shownQuoteIssuedAt = formatQuoteIssuedAt(quoteIssuedAt);
+  const quote = workspaceSettings.quoteSettings;
+  const company = workspaceSettings.companyProfile;
+  const footerLines = settingsFooterLines(workspaceSettings, "quote");
+  const contactLine = settingsContactLine(workspaceSettings);
+  const primaryContact = settingsPrimaryContact(workspaceSettings);
+  const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
 
   return (
     <Shell>
@@ -55,21 +65,21 @@ export function QuotePreviewPanel({
       </div>
       <Layout>
         <Main>
-          <Card title="KLIMAlin árajánlat">
+          <Card title={quoteTitle}>
             <div className="quote-print rounded-[2rem] bg-white p-6 text-slate-950 print:bg-white print:text-black">
               <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
                 <div className="flex items-start gap-4">
-                  <img src="/alin-klima-logo.png" alt="KLIMAlin logo" className="h-20 w-auto object-contain" />
+                  {company.logoUrl ? <img src={company.logoUrl} alt={`${company.displayName || "AlinFlow"} logo`} className="h-20 w-auto object-contain" /> : null}
                   <div>
-                    <h2 className="text-3xl font-black">KLIMAlin árajánlat</h2>
-                    <p className="mt-2 text-sm text-slate-600">Klímaberendezés alapszereléssel együtt</p>
+                    <h2 className="text-3xl font-black">{quoteTitle}</h2>
+                    <p className="mt-2 text-sm text-slate-600">{quote.subtitle}</p>
                   </div>
                 </div>
                 <div className="text-sm text-slate-600 md:text-right">
                   <p>Árajánlat időpontja: {shownQuoteIssuedAt}</p>
-                  <p>Ajánlat érvényessége: 7 nap</p>
-                  <p>Kapcsolat: 06 30 700 4908</p>
-                  <p>klimalin.hu</p>
+                  <p>Ajánlat érvényessége: {quote.validityDays} nap</p>
+                  {primaryContact ? <p>Kapcsolat: {primaryContact}</p> : null}
+                  {contactLine ? <p>{contactLine}</p> : null}
                 </div>
               </div>
 
@@ -143,15 +153,16 @@ export function QuotePreviewPanel({
               {quoteIsAlternatives ? null : (
                 <div className="mt-6 rounded-2xl bg-amber-50 p-5 text-sm text-slate-800">
                   <h3 className="font-black">Belső számlázási bontás</h3>
-                  <p className="mt-2">Adorján Alin E.V. – klímatelepítési munkadíj: {ft(installerAmount)}</p>
-                  <p>AMOVA 4U Kft. – klímaberendezés + szerelési anyagok: {ft(materialAmount)}</p>
+                  <p className="mt-2">{quote.laborProviderName || "Munkadíj"} – {quote.laborDescription}: {ft(installerAmount)}</p>
+                  <p>{quote.deviceProviderName || "Készülék és anyag"} – {quote.deviceDescription}: {ft(materialAmount)}</p>
                 </div>
               )}
 
               <div className="mt-6 text-sm text-slate-600">
                 <p>Üdvözlettel,</p>
-                <p className="font-black text-slate-950">Adorján Alin · KLIMAlin</p>
-                <p>klimalin.hu · legkondikalkulator.hu · 06 30 700 4908</p>
+                {footerLines.map((line, index) => (
+                  <p key={`${line}-${index}`} className={index === 0 ? "font-black text-slate-950" : undefined}>{line}</p>
+                ))}
               </div>
             </div>
           </Card>

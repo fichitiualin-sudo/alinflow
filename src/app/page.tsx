@@ -118,6 +118,7 @@ import { TaskPanel, type TaskFilter } from "@/components/alinflow/TaskPanel";
 import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
 import { QuotePreviewPanel } from "@/components/alinflow/QuotePreviewPanel";
 import { SchedulePanel } from "@/components/alinflow/SchedulePanel";
+import { SettingsPanel } from "@/components/alinflow/SettingsPanel";
 import {
   clearCustomerDraft,
   draftForCustomer,
@@ -162,6 +163,12 @@ import {
   type SignedDocumentIndexItem,
 } from "@/lib/alinflow/signed-document-export";
 import { downloadSpreadsheetWorkbook, type SpreadsheetSheet } from "@/lib/alinflow/spreadsheet-export";
+import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
+import {
+  defaultWorkspaceSettings,
+  workspaceSettingsFromRow,
+  workspaceSettingsToRow,
+} from "@/lib/alinflow/workspace-settings";
 
 const DASHBOARD_WAREHOUSE_LIMIT = 10;
 
@@ -237,6 +244,11 @@ function isMissingSellerTableError(error: any) {
 function isMissingWorkspaceSchemaError(error: any) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
   return (text.includes("workspace") || text.includes("workspace_id")) && (text.includes("relation") || text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
+function isMissingWorkspaceSettingsSchemaError(error: any) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
+  return text.includes("workspace_settings") && (text.includes("relation") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
 }
 
 function workspaceSlugForUser(currentUser: User) {
@@ -375,6 +387,10 @@ export default function Home() {
   const [dataLoading,setDataLoading] = useState(false);
   const [activeWorkspace,setActiveWorkspace] = useState<Workspace | null>(null);
   const [workspaceSchemaAvailable,setWorkspaceSchemaAvailable] = useState(false);
+  const [workspaceSettings,setWorkspaceSettings] = useState<WorkspaceSettings>(() => defaultWorkspaceSettings(null));
+  const [workspaceSettingsSchemaAvailable,setWorkspaceSettingsSchemaAvailable] = useState(false);
+  const [workspaceSettingsBusy,setWorkspaceSettingsBusy] = useState(false);
+  const [workspaceSettingsMessage,setWorkspaceSettingsMessage] = useState("");
   const [documentExportBusy,setDocumentExportBusy] = useState(false);
   const [signedDocumentArchiveBusy,setSignedDocumentArchiveBusy] = useState(false);
   const [initialDataReady,setInitialDataReady] = useState(false);
@@ -455,6 +471,9 @@ export default function Home() {
     activeWorkspaceIdRef.current = workspace?.id || null;
     setActiveWorkspace(workspace);
     setWorkspaceSchemaAvailable(schemaAvailable);
+    setWorkspaceSettings(defaultWorkspaceSettings(workspace));
+    setWorkspaceSettingsSchemaAvailable(false);
+    setWorkspaceSettingsMessage("");
   }
 
   function currentWorkspaceId() {
@@ -473,6 +492,70 @@ export default function Home() {
 
   function workspaceOnConflict(scopedColumns: string, legacyColumns: string) {
     return currentWorkspaceId() ? scopedColumns : legacyColumns;
+  }
+
+  async function loadWorkspaceSettingsFromDb(workspace: Workspace | null) {
+    const fallback = defaultWorkspaceSettings(workspace);
+    setWorkspaceSettings(fallback);
+    setWorkspaceSettingsMessage("");
+
+    if (!workspace?.id) {
+      setWorkspaceSettingsSchemaAvailable(false);
+      return fallback;
+    }
+
+    const { data, error } = await supabase
+      .from("workspace_settings")
+      .select("*")
+      .eq("workspace_id", workspace.id)
+      .maybeSingle();
+
+    if (error) {
+      if (isMissingWorkspaceSettingsSchemaError(error)) {
+        setWorkspaceSettingsSchemaAvailable(false);
+        return fallback;
+      }
+      throw error;
+    }
+
+    const loadedSettings = workspaceSettingsFromRow(data as any, fallback);
+    setWorkspaceSettings(loadedSettings);
+    setWorkspaceSettingsSchemaAvailable(true);
+    return loadedSettings;
+  }
+
+  async function saveWorkspaceSettings(nextSettings: WorkspaceSettings) {
+    if (!activeWorkspace?.id) {
+      setWorkspaceSettingsMessage("Nincs aktív munkaterület, ezért nem menthető a beállítás.");
+      return;
+    }
+
+    setWorkspaceSettingsBusy(true);
+    setWorkspaceSettingsMessage("");
+
+    const payload = workspaceSettingsToRow(nextSettings, activeWorkspace.id, user?.id || null);
+    const { data, error } = await supabase
+      .from("workspace_settings")
+      .upsert(payload, { onConflict: "workspace_id" })
+      .select("*")
+      .single();
+
+    setWorkspaceSettingsBusy(false);
+
+    if (error) {
+      if (isMissingWorkspaceSettingsSchemaError(error)) {
+        setWorkspaceSettingsSchemaAvailable(false);
+        setWorkspaceSettingsMessage("A mentéshez előbb futtasd a workspace settings Supabase SQL-t.");
+        return;
+      }
+      setWorkspaceSettingsMessage(`Beállítás mentési hiba: ${error.message}`);
+      return;
+    }
+
+    const loadedSettings = workspaceSettingsFromRow(data as any, defaultWorkspaceSettings(activeWorkspace));
+    setWorkspaceSettings(loadedSettings);
+    setWorkspaceSettingsSchemaAvailable(true);
+    setWorkspaceSettingsMessage("Beállítások mentve.");
   }
 
   async function ensureWorkspaceForUser(currentUser: User): Promise<Workspace | null> {
@@ -792,6 +875,7 @@ export default function Home() {
   async function requestDataLoadForUser(currentUser: User, force = false) {
     try {
       const workspace = await ensureWorkspaceForUser(currentUser);
+      await loadWorkspaceSettingsFromDb(workspace);
       const loadKey = `${currentUser.id}:${workspace?.id || "legacy"}`;
       if (!force && loadedUserIdRef.current === loadKey && initialDataReadyRef.current) return;
       loadedUserIdRef.current = loadKey;
@@ -1994,7 +2078,7 @@ export default function Home() {
           const reportIdPart = safeExportFilePart(report.id);
           const path = `munkalapok/${datePart}_${namePart}_${reportIdPart}.html`;
 
-          files.push({ path, content: buildWorkReportHtml(customer, report, items) });
+          files.push({ path, content: buildWorkReportHtml(customer, report, items, workspaceSettings) });
           indexItems.push({
             title: workReportTitle(report.appointmentType),
             type: "Munkalap",
@@ -3782,6 +3866,20 @@ export default function Home() {
     );
   }
 
+  if (view === "settings") {
+    return (
+      <SettingsPanel
+        activeWorkspace={activeWorkspace}
+        settings={workspaceSettings}
+        schemaAvailable={workspaceSettingsSchemaAvailable}
+        saving={workspaceSettingsBusy}
+        message={workspaceSettingsMessage}
+        onBack={() => goBack()}
+        onSave={saveWorkspaceSettings}
+      />
+    );
+  }
+
 
   function quotePayload(customer: Customer = selected, items: QuoteItem[] = quoteItems, issuedAt = quoteIssuedAt || new Date().toISOString()) {
     const quoteTotal = total(items);
@@ -3814,7 +3912,13 @@ export default function Home() {
       totalAmount: quoteTotal,
       installerAmount,
       materialAmount,
+      settings: workspaceSettings,
     };
+  }
+
+  function brandedAppointmentDocumentTitle(appointmentType?: AppointmentType) {
+    const brandName = workspaceSettings.companyProfile.displayName || workspaceSettings.emailSettings.senderName || "AlinFlow";
+    return appointmentDocumentTitle(appointmentType).replace("KLIMAlin", brandName);
   }
 
   async function sendQuoteEmail() {
@@ -3892,7 +3996,7 @@ export default function Home() {
         if (appointmentType === "installation" && appointmentQuoteItems.some(isQuoteItemFilled)) {
           await logDocument(customer, "quote_email", "Ajánlat email", "Elküldve", appointmentEmailSentAt);
         }
-        await logDocument(customer, appointmentEmailDocumentType(appointmentType), appointmentDocumentTitle(appointmentType), "Elküldve", appointmentEmailSentAt);
+        await logDocument(customer, appointmentEmailDocumentType(appointmentType), brandedAppointmentDocumentTitle(appointmentType), "Elküldve", appointmentEmailSentAt);
       }
       setMessage("Időpont tájékoztató email elküldve ✅");
       return true;
@@ -4005,6 +4109,7 @@ export default function Home() {
         workDate: report.workDate || customer.date,
         workTime: report.workTime || customer.time,
       },
+      settings: workspaceSettings,
     };
   }
 
@@ -5420,15 +5525,15 @@ export default function Home() {
         </div>
         <div className="print-document-area print:bg-white">
           {isAllWorkReportsPreview ? (
-            <AllWorkReportsDocument customer={selected} reports={allPreviewReports} quoteItems={quoteItems}/>
+            <AllWorkReportsDocument customer={selected} reports={allPreviewReports} quoteItems={quoteItems} workspaceSettings={workspaceSettings}/>
           ) : documentPreviewType === "purchase_declaration" ? (
             <PurchaseDeclarationDocument customer={{ ...selected, quoteItems: purchaseDeclarationItemsForPreview(selected) }} report={report} quoteItems={purchaseDeclarationItemsForPreview(selected)} seller={purchaseDeclarationSellerForPreview(selected)}/>
           ) : isAppointmentPreview ? (
-            <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems}/>
+            <AppointmentConfirmationDocument customer={selected} quoteItems={quoteItems} workspaceSettings={workspaceSettings}/>
           ) : isQuotePreview ? (
-            <QuoteDocument customer={selected} quoteItems={quoteItems} quoteIssuedAt={quoteIssuedAt}/>
+            <QuoteDocument customer={selected} quoteItems={quoteItems} quoteIssuedAt={quoteIssuedAt} workspaceSettings={workspaceSettings}/>
           ) : (
-            <WorkReportDocument customer={selected} report={report} quoteItems={quoteItems}/>
+            <WorkReportDocument customer={selected} report={report} quoteItems={quoteItems} workspaceSettings={workspaceSettings}/>
           )}
         </div>
       </Shell>
@@ -5590,6 +5695,7 @@ export default function Home() {
         materialAmount={materialPrice}
         quoteEmailBusy={quoteEmailBusy}
         quoteIssuedAt={quoteIssuedAt}
+        workspaceSettings={workspaceSettings}
         onBack={() => goBack("quote")}
         onPrint={() => window.print()}
         onSendQuote={sendQuoteEmail}
@@ -5742,6 +5848,14 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <h1 className="text-5xl font-black">Alin<span className="text-cyan-300">Flow</span></h1>
             <ThemeToggle compact />
+            <button
+              type="button"
+              onClick={() => navigateToView("settings")}
+              className="no-print rounded-2xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black text-cyan-100 shadow-xl backdrop-blur transition hover:bg-white/15"
+              title="Beállítások"
+            >
+              Beáll.
+            </button>
           </div>
           {workspaceSchemaAvailable && activeWorkspace ? (
             <p className="mt-1 text-sm font-black text-cyan-200">{activeWorkspace.name}</p>
