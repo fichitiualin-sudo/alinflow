@@ -50,6 +50,7 @@ import {
   isCustomQuoteItem,
   isKnownProductId,
   isQuoteItemFilled,
+  itemDeviceTotal,
   itemInstallPrice,
   itemInstallTotal,
   itemName,
@@ -150,6 +151,7 @@ import {
   sellerCompanyToRow,
   sellerSnapshot,
 } from "@/lib/alinflow/purchase-declarations";
+import { downloadSpreadsheetWorkbook, type SpreadsheetSheet } from "@/lib/alinflow/spreadsheet-export";
 
 const DASHBOARD_WAREHOUSE_LIMIT = 10;
 
@@ -347,6 +349,7 @@ export default function Home() {
   const [user,setUser] = useState<User | null>(null);
   const [authLoading,setAuthLoading] = useState(true);
   const [dataLoading,setDataLoading] = useState(false);
+  const [documentExportBusy,setDocumentExportBusy] = useState(false);
   const [initialDataReady,setInitialDataReady] = useState(false);
   const [loginEmail,setLoginEmail] = useState("");
   const [loginPassword,setLoginPassword] = useState("");
@@ -1272,6 +1275,475 @@ export default function Home() {
   async function refreshVisibleDocumentData() {
     await loadCustomersFromDb({ background: true });
     await loadCustomerDetailData(visibleDocumentCustomersForLoad.map((customer) => customer.id), { force: true });
+  }
+
+  async function fetchAllExportRows(tableName: string, orderColumn: string | null = "created_at") {
+    const pageSize = 1000;
+    const rows: any[] = [];
+
+    for (let from = 0; ; from += pageSize) {
+      let query: any = supabase.from(tableName).select("*");
+      if (orderColumn) query = query.order(orderColumn, { ascending: false });
+
+      const { data, error } = await query.range(from, from + pageSize - 1);
+      if (error) throw new Error(`${tableName}: ${error.message}`);
+
+      const pageRows = data || [];
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) break;
+    }
+
+    return rows;
+  }
+
+  async function fetchOptionalExportRows(tableName: string, orderColumn: string | null = "created_at") {
+    try {
+      return await fetchAllExportRows(tableName, orderColumn);
+    } catch (error: any) {
+      const text = `${error?.message || error}`.toLowerCase();
+      if (text.includes("relation") || text.includes("schema cache") || text.includes("could not find")) return [];
+      throw error;
+    }
+  }
+
+  function exportDate(value?: string | null) {
+    return value ? formatQuoteSentAt(value) : "";
+  }
+
+  function exportCustomerAddress(row: any) {
+    return fullCustomerAddress({
+      postalCode: row?.postal_code || "",
+      city: row?.city || "",
+      address: row?.address || "",
+    });
+  }
+
+  function exportQuoteItemsSummary(items: QuoteItem[] = []) {
+    const cleanItems = cleanQuoteItems(items);
+    if (!cleanItems.length) return "";
+    return cleanItems
+      .map((item) => `${itemQuantity(item)} db ${itemName(item)} (${ft(itemTotal(item))})`)
+      .join("; ");
+  }
+
+  function exportAppointmentLabel(row?: any) {
+    if (!row) return "";
+    const type = appointmentTypeLabel(row.appointment_type);
+    const date = row.scheduled_date || "";
+    const time = row.scheduled_time ? firstAppointmentTime(row.scheduled_time) : "";
+    return [type, date, time].filter(Boolean).join(" - ");
+  }
+
+  function exportChecklistDate(checklist: WorkChecklistState, key: WorkChecklistItemKey) {
+    return exportDate(checklist.completedAt?.[key]);
+  }
+
+  async function exportAllDocumentData() {
+    if (!user || documentExportBusy) return;
+
+    setDocumentExportBusy(true);
+    setMessage("Teljes Excel export készítése...");
+
+    try {
+      const [
+        customerRows,
+        appointmentRows,
+        jobRows,
+        quoteRows,
+        quoteItemRows,
+        documentRows,
+        workReportRows,
+        purchaseDeclarationRows,
+        checklistRows,
+        maintenanceItemRows,
+      ] = await Promise.all([
+        fetchAllExportRows("customers"),
+        fetchAllExportRows("appointments"),
+        fetchAllExportRows("jobs"),
+        fetchAllExportRows("quotes"),
+        fetchAllExportRows("quote_items", null),
+        fetchAllExportRows("documents"),
+        fetchAllExportRows("work_reports"),
+        fetchOptionalExportRows("purchase_declarations"),
+        fetchAllExportRows("work_checklists", null),
+        fetchOptionalExportRows("maintenance_appointment_items"),
+      ]);
+
+      const customersById = new Map(customerRows.filter((row) => row.id).map((row) => [String(row.id), row]));
+      const compatibleAppointments = compatibleAppointmentRows(appointmentRows, jobRows, { jobsReadSucceeded: true });
+      const appointmentsById = new Map(compatibleAppointments.filter((row) => row.id).map((row) => [String(row.id), row]));
+      const quotesById = new Map(quoteRows.filter((row) => row.id).map((row) => [String(row.id), row]));
+      const quotesByAppointment = new Map<string, any[]>();
+      const quoteItemsByQuote = new Map<string, any[]>();
+
+      quoteRows.forEach((quote) => {
+        if (!quote.appointment_id) return;
+        const key = String(quote.appointment_id);
+        quotesByAppointment.set(key, [...(quotesByAppointment.get(key) || []), quote]);
+      });
+
+      quoteItemRows.forEach((item) => {
+        if (!item.quote_id) return;
+        const key = String(item.quote_id);
+        quoteItemsByQuote.set(key, [...(quoteItemsByQuote.get(key) || []), item]);
+      });
+
+      const customerName = (customerId?: string | null) => {
+        const customer = customerId ? customersById.get(String(customerId)) : undefined;
+        return customer?.name || customerId || "";
+      };
+      const appointmentFor = (appointmentId?: string | null) => appointmentId ? appointmentsById.get(String(appointmentId)) : undefined;
+      const quoteItemsForQuote = (quoteId?: string | null) => (quoteId ? (quoteItemsByQuote.get(String(quoteId)) || []) : []).map(quoteItemFromRow);
+      const quoteForAppointment = (appointment: any) => {
+        if (!appointment) return undefined;
+        if (appointment.quote_id && quotesById.has(String(appointment.quote_id))) return quotesById.get(String(appointment.quote_id));
+        return (quotesByAppointment.get(String(appointment.id)) || [])[0];
+      };
+
+      const sheets: SpreadsheetSheet[] = [
+        {
+          name: "Összefoglaló",
+          columns: [
+            { key: "name", label: "Adattípus" },
+            { key: "count", label: "Darabszám" },
+          ],
+          rows: [
+            { name: "Ügyfelek", count: customerRows.length },
+            { name: "Időpontok és munkák", count: compatibleAppointments.length },
+            { name: "Ajánlatok", count: quoteRows.length },
+            { name: "Ajánlati tételek", count: quoteItemRows.length },
+            { name: "Dokumentumok", count: documentRows.length },
+            { name: "Munkalapok", count: workReportRows.length },
+            { name: "Vásárlási nyilatkozatok", count: purchaseDeclarationRows.length },
+            { name: "Lezárási lépések", count: checklistRows.length },
+            { name: "Karbantartás-klíma kapcsolatok", count: maintenanceItemRows.length },
+          ],
+        },
+        {
+          name: "Ügyfelek",
+          columns: [
+            { key: "name", label: "Ügyfél" },
+            { key: "phone", label: "Telefonszám" },
+            { key: "email", label: "Email" },
+            { key: "postalCode", label: "Irányítószám" },
+            { key: "city", label: "Település" },
+            { key: "address", label: "Cím" },
+            { key: "status", label: "Státusz" },
+            { key: "source", label: "Forrás" },
+            { key: "need", label: "Igény" },
+            { key: "notes", label: "Megjegyzés" },
+            { key: "createdAt", label: "Létrehozva" },
+            { key: "updatedAt", label: "Frissítve" },
+            { key: "id", label: "Ügyfél ID" },
+          ],
+          rows: customerRows.map((row) => ({
+            name: row.name,
+            phone: row.phone,
+            email: row.email,
+            postalCode: row.postal_code,
+            city: row.city,
+            address: row.address,
+            status: normalizeStatus(row.status),
+            source: row.source,
+            need: row.need,
+            notes: row.notes,
+            createdAt: exportDate(row.created_at),
+            updatedAt: exportDate(row.updated_at),
+            id: row.id,
+          })),
+        },
+        {
+          name: "Időpontok és munkák",
+          columns: [
+            { key: "customerName", label: "Ügyfél" },
+            { key: "type", label: "Típus" },
+            { key: "status", label: "Státusz" },
+            { key: "date", label: "Dátum" },
+            { key: "time", label: "Idő" },
+            { key: "address", label: "Cím" },
+            { key: "quoteItems", label: "Klímák / tételek" },
+            { key: "quoteTotal", label: "Ajánlat összege" },
+            { key: "notes", label: "Megjegyzés" },
+            { key: "cancelledAt", label: "Lemondva" },
+            { key: "createdAt", label: "Létrehozva" },
+            { key: "updatedAt", label: "Frissítve" },
+            { key: "appointmentId", label: "Időpont ID" },
+            { key: "quoteId", label: "Ajánlat ID" },
+          ],
+          rows: compatibleAppointments.map((appointment) => {
+            const customer = customersById.get(String(appointment.customer_id || ""));
+            const quote = quoteForAppointment(appointment);
+            const items = quoteItemsForQuote(quote?.id);
+            return {
+              customerName: customerName(appointment.customer_id),
+              type: appointmentTypeLabel(appointment.appointment_type),
+              status: normalizeStatus(appointment.status || ""),
+              date: appointment.scheduled_date,
+              time: appointment.scheduled_time,
+              address: appointment.address || exportCustomerAddress(customer),
+              quoteItems: exportQuoteItemsSummary(items),
+              quoteTotal: Number(quote?.total_amount || total(items) || 0),
+              notes: appointment.notes,
+              cancelledAt: exportDate(appointment.cancelled_at),
+              createdAt: exportDate(appointment.created_at),
+              updatedAt: exportDate(appointment.updated_at),
+              appointmentId: appointment.id,
+              quoteId: quote?.id || appointment.quote_id,
+            };
+          }),
+        },
+        {
+          name: "Ajánlatok",
+          columns: [
+            { key: "customerName", label: "Ügyfél" },
+            { key: "appointment", label: "Időpont" },
+            { key: "status", label: "Státusz" },
+            { key: "items", label: "Tételek" },
+            { key: "total", label: "Összeg" },
+            { key: "sentAt", label: "Elküldve" },
+            { key: "createdAt", label: "Létrehozva" },
+            { key: "updatedAt", label: "Frissítve" },
+            { key: "quoteId", label: "Ajánlat ID" },
+            { key: "appointmentId", label: "Időpont ID" },
+          ],
+          rows: quoteRows.map((quote) => {
+            const appointment = appointmentFor(quote.appointment_id);
+            const items = quoteItemsForQuote(quote.id);
+            return {
+              customerName: customerName(quote.customer_id),
+              appointment: exportAppointmentLabel(appointment),
+              status: normalizeStatus(quote.status || ""),
+              items: exportQuoteItemsSummary(items),
+              total: Number(quote.total_amount || total(items) || 0),
+              sentAt: exportDate(quote.sent_at),
+              createdAt: exportDate(quote.created_at),
+              updatedAt: exportDate(quote.updated_at),
+              quoteId: quote.id,
+              appointmentId: quote.appointment_id,
+            };
+          }),
+        },
+        {
+          name: "Ajánlati tételek",
+          columns: [
+            { key: "customerName", label: "Ügyfél" },
+            { key: "appointment", label: "Időpont" },
+            { key: "productName", label: "Tétel / klíma" },
+            { key: "quantity", label: "Darab" },
+            { key: "unitPrice", label: "Egységár" },
+            { key: "deviceTotal", label: "Készülék/anyag rész" },
+            { key: "installTotal", label: "Munkadíj rész" },
+            { key: "totalPrice", label: "Összesen" },
+            { key: "quoteId", label: "Ajánlat ID" },
+          ],
+          rows: quoteItemRows.map((row) => {
+            const quote = quotesById.get(String(row.quote_id || ""));
+            const appointment = appointmentFor(quote?.appointment_id);
+            const item = quoteItemFromRow(row);
+            return {
+              customerName: customerName(quote?.customer_id),
+              appointment: exportAppointmentLabel(appointment),
+              productName: itemName(item),
+              quantity: itemQuantity(item),
+              unitPrice: Number(row.unit_price || itemUnitPrice(item) || 0),
+              deviceTotal: itemDeviceTotal(item),
+              installTotal: itemInstallTotal(item),
+              totalPrice: Number(row.total_price || itemTotal(item) || 0),
+              quoteId: row.quote_id,
+            };
+          }),
+        },
+        {
+          name: "Dokumentumok",
+          columns: [
+            { key: "customerName", label: "Ügyfél" },
+            { key: "appointment", label: "Időpont" },
+            { key: "title", label: "Dokumentum" },
+            { key: "type", label: "Típus" },
+            { key: "status", label: "Státusz" },
+            { key: "sentAt", label: "Elküldve" },
+            { key: "createdAt", label: "Létrehozva" },
+            { key: "updatedAt", label: "Frissítve" },
+            { key: "documentId", label: "Dokumentum ID" },
+            { key: "appointmentId", label: "Időpont ID" },
+          ],
+          rows: documentRows.map((row) => {
+            const doc = documentFromRow(row);
+            return {
+              customerName: customerName(doc.customerId),
+              appointment: exportAppointmentLabel(appointmentFor(doc.appointmentId)),
+              title: doc.title,
+              type: doc.type,
+              status: doc.status,
+              sentAt: exportDate(doc.sentAt),
+              createdAt: exportDate(doc.createdAt),
+              updatedAt: exportDate(doc.updatedAt),
+              documentId: doc.id,
+              appointmentId: doc.appointmentId,
+            };
+          }),
+        },
+        {
+          name: "Munkalapok",
+          columns: [
+            { key: "customerName", label: "Ügyfél" },
+            { key: "appointment", label: "Időpont" },
+            { key: "type", label: "Munkalap típusa" },
+            { key: "workDate", label: "Munka dátuma" },
+            { key: "workTime", label: "Munka ideje" },
+            { key: "description", label: "Munka leírása" },
+            { key: "notes", label: "Megjegyzés" },
+            { key: "signed", label: "Aláírva" },
+            { key: "signerName", label: "Aláíró" },
+            { key: "signedAt", label: "Aláírás dátuma" },
+            { key: "emailSentAt", label: "Email elküldve" },
+            { key: "createdAt", label: "Létrehozva" },
+            { key: "updatedAt", label: "Frissítve" },
+            { key: "reportId", label: "Munkalap ID" },
+            { key: "appointmentId", label: "Időpont ID" },
+          ],
+          rows: workReportRows.map((row) => {
+            const report = workReportFromRow(row);
+            return {
+              customerName: customerName(report.customerId),
+              appointment: exportAppointmentLabel(appointmentFor(report.appointmentId)),
+              type: appointmentTypeLabel(report.appointmentType),
+              workDate: report.workDate,
+              workTime: report.workTime,
+              description: report.workDescription,
+              notes: report.notes,
+              signed: hasValidWorkReportSignature(report),
+              signerName: report.signerName,
+              signedAt: exportDate(report.signedAt),
+              emailSentAt: exportDate(report.emailSentAt),
+              createdAt: exportDate(report.createdAt),
+              updatedAt: exportDate(report.updatedAt),
+              reportId: report.id,
+              appointmentId: report.appointmentId,
+            };
+          }),
+        },
+        {
+          name: "Vásárlási nyilatkozatok",
+          columns: [
+            { key: "customerName", label: "Ügyfél" },
+            { key: "appointment", label: "Időpont" },
+            { key: "sellerName", label: "Eladó cég" },
+            { key: "sellerTaxNumber", label: "Adószám" },
+            { key: "sellerRepresentative", label: "Képviselő" },
+            { key: "items", label: "Termékek" },
+            { key: "signed", label: "Aláírva" },
+            { key: "signerName", label: "Aláíró" },
+            { key: "signedAt", label: "Aláírás dátuma" },
+            { key: "createdAt", label: "Létrehozva" },
+            { key: "updatedAt", label: "Frissítve" },
+            { key: "declarationId", label: "Nyilatkozat ID" },
+            { key: "workReportId", label: "Munkalap ID" },
+            { key: "appointmentId", label: "Időpont ID" },
+          ],
+          rows: purchaseDeclarationRows.map((row) => {
+            const declaration = declarationFromRow(row);
+            const signed = Boolean(declaration.signatureDataUrl?.trim() && declaration.signedAt);
+            return {
+              customerName: customerName(declaration.customerId),
+              appointment: exportAppointmentLabel(appointmentFor(declaration.appointmentId)),
+              sellerName: declaration.sellerName,
+              sellerTaxNumber: declaration.sellerTaxNumber,
+              sellerRepresentative: declaration.sellerRepresentative,
+              items: exportQuoteItemsSummary(declaration.quoteItems),
+              signed,
+              signerName: declaration.signerName,
+              signedAt: exportDate(declaration.signedAt),
+              createdAt: exportDate(declaration.createdAt),
+              updatedAt: exportDate(declaration.updatedAt),
+              declarationId: declaration.id,
+              workReportId: declaration.workReportId,
+              appointmentId: declaration.appointmentId,
+            };
+          }),
+        },
+        {
+          name: "Lezárási lépések",
+          columns: [
+            { key: "customerName", label: "Ügyfél" },
+            { key: "appointment", label: "Időpont" },
+            { key: "worksheet", label: "Munkalap" },
+            { key: "worksheetAt", label: "Munkalap dátuma" },
+            { key: "signature", label: "Aláírás" },
+            { key: "signatureAt", label: "Aláírás dátuma" },
+            { key: "purchaseDeclaration", label: "Vásárlási nyilatkozat" },
+            { key: "purchaseDeclarationAt", label: "Nyilatkozat dátuma" },
+            { key: "nkvh", label: "NKVH" },
+            { key: "nkvhAt", label: "NKVH dátuma" },
+            { key: "laborInvoice", label: "Munkadíj számla" },
+            { key: "laborInvoiceAt", label: "Munkadíj számla dátuma" },
+            { key: "deviceInvoice", label: "Készülék/anyag számla" },
+            { key: "deviceInvoiceAt", label: "Készülék/anyag számla dátuma" },
+            { key: "docsSent", label: "Dokumentumcsomag elküldve" },
+            { key: "docsSentAt", label: "Dokumentumküldés dátuma" },
+            { key: "updatedAt", label: "Frissítve" },
+            { key: "checklistId", label: "Checklist ID" },
+            { key: "appointmentId", label: "Időpont ID" },
+          ],
+          rows: checklistRows.map((row) => {
+            const checklist = workChecklistFromRow(row);
+            return {
+              customerName: customerName(row.customer_id),
+              appointment: exportAppointmentLabel(appointmentFor(row.appointment_id)),
+              worksheet: checklist.worksheet,
+              worksheetAt: exportChecklistDate(checklist, "worksheet"),
+              signature: checklist.signature,
+              signatureAt: exportChecklistDate(checklist, "signature"),
+              purchaseDeclaration: checklist.purchaseDeclaration,
+              purchaseDeclarationAt: exportChecklistDate(checklist, "purchaseDeclaration"),
+              nkvh: checklist.nkvh,
+              nkvhAt: exportChecklistDate(checklist, "nkvh"),
+              laborInvoice: checklist.alinInvoice,
+              laborInvoiceAt: exportChecklistDate(checklist, "alinInvoice"),
+              deviceInvoice: checklist.amovaInvoice,
+              deviceInvoiceAt: exportChecklistDate(checklist, "amovaInvoice"),
+              docsSent: checklist.docsSent,
+              docsSentAt: exportChecklistDate(checklist, "docsSent"),
+              updatedAt: exportDate(row.updated_at),
+              checklistId: row.id,
+              appointmentId: row.appointment_id,
+            };
+          }),
+        },
+        {
+          name: "Karbantartás klímái",
+          columns: [
+            { key: "customerName", label: "Ügyfél" },
+            { key: "maintenanceAppointment", label: "Karbantartási időpont" },
+            { key: "installationAppointment", label: "Kapcsolódó szerelés / klíma" },
+            { key: "createdAt", label: "Létrehozva" },
+            { key: "maintenanceAppointmentId", label: "Karbantartás ID" },
+            { key: "installationAppointmentId", label: "Szerelés ID" },
+          ],
+          rows: maintenanceItemRows.map((row) => {
+            const maintenance = appointmentFor(row.maintenance_appointment_id);
+            const installation = appointmentFor(row.installation_appointment_id);
+            const quote = quoteForAppointment(installation);
+            return {
+              customerName: customerName(maintenance?.customer_id || installation?.customer_id),
+              maintenanceAppointment: exportAppointmentLabel(maintenance),
+              installationAppointment: `${exportAppointmentLabel(installation)}${quote ? ` - ${exportQuoteItemsSummary(quoteItemsForQuote(quote.id))}` : ""}`,
+              createdAt: exportDate(row.created_at),
+              maintenanceAppointmentId: row.maintenance_appointment_id,
+              installationAppointmentId: row.installation_appointment_id,
+            };
+          }),
+        },
+      ];
+
+      const filename = `alinflow_teljes_export_${todayIso()}.xls`;
+      downloadSpreadsheetWorkbook(filename, sheets);
+      setMessage("Teljes Excel export elkészült ✅");
+    } catch (error: any) {
+      setMessage(`Excel export hiba: ${error?.message || error}`);
+    } finally {
+      setDocumentExportBusy(false);
+    }
   }
 
   async function loadSellerCompaniesFromDb() {
@@ -4743,13 +5215,14 @@ export default function Home() {
         <Layout>
           <Main>
             <Card title="Dokumentumok ügyfelenként">
-              <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto]">
+              <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto_auto]">
                 <input className="input" value={customerSearch} onChange={(event)=>setCustomerSearch(event.target.value)} placeholder="Keresés név, telefon, település, cím vagy klíma alapján..." />
                 <select className="input" value={customerStatusFilter} onChange={(event)=>setCustomerStatusFilter(event.target.value)}>
                   <option value="all">Összes státusz</option>
                   {STATUS_OPTIONS.map((status)=><option key={status} value={status}>{status}</option>)}
                 </select>
                 <button type="button" onClick={() => void refreshVisibleDocumentData()} disabled={dataLoading} className="document-action-button rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 disabled:opacity-60">{dataLoading ? "Frissítés..." : "Frissítés"}</button>
+                <button type="button" onClick={() => void exportAllDocumentData()} disabled={documentExportBusy || dataLoading} className="document-action-button rounded-2xl bg-emerald-300 px-5 py-4 font-black text-slate-950 disabled:opacity-60">{documentExportBusy ? "Export..." : "Teljes Excel export"}</button>
               </div>
               {hasCustomerFilter ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-300"><span>{documentCustomers.length} találat</span><button onClick={clearCustomerFilter} className="document-action-button rounded-xl bg-white/10 px-3 py-2 text-cyan-100">Szűrő törlése</button></div> : null}
               <div className="space-y-4">
