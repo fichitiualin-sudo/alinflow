@@ -251,6 +251,11 @@ function isMissingWorkspaceSettingsSchemaError(error: any) {
   return text.includes("workspace_settings") && (text.includes("relation") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
 }
 
+function isMissingMaintenanceItemsTableError(error: any) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
+  return text.includes("maintenance_appointment_items") && (text.includes("relation") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
 function workspaceSlugForUser(currentUser: User) {
   return `user-${currentUser.id}`;
 }
@@ -2156,6 +2161,7 @@ export default function Home() {
         workspaceQuery(supabase.from("quote_items").select("*")),
         workspaceQuery(supabase.from("appointments").select("*").order("created_at", { ascending: false })),
         workspaceQuery(supabase.from("jobs").select("*").order("created_at", { ascending: false })),
+        workspaceQuery(supabase.from("maintenance_appointment_items").select("*")),
       ]);
 
       const loadedProducts = await loadedProductsPromise;
@@ -2168,6 +2174,7 @@ export default function Home() {
         itemResult,
         appointmentResult,
         jobResult,
+        maintenanceLinkResult,
       ] = await dataPromise;
 
       const { data: customerRows, error: customerError } = customerResult;
@@ -2183,12 +2190,16 @@ export default function Home() {
       const itemRows = itemResult.data || [];
       const jobRows = jobResult.data || [];
       const appointmentRows = appointmentResult.data || [];
+      const maintenanceLinkRows = maintenanceLinkResult.data || [];
 
       if (appointmentResult.error && !isMissingAppointmentsTableError(appointmentResult.error)) {
         console.warn("Appointments betöltési hiba, jobs kompatibilitási fallback aktív", appointmentResult.error.message);
       }
       if (jobResult.error && !appointmentRows.length) {
         console.warn("Jobs kompatibilitási fallback betöltési hiba", jobResult.error.message);
+      }
+      if (maintenanceLinkResult.error && !isMissingMaintenanceItemsTableError(maintenanceLinkResult.error)) {
+        console.warn("Karbantartás-klíma kapcsolatok betöltési hiba", maintenanceLinkResult.error.message);
       }
       if (appointmentResult.error && jobResult.error) {
         setMessage(`Nem sikerült betölteni az időpontokat: ${appointmentResult.error.message}`);
@@ -2212,6 +2223,20 @@ export default function Home() {
 
     const compatibleRows = compatibleAppointmentRows(appointmentRows, jobRows, {
       jobsReadSucceeded: !jobResult.error,
+    });
+    const appointmentById = new Map<string, any>();
+    compatibleRows.forEach((row: any) => {
+      if (row.id) appointmentById.set(row.id, row);
+    });
+    const maintenanceInstallationIdsByAppointment = new Map<string, string[]>();
+    (maintenanceLinkRows || []).forEach((row: any) => {
+      if (!row.maintenance_appointment_id || !row.installation_appointment_id) return;
+      const key = String(row.maintenance_appointment_id);
+      const current = maintenanceInstallationIdsByAppointment.get(key) || [];
+      const installationId = String(row.installation_appointment_id);
+      if (!current.includes(installationId)) {
+        maintenanceInstallationIdsByAppointment.set(key, [...current, installationId]);
+      }
     });
     const currentAppointmentMap = currentAppointmentsByCustomer(compatibleRows);
     const appointmentHistoryMap = appointmentsByCustomer(compatibleRows);
@@ -2254,12 +2279,38 @@ export default function Home() {
       return quotesByCustomer.get(row.id);
     };
 
+    const quoteItemsFromAppointmentRow = (appointment?: any) => {
+      const quote = appointment ? quoteForAppointment({ id: appointment.customer_id }, appointment) : undefined;
+      return quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
+    };
+
+    const maintenanceInstallationsForAppointment = (appointment?: any) => {
+      const installationIds = appointment?.id ? (maintenanceInstallationIdsByAppointment.get(appointment.id) || []) : [];
+      return installationIds
+        .map((appointmentId) => {
+          const installation = appointmentById.get(appointmentId);
+          const linkedQuoteItems = quoteItemsFromAppointmentRow(installation);
+          return {
+            appointmentId,
+            date: installation?.scheduled_date || undefined,
+            time: installation?.scheduled_time || undefined,
+            quoteItems: linkedQuoteItems,
+          };
+        })
+        .filter((installation) => installation.quoteItems.length || installation.date || installation.time);
+    };
+
     const customerFromAppointment = (row: any, appointment?: any): Customer => {
       const quote = quoteForAppointment(row, appointment);
       const existingDocs = documentsByCustomer[row.id] || [];
       const loadedAppointmentType = normalizeAppointmentType(appointment?.appointment_type);
       const quoteSentAt = quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
       const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
+      const maintenanceInstallations = loadedAppointmentType === "maintenance" ? maintenanceInstallationsForAppointment(appointment) : [];
+      const maintenanceQuoteItems = cleanQuoteItems(maintenanceInstallations.flatMap((installation) => installation.quoteItems));
+      const effectiveQuoteItems = loadedAppointmentType === "maintenance" && maintenanceQuoteItems.length
+        ? maintenanceQuoteItems
+        : quoteItemsFromDb;
 
       const customer: Customer = {
         id: row.id,
@@ -2284,12 +2335,14 @@ export default function Home() {
         appointmentType: loadedAppointmentType,
         activeAppointmentId: appointment?.id || undefined,
         activeQuoteId: quote?.id || undefined,
-        quoteItems: quoteItemsFromDb.length ? quoteItemsFromDb : EMPTY_QUOTE_ITEMS,
-        productId: quoteItemsFromDb[0]?.productId,
+        quoteItems: effectiveQuoteItems.length ? effectiveQuoteItems : EMPTY_QUOTE_ITEMS,
+        productId: effectiveQuoteItems[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
         stockDeducted: appointment?.id
           ? stockDeductedFromWorkStatus(appointment.status)
           : Boolean(row.stock_deducted) || stockDeductedFromWorkStatus(row.status),
+        maintenanceInstallationIds: loadedAppointmentType === "maintenance" ? maintenanceInstallations.map((installation) => installation.appointmentId) : undefined,
+        maintenanceInstallations: loadedAppointmentType === "maintenance" ? maintenanceInstallations : undefined,
       };
 
       return existingDocs.length ? customerWithDetailDocuments(customer, existingDocs) : customer;
@@ -2562,6 +2615,32 @@ export default function Home() {
     setScheduleTime((previous) => normalizeAppointmentTimeInput(previous) || slots[0] || "08:00");
   }
 
+  function maintenanceQuoteItemsForInstallationIds(customer: Customer, installationIds: string[]) {
+    const selectedIds = new Set(installationIds);
+    const installationWorks = customerInstallationWorks(customer);
+    return cleanQuoteItems(installationWorks
+      .filter((work) => work.activeAppointmentId && selectedIds.has(work.activeAppointmentId))
+      .flatMap((work) => work.quoteItems || []));
+  }
+
+  function updateMaintenanceInstallationSelection(installationId: string, checked: boolean) {
+    const installationWorks = customerInstallationWorks(selected);
+    const defaultIds = installationWorks.map((work) => work.activeAppointmentId).filter(Boolean) as string[];
+    const current = new Set(selected.maintenanceInstallationIds ?? defaultIds);
+    if (checked) current.add(installationId);
+    else current.delete(installationId);
+    const nextIds = Array.from(current);
+    const nextQuoteItems = maintenanceQuoteItemsForInstallationIds(selected, nextIds);
+    const updated: Customer = {
+      ...selected,
+      maintenanceInstallationIds: nextIds,
+      quoteItems: nextQuoteItems,
+      productId: nextQuoteItems[0]?.productId || undefined,
+    };
+    setSelected(updated);
+    setQuoteItems(nextQuoteItems);
+  }
+
   function openQuickAppointment(date: string) {
     setQuickAppointment({
       date,
@@ -2760,6 +2839,7 @@ export default function Home() {
       stockDeducted: false,
       quoteItems: quoteItemsForAppointment,
       productId: quoteItemsForAppointment[0]?.productId || undefined,
+      maintenanceInstallationIds: appointmentType === "maintenance" ? quickAppointment.maintenanceInstallationIds : undefined,
       isFresh: true,
       appointmentBookedAt: baseCustomer.appointmentBookedAt || now,
       appointmentUpdatedAt: now,
@@ -3222,7 +3302,18 @@ export default function Home() {
     }
 
     const appointmentBookedAt = new Date().toISOString();
-    const scheduledQuoteItems = cleanQuoteItems(quoteItems);
+    const maintenanceWorksForSchedule = normalizedScheduleAppointmentType === "maintenance" ? customerInstallationWorks(selected) : [];
+    const maintenanceInstallationIds = normalizedScheduleAppointmentType === "maintenance"
+      ? selected.maintenanceInstallationIds ?? (maintenanceWorksForSchedule.map((work) => work.activeAppointmentId).filter(Boolean) as string[])
+      : undefined;
+    if (normalizedScheduleAppointmentType === "maintenance" && maintenanceWorksForSchedule.length && !maintenanceInstallationIds?.length) {
+      setMessage("Karbantartáshoz válassz legalább egy kapcsolódó klímát.");
+      return;
+    }
+    const selectedMaintenanceQuoteItems = normalizedScheduleAppointmentType === "maintenance" && maintenanceInstallationIds?.length
+      ? maintenanceQuoteItemsForInstallationIds(selected, maintenanceInstallationIds)
+      : EMPTY_QUOTE_ITEMS;
+    const scheduledQuoteItems = selectedMaintenanceQuoteItems.length ? selectedMaintenanceQuoteItems : cleanQuoteItems(quoteItems);
     const updated:Customer = {
       ...selected,
       date:scheduleDate,
@@ -3231,6 +3322,7 @@ export default function Home() {
       status:"Időpont foglalva",
       quoteItems: scheduledQuoteItems,
       productId: scheduledQuoteItems[0]?.productId || undefined,
+      maintenanceInstallationIds,
       isFresh:true,
       appointmentBookedAt: selected.appointmentBookedAt || appointmentBookedAt,
       appointmentUpdatedAt: appointmentBookedAt,
@@ -3245,6 +3337,8 @@ export default function Home() {
       };
       if (normalizeAppointmentType(savedUpdated.appointmentType) !== "maintenance") {
         await logDocument(savedUpdated, appointmentBookedDocumentType(savedUpdated.appointmentType), `${appointmentTypeLabel(savedUpdated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
+      } else {
+        await saveMaintenanceAppointmentLinks(savedUpdated, savedUpdated.maintenanceInstallationIds || []);
       }
       promoteCustomerWork(savedUpdated);
       setSelected(savedUpdated);
@@ -3622,7 +3716,9 @@ export default function Home() {
 
   function startMaintenanceForCustomer(customer: Customer) {
     const changedAt = new Date().toISOString();
-    const installationItems = cleanQuoteItems(customerInstallationWorks(customer).flatMap((work) => work.quoteItems || []));
+    const installationWorks = customerInstallationWorks(customer);
+    const installationIds = installationWorks.map((work) => work.activeAppointmentId).filter(Boolean) as string[];
+    const installationItems = cleanQuoteItems(installationWorks.flatMap((work) => work.quoteItems || []));
     const maintenanceCustomer: Customer = {
       ...customer,
       date: undefined,
@@ -3633,6 +3729,7 @@ export default function Home() {
       activeWorkReportId: undefined,
       status: "Időpont foglalva",
       stockDeducted: false,
+      maintenanceInstallationIds: installationIds,
       isFresh: true,
       updatedAt: changedAt,
     };
@@ -5774,6 +5871,8 @@ export default function Home() {
         freeSlots={free}
         quoteItems={quoteItems}
         products={products}
+        maintenanceInstallationWorks={normalizedScheduleAppointmentType === "maintenance" ? customerInstallationWorks(selected) : []}
+        maintenanceInstallationIds={selected.maintenanceInstallationIds ?? (normalizedScheduleAppointmentType === "maintenance" ? (customerInstallationWorks(selected).map((work) => work.activeAppointmentId).filter(Boolean) as string[]) : [])}
         totalQuantity={q}
         sendAppointmentNotice={sendAppointmentNotice}
         appointmentEmailBusy={appointmentEmailBusy}
@@ -5787,6 +5886,7 @@ export default function Home() {
         onUpdateQuoteItem={updateQuoteItem}
         onUpdateQuoteProduct={updateQuoteProduct}
         onAddQuoteItem={addQuoteItem}
+        onToggleMaintenanceInstallation={updateMaintenanceInstallationSelection}
         onSetSendAppointmentNotice={setSendAppointmentNotice}
       />
     );

@@ -1,7 +1,7 @@
 "use client";
 
 import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
-import { isCustomQuoteItem, itemName, itemUnitPrice, sortProducts } from "@/lib/alinflow/products";
+import { climateSummary, isCustomQuoteItem, itemName, itemUnitPrice, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
@@ -20,6 +20,8 @@ type SchedulePanelProps = {
   freeSlots: string[];
   quoteItems: QuoteItem[];
   products: ClimateProduct[];
+  maintenanceInstallationWorks: Customer[];
+  maintenanceInstallationIds: string[];
   totalQuantity: number;
   sendAppointmentNotice: boolean;
   appointmentEmailBusy: boolean;
@@ -33,6 +35,7 @@ type SchedulePanelProps = {
   onUpdateQuoteItem: (index: number, key: keyof QuoteItem, value: string | number | boolean) => void;
   onUpdateQuoteProduct: (index: number, productId: string) => void;
   onAddQuoteItem: () => void;
+  onToggleMaintenanceInstallation: (appointmentId: string, checked: boolean) => void;
   onSetSendAppointmentNotice: (value: boolean) => void;
 };
 
@@ -81,6 +84,8 @@ export function SchedulePanel({
   freeSlots,
   quoteItems,
   products,
+  maintenanceInstallationWorks,
+  maintenanceInstallationIds,
   totalQuantity,
   sendAppointmentNotice,
   appointmentEmailBusy,
@@ -94,6 +99,7 @@ export function SchedulePanel({
   onUpdateQuoteItem,
   onUpdateQuoteProduct,
   onAddQuoteItem,
+  onToggleMaintenanceInstallation,
   onSetSendAppointmentNotice,
 }: SchedulePanelProps) {
   const isInstallation = isInstallationAppointment(appointmentType);
@@ -206,16 +212,44 @@ export function SchedulePanel({
             ) : null}
 
             {isMaintenance ? (
-              quoteItems.length ? (
-                <div className="mb-4 space-y-3">
-                  {quoteItems.map((item, index) => (
-                    <div key={index} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-                      <p className="font-black">{itemName(item)}</p>
-                      <p className="mt-1 text-sm text-slate-400">{Number(item.quantity) || 1} db</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null
+              <div className="mb-4 space-y-3">
+                {maintenanceInstallationWorks.length ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-400">Karbantartás ehhez a klímához</p>
+                    {maintenanceInstallationWorks.map((work) => (
+                      <label key={work.activeAppointmentId || `${work.id}-${work.date}`} className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-5 w-5 accent-cyan-300"
+                          checked={Boolean(work.activeAppointmentId && maintenanceInstallationIds.includes(work.activeAppointmentId))}
+                          disabled={!work.activeAppointmentId}
+                          onChange={(event) => {
+                            if (!work.activeAppointmentId) return;
+                            onToggleMaintenanceInstallation(work.activeAppointmentId, event.target.checked);
+                          }}
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-black">{climateSummary(work.quoteItems) || "Korábbi telepítés"}</span>
+                          <span className="mt-1 block text-sm text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+                {quoteItems.length ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-400">Kiválasztott karbantartandó klímák</p>
+                    {quoteItems.map((item, index) => (
+                      <div key={index} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+                        <p className="font-black">{itemName(item)}</p>
+                        <p className="mt-1 text-sm text-slate-400">{Number(item.quantity) || 1} db</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-black text-amber-100">Válassz legalább egy kapcsolódó klímát.</div>
+                )}
+              </div>
             ) : null}
 
             <InfoRow label="Időpont típusa" value={appointmentTypeLabel(appointmentType)} />

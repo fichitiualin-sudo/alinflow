@@ -63,7 +63,7 @@ export function WorkReportPanel({
   const appointmentType = normalizeAppointmentType(selected.appointmentType);
   const isMaintenance = appointmentType === "maintenance";
   const reportTitle = workReportTitle(selected.appointmentType);
-  const climateLabel = isMaintenance ? "Karbantartandó klíma" : "Klíma";
+  const climateLabel = isMaintenance ? "Karbantartandó klímák" : "Klíma";
   const hasValidSignature = hasValidWorkReportSignature(workReport);
 
   return (

@@ -76,6 +76,13 @@ export type InventoryItem = {
   stock: number;
 };
 
+export type MaintenanceInstallationSummary = {
+  appointmentId: string;
+  date?: string;
+  time?: string;
+  quoteItems: QuoteItem[];
+};
+
 export type Customer = {
   id: string;
   name: string;
@@ -106,6 +113,8 @@ export type Customer = {
   quotePricingMode?: QuotePricingMode;
   isFresh?: boolean;
   stockDeducted?: boolean;
+  maintenanceInstallationIds?: string[];
+  maintenanceInstallations?: MaintenanceInstallationSummary[];
 };
 
 
