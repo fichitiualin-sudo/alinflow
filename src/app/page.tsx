@@ -267,6 +267,7 @@ function isMissingMaintenanceMapSchemaError(error: any) {
 }
 
 function numericDbValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return undefined;
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : undefined;
 }
