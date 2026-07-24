@@ -182,6 +182,7 @@ type PageDocumentRow = {
   reportDate?: string;
   reportTime?: string;
   reportDateLabel?: string;
+  relatedClimateSummary?: string;
 };
 
 type WorkActionDates = {
@@ -4307,6 +4308,22 @@ export default function Home() {
       });
   }
 
+  function maintenanceWorkForAppointment(customer: Customer, appointmentId?: string) {
+    const history = workCustomersForScheduling([customer], { [customer.id]: workHistoryByCustomer[customer.id] || [] });
+    return history.find((work) => (
+      normalizeAppointmentType(work.appointmentType) === "maintenance"
+      && Boolean(appointmentId)
+      && work.activeAppointmentId === appointmentId
+    ));
+  }
+
+  function maintenanceClimateSummaryForAppointment(customer: Customer, appointmentId?: string) {
+    const maintenanceWork = maintenanceWorkForAppointment(customer, appointmentId);
+    const linkedItems = cleanQuoteItems(maintenanceWork?.maintenanceInstallations?.flatMap((installation) => installation.quoteItems) || []);
+    const items = linkedItems.length ? linkedItems : cleanQuoteItems(maintenanceWork?.quoteItems || []);
+    return climateSummary(items);
+  }
+
   function restoredInstallationStatusAfterMaintenance(customer: Customer) {
     if (customer.status === "Lezárva") return "Lezárva";
     const installationReport = savedReportFor({ ...customer, activeWorkReportId: undefined, appointmentType: "installation" }, "installation");
@@ -4729,6 +4746,7 @@ export default function Home() {
       reportDate: report.workDate,
       reportTime: report.workTime,
       reportDateLabel: formatMaintenanceReportDate(report),
+      relatedClimateSummary: maintenanceClimateSummaryForAppointment(customer, report.appointmentId),
     }));
 
     const currentType = normalizeAppointmentType(customer.appointmentType);
@@ -4744,6 +4762,7 @@ export default function Home() {
         reportDate: customer.date,
         reportTime: customer.time,
         reportDateLabel: formatReportDateLabel(customer),
+        relatedClimateSummary: maintenanceClimateSummaryForAppointment(customer, customer.activeAppointmentId),
       });
     }
 

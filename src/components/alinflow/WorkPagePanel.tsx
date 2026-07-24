@@ -34,7 +34,7 @@ type MaterialItem = {
   isExtra?: boolean;
 };
 
-type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string };
+type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string; relatedClimateSummary?: string };
 type WorkActionDates = {
   appointmentEmail?: string;
   workReport?: string;
@@ -71,6 +71,67 @@ function WorkSectionToggleButton({
         {open ? "-" : "+"}
       </span>
     </button>
+  );
+}
+
+function workIdentity(work: Customer) {
+  return work.activeAppointmentId || `${work.id}:${work.appointmentType || "work"}:${work.date || ""}:${work.time || ""}`;
+}
+
+function uniqueWorkList(works: Customer[]) {
+  const byKey = new Map<string, Customer>();
+  works.forEach((work) => {
+    const key = workIdentity(work);
+    if (!byKey.has(key)) byKey.set(key, work);
+  });
+  return Array.from(byKey.values());
+}
+
+function compareWorkByDateDesc(a: Customer, b: Customer) {
+  return String(b.date || "").localeCompare(String(a.date || "")) || String(b.time || "").localeCompare(String(a.time || ""));
+}
+
+function workDateTimeLabel(work: Customer) {
+  return work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül";
+}
+
+function maintenanceInstallationIdsFor(work: Customer) {
+  return work.maintenanceInstallationIds || work.maintenanceInstallations?.map((installation) => installation.appointmentId) || [];
+}
+
+function maintenanceWorksForInstallation(installation: Customer, maintenanceWorks: Customer[]) {
+  if (!installation.activeAppointmentId) return [];
+  return maintenanceWorks
+    .filter((work) => maintenanceInstallationIdsFor(work).includes(installation.activeAppointmentId || ""))
+    .sort(compareWorkByDateDesc);
+}
+
+function ClimateMaintenanceHistory({
+  works,
+  onOpenWorkVersion,
+}: {
+  works: Customer[];
+  onOpenWorkVersion: (customer: Customer) => void;
+}) {
+  if (!works.length) return null;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-emerald-300/15 bg-emerald-400/10 p-3">
+      <p className="text-xs font-black uppercase tracking-wide text-emerald-200">Karbantartások ennél a klímánál</p>
+      <div className="mt-2 space-y-2">
+        {works.map((work) => (
+          <button
+            key={workIdentity(work)}
+            type="button"
+            onClick={() => onOpenWorkVersion(work)}
+            className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-sm font-bold text-slate-100 hover:bg-white/15"
+          >
+            <span>{workDateTimeLabel(work)}</span>
+            <span className="ml-2 text-slate-400">· {work.status || "Folyamatban"}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -223,8 +284,16 @@ export function WorkPagePanel({
   const [deviceInvoiceSendEmail, setDeviceInvoiceSendEmail] = useState(defaultInvoiceEmail);
   const [maintenanceInvoiceSendEmail, setMaintenanceInvoiceSendEmail] = useState(defaultInvoiceEmail);
   const billingConfig = billingUiConfig(workspaceSettings);
-  const previousInstallationWorks = workHistory.filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId !== selected.activeAppointmentId);
-  const maintenanceWorks = workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance" && work.activeAppointmentId !== selected.activeAppointmentId);
+  const allMaintenanceWorks = uniqueWorkList([
+    ...(isMaintenance ? [selected] : []),
+    ...workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance"),
+  ]).filter((work) => work.activeAppointmentId !== selected.activeAppointmentId || isMaintenance);
+  const previousInstallationWorks = uniqueWorkList(workHistory)
+    .filter((work) => isInstallationAppointment(work.appointmentType))
+    .filter((work) => work.activeAppointmentId !== selected.activeAppointmentId)
+    .filter((work) => !selected.date || !work.date || work.date !== selected.date)
+    .sort(compareWorkByDateDesc);
+  const currentInstallationMaintenanceWorks = isInstallation ? maintenanceWorksForInstallation(selected, allMaintenanceWorks) : [];
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
@@ -310,44 +379,37 @@ export function WorkPagePanel({
             />
           </Card>
 
-          {(previousInstallationWorks.length || maintenanceWorks.length) ? (
+          {previousInstallationWorks.length ? (
             <div className="mt-4">
               <button
                 type="button"
                 onClick={() => setShowWorkHistory((open) => !open)}
                 className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
               >
-                {showWorkHistory ? "Korábbi munkák elrejtése" : "Korábbi munkák és karbantartások megjelenítése"}
+                {showWorkHistory ? "Korábbi klímaszerelések elrejtése" : "Korábbi klímaszerelések megjelenítése"}
               </button>
             </div>
           ) : null}
 
           {showWorkHistory ? (
-            <Card title="Korábbi munkák">
+            <Card title="Korábbi klímaszerelések">
               <div className="space-y-3">
-                {previousInstallationWorks.map((work) => (
-                  <button
-                    key={work.activeAppointmentId || `${work.id}-${work.date}`}
-                    type="button"
-                    onClick={() => onOpenWorkVersion(work)}
-                    className="w-full rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-left hover:border-cyan-300/40"
-                  >
-                    <p className="font-black">{climateSummary(work.quoteItems) || "Korábbi szerelés"}</p>
-                    <p className="mt-1 text-sm font-bold text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"} · {work.status || "Folyamatban"}</p>
-                  </button>
-                ))}
-                {maintenanceWorks.map((work) => (
-                  <button
-                    key={work.activeAppointmentId || `${work.id}-${work.date}`}
-                    type="button"
-                    onClick={() => onOpenWorkVersion(work)}
-                    className="w-full rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-left hover:border-emerald-300/50"
-                  >
-                    <p className="font-black">Karbantartás</p>
-                    <p className="mt-1 text-sm font-bold text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"} · {work.status || "Folyamatban"}</p>
-                    {work.quoteItems?.length ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{climateSummary(work.quoteItems)}</p> : null}
-                  </button>
-                ))}
+                {previousInstallationWorks.map((work) => {
+                  const linkedMaintenanceWorks = maintenanceWorksForInstallation(work, allMaintenanceWorks);
+                  return (
+                    <div key={workIdentity(work)} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+                      <button
+                        type="button"
+                        onClick={() => onOpenWorkVersion(work)}
+                        className="w-full text-left hover:text-cyan-100"
+                      >
+                        <p className="font-black">{climateSummary(work.quoteItems) || "Korábbi szerelés"}</p>
+                        <p className="mt-1 text-sm font-bold text-slate-400">{workDateTimeLabel(work)} · {work.status || "Folyamatban"}</p>
+                      </button>
+                      <ClimateMaintenanceHistory works={linkedMaintenanceWorks} onOpenWorkVersion={onOpenWorkVersion} />
+                    </div>
+                  );
+                })}
               </div>
             </Card>
           ) : null}
@@ -457,6 +519,7 @@ export function WorkPagePanel({
                   <b className="text-2xl">{ft(total(quoteItems))}</b>
                 </div>
               </div>
+              <ClimateMaintenanceHistory works={currentInstallationMaintenanceWorks} onOpenWorkVersion={onOpenWorkVersion} />
             </div> : null}
             {isInstallation ? <div className="mt-4 flex flex-col gap-3 md:flex-row">
               <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddQuoteItem}>+ Klíma hozzáadása</button>
@@ -1164,6 +1227,7 @@ function MaintenanceHistory({
               <div key={`${row.action}-${row.reportId || row.reportDateLabel || row.reportDate || row.title}`} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-black text-slate-100">{label}</p>
+                  {row.relatedClimateSummary ? <p className="mt-1 text-xs font-bold text-emerald-200">Klíma: {row.relatedClimateSummary}</p> : null}
                   {isCancelled ? <p className="mt-1 text-xs font-black text-red-200">Lemondva</p> : row.status ? <p className="mt-1 text-xs font-bold text-slate-400">{row.status}</p> : null}
                 </div>
                 {isCancelled ? null : hasReport ? (
