@@ -103,6 +103,7 @@ import {
   sortCustomersBySchedule,
 } from "@/lib/alinflow/schedule";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
+import { MaintenanceMapPanel } from "@/components/alinflow/MaintenanceMapPanel";
 import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
 import { AllWorkReportsDocument, AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
 import { CustomerSearchPanel, LeadImportPanel } from "@/components/alinflow/CustomerPanels";
@@ -144,6 +145,7 @@ import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
+import { buildMaintenanceMapPoints } from "@/lib/alinflow/maintenance-map";
 import { normalizePostalCodeInput, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
@@ -256,6 +258,18 @@ function isMissingWorkspaceSettingsSchemaError(error: any) {
 function isMissingMaintenanceItemsTableError(error: any) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
   return text.includes("maintenance_appointment_items") && (text.includes("relation") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
+function isMissingMaintenanceMapSchemaError(error: any) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
+  return (text.includes("latitude") || text.includes("longitude") || text.includes("geocode_status") || text.includes("geocode_error"))
+    && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
+function numericDbValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return undefined;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
 }
 
 function workspaceSlugForUser(currentUser: User) {
@@ -389,6 +403,7 @@ export default function Home() {
   const [inventory,setInventory] = useState<InventoryItem[]>(DEFAULT_INVENTORY);
   const [materialInventory,setMaterialInventory] = useState(MATERIAL_STOCK);
   const [message,setMessage] = useState("");
+  const [maintenanceMapGeocodingBusy,setMaintenanceMapGeocodingBusy] = useState(false);
   const [user,setUser] = useState<User | null>(null);
   const [authLoading,setAuthLoading] = useState(true);
   const [dataLoading,setDataLoading] = useState(false);
@@ -677,6 +692,8 @@ export default function Home() {
   const shownTime = appointmentTimeRangeLabel({ appointmentType: normalizedScheduleAppointmentType, time: scheduleStoredTime, quoteItems }, normalizedScheduleTime);
   const sortedCustomers = sortCustomersByCreatedAtDesc(customers);
   const allWorkCustomers = workCustomersForScheduling(sortedCustomers, workHistoryByCustomer);
+  const maintenanceMapPoints = buildMaintenanceMapPoints(allWorkCustomers);
+  const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
   const calendarCustomers = sortCustomersBySchedule(allWorkCustomers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva"));
@@ -1014,7 +1031,7 @@ export default function Home() {
 
   function currentReturnTarget() {
     if (view === "tasks") return { view: "tasks" as View, taskFilter };
-    if (view === "dashboard" || view === "archive" || view === "documents") return { view };
+    if (view === "dashboard" || view === "archive" || view === "documents" || view === "maintenanceMap") return { view };
     return returnTarget;
   }
 
@@ -1026,6 +1043,112 @@ export default function Home() {
       return;
     }
     replaceView(target?.view || "dashboard");
+  }
+
+  function patchAppointmentMapData(appointmentId: string, patch: Partial<Customer>) {
+    const applyPatch = (customer: Customer) => (
+      customer.activeAppointmentId === appointmentId ? { ...customer, ...patch } : customer
+    );
+
+    setCustomers((prev) => prev.map(applyPatch));
+    setWorkHistoryByCustomer((prev) => Object.fromEntries(
+      Object.entries(prev).map(([customerId, works]) => [customerId, works.map(applyPatch)])
+    ));
+    setSelected((current) => applyPatch(current));
+  }
+
+  async function geocodeMissingMaintenanceMapPoints() {
+    const targets = maintenanceMapPoints
+      .filter((point) => (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) && point.address)
+      .slice(0, 30);
+
+    if (!targets.length) {
+      setMessage("Nincs hiányzó koordinátájú, címmel rendelkező telepített klíma.");
+      return;
+    }
+
+    try {
+      setMaintenanceMapGeocodingBusy(true);
+      setMessage("Hiányzó térképes koordináták keresése...");
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("A koordinátakereséshez jelentkezz be újra.");
+
+      const response = await fetch("/api/geocode-installations", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          locations: targets.map((point) => ({
+            appointmentId: point.appointmentId,
+            address: point.address,
+          })),
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Nem sikerült a koordinátakeresés.");
+
+      const results = Array.isArray(payload?.results) ? payload.results : [];
+      let savedCount = 0;
+      let failedCount = 0;
+
+      for (const result of results) {
+        const appointmentId = String(result?.appointmentId || "");
+        if (!appointmentId) continue;
+
+        const success = result?.status === "ok" && Number.isFinite(Number(result?.latitude)) && Number.isFinite(Number(result?.longitude));
+        const updatedAt = new Date().toISOString();
+        const geocodeErrorMessage = String(result?.error || "Nincs találat a címre.").slice(0, 500);
+        const dbPayload = success
+          ? {
+              latitude: Number(result.latitude),
+              longitude: Number(result.longitude),
+              geocoded_at: updatedAt,
+              geocode_status: "ok",
+              geocode_error: null,
+            }
+          : {
+              geocoded_at: updatedAt,
+              geocode_status: "failed",
+              geocode_error: geocodeErrorMessage,
+            };
+
+        const { error } = await workspaceQuery(supabase.from("appointments").update(dbPayload).eq("id", appointmentId));
+        if (error) {
+          if (isMissingMaintenanceMapSchemaError(error)) {
+            throw new Error("A karbantartási térképhez előbb futtasd a docs/sql/20260724_ADD_MAINTENANCE_MAP_COORDINATES.sql migrációt.");
+          }
+          throw error;
+        }
+
+        patchAppointmentMapData(appointmentId, success
+          ? {
+              mapLatitude: Number(result.latitude),
+              mapLongitude: Number(result.longitude),
+              mapGeocodedAt: updatedAt,
+              mapGeocodeStatus: "ok",
+              mapGeocodeError: undefined,
+            }
+          : {
+              mapGeocodedAt: updatedAt,
+              mapGeocodeStatus: "failed",
+              mapGeocodeError: geocodeErrorMessage,
+            });
+
+        if (success) savedCount += 1;
+        else failedCount += 1;
+      }
+
+      setMessage(`Koordinátakeresés kész: ${savedCount} cím mentve${failedCount ? `, ${failedCount} címhez nincs találat` : ""}.`);
+    } catch (error: any) {
+      setMessage(`Térkép hiba: ${error.message}`);
+    } finally {
+      setMaintenanceMapGeocodingBusy(false);
+    }
   }
 
   function continueCustomerDraft() {
@@ -2323,6 +2446,7 @@ export default function Home() {
         phone: row.phone || "",
         email: row.email || "",
         address: row.address || appointment?.address || "",
+        workAddress: appointment?.address || row.address || "",
         source: row.source || "Kézi rögzítés",
         status: normalizeStatus(appointment?.status || row.status || "Visszahívandó"),
         need: row.need || "",
@@ -2346,6 +2470,11 @@ export default function Home() {
           : Boolean(row.stock_deducted) || stockDeductedFromWorkStatus(row.status),
         maintenanceInstallationIds: loadedAppointmentType === "maintenance" ? maintenanceInstallations.map((installation) => installation.appointmentId) : undefined,
         maintenanceInstallations: loadedAppointmentType === "maintenance" ? maintenanceInstallations : undefined,
+        mapLatitude: numericDbValue(appointment?.latitude),
+        mapLongitude: numericDbValue(appointment?.longitude),
+        mapGeocodedAt: appointment?.geocoded_at || undefined,
+        mapGeocodeStatus: appointment?.geocode_status || undefined,
+        mapGeocodeError: appointment?.geocode_error || undefined,
       };
 
       return existingDocs.length ? customerWithDetailDocuments(customer, existingDocs) : customer;
@@ -3984,6 +4113,22 @@ export default function Home() {
         onOpenCustomer={openCustomer}
         onOpenWarehouse={() => navigateToView("warehouse")}
       />
+    );
+  }
+
+  if (view === "maintenanceMap") {
+    return (
+      <Shell>
+        {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
+        <MaintenanceMapPanel
+          points={maintenanceMapPoints}
+          googleMapsApiKey={googleMapsApiKey}
+          geocodingBusy={maintenanceMapGeocodingBusy}
+          onBack={() => goBack()}
+          onOpenCustomer={(customer) => openCustomer(customer, "work")}
+          onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
+        />
+      </Shell>
     );
   }
 
@@ -6071,6 +6216,7 @@ export default function Home() {
         </div>
         <div className="grid grid-cols-3 gap-2 [&>button]:min-w-0 [&>button]:px-2 [&>button]:py-3 [&>button]:text-center [&>button]:text-sm [&>button]:leading-tight sm:flex sm:flex-wrap sm:gap-3 sm:[&>button]:px-5 sm:[&>button]:py-4 sm:[&>button]:text-base">
           <Btn onClick={startNewCustomer}>+ Új ügyfél</Btn>
+          <Btn onClick={() => navigateToView("maintenanceMap")}>Térkép</Btn>
           <Btn color="blue" onClick={() => navigateToView("documents")}>Dokumentumok</Btn>
           <Btn color="green" onClick={() => navigateToView("warehouse")}>Raktár</Btn>
           <Btn color="red" onClick={() => navigateToView("archive")}>Lezárt ({archivedCustomers.length})</Btn>

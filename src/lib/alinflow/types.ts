@@ -11,6 +11,7 @@ export type View =
   | "archive"
   | "documents"
   | "settings"
+  | "maintenanceMap"
   | "documentPreview";
 
 export type CalendarMode = "week" | "month";
@@ -92,6 +93,7 @@ export type Customer = {
   phone: string;
   email: string;
   address: string;
+  workAddress?: string;
   source: string;
   status: string;
   need: string;
@@ -116,6 +118,11 @@ export type Customer = {
   stockDeducted?: boolean;
   maintenanceInstallationIds?: string[];
   maintenanceInstallations?: MaintenanceInstallationSummary[];
+  mapLatitude?: number;
+  mapLongitude?: number;
+  mapGeocodedAt?: string;
+  mapGeocodeStatus?: "pending" | "ok" | "failed" | "manual";
+  mapGeocodeError?: string;
 };
 
 
