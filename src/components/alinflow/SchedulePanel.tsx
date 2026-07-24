@@ -2,6 +2,7 @@
 
 import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
 import { climateSummary, isCustomQuoteItem, itemName, itemUnitPrice, sortProducts } from "@/lib/alinflow/products";
+import { displayAddress } from "@/lib/alinflow/format";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
@@ -230,6 +231,7 @@ export function SchedulePanel({
                         />
                         <span className="min-w-0">
                           <span className="block font-black">{climateSummary(work.quoteItems) || "Korábbi telepítés"}</span>
+                          {displayAddress(work) ? <span className="mt-1 block text-sm font-bold text-slate-300">{displayAddress(work)}</span> : null}
                           <span className="mt-1 block text-sm text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"}</span>
                         </span>
                       </label>

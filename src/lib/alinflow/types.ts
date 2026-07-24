@@ -80,6 +80,7 @@ export type MaintenanceInstallationSummary = {
   appointmentId: string;
   date?: string;
   time?: string;
+  address?: string;
   quoteItems: QuoteItem[];
 };
 

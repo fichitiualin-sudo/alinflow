@@ -183,6 +183,7 @@ type PageDocumentRow = {
   reportTime?: string;
   reportDateLabel?: string;
   relatedClimateSummary?: string;
+  relatedClimateAddress?: string;
 };
 
 type WorkActionDates = {
@@ -2295,6 +2296,7 @@ export default function Home() {
             appointmentId,
             date: installation?.scheduled_date || undefined,
             time: installation?.scheduled_time || undefined,
+            address: installation?.address || undefined,
             quoteItems: linkedQuoteItems,
           };
         })
@@ -2624,6 +2626,19 @@ export default function Home() {
       .flatMap((work) => work.quoteItems || []));
   }
 
+  function maintenanceInstallationSummariesForIds(customer: Customer, installationIds: string[]) {
+    const selectedIds = new Set(installationIds);
+    return customerInstallationWorks(customer)
+      .filter((work) => work.activeAppointmentId && selectedIds.has(work.activeAppointmentId))
+      .map((work) => ({
+        appointmentId: work.activeAppointmentId as string,
+        date: work.date,
+        time: work.time,
+        address: work.address,
+        quoteItems: cleanQuoteItems(work.quoteItems || []),
+      }));
+  }
+
   function updateMaintenanceInstallationSelection(installationId: string, checked: boolean) {
     const installationWorks = customerInstallationWorks(selected);
     const defaultIds = installationWorks.map((work) => work.activeAppointmentId).filter(Boolean) as string[];
@@ -2635,6 +2650,7 @@ export default function Home() {
     const updated: Customer = {
       ...selected,
       maintenanceInstallationIds: nextIds,
+      maintenanceInstallations: maintenanceInstallationSummariesForIds(selected, nextIds),
       quoteItems: nextQuoteItems,
       productId: nextQuoteItems[0]?.productId || undefined,
     };
@@ -2841,6 +2857,9 @@ export default function Home() {
       quoteItems: quoteItemsForAppointment,
       productId: quoteItemsForAppointment[0]?.productId || undefined,
       maintenanceInstallationIds: appointmentType === "maintenance" ? quickAppointment.maintenanceInstallationIds : undefined,
+      maintenanceInstallations: appointmentType === "maintenance"
+        ? maintenanceInstallationSummariesForIds(baseCustomer, quickAppointment.maintenanceInstallationIds)
+        : undefined,
       isFresh: true,
       appointmentBookedAt: baseCustomer.appointmentBookedAt || now,
       appointmentUpdatedAt: now,
@@ -3324,6 +3343,9 @@ export default function Home() {
       quoteItems: scheduledQuoteItems,
       productId: scheduledQuoteItems[0]?.productId || undefined,
       maintenanceInstallationIds,
+      maintenanceInstallations: normalizedScheduleAppointmentType === "maintenance" && maintenanceInstallationIds?.length
+        ? maintenanceInstallationSummariesForIds(selected, maintenanceInstallationIds)
+        : undefined,
       isFresh:true,
       appointmentBookedAt: selected.appointmentBookedAt || appointmentBookedAt,
       appointmentUpdatedAt: appointmentBookedAt,
@@ -3720,6 +3742,15 @@ export default function Home() {
     const installationWorks = customerInstallationWorks(customer);
     const installationIds = installationWorks.map((work) => work.activeAppointmentId).filter(Boolean) as string[];
     const installationItems = cleanQuoteItems(installationWorks.flatMap((work) => work.quoteItems || []));
+    const maintenanceInstallations = installationWorks
+      .filter((work) => work.activeAppointmentId)
+      .map((work) => ({
+        appointmentId: work.activeAppointmentId as string,
+        date: work.date,
+        time: work.time,
+        address: work.address,
+        quoteItems: cleanQuoteItems(work.quoteItems || []),
+      }));
     const maintenanceCustomer: Customer = {
       ...customer,
       date: undefined,
@@ -3731,6 +3762,7 @@ export default function Home() {
       status: "Időpont foglalva",
       stockDeducted: false,
       maintenanceInstallationIds: installationIds,
+      maintenanceInstallations,
       isFresh: true,
       updatedAt: changedAt,
     };
@@ -4324,6 +4356,15 @@ export default function Home() {
     return climateSummary(items);
   }
 
+  function maintenanceClimateAddressForAppointment(customer: Customer, appointmentId?: string) {
+    const maintenanceWork = maintenanceWorkForAppointment(customer, appointmentId);
+    const linkedAddresses = Array.from(new Set((maintenanceWork?.maintenanceInstallations || [])
+      .map((installation) => (installation.address || "").trim())
+      .filter(Boolean)));
+    if (linkedAddresses.length) return linkedAddresses.join(" · ");
+    return maintenanceWork ? displayAddress(maintenanceWork) : "";
+  }
+
   function restoredInstallationStatusAfterMaintenance(customer: Customer) {
     if (customer.status === "Lezárva") return "Lezárva";
     const installationReport = savedReportFor({ ...customer, activeWorkReportId: undefined, appointmentType: "installation" }, "installation");
@@ -4747,6 +4788,7 @@ export default function Home() {
       reportTime: report.workTime,
       reportDateLabel: formatMaintenanceReportDate(report),
       relatedClimateSummary: maintenanceClimateSummaryForAppointment(customer, report.appointmentId),
+      relatedClimateAddress: maintenanceClimateAddressForAppointment(customer, report.appointmentId),
     }));
 
     const currentType = normalizeAppointmentType(customer.appointmentType);
@@ -4763,6 +4805,7 @@ export default function Home() {
         reportTime: customer.time,
         reportDateLabel: formatReportDateLabel(customer),
         relatedClimateSummary: maintenanceClimateSummaryForAppointment(customer, customer.activeAppointmentId),
+        relatedClimateAddress: maintenanceClimateAddressForAppointment(customer, customer.activeAppointmentId),
       });
     }
 
@@ -5527,6 +5570,7 @@ export default function Home() {
                           />
                           <span>
                             <span className="block font-black">{climateSummary(work.quoteItems) || "Korábbi telepítés"}</span>
+                            {displayAddress(work) ? <span className="mt-1 block text-sm font-bold text-slate-300">{displayAddress(work)}</span> : null}
                             <span className="mt-1 block text-sm text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"}</span>
                           </span>
                         </label>
