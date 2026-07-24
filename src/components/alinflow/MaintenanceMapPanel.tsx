@@ -94,16 +94,6 @@ function routeTarget(point: MaintenanceMapPoint) {
   return point.address;
 }
 
-function googleRouteHref(points: MaintenanceMapPoint[]) {
-  const routePoints = points.filter((point) => routeTarget(point)).slice(0, 10);
-  if (!routePoints.length) return "";
-  const destination = routeTarget(routePoints[routePoints.length - 1]);
-  const waypoints = routePoints.slice(0, -1).map(routeTarget).filter(Boolean);
-  const params = new URLSearchParams({ api: "1", travelmode: "driving", destination });
-  if (waypoints.length) params.set("waypoints", waypoints.join("|"));
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
-}
-
 export function MaintenanceMapPanel({
   points,
   googleMapsApiKey,
@@ -142,8 +132,6 @@ export function MaintenanceMapPanel({
     .map((point) => `${point.appointmentId}:${point.latitude}:${point.longitude}:${point.status}`)
     .join("|");
   const missingCoordinateCount = points.filter((point) => !hasCoordinates(point) && point.address).length;
-  const routeHref = googleRouteHref(filteredPoints);
-  const routeCount = filteredPoints.filter((point) => routeTarget(point)).slice(0, 10).length;
 
   const counts = useMemo(() => {
     return points.reduce<Record<MaintenanceMapStatus | "all", number>>(
@@ -245,7 +233,7 @@ export function MaintenanceMapPanel({
       <section className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-2xl md:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-sm font-black text-cyan-200">Karbantartási útvonaltervezés</p>
+            <p className="text-sm font-black text-cyan-200">Karbantartási térkép</p>
             <h1 className="mt-1 text-3xl font-black md:text-4xl">Telepített klímák térképen</h1>
             <p className="mt-2 max-w-3xl text-sm font-bold text-slate-400 md:text-base">
               Itt egyben látod a telepített klímákat, cím szerint. A színek azt mutatják, melyik készüléknél esedékes vagy közelgő a karbantartás.
@@ -280,16 +268,6 @@ export function MaintenanceMapPanel({
               ))}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              {routeHref ? (
-                <a
-                  href={routeHref}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-2xl bg-emerald-400 px-4 py-3 text-center text-sm font-black text-slate-950"
-                >
-                  Útvonal nyitása ({routeCount})
-                </a>
-              ) : null}
               <button
                 type="button"
                 onClick={onGeocodeMissing}
