@@ -145,7 +145,7 @@ import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
-import { buildMaintenanceMapPoints } from "@/lib/alinflow/maintenance-map";
+import { buildMaintenanceMapPoints, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
 import { normalizePostalCodeInput, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
@@ -263,6 +263,12 @@ function isMissingMaintenanceItemsTableError(error: any) {
 function isMissingMaintenanceMapSchemaError(error: any) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
   return (text.includes("latitude") || text.includes("longitude") || text.includes("geocode_status") || text.includes("geocode_error"))
+    && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
+function isMissingMaintenanceOptOutSchemaError(error: any) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
+  return (text.includes("maintenance_opt_out") || text.includes("maintenance_opt_out_at"))
     && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
 }
 
@@ -980,24 +986,46 @@ export default function Home() {
   const missingChecklist = closeRequirementItems.filter((item) => !item.done).map((item) => item.label);
   const checklistReady = missingChecklist.length === 0;
 
+  function workScopedCustomer(customer: Customer) {
+    if (!customer.activeAppointmentId) return customer;
+    const matchingWork = (workHistoryByCustomer[customer.id] || []).find((work) => work.activeAppointmentId === customer.activeAppointmentId);
+    if (!matchingWork) return customer;
+    const workAddress = matchingWork.workAddress || matchingWork.address || customer.workAddress || customer.address;
+
+    return {
+      ...customer,
+      ...matchingWork,
+      id: customer.id,
+      name: customer.name || matchingWork.name,
+      phone: customer.phone || matchingWork.phone,
+      email: customer.email || matchingWork.email,
+      postalCode: customer.postalCode || matchingWork.postalCode,
+      city: customer.city || matchingWork.city,
+      address: workAddress,
+      workAddress,
+    };
+  }
+
   function openCustomer(c:Customer, v:View) {
     const target = currentReturnTarget();
     if (target) setReturnTarget(target);
 
-    const draft = draftForCustomer(c);
-    const customerToOpen = draft?.customer || c;
-    const itemsToOpen = draft?.quoteItems || c.quoteItems || EMPTY_QUOTE_ITEMS;
+    const scopedCustomer = workScopedCustomer(c);
+    const draft = draftForCustomer(scopedCustomer);
+    const activeDraft = draft?.customer.activeAppointmentId === scopedCustomer.activeAppointmentId ? draft : null;
+    const customerToOpen = activeDraft?.customer || scopedCustomer;
+    const itemsToOpen = activeDraft?.quoteItems || scopedCustomer.quoteItems || EMPTY_QUOTE_ITEMS;
 
     setSelected(customerToOpen);
     setQuoteItems(itemsToOpen);
-    setScheduleDate(draft?.scheduleDate || customerToOpen.date || todayIso());
-    setScheduleTime(draft?.scheduleTime || firstAppointmentTime(customerToOpen.time));
-    setScheduleAppointmentType(normalizeAppointmentType(draft?.scheduleAppointmentType || customerToOpen.appointmentType));
+    setScheduleDate(activeDraft?.scheduleDate || customerToOpen.date || todayIso());
+    setScheduleTime(activeDraft?.scheduleTime || firstAppointmentTime(customerToOpen.time));
+    setScheduleAppointmentType(normalizeAppointmentType(activeDraft?.scheduleAppointmentType || customerToOpen.appointmentType));
     setWorkReport(emptyWorkReport(customerToOpen));
     setWorkChecklist(effectiveChecklistFor(customerToOpen));
     if (customerToOpen.id) void loadCustomerDetailData([customerToOpen.id]);
-    setEditCustomer(draft?.editCustomer ?? false);
-    setAllowWorkResourceEdit(draft?.allowWorkResourceEdit ?? false);
+    setEditCustomer(activeDraft?.editCustomer ?? false);
+    setAllowWorkResourceEdit(activeDraft?.allowWorkResourceEdit ?? false);
     navigateToView(v);
   }
 
@@ -1148,6 +1176,32 @@ export default function Home() {
       setMessage(`Térkép hiba: ${error.message}`);
     } finally {
       setMaintenanceMapGeocodingBusy(false);
+    }
+  }
+
+  async function toggleMaintenanceOptOut(point: MaintenanceMapPoint, checked: boolean) {
+    const updatedAt = new Date().toISOString();
+    const dbPayload = {
+      maintenance_opt_out: checked,
+      maintenance_opt_out_at: checked ? updatedAt : null,
+    };
+
+    try {
+      const { error } = await workspaceQuery(supabase.from("appointments").update(dbPayload).eq("id", point.appointmentId));
+      if (error) {
+        if (isMissingMaintenanceOptOutSchemaError(error)) {
+          throw new Error("A 'nem kéri a karbantartást' jelöléshez előbb futtasd a docs/sql/20260725_ADD_MAINTENANCE_OPT_OUT.sql migrációt.");
+        }
+        throw error;
+      }
+
+      patchAppointmentMapData(point.appointmentId, {
+        maintenanceOptOut: checked,
+        maintenanceOptOutAt: checked ? updatedAt : undefined,
+      });
+      setMessage(checked ? "Mentve: az ügyfél nem kéri a karbantartást." : "Mentve: a klíma újra bekerült a karbantartási figyelésbe.");
+    } catch (error: any) {
+      setMessage(`Karbantartási jelölés hiba: ${error.message}`);
     }
   }
 
@@ -2437,16 +2491,21 @@ export default function Home() {
       const effectiveQuoteItems = loadedAppointmentType === "maintenance" && maintenanceQuoteItems.length
         ? maintenanceQuoteItems
         : quoteItemsFromDb;
+      const appointmentAddress = String(appointment?.address || "");
+      const displayWorkAddress = appointmentAddress || row.address || "";
+      const appointmentAddressHasLocation = Boolean(appointmentAddress.match(/\b\d{4}\b/));
+      const customerCity = appointmentAddressHasLocation ? "" : row.city || "";
+      const customerPostalCode = postalCodeFromCustomerData(customerCity, appointmentAddressHasLocation ? "" : row.postal_code, displayWorkAddress);
 
       const customer: Customer = {
         id: row.id,
         name: row.name || "",
-        city: row.city || "",
-        postalCode: postalCodeFromCustomerData(row.city, row.postal_code, row.address),
+        city: customerCity,
+        postalCode: customerPostalCode,
         phone: row.phone || "",
         email: row.email || "",
-        address: row.address || appointment?.address || "",
-        workAddress: appointment?.address || row.address || "",
+        address: displayWorkAddress,
+        workAddress: displayWorkAddress,
         source: row.source || "Kézi rögzítés",
         status: normalizeStatus(appointment?.status || row.status || "Visszahívandó"),
         need: row.need || "",
@@ -2470,6 +2529,8 @@ export default function Home() {
           : Boolean(row.stock_deducted) || stockDeductedFromWorkStatus(row.status),
         maintenanceInstallationIds: loadedAppointmentType === "maintenance" ? maintenanceInstallations.map((installation) => installation.appointmentId) : undefined,
         maintenanceInstallations: loadedAppointmentType === "maintenance" ? maintenanceInstallations : undefined,
+        maintenanceOptOut: Boolean(appointment?.maintenance_opt_out),
+        maintenanceOptOutAt: appointment?.maintenance_opt_out_at || undefined,
         mapLatitude: numericDbValue(appointment?.latitude),
         mapLongitude: numericDbValue(appointment?.longitude),
         mapGeocodedAt: appointment?.geocoded_at || undefined,
@@ -4127,6 +4188,7 @@ export default function Home() {
           onBack={() => goBack()}
           onOpenCustomer={(customer) => openCustomer(customer, "work")}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
+          onToggleMaintenanceOptOut={toggleMaintenanceOptOut}
         />
       </Shell>
     );

@@ -10,6 +10,13 @@ export type AppointmentRecordRow = {
   address?: string | null;
   notes?: string | null;
   cancelled_at?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  geocoded_at?: string | null;
+  geocode_status?: string | null;
+  geocode_error?: string | null;
+  maintenance_opt_out?: boolean | null;
+  maintenance_opt_out_at?: string | null;
   created_by?: string | null;
   legacy_source_key?: string | null;
   created_at?: string | null;
