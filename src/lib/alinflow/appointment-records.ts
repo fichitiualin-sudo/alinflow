@@ -32,6 +32,14 @@ function isCancelled(row: AppointmentRecordRow) {
     || String(row.status || "").trim().toLocaleLowerCase("hu-HU") === "lemondva";
 }
 
+function isLegacyMergedAppointment(row: AppointmentRecordRow) {
+  const legacySourceKey = String(row.legacy_source_key || "");
+  const notes = String(row.notes || "");
+
+  return legacySourceKey.startsWith("legacy-klima-xlsx:merged:")
+    || notes.includes("legacy_merged_into:");
+}
+
 function compareAppointmentRows(first: AppointmentRecordRow, second: AppointmentRecordRow) {
   const cancellationDifference = Number(isCancelled(first)) - Number(isCancelled(second));
   if (cancellationDifference !== 0) return cancellationDifference;
@@ -73,7 +81,9 @@ export function compatibleAppointmentRows(
   );
   const matchedJobIds = new Set<string>();
 
-  const rows = appointmentRows.flatMap((appointment) => {
+  const visibleAppointmentRows = appointmentRows.filter((row) => !isLegacyMergedAppointment(row));
+
+  const rows = visibleAppointmentRows.flatMap((appointment) => {
     const jobId = legacyJobId(appointment);
     if (!jobId) return [appointment];
 
