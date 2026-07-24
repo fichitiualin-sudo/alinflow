@@ -115,9 +115,14 @@ export function MaintenanceMapPanel({
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const onOpenCustomerRef = useRef(onOpenCustomer);
   const [statusFilter, setStatusFilter] = useState<MaintenanceMapStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [mapError, setMapError] = useState("");
+
+  useEffect(() => {
+    onOpenCustomerRef.current = onOpenCustomer;
+  }, [onOpenCustomer]);
 
   const filteredPoints = useMemo(() => {
     const normalizedSearch = search.toLocaleLowerCase("hu-HU").trim();
@@ -194,7 +199,8 @@ export function MaintenanceMapPanel({
           });
 
           marker.addListener("click", () => {
-            infoWindow.setContent(`
+            const content = document.createElement("div");
+            content.innerHTML = `
               <div style="font-family:Arial,sans-serif;max-width:260px;color:#0f172a">
                 <div style="font-weight:900;font-size:16px;margin-bottom:4px">${escapeHtml(point.customerName)}</div>
                 <div style="font-weight:800;margin-bottom:6px">${escapeHtml(point.climateSummary)}</div>
@@ -202,8 +208,15 @@ export function MaintenanceMapPanel({
                 <div style="font-size:12px;color:#475569">Szerelés: ${escapeHtml(formatMapDate(point.installationDate))}</div>
                 <div style="font-size:12px;color:#475569">Utolsó karbantartás: ${escapeHtml(formatMapDate(point.lastMaintenanceDate))}</div>
                 <div style="font-size:12px;color:#475569">Következő esedékes: ${escapeHtml(formatMapDate(point.nextMaintenanceDue))}</div>
+                <button type="button" data-open-customer style="margin-top:10px;width:100%;border:0;border-radius:12px;background:#67e8f9;color:#0f172a;padding:10px 12px;font-weight:900;cursor:pointer">
+                  Ügyfél megnyitása
+                </button>
               </div>
-            `);
+            `;
+            content.querySelector<HTMLButtonElement>("[data-open-customer]")?.addEventListener("click", () => {
+              onOpenCustomerRef.current(point.customer);
+            });
+            infoWindow.setContent(content);
             infoWindow.open({ anchor: marker, map: mapRef.current });
           });
 
