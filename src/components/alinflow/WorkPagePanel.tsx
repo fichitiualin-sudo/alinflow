@@ -319,6 +319,7 @@ export function WorkPagePanel({
   const canStartMaintenance = installationFinished || maintenanceFinished;
   const [showMaterials, setShowMaterials] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
+  const [showMaintenance, setShowMaintenance] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
   const [showWorkItems, setShowWorkItems] = useState(false);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
@@ -466,22 +467,6 @@ export function WorkPagePanel({
                     {workAddressLabel(work) ? <p className="mt-1 text-sm font-bold text-slate-300">{workAddressLabel(work)}</p> : null}
                     <p className="mt-1 text-sm font-bold text-slate-400">{workDateTimeLabel(work)} · {work.status || "Folyamatban"}</p>
                   </button>
-                ))}
-              </div>
-            </Card>
-          ) : null}
-
-          {installationWorksForMaintenance.length ? (
-            <Card title="Karbantartások">
-              <div className="space-y-3">
-                {installationWorksForMaintenance.map((installation) => (
-                  <InstalledClimateMaintenanceCard
-                    key={workIdentity(installation)}
-                    installation={installation}
-                    works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
-                    onOpenWorkVersion={onOpenWorkVersion}
-                    onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
-                  />
                 ))}
               </div>
             </Card>
@@ -709,6 +694,32 @@ export function WorkPagePanel({
               onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
             />
           </Card> : null}
+
+          {installationWorksForMaintenance.length ? (
+            <>
+              <WorkSectionToggleButton
+                label={showMaintenance ? "Karbantartások elrejtése" : "Karbantartások megjelenítése"}
+                open={showMaintenance}
+                onClick={() => setShowMaintenance((open) => !open)}
+              />
+
+              {showMaintenance ? (
+                <Card title="Karbantartások">
+                  <div className="space-y-3">
+                    {installationWorksForMaintenance.map((installation) => (
+                      <InstalledClimateMaintenanceCard
+                        key={workIdentity(installation)}
+                        installation={installation}
+                        works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
+                        onOpenWorkVersion={onOpenWorkVersion}
+                        onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
+                      />
+                    ))}
+                  </div>
+                </Card>
+              ) : null}
+            </>
+          ) : null}
 
           <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
             <div className="space-y-3">
