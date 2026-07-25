@@ -356,6 +356,7 @@ export function WorkPagePanel({
     .sort(compareWorkByDateDesc);
   const selectedMaintenanceInstallations = isMaintenance ? selected.maintenanceInstallations || [] : [];
   const hasMaintenanceClimateDetails = selectedMaintenanceInstallations.length > 0 || quoteItems.length > 0;
+  const hasMaintenanceSection = installationWorksForMaintenance.length > 0 || maintenanceRows.length > 0 || canStartMaintenance;
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
@@ -679,23 +680,9 @@ export function WorkPagePanel({
                 />
               ))}
             </div>
-            <MaintenanceHistory
-              selected={selected}
-              rows={maintenanceRows}
-              canStartMaintenance={canStartMaintenance}
-              quoteEmailBusy={quoteEmailBusy}
-              appointmentEmailBusy={appointmentEmailBusy}
-              thankYouEmailBusy={thankYouEmailBusy}
-              onOpenDocumentPreview={onOpenDocumentPreview}
-              onOpenWorkReportFor={onOpenWorkReportFor}
-              onSendQuoteEmail={onSendQuoteEmail}
-              onSendAppointmentEmailFor={onSendAppointmentEmailFor}
-              onSendThankYouEmailFor={onSendThankYouEmailFor}
-              onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
-            />
           </Card> : null}
 
-          {installationWorksForMaintenance.length ? (
+          {hasMaintenanceSection ? (
             <>
               <WorkSectionToggleButton
                 label={showMaintenance ? "Karbantartások elrejtése" : "Karbantartások megjelenítése"}
@@ -705,17 +692,33 @@ export function WorkPagePanel({
 
               {showMaintenance ? (
                 <Card title="Karbantartások">
-                  <div className="space-y-3">
-                    {installationWorksForMaintenance.map((installation) => (
-                      <InstalledClimateMaintenanceCard
-                        key={workIdentity(installation)}
-                        installation={installation}
-                        works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
-                        onOpenWorkVersion={onOpenWorkVersion}
-                        onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
-                      />
-                    ))}
-                  </div>
+                  {installationWorksForMaintenance.length ? (
+                    <div className="space-y-3">
+                      {installationWorksForMaintenance.map((installation) => (
+                        <InstalledClimateMaintenanceCard
+                          key={workIdentity(installation)}
+                          installation={installation}
+                          works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
+                          onOpenWorkVersion={onOpenWorkVersion}
+                          onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                  <MaintenanceHistory
+                    selected={selected}
+                    rows={maintenanceRows}
+                    canStartMaintenance={canStartMaintenance}
+                    quoteEmailBusy={quoteEmailBusy}
+                    appointmentEmailBusy={appointmentEmailBusy}
+                    thankYouEmailBusy={thankYouEmailBusy}
+                    onOpenDocumentPreview={onOpenDocumentPreview}
+                    onOpenWorkReportFor={onOpenWorkReportFor}
+                    onSendQuoteEmail={onSendQuoteEmail}
+                    onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+                    onSendThankYouEmailFor={onSendThankYouEmailFor}
+                    onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
+                  />
                 </Card>
               ) : null}
             </>
