@@ -1209,13 +1209,13 @@ export default function Home() {
     await toggleAppointmentMaintenanceOptOut(point.appointmentId, checked);
   }
 
-  async function toggleSelectedMaintenanceOptOut(checked: boolean) {
-    if (!selected.activeAppointmentId) {
+  async function toggleCustomerMaintenanceOptOut(customer: Customer, checked: boolean) {
+    if (!customer.activeAppointmentId) {
       setMessage("A karbantartási jelöléshez előbb mentsd az időpontot.");
       return;
     }
 
-    await toggleAppointmentMaintenanceOptOut(selected.activeAppointmentId, checked);
+    await toggleAppointmentMaintenanceOptOut(customer.activeAppointmentId, checked);
   }
 
   function continueCustomerDraft() {
@@ -6262,7 +6262,7 @@ export default function Home() {
         onMarkInstallationDone={markInstallationDone}
         onCancelAppointment={cancelAppointment}
         onStartMaintenanceForCustomer={startMaintenanceForCustomer}
-        onToggleMaintenanceOptOut={toggleSelectedMaintenanceOptOut}
+        onToggleMaintenanceOptOut={toggleCustomerMaintenanceOptOut}
         onToggleChecklist={toggleChecklist}
         onCreateInvoice={createInvoice}
         onOpenWorkVersion={openWorkVersion}

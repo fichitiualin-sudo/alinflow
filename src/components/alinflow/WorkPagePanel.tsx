@@ -146,6 +146,47 @@ function ClimateMaintenanceHistory({
   );
 }
 
+function InstalledClimateMaintenanceCard({
+  installation,
+  works,
+  onOpenWorkVersion,
+  onToggleMaintenanceOptOut,
+}: {
+  installation: Customer;
+  works: Customer[];
+  onOpenWorkVersion: (customer: Customer) => void;
+  onToggleMaintenanceOptOut: (customer: Customer, checked: boolean) => void;
+}) {
+  const addressLabel = workAddressLabel(installation);
+  const optedOut = Boolean(installation.maintenanceOptOut);
+
+  return (
+    <article className={`rounded-3xl border p-4 ${optedOut ? "border-zinc-300/25 bg-zinc-500/15" : "border-emerald-300/15 bg-emerald-400/10"}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-black text-slate-100">{climateSummary(installation.quoteItems) || "Telepített klíma"}</p>
+          {addressLabel ? <p className="mt-1 text-sm font-bold text-slate-300">Cím: {addressLabel}</p> : null}
+          <p className="mt-1 text-sm font-bold text-slate-400">Telepítés: {workDateTimeLabel(installation)}</p>
+        </div>
+        <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-zinc-300/20 bg-white/5 px-3 py-2 text-sm font-black text-slate-100">
+          <input
+            type="checkbox"
+            className="h-5 w-5 accent-zinc-400"
+            checked={optedOut}
+            onChange={(event) => onToggleMaintenanceOptOut(installation, event.target.checked)}
+          />
+          <span>Nem kéri</span>
+        </label>
+      </div>
+      {works.length ? (
+        <ClimateMaintenanceHistory works={works} addressLabel={addressLabel} onOpenWorkVersion={onOpenWorkVersion} />
+      ) : (
+        <p className="mt-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-400">Még nincs rögzített karbantartás ennél a klímánál.</p>
+      )}
+    </article>
+  );
+}
+
 type WorkPagePanelProps = {
   selected: Customer;
   scheduleDate: string;
@@ -201,7 +242,7 @@ type WorkPagePanelProps = {
   onMarkInstallationDone: () => void;
   onCancelAppointment: () => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
-  onToggleMaintenanceOptOut: (checked: boolean) => void;
+  onToggleMaintenanceOptOut: (customer: Customer, checked: boolean) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
   onCreateInvoice: (kind: BillingInvoiceKind, amount: string, paymentMethod: BillingPaymentMethod, sendEmail: boolean) => void;
   invoiceBusy: BillingInvoiceKind | null;
@@ -301,12 +342,17 @@ export function WorkPagePanel({
     ...(isMaintenance ? [selected] : []),
     ...workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance"),
   ]).filter((work) => work.activeAppointmentId !== selected.activeAppointmentId || isMaintenance);
+  const installationWorksForMaintenance = uniqueWorkList([
+    ...(isInstallation ? [selected] : []),
+    ...workHistory.filter((work) => isInstallationAppointment(work.appointmentType)),
+  ])
+    .filter((work) => Boolean(work.activeAppointmentId))
+    .sort(compareWorkByDateDesc);
   const previousInstallationWorks = uniqueWorkList(workHistory)
     .filter((work) => isInstallationAppointment(work.appointmentType))
     .filter((work) => work.activeAppointmentId !== selected.activeAppointmentId)
     .filter((work) => !selected.date || !work.date || work.date !== selected.date)
     .sort(compareWorkByDateDesc);
-  const currentInstallationMaintenanceWorks = isInstallation ? maintenanceWorksForInstallation(selected, allMaintenanceWorks) : [];
   const selectedMaintenanceInstallations = isMaintenance ? selected.maintenanceInstallations || [] : [];
   const hasMaintenanceClimateDetails = selectedMaintenanceInstallations.length > 0 || quoteItems.length > 0;
   const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
@@ -392,20 +438,6 @@ export function WorkPagePanel({
               onChange={onUpdateSelectedField}
               onExternalOpen={() => onRememberExternalCustomer(selected, "work")}
             />
-            {isInstallation && selected.activeAppointmentId ? (
-              <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-zinc-300/20 bg-zinc-500/15 p-4 text-sm font-black text-slate-100">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 accent-zinc-400"
-                  checked={Boolean(selected.maintenanceOptOut)}
-                  onChange={(event) => onToggleMaintenanceOptOut(event.target.checked)}
-                />
-                <span className="min-w-0">
-                  <span className="block">Nem kéri a karbantartást</span>
-                  <span className="mt-1 block text-xs font-bold text-slate-400">Ez csak erre a telepített klímára vonatkozik.</span>
-                </span>
-              </label>
-            ) : null}
           </Card>
 
           {previousInstallationWorks.length ? (
@@ -434,6 +466,22 @@ export function WorkPagePanel({
                     {workAddressLabel(work) ? <p className="mt-1 text-sm font-bold text-slate-300">{workAddressLabel(work)}</p> : null}
                     <p className="mt-1 text-sm font-bold text-slate-400">{workDateTimeLabel(work)} · {work.status || "Folyamatban"}</p>
                   </button>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
+          {installationWorksForMaintenance.length ? (
+            <Card title="Karbantartások">
+              <div className="space-y-3">
+                {installationWorksForMaintenance.map((installation) => (
+                  <InstalledClimateMaintenanceCard
+                    key={workIdentity(installation)}
+                    installation={installation}
+                    works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
+                    onOpenWorkVersion={onOpenWorkVersion}
+                    onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
+                  />
                 ))}
               </div>
             </Card>
@@ -560,7 +608,6 @@ export function WorkPagePanel({
                   <b className="text-2xl">{ft(total(quoteItems))}</b>
                 </div>
               </div>
-              <ClimateMaintenanceHistory works={currentInstallationMaintenanceWorks} addressLabel={workAddressLabel(selected)} onOpenWorkVersion={onOpenWorkVersion} />
             </div> : null}
             {isInstallation ? <div className="mt-4 flex flex-col gap-3 md:flex-row">
               <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddQuoteItem}>+ Klíma hozzáadása</button>
