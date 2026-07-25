@@ -179,7 +179,7 @@ function InstalledClimateMaintenanceCard({
         </label>
       </div>
       {works.length ? (
-        <ClimateMaintenanceHistory works={works} addressLabel={addressLabel} onOpenWorkVersion={onOpenWorkVersion} />
+        <ClimateMaintenanceHistory works={works} onOpenWorkVersion={onOpenWorkVersion} />
       ) : (
         <p className="mt-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-400">Még nincs rögzített karbantartás ennél a klímánál.</p>
       )}
