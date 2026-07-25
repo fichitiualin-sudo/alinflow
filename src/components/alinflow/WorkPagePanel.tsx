@@ -201,6 +201,7 @@ type WorkPagePanelProps = {
   onMarkInstallationDone: () => void;
   onCancelAppointment: () => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
+  onToggleMaintenanceOptOut: (checked: boolean) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
   onCreateInvoice: (kind: BillingInvoiceKind, amount: string, paymentMethod: BillingPaymentMethod, sendEmail: boolean) => void;
   invoiceBusy: BillingInvoiceKind | null;
@@ -262,6 +263,7 @@ export function WorkPagePanel({
   onMarkInstallationDone,
   onCancelAppointment,
   onStartMaintenanceForCustomer,
+  onToggleMaintenanceOptOut,
   onToggleChecklist,
   onCreateInvoice,
   invoiceBusy,
@@ -390,6 +392,20 @@ export function WorkPagePanel({
               onChange={onUpdateSelectedField}
               onExternalOpen={() => onRememberExternalCustomer(selected, "work")}
             />
+            {isInstallation && selected.activeAppointmentId ? (
+              <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-zinc-300/20 bg-zinc-500/15 p-4 text-sm font-black text-slate-100">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 accent-zinc-400"
+                  checked={Boolean(selected.maintenanceOptOut)}
+                  onChange={(event) => onToggleMaintenanceOptOut(event.target.checked)}
+                />
+                <span className="min-w-0">
+                  <span className="block">Nem kéri a karbantartást</span>
+                  <span className="mt-1 block text-xs font-bold text-slate-400">Ez csak erre a telepített klímára vonatkozik.</span>
+                </span>
+              </label>
+            ) : null}
           </Card>
 
           {previousInstallationWorks.length ? (

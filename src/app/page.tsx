@@ -1179,7 +1179,7 @@ export default function Home() {
     }
   }
 
-  async function toggleMaintenanceOptOut(point: MaintenanceMapPoint, checked: boolean) {
+  async function toggleAppointmentMaintenanceOptOut(appointmentId: string, checked: boolean) {
     const updatedAt = new Date().toISOString();
     const dbPayload = {
       maintenance_opt_out: checked,
@@ -1187,7 +1187,7 @@ export default function Home() {
     };
 
     try {
-      const { error } = await workspaceQuery(supabase.from("appointments").update(dbPayload).eq("id", point.appointmentId));
+      const { error } = await workspaceQuery(supabase.from("appointments").update(dbPayload).eq("id", appointmentId));
       if (error) {
         if (isMissingMaintenanceOptOutSchemaError(error)) {
           throw new Error("A 'nem kéri a karbantartást' jelöléshez előbb futtasd a docs/sql/20260725_ADD_MAINTENANCE_OPT_OUT.sql migrációt.");
@@ -1195,7 +1195,7 @@ export default function Home() {
         throw error;
       }
 
-      patchAppointmentMapData(point.appointmentId, {
+      patchAppointmentMapData(appointmentId, {
         maintenanceOptOut: checked,
         maintenanceOptOutAt: checked ? updatedAt : undefined,
       });
@@ -1203,6 +1203,19 @@ export default function Home() {
     } catch (error: any) {
       setMessage(`Karbantartási jelölés hiba: ${error.message}`);
     }
+  }
+
+  async function toggleMaintenanceOptOut(point: MaintenanceMapPoint, checked: boolean) {
+    await toggleAppointmentMaintenanceOptOut(point.appointmentId, checked);
+  }
+
+  async function toggleSelectedMaintenanceOptOut(checked: boolean) {
+    if (!selected.activeAppointmentId) {
+      setMessage("A karbantartási jelöléshez előbb mentsd az időpontot.");
+      return;
+    }
+
+    await toggleAppointmentMaintenanceOptOut(selected.activeAppointmentId, checked);
   }
 
   function continueCustomerDraft() {
@@ -6249,6 +6262,7 @@ export default function Home() {
         onMarkInstallationDone={markInstallationDone}
         onCancelAppointment={cancelAppointment}
         onStartMaintenanceForCustomer={startMaintenanceForCustomer}
+        onToggleMaintenanceOptOut={toggleSelectedMaintenanceOptOut}
         onToggleChecklist={toggleChecklist}
         onCreateInvoice={createInvoice}
         onOpenWorkVersion={openWorkVersion}
