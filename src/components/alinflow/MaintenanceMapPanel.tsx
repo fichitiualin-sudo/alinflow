@@ -112,6 +112,7 @@ export function MaintenanceMapPanel({
   const [statusFilter, setStatusFilter] = useState<MaintenanceMapStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [mapError, setMapError] = useState("");
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
 
   useEffect(() => {
     onOpenCustomerRef.current = onOpenCustomer;
@@ -146,6 +147,32 @@ export function MaintenanceMapPanel({
       { all: 0, ok: 0, dueSoon: 0, overdue: 0, optOut: 0, unknown: 0 }
     );
   }, [points]);
+
+  useEffect(() => {
+    if (!isMapFullscreen || typeof document === "undefined") return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMapFullscreen]);
+
+  useEffect(() => {
+    if (!mapRef.current || !window.google?.maps) return;
+    const resizeTimer = window.setTimeout(() => {
+      const googleMaps = window.google.maps;
+      googleMaps.event.trigger(mapRef.current, "resize");
+
+      if (!locatedPoints.length) return;
+      const bounds = new googleMaps.LatLngBounds();
+      locatedPoints.forEach((point) => {
+        bounds.extend({ lat: Number(point.latitude), lng: Number(point.longitude) });
+      });
+      mapRef.current.fitBounds(bounds, isMapFullscreen ? 32 : 64);
+    }, 120);
+
+    return () => window.clearTimeout(resizeTimer);
+  }, [isMapFullscreen, locatedPointSignature]);
 
   useEffect(() => {
     if (!googleMapsApiKey || !mapContainerRef.current) return;
@@ -272,7 +299,25 @@ export function MaintenanceMapPanel({
           />
 
           {googleMapsApiKey ? (
-            <div ref={mapContainerRef} className="min-h-[520px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900/80" />
+            <div className={isMapFullscreen ? "fixed inset-0 z-[100] bg-slate-950 p-3" : "relative"}>
+              <button
+                type="button"
+                onClick={() => setIsMapFullscreen((current) => !current)}
+                className={`absolute right-3 top-3 z-10 rounded-2xl bg-white px-4 py-3 text-sm font-black text-slate-950 shadow-xl shadow-slate-950/30 ${
+                  isMapFullscreen ? "" : "sm:hidden"
+                }`}
+              >
+                {isMapFullscreen ? "Bezárás" : "Teljes képernyő"}
+              </button>
+              <div
+                ref={mapContainerRef}
+                className={
+                  isMapFullscreen
+                    ? "h-full min-h-0 overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900/80"
+                    : "min-h-[420px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900/80 sm:min-h-[520px]"
+                }
+              />
+            </div>
           ) : (
             <div className="flex min-h-[320px] items-center justify-center rounded-[1.5rem] border border-amber-300/30 bg-amber-300/15 p-6 text-center font-bold text-amber-100">
               A térképhez add meg a Vercel környezeti változók között a NEXT_PUBLIC_GOOGLE_MAPS_API_KEY kulcsot.
