@@ -25,6 +25,7 @@ type MaintenanceMapPanelProps = {
   onBack: () => void;
   onOpenCustomer: (customer: Customer) => void;
   onGeocodeMissing: () => void;
+  onToggleMaintenanceOptOut: (point: MaintenanceMapPoint, checked: boolean) => void;
 };
 
 const FILTERS: Array<{ value: MaintenanceMapStatus | "all"; label: string }> = [
@@ -32,6 +33,7 @@ const FILTERS: Array<{ value: MaintenanceMapStatus | "all"; label: string }> = [
   { value: "overdue", label: "Esedékes" },
   { value: "dueSoon", label: "Hamarosan" },
   { value: "ok", label: "Rendben" },
+  { value: "optOut", label: "Nem kéri" },
   { value: "unknown", label: "Nincs adat" },
 ];
 
@@ -101,6 +103,7 @@ export function MaintenanceMapPanel({
   onBack,
   onOpenCustomer,
   onGeocodeMissing,
+  onToggleMaintenanceOptOut,
 }: MaintenanceMapPanelProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -140,7 +143,7 @@ export function MaintenanceMapPanel({
         acc[point.status] += 1;
         return acc;
       },
-      { all: 0, ok: 0, dueSoon: 0, overdue: 0, unknown: 0 }
+      { all: 0, ok: 0, dueSoon: 0, overdue: 0, optOut: 0, unknown: 0 }
     );
   }, [points]);
 
@@ -230,24 +233,6 @@ export function MaintenanceMapPanel({
         ← Vissza
       </button>
 
-      <section className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-2xl md:p-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <p className="text-sm font-black text-cyan-200">Karbantartási térkép</p>
-            <h1 className="mt-1 text-3xl font-black md:text-4xl">Telepített klímák térképen</h1>
-            <p className="mt-2 max-w-3xl text-sm font-bold text-slate-400 md:text-base">
-              Itt egyben látod a telepített klímákat, cím szerint. A színek azt mutatják, melyik készüléknél esedékes vagy közelgő a karbantartás.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-sm font-black sm:grid-cols-4">
-            <div className="rounded-2xl bg-slate-900/80 p-3"><span className="text-slate-400">Összes</span><b className="mt-1 block text-xl">{counts.all}</b></div>
-            <div className="rounded-2xl bg-red-500/20 p-3 text-red-100"><span>Esedékes</span><b className="mt-1 block text-xl">{counts.overdue}</b></div>
-            <div className="rounded-2xl bg-amber-300/20 p-3 text-amber-100"><span>Hamarosan</span><b className="mt-1 block text-xl">{counts.dueSoon}</b></div>
-            <div className="rounded-2xl bg-emerald-400/20 p-3 text-emerald-100"><span>Rendben</span><b className="mt-1 block text-xl">{counts.ok}</b></div>
-          </div>
-        </div>
-      </section>
-
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.75fr)]">
         <div className="space-y-4 rounded-[2rem] border border-white/10 bg-white/5 p-4 shadow-2xl">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -330,6 +315,16 @@ export function MaintenanceMapPanel({
                     </p>
                   ) : null}
                 </div>
+
+                <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-black text-slate-100">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-zinc-400"
+                    checked={point.status === "optOut"}
+                    onChange={(event) => onToggleMaintenanceOptOut(point, event.target.checked)}
+                  />
+                  <span>Nem kéri a karbantartást</span>
+                </label>
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button

@@ -3,7 +3,7 @@ import { appointmentSummaryLabel, appointmentTimeRangeLabel, isInstallationAppoi
 import { displayAddress } from "./format";
 import { climateSummary } from "./products";
 
-export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "unknown";
+export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "optOut" | "unknown";
 
 export type MaintenanceMapPoint = {
   appointmentId: string;
@@ -91,6 +91,7 @@ export function formatMapDate(value?: string) {
 }
 
 export function maintenanceMapStatusLabel(status: MaintenanceMapStatus) {
+  if (status === "optOut") return "Nem kéri";
   if (status === "overdue") return "Esedékes / elmaradt";
   if (status === "dueSoon") return "Hamarosan esedékes";
   if (status === "ok") return "Rendben";
@@ -98,6 +99,7 @@ export function maintenanceMapStatusLabel(status: MaintenanceMapStatus) {
 }
 
 export function maintenanceMapStatusColor(status: MaintenanceMapStatus) {
+  if (status === "optOut") return "#6b7280";
   if (status === "overdue") return "#ef4444";
   if (status === "dueSoon") return "#f59e0b";
   if (status === "ok") return "#22c55e";
@@ -105,6 +107,7 @@ export function maintenanceMapStatusColor(status: MaintenanceMapStatus) {
 }
 
 export function maintenanceMapStatusClass(status: MaintenanceMapStatus) {
+  if (status === "optOut") return "border-zinc-300/30 bg-zinc-500/25 text-zinc-100";
   if (status === "overdue") return "border-red-300/30 bg-red-500/20 text-red-100";
   if (status === "dueSoon") return "border-amber-300/30 bg-amber-300/20 text-amber-100";
   if (status === "ok") return "border-emerald-300/30 bg-emerald-400/20 text-emerald-100";
@@ -138,7 +141,7 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
       const lastMaintenanceDate = latestDate(maintenances.map((maintenance) => maintenance.date));
       const baselineDate = lastMaintenanceDate || installation.date;
       const nextMaintenanceDue = baselineDate ? addYears(baselineDate, 1) : undefined;
-      const status = dateStatus(nextMaintenanceDue);
+      const status: MaintenanceMapStatus = installation.maintenanceOptOut ? "optOut" : dateStatus(nextMaintenanceDue);
       const address = pointAddress(installation);
       const customerForMap = { ...installation, address: installation.workAddress || installation.address };
 
@@ -165,7 +168,7 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
     })
     .filter((point): point is MaintenanceMapPoint => Boolean(point))
     .sort((a, b) => {
-      const statusPriority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, unknown: 2, ok: 3 };
+      const statusPriority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, ok: 2, optOut: 3, unknown: 4 };
       const priorityDiff = statusPriority[a.status] - statusPriority[b.status];
       if (priorityDiff !== 0) return priorityDiff;
       return String(a.nextMaintenanceDue || "9999-99-99").localeCompare(String(b.nextMaintenanceDue || "9999-99-99"));

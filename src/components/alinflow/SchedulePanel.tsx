@@ -233,6 +233,11 @@ export function SchedulePanel({
                           <span className="block font-black">{climateSummary(work.quoteItems) || "Korábbi telepítés"}</span>
                           {displayAddress(work) ? <span className="mt-1 block text-sm font-bold text-slate-300">{displayAddress(work)}</span> : null}
                           <span className="mt-1 block text-sm text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"}</span>
+                          {work.maintenanceOptOut ? (
+                            <span className="mt-2 inline-flex rounded-full border border-zinc-300/30 bg-zinc-500/25 px-3 py-1 text-xs font-black text-zinc-100">
+                              Nem kéri a karbantartást
+                            </span>
+                          ) : null}
                         </span>
                       </label>
                     ))}

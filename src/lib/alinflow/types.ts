@@ -118,6 +118,8 @@ export type Customer = {
   stockDeducted?: boolean;
   maintenanceInstallationIds?: string[];
   maintenanceInstallations?: MaintenanceInstallationSummary[];
+  maintenanceOptOut?: boolean;
+  maintenanceOptOutAt?: string;
   mapLatitude?: number;
   mapLongitude?: number;
   mapGeocodedAt?: string;
