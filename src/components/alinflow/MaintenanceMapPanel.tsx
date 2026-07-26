@@ -76,8 +76,9 @@ function hasCoordinates(point: MaintenanceMapPoint) {
   return Number.isFinite(point.latitude) && Number.isFinite(point.longitude);
 }
 
-function markerIcon(googleMaps: any, status: MaintenanceMapStatus) {
+function markerIcon(googleMaps: any, status: MaintenanceMapStatus, compact = false) {
   const color = maintenanceMapStatusColor(status);
+  const size = compact ? { width: 18, height: 22, anchorX: 9, anchorY: 22 } : { width: 34, height: 40, anchorX: 17, anchorY: 40 };
   const svg = `
     <svg width="40" height="48" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M20 46C20 46 36 28.6 36 17.8C36 8.5 28.8 1 20 1C11.2 1 4 8.5 4 17.8C4 28.6 20 46 20 46Z" fill="${color}" stroke="#0f172a" stroke-width="2"/>
@@ -86,8 +87,8 @@ function markerIcon(googleMaps: any, status: MaintenanceMapStatus) {
 
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    scaledSize: new googleMaps.Size(34, 40),
-    anchor: new googleMaps.Point(17, 40),
+    scaledSize: new googleMaps.Size(size.width, size.height),
+    anchor: new googleMaps.Point(size.anchorX, size.anchorY),
   };
 }
 
@@ -113,10 +114,20 @@ export function MaintenanceMapPanel({
   const [search, setSearch] = useState("");
   const [mapError, setMapError] = useState("");
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [compactMapMarkers, setCompactMapMarkers] = useState(false);
 
   useEffect(() => {
     onOpenCustomerRef.current = onOpenCustomer;
   }, [onOpenCustomer]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(max-width: 640px)");
+    const updateMarkerSize = () => setCompactMapMarkers(mediaQuery.matches);
+    updateMarkerSize();
+    mediaQuery.addEventListener("change", updateMarkerSize);
+    return () => mediaQuery.removeEventListener("change", updateMarkerSize);
+  }, []);
 
   const filteredPoints = useMemo(() => {
     const normalizedSearch = search.toLocaleLowerCase("hu-HU").trim();
@@ -213,7 +224,7 @@ export function MaintenanceMapPanel({
             position,
             map: mapRef.current,
             title: `${point.customerName} - ${point.climateSummary}`,
-            icon: markerIcon(googleMaps, point.status),
+            icon: markerIcon(googleMaps, point.status, compactMapMarkers),
           });
 
           marker.addListener("click", () => {
@@ -248,7 +259,7 @@ export function MaintenanceMapPanel({
     return () => {
       disposed = true;
     };
-  }, [googleMapsApiKey, locatedPointSignature]);
+  }, [googleMapsApiKey, locatedPointSignature, compactMapMarkers]);
 
   return (
     <main className="space-y-6">
