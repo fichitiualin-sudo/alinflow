@@ -146,7 +146,7 @@ import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLab
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { buildMaintenanceMapPoints, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
-import { normalizePostalCodeInput, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
+import { normalizePostalCodeInput, uniqueSettlementByCity, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
   declarationFromRow,
@@ -2628,6 +2628,10 @@ export default function Home() {
     quoteId?: string;
   };
 
+  type PersistCustomerOptions = {
+    persistQuote?: boolean;
+  };
+
   async function saveAppointmentWithJobMirror(customer: Customer, quoteId?: string): Promise<PersistCustomerResult> {
     const { data, error } = await supabase.rpc("save_appointment_with_job_mirror", {
       p_appointment_id: customer.activeAppointmentId || null,
@@ -2671,8 +2675,10 @@ export default function Home() {
     };
   }
 
-  async function persistCustomerToDb(customer: Customer): Promise<PersistCustomerResult | undefined> {
-    if (!user || !customer.id || !customer.name.trim()) return;
+  async function persistCustomerToDb(customer: Customer, options: PersistCustomerOptions = {}): Promise<PersistCustomerResult | undefined> {
+    if (!user) throw new Error("A mentéshez be kell jelentkezni.");
+    if (!customer.id) throw new Error("Hiányzik az ügyfél azonosítója.");
+    if (!customer.name.trim()) throw new Error("Adj meg ügyfélnevet a mentéshez.");
 
     const customerPayload = {
       id: customer.id,
@@ -2699,6 +2705,7 @@ export default function Home() {
 
     if (customerResult.error) throw customerResult.error;
 
+    const cleanedQuoteItems = cleanQuoteItems(customer.quoteItems || []);
     let quoteId = customer.activeQuoteId;
     if (quoteId && customer.activeAppointmentId) {
       const { data: quoteScope } = await workspaceQuery(supabase
@@ -2718,7 +2725,8 @@ export default function Home() {
         .maybeSingle();
       quoteId = appointmentQuote?.quote_id || undefined;
     }
-    if (!quoteId && !customer.date) {
+    const shouldPersistQuote = options.persistQuote ?? Boolean(quoteId || cleanedQuoteItems.length);
+    if (shouldPersistQuote && !quoteId && !customer.date) {
       const { data: existingQuotes } = await workspaceQuery(supabase
         .from("quotes")
         .select("id")
@@ -2726,30 +2734,33 @@ export default function Home() {
         .limit(1);
       quoteId = existingQuotes?.[0]?.id as string | undefined;
     }
-    const quotePayload = withWorkspace({
-      customer_id: customer.id,
-      appointment_id: customer.activeAppointmentId || null,
-      status: normalizeStatus(customer.status || "Ajánlat elküldve"),
-      total_amount: total(customer.quoteItems || []),
-      notes: quotePricingModeToNotes(customer.quotePricingMode),
-      created_by: user.id,
-    });
 
-    if (quoteId) {
-      const { error } = await workspaceQuery(supabase.from("quotes").update(quotePayload).eq("id", quoteId));
-      if (error) throw error;
-    } else {
-      const { data, error } = await supabase.from("quotes").insert(quotePayload).select("id").single();
-      if (error) throw error;
-      quoteId = data.id;
-    }
+    if (shouldPersistQuote) {
+      const quotePayload = withWorkspace({
+        customer_id: customer.id,
+        appointment_id: customer.activeAppointmentId || null,
+        status: normalizeStatus(customer.status || "Ajánlat elküldve"),
+        total_amount: total(cleanedQuoteItems),
+        notes: quotePricingModeToNotes(customer.quotePricingMode),
+        created_by: user.id,
+      });
 
-    if (quoteId) {
-      await workspaceQuery(supabase.from("quote_items").delete().eq("quote_id", quoteId));
-      const rowsToInsert = cleanQuoteItems(customer.quoteItems);
-      if (rowsToInsert.length) {
-        const { error } = await supabase.from("quote_items").insert(rowsToInsert.map((item) => withWorkspace(quoteItemToRow(item, quoteId as string))));
+      if (quoteId) {
+        const { error } = await workspaceQuery(supabase.from("quotes").update(quotePayload).eq("id", quoteId));
         if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from("quotes").insert(quotePayload).select("id").single();
+        if (error) throw error;
+        quoteId = data.id;
+      }
+
+      if (quoteId) {
+        await workspaceQuery(supabase.from("quote_items").delete().eq("quote_id", quoteId));
+        const rowsToInsert = cleanedQuoteItems;
+        if (rowsToInsert.length) {
+          const { error } = await supabase.from("quote_items").insert(rowsToInsert.map((item) => withWorkspace(quoteItemToRow(item, quoteId as string))));
+          if (error) throw error;
+        }
       }
     }
 
@@ -2776,6 +2787,8 @@ export default function Home() {
       const result = await cancelAppointmentWithJobMirror(customer, customer.updatedAt || new Date().toISOString());
       return { ...result, quoteId };
     }
+
+    return quoteId ? { quoteId } : undefined;
 
   }
 
@@ -2891,6 +2904,14 @@ export default function Home() {
     updateQuickAppointment({
       postalCode,
       ...(exact ? { city: exact.city } : {}),
+    });
+  }
+
+  function updateQuickAppointmentCity(value: string) {
+    const exact = uniqueSettlementByCity(value);
+    updateQuickAppointment({
+      city: value,
+      ...(exact ? { postalCode: exact.postalCode } : {}),
     });
   }
 
@@ -3329,7 +3350,7 @@ export default function Home() {
     });
 
     try {
-      await persistCustomerToDb(customerToSave);
+      await persistCustomerToDb(customerToSave, { persistQuote: true });
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Ügyfél mentve ✅");
@@ -3368,7 +3389,7 @@ export default function Home() {
     });
 
     try {
-      await persistCustomerToDb(customerToSave);
+      await persistCustomerToDb(customerToSave, { persistQuote: false });
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Felmérési időpont választható ✅");
@@ -3399,7 +3420,7 @@ export default function Home() {
     });
 
     try {
-      await persistCustomerToDb(customerToSave);
+      await persistCustomerToDb(customerToSave, { persistQuote: false });
       setMessage("Ügyféladatok mentve ✅");
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
@@ -5669,7 +5690,6 @@ export default function Home() {
         ].join(" ").toLocaleLowerCase("hu-HU").includes(searchTerm);
       })
       .slice(0, 8);
-    const linkedItems = quickAppointmentQuoteItems(quickAppointment, selectedQuickCustomer);
     const sortedProducts = sortProducts(products);
 
     return (
@@ -5737,7 +5757,7 @@ export default function Home() {
               <input className="input" value={quickAppointment.phone} onChange={(event) => updateQuickAppointment({ phone: event.target.value })} placeholder="Telefon" />
               <input className="input" value={quickAppointment.email} onChange={(event) => updateQuickAppointment({ email: event.target.value })} placeholder="Email" />
               <input className="input" inputMode="numeric" maxLength={4} value={quickAppointment.postalCode} onChange={(event) => updateQuickAppointmentPostalCode(event.target.value)} placeholder="Irányítószám" />
-              <input className="input" value={quickAppointment.city} onChange={(event) => updateQuickAppointment({ city: event.target.value })} placeholder="Település" />
+              <input className="input" value={quickAppointment.city} onChange={(event) => updateQuickAppointmentCity(event.target.value)} placeholder="Település" />
               <input className="input md:col-span-2" value={quickAppointment.address} onChange={(event) => updateQuickAppointment({ address: event.target.value })} placeholder="Cím" />
             </div>
           ) : null}
@@ -5797,18 +5817,9 @@ export default function Home() {
                       ))}
                     </div>
                   ) : null}
-                  {linkedItems.length ? (
-                    <div className="space-y-2">
-                      {linkedItems.map((item, index) => (
-                        <div key={`${item.productId}-${index}`} className="rounded-2xl bg-slate-950/60 p-3">
-                          <p className="font-black">{itemName(item)}</p>
-                          <p className="text-sm text-slate-400">{Number(item.quantity) || 1} db</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
+                  {!maintenanceInstallationWorks.length ? (
                     <div className="rounded-2xl bg-amber-400/15 p-4 text-sm font-bold text-amber-100">Ennél az ügyfélnél nincs korábbi klíma rögzítve, de a karbantartási időpont így is menthető.</div>
-                  )}
+                  ) : null}
                 </div>
               ) : null}
 

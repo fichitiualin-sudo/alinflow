@@ -243,19 +243,9 @@ export function SchedulePanel({
                     ))}
                   </div>
                 ) : null}
-                {quoteItems.length ? (
-                  <div className="space-y-2">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-400">Kiválasztott karbantartandó klímák</p>
-                    {quoteItems.map((item, index) => (
-                      <div key={index} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-                        <p className="font-black">{itemName(item)}</p>
-                        <p className="mt-1 text-sm text-slate-400">{Number(item.quantity) || 1} db</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
+                {maintenanceInstallationWorks.length && !maintenanceInstallationIds.length ? (
                   <div className="rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-black text-amber-100">Válassz legalább egy kapcsolódó klímát.</div>
-                )}
+                ) : null}
               </div>
             ) : null}
 

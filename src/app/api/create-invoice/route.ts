@@ -1,5 +1,5 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
-import { cleanQuoteItems, climateSummary, itemDeviceTotal, itemInstallTotal, itemName, itemQuantity } from "@/lib/alinflow/products";
+import { cleanQuoteItems, itemDeviceTotal, itemInstallTotal, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
 export const runtime = "nodejs";
@@ -134,6 +134,15 @@ function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: num
   };
 }
 
+function invoiceQuantityPrefix(quantity: number) {
+  return quantity > 1 ? `${quantity} db ` : "";
+}
+
+function invoiceLineNoteXml(note: string) {
+  const value = String(note || "").trim();
+  return value ? `      <megjegyzes>${safeText(value)}</megjegyzes>\n` : "";
+}
+
 function distributeGross(totalGross: number, weights: number[]) {
   const weightSum = weights.reduce((sum, value) => sum + Math.max(0, value), 0);
   if (!weightSum) return weights.map(() => 0);
@@ -151,17 +160,18 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
   const cleanItems = cleanQuoteItems(items);
 
   if (kind === "maintenance") {
-    return [invoiceLineFromGross(kind, maintenanceInvoiceLineName(labels), amount, climateSummary(items))];
+    const quantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
+    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(quantity)}${maintenanceInvoiceLineName(labels)}`, amount, "")];
   }
 
   if (kind === "labor") {
     const quantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
 
     if (!quantity) {
-      return [invoiceLineFromGross(kind, laborInvoiceLineName(labels), amount, climateSummary(items))];
+      return [invoiceLineFromGross(kind, laborInvoiceLineName(labels), amount, "")];
     }
 
-    return [invoiceLineFromGross(kind, `${quantity > 1 ? `${quantity} db ` : ""}${laborInvoiceLineName(labels)}`, amount, "")];
+    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(quantity)}${laborInvoiceLineName(labels)}`, amount, "")];
   }
 
   if (kind === "combined") {
@@ -169,7 +179,7 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
       .map((item) => {
         const quantity = itemQuantity(item);
         return {
-          name: `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`,
+          name: `${invoiceQuantityPrefix(quantity)}${itemName(item)} + szerelési anyagok`,
           weight: itemDeviceTotal(item),
         };
       })
@@ -179,13 +189,13 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
     const combinedLines = [
       ...itemLines,
       laborWeight > 0 ? {
-        name: `${laborQuantity > 1 ? `${laborQuantity} db ` : ""}${laborInvoiceLineName(labels)}`,
+        name: `${invoiceQuantityPrefix(laborQuantity)}${laborInvoiceLineName(labels)}`,
         weight: laborWeight,
       } : null,
     ].filter(Boolean) as Array<{ name: string; weight: number }>;
 
     if (!combinedLines.length) {
-      return [invoiceLineFromGross(kind, invoiceLineName("combined", labels), amount, climateSummary(items))];
+      return [invoiceLineFromGross(kind, invoiceLineName("combined", labels), amount, "")];
     }
 
     const grossValues = distributeGross(amount, combinedLines.map((line) => line.weight));
@@ -198,7 +208,7 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
     .map((item) => {
       const quantity = itemQuantity(item);
       return {
-        name: `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`,
+        name: `${invoiceQuantityPrefix(quantity)}${itemName(item)} + szerelési anyagok`,
         weight: itemDeviceTotal(item),
       };
     })
@@ -295,8 +305,7 @@ ${lines.map((line) => `    <tetel>
       <nettoErtek>${line.net}</nettoErtek>
       <afaErtek>${line.vat}</afaErtek>
       <bruttoErtek>${line.gross}</bruttoErtek>
-      <megjegyzes>${safeText(line.note)}</megjegyzes>
-    </tetel>`).join("\n")}
+${invoiceLineNoteXml(line.note)}    </tetel>`).join("\n")}
   </tetelek>
 </xmlszamla>`;
 }
