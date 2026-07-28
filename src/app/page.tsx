@@ -3284,6 +3284,18 @@ export default function Home() {
     }
   }
 
+  async function markManualInvoice(kind: BillingInvoiceKind) {
+    if (!selected.id) return;
+
+    if (kind === "combined") {
+      await updateChecklistForCustomer(selected, { amovaInvoice: true, alinInvoice: true });
+    } else {
+      await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
+    }
+
+    setMessage("Kézi számlázás készre jelölve.");
+  }
+
   async function createInvoice(kind: BillingInvoiceKind, amountValue: string, paymentMethod: BillingPaymentMethod, sendEmail = false) {
     if (!selected.id) return;
     const amount = Number(String(amountValue || "").replace(/\s/g, ""));
@@ -6297,6 +6309,7 @@ export default function Home() {
         onToggleMaintenanceOptOut={toggleCustomerMaintenanceOptOut}
         onToggleChecklist={toggleChecklist}
         onCreateInvoice={createInvoice}
+        onMarkManualInvoice={markManualInvoice}
         onOpenWorkVersion={openWorkVersion}
       />
     </Shell>

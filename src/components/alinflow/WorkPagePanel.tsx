@@ -261,6 +261,7 @@ type WorkPagePanelProps = {
   onToggleMaintenanceOptOut: (customer: Customer, checked: boolean) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
   onCreateInvoice: (kind: BillingInvoiceKind, amount: string, paymentMethod: BillingPaymentMethod, sendEmail: boolean) => void;
+  onMarkManualInvoice: (kind: BillingInvoiceKind) => void;
   invoiceBusy: BillingInvoiceKind | null;
   onOpenWorkVersion: (customer: Customer) => void;
 };
@@ -323,6 +324,7 @@ export function WorkPagePanel({
   onToggleMaintenanceOptOut,
   onToggleChecklist,
   onCreateInvoice,
+  onMarkManualInvoice,
   invoiceBusy,
   onOpenWorkVersion,
 }: WorkPagePanelProps) {
@@ -785,6 +787,7 @@ export function WorkPagePanel({
                     onPaymentMethodChange={setMaintenancePaymentMethod}
                     onSendEmailChange={setMaintenanceInvoiceSendEmail}
                     onCreateInvoice={() => onCreateInvoice("maintenance", maintenanceInvoiceAmount, maintenancePaymentMethod, maintenanceInvoiceSendEmail)}
+                    onManualComplete={() => onMarkManualInvoice("maintenance")}
                     invoiceBusy={invoiceBusy}
                     billingConfig={billingConfig}
                     quoteItems={quoteItems}
@@ -815,6 +818,7 @@ export function WorkPagePanel({
                   onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount, laborPaymentMethod, laborInvoiceSendEmail)}
                   onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount, devicePaymentMethod, deviceInvoiceSendEmail)}
                   onCreateCombinedInvoice={() => onCreateInvoice("combined", combinedInvoiceAmount, devicePaymentMethod, deviceInvoiceSendEmail)}
+                  onMarkManualInvoice={onMarkManualInvoice}
                   invoiceBusy={invoiceBusy}
                   billingConfig={billingConfig}
                   quoteItems={quoteItems}
@@ -865,6 +869,7 @@ function BillingPreparationPanel({
   onCreateLaborInvoice,
   onCreateDeviceInvoice,
   onCreateCombinedInvoice,
+  onMarkManualInvoice,
   invoiceBusy,
   billingConfig,
   quoteItems,
@@ -891,6 +896,7 @@ function BillingPreparationPanel({
   onCreateLaborInvoice: () => void;
   onCreateDeviceInvoice: () => void;
   onCreateCombinedInvoice: () => void;
+  onMarkManualInvoice: (kind: BillingInvoiceKind) => void;
   invoiceBusy: BillingInvoiceKind | null;
   billingConfig: ReturnType<typeof billingUiConfig>;
   quoteItems: QuoteItem[];
@@ -932,6 +938,7 @@ function BillingPreparationPanel({
             onPaymentMethodChange={onDevicePaymentMethodChange}
             onSendEmailChange={onDeviceSendEmailChange}
             onCreateInvoice={onCreateCombinedInvoice}
+            onManualComplete={() => onMarkManualInvoice("combined")}
             invoiceBusy={invoiceBusy === "combined"}
             customerEmail={customerEmail}
           />
@@ -951,6 +958,7 @@ function BillingPreparationPanel({
             onPaymentMethodChange={onDevicePaymentMethodChange}
             onSendEmailChange={onDeviceSendEmailChange}
             onCreateInvoice={onCreateDeviceInvoice}
+            onManualComplete={() => onMarkManualInvoice("device")}
             invoiceBusy={invoiceBusy === "device"}
             customerEmail={customerEmail}
           />
@@ -968,6 +976,7 @@ function BillingPreparationPanel({
             onPaymentMethodChange={onLaborPaymentMethodChange}
             onSendEmailChange={onLaborSendEmailChange}
             onCreateInvoice={onCreateLaborInvoice}
+            onManualComplete={() => onMarkManualInvoice("labor")}
             invoiceBusy={invoiceBusy === "labor"}
             customerEmail={customerEmail}
           />
@@ -991,6 +1000,7 @@ function MaintenanceBillingPanel({
   onPaymentMethodChange,
   onSendEmailChange,
   onCreateInvoice,
+  onManualComplete,
   invoiceBusy,
   billingConfig,
   quoteItems,
@@ -1005,6 +1015,7 @@ function MaintenanceBillingPanel({
   onPaymentMethodChange: (value: BillingPaymentMethod) => void;
   onSendEmailChange: (value: boolean) => void;
   onCreateInvoice: () => void;
+  onManualComplete: () => void;
   invoiceBusy: BillingInvoiceKind | null;
   billingConfig: ReturnType<typeof billingUiConfig>;
   quoteItems: QuoteItem[];
@@ -1038,6 +1049,7 @@ function MaintenanceBillingPanel({
           onPaymentMethodChange={onPaymentMethodChange}
           onSendEmailChange={onSendEmailChange}
           onCreateInvoice={onCreateInvoice}
+          onManualComplete={onManualComplete}
           invoiceBusy={invoiceBusy === "maintenance"}
           customerEmail={customerEmail}
         />
@@ -1060,6 +1072,7 @@ function InvoicePrepCard({
   onPaymentMethodChange,
   onSendEmailChange,
   onCreateInvoice,
+  onManualComplete,
   invoiceBusy,
   customerEmail,
 }: {
@@ -1076,6 +1089,7 @@ function InvoicePrepCard({
   onPaymentMethodChange: (value: BillingPaymentMethod) => void;
   onSendEmailChange: (value: boolean) => void;
   onCreateInvoice: () => void;
+  onManualComplete: () => void;
   invoiceBusy: boolean;
   customerEmail: string;
 }) {
@@ -1087,9 +1101,24 @@ function InvoicePrepCard({
         <div>
           <p className="text-lg font-black text-slate-100">{title}</p>
         </div>
-        <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
-          {done ? "Kész" : "Előkészítve"}
-        </span>
+        <div className="flex w-fit flex-col items-start gap-2 sm:items-end">
+          <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
+            {done ? "Kész" : "Előkészítve"}
+          </span>
+          {!done ? (
+            <label className="flex cursor-pointer items-center gap-2 rounded-full bg-orange-300 px-3 py-2 text-xs font-black text-slate-950 shadow-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-[#ff5a1f]"
+                disabled={invoiceBusy}
+                onChange={(event) => {
+                  if (event.target.checked) onManualComplete();
+                }}
+              />
+              Kézi számlázás
+            </label>
+          ) : null}
+        </div>
       </div>
       <div className="mb-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-900/90 p-2">
         <button
