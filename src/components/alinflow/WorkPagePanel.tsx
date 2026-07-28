@@ -1097,16 +1097,16 @@ function InvoicePrepCard({
 
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
           <p className="text-lg font-black text-slate-100">{title}</p>
         </div>
-        <div className="flex w-fit flex-wrap items-center gap-2 sm:justify-end">
-          <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`w-fit rounded-full px-2.5 py-1 text-[11px] font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
             {done ? "Kész" : "Előkészítve"}
           </span>
           {!done ? (
-            <label className="flex cursor-pointer items-center gap-2 rounded-full bg-orange-300 px-3 py-2 text-xs font-black text-slate-950 shadow-sm">
+            <label className="flex cursor-pointer items-center gap-1.5 rounded-full bg-orange-300 px-2.5 py-1.5 text-[11px] font-black text-slate-950 shadow-sm">
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-[#ff5a1f]"
