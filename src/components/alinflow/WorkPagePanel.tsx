@@ -25,6 +25,7 @@ import {
 import type { View } from "@/lib/alinflow/types";
 import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
+import { normalizeStatus } from "@/lib/alinflow/constants";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 
 type MaterialItem = {
@@ -97,6 +98,21 @@ function workDateTimeLabel(work: Customer) {
 
 function workAddressLabel(work: Pick<Customer, "city" | "address" | "postalCode">) {
   return displayAddress(work);
+}
+
+function isCancelledWork(work: Customer) {
+  return normalizeStatus(work.status || "") === "Lemondva";
+}
+
+function hasInstalledClimateItems(work: Customer) {
+  return cleanQuoteItems(work.quoteItems).length > 0;
+}
+
+function isInstalledClimateWork(work: Customer) {
+  return isInstallationAppointment(work.appointmentType)
+    && Boolean(work.activeAppointmentId)
+    && !isCancelledWork(work)
+    && hasInstalledClimateItems(work);
 }
 
 function maintenanceInstallationDateLabel(installation: MaintenanceInstallationSummary) {
@@ -342,15 +358,17 @@ export function WorkPagePanel({
   const allMaintenanceWorks = uniqueWorkList([
     ...(isMaintenance ? [selected] : []),
     ...workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance"),
-  ]).filter((work) => work.activeAppointmentId !== selected.activeAppointmentId || isMaintenance);
+  ])
+    .filter((work) => work.activeAppointmentId !== selected.activeAppointmentId || isMaintenance)
+    .filter((work) => !isCancelledWork(work));
   const installationWorksForMaintenance = uniqueWorkList([
     ...(isInstallation ? [selected] : []),
     ...workHistory.filter((work) => isInstallationAppointment(work.appointmentType)),
   ])
-    .filter((work) => Boolean(work.activeAppointmentId))
+    .filter(isInstalledClimateWork)
     .sort(compareWorkByDateDesc);
   const previousInstallationWorks = uniqueWorkList(workHistory)
-    .filter((work) => isInstallationAppointment(work.appointmentType))
+    .filter(isInstalledClimateWork)
     .filter((work) => work.activeAppointmentId !== selected.activeAppointmentId)
     .filter((work) => !selected.date || !work.date || work.date !== selected.date)
     .sort(compareWorkByDateDesc);
@@ -420,13 +438,13 @@ export function WorkPagePanel({
     return (
       <>
         <WorkSectionToggleButton
-          label={showMaintenance ? "Karbantartások elrejtése" : "Karbantartások megjelenítése"}
+          label={showMaintenance ? "Klímák karbantartási állapotának elrejtése" : "Klímák karbantartási állapotának megjelenítése"}
           open={showMaintenance}
           onClick={() => setShowMaintenance((open) => !open)}
         />
 
         {showMaintenance ? (
-          <Card title="Karbantartások">
+          <Card title="Klímák karbantartási állapota">
             {installationWorksForMaintenance.length ? (
               <div className="space-y-3">
                 {installationWorksForMaintenance.map((installation) => (
@@ -495,13 +513,13 @@ export function WorkPagePanel({
                 onClick={() => setShowWorkHistory((open) => !open)}
                 className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
               >
-                {showWorkHistory ? "Korábbi klímaszerelések elrejtése" : "Korábbi klímaszerelések megjelenítése"}
+                {showWorkHistory ? "Más klímaszerelések elrejtése" : "Más klímaszerelések megjelenítése"}
               </button>
             </div>
           ) : null}
 
           {showWorkHistory ? (
-            <Card title="Korábbi klímaszerelések">
+            <Card title="Más klímaszerelések ennél az ügyfélnél">
               <div className="space-y-3">
                 {previousInstallationWorks.map((work) => (
                   <button
