@@ -1543,6 +1543,21 @@ export default function Home() {
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.time || "").localeCompare(String(a.time || "")));
   }
 
+  function maintenanceLinkedInstallationIds(customer: Customer) {
+    return Array.from(new Set([
+      ...(customer.maintenanceInstallationIds || []),
+      ...((customer.maintenanceInstallations || []).map((installation) => installation.appointmentId)),
+    ].filter(Boolean)));
+  }
+
+  function installationWorkAfterMaintenanceCancellation(customer: Customer) {
+    const linkedIds = new Set(maintenanceLinkedInstallationIds(customer));
+    const installationWorks = customerInstallationWorks(customer)
+      .filter((work) => normalizeStatus(work.status || "") !== "Lemondva");
+    return installationWorks.find((work) => work.activeAppointmentId && linkedIds.has(work.activeAppointmentId))
+      || installationWorks[0];
+  }
+
   function updateWorkHistory(savedWork: Customer) {
     if (!savedWork.id) return;
     setWorkHistoryByCustomer((prev) => {
@@ -2658,8 +2673,12 @@ export default function Home() {
   }
 
   async function cancelAppointmentWithJobMirror(customer: Customer, cancelledAt: string): Promise<PersistCustomerResult> {
+    if (!customer.activeAppointmentId) {
+      throw new Error("Hianyzik a lemondando idopont azonositoja, ezert biztonsagbol nem modositottam rekordot.");
+    }
+
     const { data, error } = await supabase.rpc("cancel_appointment_with_job_mirror", {
-      p_appointment_id: customer.activeAppointmentId || null,
+      p_appointment_id: customer.activeAppointmentId,
       p_customer_id: customer.id,
       p_cancelled_at: cancelledAt,
       p_status: "Lemondva",
@@ -3883,35 +3902,44 @@ export default function Home() {
     const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
 
     if (currentAppointmentType === "maintenance") {
-      const installationReport = savedReportFor({ ...selected, activeWorkReportId: undefined, appointmentType: "installation" }, "installation");
-      const restoredStatus = restoredInstallationStatusAfterMaintenance(selected);
-      const restored: Customer = {
-        ...selected,
-        date: installationReport?.workDate || undefined,
-        time: installationReport?.workTime || undefined,
-        appointmentType: "installation",
-        activeAppointmentId: undefined,
-        activeWorkReportId: undefined,
-        status: restoredStatus,
-        isFresh: restoredStatus !== "Lezárva",
-        updatedAt: changedAt,
-      };
-
       try {
         await logDocument(selected, maintenanceCancellationDocumentType(selected, changedAt), maintenanceCancellationTitle(selected), "Lemondva", changedAt);
         await cancelAppointmentWithJobMirror(selected, changedAt);
-        const persisted = await persistCustomerToDb(restored);
-        const savedRestored: Customer = {
-          ...restored,
-          activeAppointmentId: persisted?.appointmentId || restored.activeAppointmentId,
-          activeQuoteId: persisted?.quoteId || restored.activeQuoteId,
+        const cancelledMaintenance: Customer = { ...selected, status: "Lemondva", isFresh: false, updatedAt: changedAt };
+        const fallbackInstallation = installationWorkAfterMaintenanceCancellation(selected);
+        const nextSelected: Customer = fallbackInstallation ? {
+          ...selected,
+          ...fallbackInstallation,
+          id: selected.id,
+          name: selected.name || fallbackInstallation.name,
+          phone: selected.phone || fallbackInstallation.phone,
+          email: selected.email || fallbackInstallation.email,
+          postalCode: selected.postalCode || fallbackInstallation.postalCode,
+          city: selected.city || fallbackInstallation.city,
+          address: fallbackInstallation.address || selected.address,
+        } : {
+          ...selected,
+          date: undefined,
+          time: undefined,
+          appointmentType: "installation",
+          activeAppointmentId: undefined,
+          activeQuoteId: undefined,
+          activeWorkReportId: undefined,
+          quoteItems: EMPTY_QUOTE_ITEMS,
+          status: "Visszahívandó",
+          isFresh: true,
+          updatedAt: changedAt,
         };
-        setSelected(savedRestored);
-        setScheduleAppointmentType("installation");
-        setScheduleDate(savedRestored.date || todayIso());
-        setScheduleTime(firstAppointmentTime(savedRestored.time || "08:00"));
+        updateWorkHistory(cancelledMaintenance);
+        setSelected(nextSelected);
+        setQuoteItems(nextSelected.quoteItems || EMPTY_QUOTE_ITEMS);
+        setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
+        setScheduleDate(nextSelected.date || todayIso());
+        setScheduleTime(firstAppointmentTime(nextSelected.time || "08:00"));
         setAllowWorkResourceEdit(false);
-        setCustomers(prev => prev.map(c => c.id === savedRestored.id ? savedRestored : c));
+        if (fallbackInstallation) {
+          setCustomers(prev => prev.map(c => c.id === nextSelected.id ? nextSelected : c));
+        }
         setMessage("Karbantartási időpont lemondva ✅ A klímaszerelés és a korábbi dokumentumok megmaradtak.");
         replaceView("work");
       } catch (error: any) {
@@ -4604,13 +4632,6 @@ export default function Home() {
       .filter(Boolean)));
     if (linkedAddresses.length) return linkedAddresses.join(" · ");
     return maintenanceWork ? displayAddress(maintenanceWork) : "";
-  }
-
-  function restoredInstallationStatusAfterMaintenance(customer: Customer) {
-    if (customer.status === "Lezárva") return "Lezárva";
-    const installationReport = savedReportFor({ ...customer, activeWorkReportId: undefined, appointmentType: "installation" }, "installation");
-    if (installationReport?.id || customer.stockDeducted) return "Lezárva";
-    return "Visszahívandó";
   }
 
   function errorMentionsWorkReportType(error: any) {
