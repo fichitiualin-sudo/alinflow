@@ -1097,11 +1097,11 @@ function InvoicePrepCard({
 
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-lg font-black text-slate-100">{title}</p>
         </div>
-        <div className="flex w-fit flex-col items-start gap-2 sm:items-end">
+        <div className="flex w-fit flex-wrap items-center gap-2 sm:justify-end">
           <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
             {done ? "Kész" : "Előkészítve"}
           </span>

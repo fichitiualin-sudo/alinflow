@@ -1538,8 +1538,16 @@ export default function Home() {
 
   function customerInstallationWorks(customer: Customer | undefined) {
     if (!customer?.id) return [];
-    return workCustomersForScheduling([customer], { [customer.id]: workHistoryByCustomer[customer.id] || [] })
-      .filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId)
+    const history = workHistoryByCustomer[customer.id] || [];
+    const candidates = history.length ? history : [customer];
+    const byAppointmentId = new Map<string, Customer>();
+    candidates
+      .filter((work) => isInstallationAppointment(work.appointmentType) && work.activeAppointmentId && normalizeStatus(work.status || "") !== "Lemondva")
+      .forEach((work) => {
+        if (!work.activeAppointmentId || byAppointmentId.has(work.activeAppointmentId)) return;
+        byAppointmentId.set(work.activeAppointmentId, work);
+      });
+    return Array.from(byAppointmentId.values())
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.time || "").localeCompare(String(a.time || "")));
   }
 
@@ -5065,25 +5073,7 @@ export default function Home() {
       relatedClimateAddress: maintenanceClimateAddressForAppointment(customer, report.appointmentId),
     }));
 
-    const currentType = normalizeAppointmentType(customer.appointmentType);
-    const hasCurrentMaintenanceDate = currentType === "maintenance" && Boolean(customer.date);
-    const currentAlreadySaved = hasCurrentMaintenanceDate ? existingReports.some((report) => sameReportAppointment(report, customer)) : false;
-    const currentRows: PageDocumentRow[] = [];
-    if (hasCurrentMaintenanceDate && !currentAlreadySaved) {
-      currentRows.push({
-        title: `Karbantartási munkalap · ${formatReportDateLabel(customer)}`,
-        status: "Munkalap hiányzik",
-        action: "MaintenanceReport",
-        appointmentType: "maintenance",
-        reportDate: customer.date,
-        reportTime: customer.time,
-        reportDateLabel: formatReportDateLabel(customer),
-        relatedClimateSummary: maintenanceClimateSummaryForAppointment(customer, customer.activeAppointmentId),
-        relatedClimateAddress: maintenanceClimateAddressForAppointment(customer, customer.activeAppointmentId),
-      });
-    }
-
-    const rows = [...currentRows, ...reportRows, ...maintenanceCancellationRowsFor(customer)]
+    const rows = [...reportRows, ...maintenanceCancellationRowsFor(customer)]
       .sort((a, b) => maintenanceRowSortValue(b).localeCompare(maintenanceRowSortValue(a)));
     const savedRows = reportRows.filter((row) => Boolean(row.reportId));
     if (includeBundle && savedRows.length > 1) {
