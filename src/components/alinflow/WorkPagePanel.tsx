@@ -319,7 +319,7 @@ export function WorkPagePanel({
   const canStartMaintenance = installationFinished || maintenanceFinished;
   const [showMaterials, setShowMaterials] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
-  const [showMaintenance, setShowMaintenance] = useState(false);
+  const [showMaintenance, setShowMaintenance] = useState(true);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
   const [showWorkItems, setShowWorkItems] = useState(false);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
@@ -414,6 +414,52 @@ export function WorkPagePanel({
     });
   }
 
+  function renderMaintenanceSection() {
+    if (!hasMaintenanceSection) return null;
+
+    return (
+      <>
+        <WorkSectionToggleButton
+          label={showMaintenance ? "Karbantartások elrejtése" : "Karbantartások megjelenítése"}
+          open={showMaintenance}
+          onClick={() => setShowMaintenance((open) => !open)}
+        />
+
+        {showMaintenance ? (
+          <Card title="Karbantartások">
+            {installationWorksForMaintenance.length ? (
+              <div className="space-y-3">
+                {installationWorksForMaintenance.map((installation) => (
+                  <InstalledClimateMaintenanceCard
+                    key={workIdentity(installation)}
+                    installation={installation}
+                    works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
+                    onOpenWorkVersion={onOpenWorkVersion}
+                    onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
+                  />
+                ))}
+              </div>
+            ) : null}
+            <MaintenanceHistory
+              selected={selected}
+              rows={maintenanceRows}
+              canStartMaintenance={canStartMaintenance}
+              quoteEmailBusy={quoteEmailBusy}
+              appointmentEmailBusy={appointmentEmailBusy}
+              thankYouEmailBusy={thankYouEmailBusy}
+              onOpenDocumentPreview={onOpenDocumentPreview}
+              onOpenWorkReportFor={onOpenWorkReportFor}
+              onSendQuoteEmail={onSendQuoteEmail}
+              onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+              onSendThankYouEmailFor={onSendThankYouEmailFor}
+              onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
+            />
+          </Card>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="sticky top-3 z-50 w-fit print:hidden">
@@ -475,6 +521,10 @@ export function WorkPagePanel({
 
           <div className="xl:hidden">
             <Gradient title="Munka státusz" value={workStatusValue} />
+          </div>
+
+          <div className="mt-4 space-y-6 xl:hidden">
+            {renderMaintenanceSection()}
           </div>
 
           <div className="mt-4">
@@ -682,47 +732,9 @@ export function WorkPagePanel({
             </div>
           </Card> : null}
 
-          {hasMaintenanceSection ? (
-            <>
-              <WorkSectionToggleButton
-                label={showMaintenance ? "Karbantartások elrejtése" : "Karbantartások megjelenítése"}
-                open={showMaintenance}
-                onClick={() => setShowMaintenance((open) => !open)}
-              />
-
-              {showMaintenance ? (
-                <Card title="Karbantartások">
-                  {installationWorksForMaintenance.length ? (
-                    <div className="space-y-3">
-                      {installationWorksForMaintenance.map((installation) => (
-                        <InstalledClimateMaintenanceCard
-                          key={workIdentity(installation)}
-                          installation={installation}
-                          works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
-                          onOpenWorkVersion={onOpenWorkVersion}
-                          onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                  <MaintenanceHistory
-                    selected={selected}
-                    rows={maintenanceRows}
-                    canStartMaintenance={canStartMaintenance}
-                    quoteEmailBusy={quoteEmailBusy}
-                    appointmentEmailBusy={appointmentEmailBusy}
-                    thankYouEmailBusy={thankYouEmailBusy}
-                    onOpenDocumentPreview={onOpenDocumentPreview}
-                    onOpenWorkReportFor={onOpenWorkReportFor}
-                    onSendQuoteEmail={onSendQuoteEmail}
-                    onSendAppointmentEmailFor={onSendAppointmentEmailFor}
-                    onSendThankYouEmailFor={onSendThankYouEmailFor}
-                    onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
-                  />
-                </Card>
-              ) : null}
-            </>
-          ) : null}
+          <div className="hidden space-y-6 xl:block">
+            {renderMaintenanceSection()}
+          </div>
 
           <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
             <div className="space-y-3">
@@ -1131,29 +1143,36 @@ function parseAmount(value: string) {
   return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
 }
 
+function invoiceQuantityPrefix(quantity: number) {
+  return quantity > 1 ? `${quantity} db ` : "";
+}
+
 function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
-  if (kind === "maintenance") return [config.maintenanceLineName];
+  if (kind === "maintenance") {
+    const quantity = cleanQuoteItems(items).reduce((sum, item) => sum + itemQuantity(item), 0);
+    return [`${invoiceQuantityPrefix(quantity)}${config.maintenanceLineName}`];
+  }
 
   if (kind === "labor") {
     const quantity = cleanQuoteItems(items).reduce((sum, item) => sum + itemQuantity(item), 0);
-    return [`${quantity > 1 ? `${quantity} db ` : ""}${config.laborLineName}`];
+    return [`${invoiceQuantityPrefix(quantity)}${config.laborLineName}`];
   }
 
   if (kind === "combined") {
     const cleanItems = cleanQuoteItems(items);
     const deviceLines = cleanItems.map((item) => {
       const quantity = itemQuantity(item);
-      return `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`;
+      return `${invoiceQuantityPrefix(quantity)}${itemName(item)} + szerelési anyagok`;
     });
     const laborQuantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
-    const laborLine = laborQuantity ? `${laborQuantity > 1 ? `${laborQuantity} db ` : ""}${config.laborLineName}` : "";
+    const laborLine = laborQuantity ? `${invoiceQuantityPrefix(laborQuantity)}${config.laborLineName}` : "";
     const lines = [...deviceLines, laborLine].filter(Boolean);
     return lines.length ? lines : [config.combinedLineName];
   }
 
   const lines = cleanQuoteItems(items).map((item) => {
     const quantity = itemQuantity(item);
-    return `${quantity > 1 ? `${quantity} db ` : ""}${itemName(item)} + szerelési anyagok`;
+    return `${invoiceQuantityPrefix(quantity)}${itemName(item)} + szerelési anyagok`;
   });
   return lines.length ? lines : [`${config.deviceLineName} + szerelési anyagok`];
 }
