@@ -25,6 +25,7 @@ import {
 import type { View } from "@/lib/alinflow/types";
 import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
+import { normalizeStatus } from "@/lib/alinflow/constants";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 
 type MaterialItem = {
@@ -97,6 +98,21 @@ function workDateTimeLabel(work: Customer) {
 
 function workAddressLabel(work: Pick<Customer, "city" | "address" | "postalCode">) {
   return displayAddress(work);
+}
+
+function isCancelledWork(work: Customer) {
+  return normalizeStatus(work.status || "") === "Lemondva";
+}
+
+function hasInstalledClimateItems(work: Customer) {
+  return cleanQuoteItems(work.quoteItems).length > 0;
+}
+
+function isInstalledClimateWork(work: Customer) {
+  return isInstallationAppointment(work.appointmentType)
+    && Boolean(work.activeAppointmentId)
+    && !isCancelledWork(work)
+    && hasInstalledClimateItems(work);
 }
 
 function maintenanceInstallationDateLabel(installation: MaintenanceInstallationSummary) {
@@ -245,6 +261,7 @@ type WorkPagePanelProps = {
   onToggleMaintenanceOptOut: (customer: Customer, checked: boolean) => void;
   onToggleChecklist: (key: WorkChecklistItemKey) => void;
   onCreateInvoice: (kind: BillingInvoiceKind, amount: string, paymentMethod: BillingPaymentMethod, sendEmail: boolean) => void;
+  onMarkManualInvoice: (kind: BillingInvoiceKind) => void;
   invoiceBusy: BillingInvoiceKind | null;
   onOpenWorkVersion: (customer: Customer) => void;
 };
@@ -307,6 +324,7 @@ export function WorkPagePanel({
   onToggleMaintenanceOptOut,
   onToggleChecklist,
   onCreateInvoice,
+  onMarkManualInvoice,
   invoiceBusy,
   onOpenWorkVersion,
 }: WorkPagePanelProps) {
@@ -342,15 +360,17 @@ export function WorkPagePanel({
   const allMaintenanceWorks = uniqueWorkList([
     ...(isMaintenance ? [selected] : []),
     ...workHistory.filter((work) => normalizeAppointmentType(work.appointmentType) === "maintenance"),
-  ]).filter((work) => work.activeAppointmentId !== selected.activeAppointmentId || isMaintenance);
+  ])
+    .filter((work) => work.activeAppointmentId !== selected.activeAppointmentId || isMaintenance)
+    .filter((work) => !isCancelledWork(work));
   const installationWorksForMaintenance = uniqueWorkList([
     ...(isInstallation ? [selected] : []),
     ...workHistory.filter((work) => isInstallationAppointment(work.appointmentType)),
   ])
-    .filter((work) => Boolean(work.activeAppointmentId))
+    .filter(isInstalledClimateWork)
     .sort(compareWorkByDateDesc);
   const previousInstallationWorks = uniqueWorkList(workHistory)
-    .filter((work) => isInstallationAppointment(work.appointmentType))
+    .filter(isInstalledClimateWork)
     .filter((work) => work.activeAppointmentId !== selected.activeAppointmentId)
     .filter((work) => !selected.date || !work.date || work.date !== selected.date)
     .sort(compareWorkByDateDesc);
@@ -420,13 +440,13 @@ export function WorkPagePanel({
     return (
       <>
         <WorkSectionToggleButton
-          label={showMaintenance ? "Karbantartások elrejtése" : "Karbantartások megjelenítése"}
+          label={showMaintenance ? "Klímák karbantartási állapotának elrejtése" : "Klímák karbantartási állapotának megjelenítése"}
           open={showMaintenance}
           onClick={() => setShowMaintenance((open) => !open)}
         />
 
         {showMaintenance ? (
-          <Card title="Karbantartások">
+          <Card title="Klímák karbantartási állapota">
             {installationWorksForMaintenance.length ? (
               <div className="space-y-3">
                 {installationWorksForMaintenance.map((installation) => (
@@ -495,13 +515,13 @@ export function WorkPagePanel({
                 onClick={() => setShowWorkHistory((open) => !open)}
                 className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
               >
-                {showWorkHistory ? "Korábbi klímaszerelések elrejtése" : "Korábbi klímaszerelések megjelenítése"}
+                {showWorkHistory ? "Más klímaszerelések elrejtése" : "Más klímaszerelések megjelenítése"}
               </button>
             </div>
           ) : null}
 
           {showWorkHistory ? (
-            <Card title="Korábbi klímaszerelések">
+            <Card title="Más klímaszerelések ennél az ügyfélnél">
               <div className="space-y-3">
                 {previousInstallationWorks.map((work) => (
                   <button
@@ -767,6 +787,7 @@ export function WorkPagePanel({
                     onPaymentMethodChange={setMaintenancePaymentMethod}
                     onSendEmailChange={setMaintenanceInvoiceSendEmail}
                     onCreateInvoice={() => onCreateInvoice("maintenance", maintenanceInvoiceAmount, maintenancePaymentMethod, maintenanceInvoiceSendEmail)}
+                    onManualComplete={() => onMarkManualInvoice("maintenance")}
                     invoiceBusy={invoiceBusy}
                     billingConfig={billingConfig}
                     quoteItems={quoteItems}
@@ -797,6 +818,7 @@ export function WorkPagePanel({
                   onCreateLaborInvoice={() => onCreateInvoice("labor", laborInvoiceAmount, laborPaymentMethod, laborInvoiceSendEmail)}
                   onCreateDeviceInvoice={() => onCreateInvoice("device", deviceInvoiceAmount, devicePaymentMethod, deviceInvoiceSendEmail)}
                   onCreateCombinedInvoice={() => onCreateInvoice("combined", combinedInvoiceAmount, devicePaymentMethod, deviceInvoiceSendEmail)}
+                  onMarkManualInvoice={onMarkManualInvoice}
                   invoiceBusy={invoiceBusy}
                   billingConfig={billingConfig}
                   quoteItems={quoteItems}
@@ -847,6 +869,7 @@ function BillingPreparationPanel({
   onCreateLaborInvoice,
   onCreateDeviceInvoice,
   onCreateCombinedInvoice,
+  onMarkManualInvoice,
   invoiceBusy,
   billingConfig,
   quoteItems,
@@ -873,6 +896,7 @@ function BillingPreparationPanel({
   onCreateLaborInvoice: () => void;
   onCreateDeviceInvoice: () => void;
   onCreateCombinedInvoice: () => void;
+  onMarkManualInvoice: (kind: BillingInvoiceKind) => void;
   invoiceBusy: BillingInvoiceKind | null;
   billingConfig: ReturnType<typeof billingUiConfig>;
   quoteItems: QuoteItem[];
@@ -914,6 +938,7 @@ function BillingPreparationPanel({
             onPaymentMethodChange={onDevicePaymentMethodChange}
             onSendEmailChange={onDeviceSendEmailChange}
             onCreateInvoice={onCreateCombinedInvoice}
+            onManualComplete={() => onMarkManualInvoice("combined")}
             invoiceBusy={invoiceBusy === "combined"}
             customerEmail={customerEmail}
           />
@@ -933,6 +958,7 @@ function BillingPreparationPanel({
             onPaymentMethodChange={onDevicePaymentMethodChange}
             onSendEmailChange={onDeviceSendEmailChange}
             onCreateInvoice={onCreateDeviceInvoice}
+            onManualComplete={() => onMarkManualInvoice("device")}
             invoiceBusy={invoiceBusy === "device"}
             customerEmail={customerEmail}
           />
@@ -950,6 +976,7 @@ function BillingPreparationPanel({
             onPaymentMethodChange={onLaborPaymentMethodChange}
             onSendEmailChange={onLaborSendEmailChange}
             onCreateInvoice={onCreateLaborInvoice}
+            onManualComplete={() => onMarkManualInvoice("labor")}
             invoiceBusy={invoiceBusy === "labor"}
             customerEmail={customerEmail}
           />
@@ -973,6 +1000,7 @@ function MaintenanceBillingPanel({
   onPaymentMethodChange,
   onSendEmailChange,
   onCreateInvoice,
+  onManualComplete,
   invoiceBusy,
   billingConfig,
   quoteItems,
@@ -987,6 +1015,7 @@ function MaintenanceBillingPanel({
   onPaymentMethodChange: (value: BillingPaymentMethod) => void;
   onSendEmailChange: (value: boolean) => void;
   onCreateInvoice: () => void;
+  onManualComplete: () => void;
   invoiceBusy: BillingInvoiceKind | null;
   billingConfig: ReturnType<typeof billingUiConfig>;
   quoteItems: QuoteItem[];
@@ -1020,6 +1049,7 @@ function MaintenanceBillingPanel({
           onPaymentMethodChange={onPaymentMethodChange}
           onSendEmailChange={onSendEmailChange}
           onCreateInvoice={onCreateInvoice}
+          onManualComplete={onManualComplete}
           invoiceBusy={invoiceBusy === "maintenance"}
           customerEmail={customerEmail}
         />
@@ -1042,6 +1072,7 @@ function InvoicePrepCard({
   onPaymentMethodChange,
   onSendEmailChange,
   onCreateInvoice,
+  onManualComplete,
   invoiceBusy,
   customerEmail,
 }: {
@@ -1058,6 +1089,7 @@ function InvoicePrepCard({
   onPaymentMethodChange: (value: BillingPaymentMethod) => void;
   onSendEmailChange: (value: boolean) => void;
   onCreateInvoice: () => void;
+  onManualComplete: () => void;
   invoiceBusy: boolean;
   customerEmail: string;
 }) {
@@ -1065,13 +1097,28 @@ function InvoicePrepCard({
 
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
           <p className="text-lg font-black text-slate-100">{title}</p>
         </div>
-        <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
-          {done ? "Kész" : "Előkészítve"}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`w-fit rounded-full px-2.5 py-1 text-[11px] font-black ${done ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-200"}`}>
+            {done ? "Kész" : "Előkészítve"}
+          </span>
+          {!done ? (
+            <label className="flex cursor-pointer items-center gap-1.5 rounded-full bg-orange-300 px-2.5 py-1.5 text-[11px] font-black text-slate-950 shadow-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-[#ff5a1f]"
+                disabled={invoiceBusy}
+                onChange={(event) => {
+                  if (event.target.checked) onManualComplete();
+                }}
+              />
+              Kézi számlázás
+            </label>
+          ) : null}
+        </div>
       </div>
       <div className="mb-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-900/90 p-2">
         <button
