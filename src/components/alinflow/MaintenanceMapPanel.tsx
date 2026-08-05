@@ -76,6 +76,15 @@ function hasCoordinates(point: MaintenanceMapPoint) {
   return Number.isFinite(point.latitude) && Number.isFinite(point.longitude);
 }
 
+function normalizeSearch(value?: string | null) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function markerIcon(googleMaps: any, status: MaintenanceMapStatus, compact = false) {
   const color = maintenanceMapStatusColor(status);
   const size = compact ? { width: 18, height: 22, anchorX: 9, anchorY: 22 } : { width: 34, height: 40, anchorX: 17, anchorY: 40 };
@@ -130,15 +139,12 @@ export function MaintenanceMapPanel({
   }, []);
 
   const filteredPoints = useMemo(() => {
-    const normalizedSearch = search.toLocaleLowerCase("hu-HU").trim();
+    const normalizedSearch = normalizeSearch(search);
     return points.filter((point) => {
       const statusOk = statusFilter === "all" || point.status === statusFilter;
       if (!statusOk) return false;
       if (!normalizedSearch) return true;
-      return [point.customerName, point.climateSummary, point.address, point.city]
-        .join(" ")
-        .toLocaleLowerCase("hu-HU")
-        .includes(normalizedSearch);
+      return normalizeSearch([point.customerName, point.climateSummary, point.address, point.city].join(" ")).includes(normalizedSearch);
     });
   }, [points, search, statusFilter]);
 

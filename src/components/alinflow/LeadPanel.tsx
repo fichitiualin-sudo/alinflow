@@ -22,10 +22,20 @@ type LeadPanelProps = {
 };
 
 function EditField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const isEmail = label.toLowerCase() === "email";
   return (
     <label className="rounded-2xl bg-slate-900/80 p-4">
       <span className="text-sm text-slate-400">{label}</span>
-      <input className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={value || ""} onChange={(event) => onChange(event.target.value)} />
+      <input
+        className="mt-2 w-full bg-transparent text-lg font-black outline-none"
+        type={isEmail ? "email" : "text"}
+        inputMode={isEmail ? "email" : undefined}
+        autoCapitalize={isEmail ? "none" : undefined}
+        autoCorrect={isEmail ? "off" : undefined}
+        spellCheck={isEmail ? false : undefined}
+        value={value || ""}
+        onChange={(event) => onChange(isEmail ? event.target.value.toLowerCase() : event.target.value)}
+      />
     </label>
   );
 }
