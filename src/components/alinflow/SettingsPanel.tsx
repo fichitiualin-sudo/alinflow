@@ -30,6 +30,7 @@ function TextField({
   placeholder?: string;
   type?: string;
 }) {
+  const isEmail = type === "email";
   return (
     <label className="block">
       <span className="text-sm font-bold text-slate-300">{label}</span>
@@ -37,7 +38,11 @@ function TextField({
         type={type}
         value={value}
         placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
+        inputMode={isEmail ? "email" : undefined}
+        autoCapitalize={isEmail ? "none" : undefined}
+        autoCorrect={isEmail ? "off" : undefined}
+        spellCheck={isEmail ? false : undefined}
+        onChange={(event) => onChange(isEmail ? event.target.value.toLowerCase() : event.target.value)}
         className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 font-bold text-slate-50 outline-none transition focus:border-cyan-300"
       />
     </label>
@@ -125,7 +130,7 @@ export function SettingsPanel({
                 <TextField label="Megjelenő név" value={draft.companyProfile.displayName} onChange={(value) => updateSection("companyProfile", "displayName", value)} />
                 <TextField label="Jogi név / vállalkozás neve" value={draft.companyProfile.legalName} onChange={(value) => updateSection("companyProfile", "legalName", value)} />
                 <TextField label="Telefonszám" value={draft.companyProfile.phone} onChange={(value) => updateSection("companyProfile", "phone", value)} />
-                <TextField label="Email" value={draft.companyProfile.email} onChange={(value) => updateSection("companyProfile", "email", value)} />
+                <TextField label="Email" type="email" value={draft.companyProfile.email} onChange={(value) => updateSection("companyProfile", "email", value)} />
                 <TextField label="Cím" value={draft.companyProfile.address} onChange={(value) => updateSection("companyProfile", "address", value)} />
                 <TextField label="Logó URL" value={draft.companyProfile.logoUrl} onChange={(value) => updateSection("companyProfile", "logoUrl", value)} />
                 <TextField label="Weboldal" value={draft.companyProfile.website} onChange={(value) => updateSection("companyProfile", "website", value)} />

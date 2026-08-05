@@ -735,6 +735,7 @@ export default function Home() {
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
       .trim();
   }
 
@@ -1245,7 +1246,7 @@ export default function Home() {
     setLoginMessage("");
 
     const { error } = await supabase.auth.signInWithPassword({
-      email: loginEmail.trim(),
+      email: loginEmail.trim().toLowerCase(),
       password: loginPassword,
     });
 
@@ -2851,7 +2852,7 @@ export default function Home() {
   }
 
   function updateSelectedField(field: keyof Customer, value: string) {
-    setSelected((prev) => ({ ...prev, [field]: value }));
+    setSelected((prev) => ({ ...prev, [field]: field === "email" ? value.toLowerCase() : value }));
   }
 
   function updateScheduleAppointmentType(value: AppointmentType) {
@@ -3076,7 +3077,7 @@ export default function Home() {
       city: quickAppointment.city.trim(),
       postalCode: quickAppointment.postalCode.trim(),
       phone: quickAppointment.phone.trim(),
-      email: quickAppointment.email.trim(),
+      email: quickAppointment.email.trim().toLowerCase(),
       address: quickAppointment.address.trim(),
       source: "Naptár gyors rögzítés",
       status: "Időpont foglalva",
@@ -3092,7 +3093,7 @@ export default function Home() {
       ...baseCustomer,
       name: existingCustomer ? baseCustomer.name : quickAppointment.name.trim(),
       phone: existingCustomer ? baseCustomer.phone : quickAppointment.phone.trim(),
-      email: existingCustomer ? baseCustomer.email : quickAppointment.email.trim(),
+      email: existingCustomer ? baseCustomer.email : quickAppointment.email.trim().toLowerCase(),
       postalCode: existingCustomer ? baseCustomer.postalCode : quickAppointment.postalCode.trim(),
       city: existingCustomer ? baseCustomer.city : quickAppointment.city.trim(),
       address: existingCustomer ? baseCustomer.address : quickAppointment.address.trim(),
@@ -5699,18 +5700,19 @@ export default function Home() {
     const isExistingMode = quickAppointment.customerMode === "existing";
     const selectedQuickCustomer = quickAppointmentSelectedCustomer(quickAppointment);
     const maintenanceInstallationWorks = selectedQuickCustomer ? customerInstallationWorks(selectedQuickCustomer) : [];
-    const searchTerm = quickAppointment.search.trim().toLocaleLowerCase("hu-HU");
+    const searchTerm = normalizeSearch(quickAppointment.search);
     const quickCustomerMatches = customers
       .filter((customer) => {
         if (!searchTerm) return true;
-        return [
+        const haystack = normalizeSearch([
           customer.name,
           customer.phone,
           customer.email,
           customer.address,
           customer.city,
           customer.postalCode,
-        ].join(" ").toLocaleLowerCase("hu-HU").includes(searchTerm);
+        ].join(" "));
+        return haystack.includes(searchTerm);
       })
       .slice(0, 8);
     const sortedProducts = sortProducts(products);
@@ -5778,7 +5780,7 @@ export default function Home() {
             <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
               <input className="input" value={quickAppointment.name} onChange={(event) => updateQuickAppointment({ name: event.target.value })} placeholder="Név" />
               <input className="input" value={quickAppointment.phone} onChange={(event) => updateQuickAppointment({ phone: event.target.value })} placeholder="Telefon" />
-              <input className="input" value={quickAppointment.email} onChange={(event) => updateQuickAppointment({ email: event.target.value })} placeholder="Email" />
+              <input className="input" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={quickAppointment.email} onChange={(event) => updateQuickAppointment({ email: event.target.value.toLowerCase() })} placeholder="Email" />
               <input className="input" inputMode="numeric" maxLength={4} value={quickAppointment.postalCode} onChange={(event) => updateQuickAppointmentPostalCode(event.target.value)} placeholder="Irányítószám" />
               <input className="input" value={quickAppointment.city} onChange={(event) => updateQuickAppointmentCity(event.target.value)} placeholder="Település" />
               <input className="input md:col-span-2" value={quickAppointment.address} onChange={(event) => updateQuickAppointment({ address: event.target.value })} placeholder="Cím" />
@@ -6423,10 +6425,20 @@ function CustomerGrid({
 }
 
 function EditField({label,value,onChange}:{label:string;value:string;onChange:(value:string)=>void}) {
+  const isEmail = label.toLowerCase() === "email";
   return (
     <label className="rounded-2xl bg-slate-900/80 p-4">
       <span className="text-sm text-slate-400">{label}</span>
-      <input className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={value || ""} onChange={(event) => onChange(event.target.value)} />
+      <input
+        className="mt-2 w-full bg-transparent text-lg font-black outline-none"
+        type={isEmail ? "email" : "text"}
+        inputMode={isEmail ? "email" : undefined}
+        autoCapitalize={isEmail ? "none" : undefined}
+        autoCorrect={isEmail ? "off" : undefined}
+        spellCheck={isEmail ? false : undefined}
+        value={value || ""}
+        onChange={(event) => onChange(isEmail ? event.target.value.toLowerCase() : event.target.value)}
+      />
     </label>
   );
 }
