@@ -339,7 +339,7 @@ export function WorkPagePanel({
   const [showDocuments, setShowDocuments] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(true);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
-  const [showWorkItems, setShowWorkItems] = useState(false);
+  const [showWorkItems, setShowWorkItems] = useState(true);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const defaultCombinedAmount = total(quoteItems);
@@ -495,17 +495,17 @@ export function WorkPagePanel({
       <Layout>
         <Main>
           <Card title="Ügyféladatok">
-            <div className="mb-4 flex flex-wrap gap-3">
-              {selected.phone ? <a href={telHref(selected.phone)} onClick={() => onRecordCustomerPhoneCall(selected, "work")} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Hívás</a> : null}
-              {editCustomer ? <Btn color="green" onClick={onSaveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={() => onSetEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}
-              {editCustomer ? <button onClick={() => onSetEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}
-            </div>
             <CustomerGrid
               c={selected}
               editable={editCustomer}
               onChange={onUpdateSelectedField}
               onExternalOpen={() => onRememberExternalCustomer(selected, "work")}
             />
+            <div className="mt-4 flex flex-wrap gap-3">
+              {selected.phone ? <a href={telHref(selected.phone)} onClick={() => onRecordCustomerPhoneCall(selected, "work")} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Hívás</a> : null}
+              {editCustomer ? <Btn color="green" onClick={onSaveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={() => onSetEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}
+              {editCustomer ? <button onClick={() => onSetEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}
+            </div>
           </Card>
 
           {previousInstallationWorks.length ? (
