@@ -339,7 +339,7 @@ export function WorkPagePanel({
   const [showDocuments, setShowDocuments] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(true);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
-  const [showWorkItems, setShowWorkItems] = useState(false);
+  const [showWorkItems, setShowWorkItems] = useState(true);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const defaultCombinedAmount = total(quoteItems);
