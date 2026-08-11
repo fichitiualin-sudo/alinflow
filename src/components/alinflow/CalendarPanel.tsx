@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { CalendarMode, Customer } from "@/lib/alinflow/types";
-import { climateSummary } from "@/lib/alinflow/products";
+import { cleanQuoteItems, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { iso } from "@/lib/alinflow/format";
 import { calLabel, googleCalendarHref, weekStart } from "@/lib/alinflow/calendar";
 import { appointmentTimeRangeLabel, appointmentTypeLabel, isInstallationAppointment } from "@/lib/alinflow/appointments";
@@ -43,9 +43,14 @@ function calendarStatusStyle(status: string) {
   return "border border-white/10 bg-white/10 text-white";
 }
 
-function calendarJobSummary(job: Customer) {
-  if (isInstallationAppointment(job.appointmentType)) return climateSummary(job.quoteItems);
-  return appointmentTypeLabel(job.appointmentType);
+function calendarJobSummaryLines(job: Customer) {
+  if (isInstallationAppointment(job.appointmentType)) {
+    const items = cleanQuoteItems(job.quoteItems);
+    return items.length
+      ? items.map((item) => `${itemQuantity(item)} db ${itemName(item)}`)
+      : ["Nincs klíma megadva"];
+  }
+  return [appointmentTypeLabel(job.appointmentType)];
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -146,7 +151,11 @@ export function Calendar({
                         <p className="text-xs font-black">{appointmentTypeLabel(job.appointmentType)} · {appointmentTimeRangeLabel(job)}</p>
                       </div>
                       <p className="mt-1 truncate text-sm font-semibold md:text-xs">{job.name}</p>
-                      <p className="truncate text-xs text-cyan-100/80 md:text-[11px]">{calendarJobSummary(job)}</p>
+                      <div className="mt-0.5 space-y-0.5 text-xs text-cyan-100/80 md:text-[11px]">
+                        {calendarJobSummaryLines(job).map((line, index) => (
+                          <p key={`${line}-${index}`} className="break-words leading-snug">{line}</p>
+                        ))}
+                      </div>
                       <p className="truncate text-xs opacity-70 md:text-[11px]">{job.city}</p>
                     </button>
                     {mode === "week" && !selectable ? (

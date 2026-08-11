@@ -341,13 +341,6 @@ function ClimateProductManager({
   onUpdateProductInstallPrice,
   onSaveClimateProduct,
 }: ClimateProductManagerProps) {
-  const [managerPage, setManagerPage] = useState(1);
-  const managerPagination = paginate(products, managerPage);
-
-  useEffect(() => {
-    setManagerPage(1);
-  }, [products.length, showClimateProductManager]);
-
   return (
     <Card title="Klímatípusok és árak">
       <button
@@ -386,7 +379,7 @@ function ClimateProductManager({
           </div>
 
           <div className="space-y-3">
-            {managerPagination.items.map((product) => {
+            {products.map((product) => {
               const devicePrice = productDevicePrice(product);
               const customerPrice = Math.max(0, devicePrice + Number(product.installPrice || 0));
               return (
@@ -413,8 +406,6 @@ function ClimateProductManager({
               );
             })}
           </div>
-          <PaginationControls currentPage={managerPagination.currentPage} pageCount={managerPagination.pageCount} totalCount={products.length} onPageChange={setManagerPage} />
-
           {productMessage ? <div className="rounded-2xl bg-slate-950/70 p-4 text-sm font-bold text-slate-100">{productMessage}</div> : null}
         </div>
       ) : null}
