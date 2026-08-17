@@ -61,6 +61,7 @@ import {
   itemQuantity,
   itemTotal,
   itemUnitPrice,
+  matchesKlimalinProductName,
   normalizeProduct,
   prod,
   productPriceText,
@@ -1483,15 +1484,6 @@ export default function Home() {
     }
   }
 
-  function catalogProductMatchKey(value?: string | null) {
-    return String(value || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLocaleLowerCase("hu-HU")
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-  }
-
   async function syncKlimalinProducts() {
     const workspaceId = currentWorkspaceId();
     if (!workspaceId) {
@@ -1513,11 +1505,11 @@ export default function Home() {
       const byExternalKey = new Map(products
         .filter((product) => product.externalSource === "klimalin" && product.externalKey)
         .map((product) => [product.externalKey as string, product]));
-      const byName = new Map(products.map((product) => [catalogProductMatchKey(product.name), product]));
       const workspaceSuffix = workspaceId.replace(/-/g, "").slice(0, 8);
 
       const syncedProducts = catalog.map((source) => {
-        const existing = byExternalKey.get(source.externalKey) || byName.get(catalogProductMatchKey(source.name));
+        const nameMatches = products.filter((product) => matchesKlimalinProductName(product.name, source.name));
+        const existing = byExternalKey.get(source.externalKey) || (nameMatches.length === 1 ? nameMatches[0] : undefined);
         return normalizeProduct({
           id: existing?.id || `klimalin-${productSlug(source.externalKey)}-${workspaceSuffix}`,
           name: source.name,
