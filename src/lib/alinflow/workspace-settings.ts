@@ -326,12 +326,30 @@ export function settingsFooterLines(settings: WorkspaceSettings, source: "quote"
   return (text ? text.split(/\r?\n/) : fallback).map((line) => line.trim()).filter(Boolean);
 }
 
+export function settingsCustomerDocumentFooterLines(settings: WorkspaceSettings, source: "quote" | "email") {
+  const hiddenParts = new Set(
+    [settings.companyProfile.secondaryWebsite, settings.companyProfile.phone]
+      .map((value) => value.trim().toLocaleLowerCase("hu-HU"))
+      .filter(Boolean),
+  );
+
+  return settingsFooterLines(settings, source)
+    .map((line) =>
+      line
+        .split(/\s*·\s*/)
+        .map((part) => part.trim())
+        .filter((part) => part && !hiddenParts.has(part.toLocaleLowerCase("hu-HU")))
+        .join(" · "),
+    )
+    .filter(Boolean);
+}
+
 export function settingsBrandName(settings: WorkspaceSettings) {
   return settings.companyProfile.displayName || settings.emailSettings.senderName || "AlinFlow";
 }
 
 export function settingsContactLine(settings: WorkspaceSettings) {
-  return [settings.companyProfile.website, settings.companyProfile.secondaryWebsite, settings.companyProfile.phone].filter(Boolean).join(" · ");
+  return settings.companyProfile.website;
 }
 
 export function settingsPrimaryContact(settings: WorkspaceSettings) {

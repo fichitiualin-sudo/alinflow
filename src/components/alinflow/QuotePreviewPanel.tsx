@@ -2,7 +2,7 @@ import type { Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { displayAddress, ft } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemPriceLine, itemProductMedia, itemQuantity, itemTotal } from "@/lib/alinflow/products";
-import { settingsContactLine, settingsContentLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
+import { settingsContactLine, settingsContentLines, settingsCustomerDocumentFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuotePreviewPanelProps = {
@@ -49,7 +49,7 @@ export function QuotePreviewPanel({
   const shownQuoteIssuedAt = formatQuoteIssuedAt(quoteIssuedAt);
   const quote = workspaceSettings.quoteSettings;
   const company = workspaceSettings.companyProfile;
-  const footerLines = settingsFooterLines(workspaceSettings, "quote");
+  const footerLines = settingsCustomerDocumentFooterLines(workspaceSettings, "quote");
   const contactLine = settingsContactLine(workspaceSettings);
   const primaryContact = settingsPrimaryContact(workspaceSettings);
   const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;

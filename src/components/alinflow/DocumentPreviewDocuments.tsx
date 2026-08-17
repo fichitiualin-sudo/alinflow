@@ -5,7 +5,7 @@ import { isQuoteAlternatives, itemName, itemProductMedia, itemQuantity, itemTota
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { DEFAULT_SELLER_COMPANY } from "@/lib/alinflow/purchase-declarations";
-import { defaultWorkspaceSettings, settingsBrandName, settingsContactLine, settingsContentLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
+import { defaultWorkspaceSettings, settingsBrandName, settingsContactLine, settingsContentLines, settingsCustomerDocumentFooterLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 
 function formatDocumentDate(value?: string) {
   if (!value) return "nincs megadva";
@@ -273,7 +273,7 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
   const settings = workspaceSettings || defaultWorkspaceSettings(null);
   const quote = settings.quoteSettings;
   const company = settings.companyProfile;
-  const footerLines = settingsFooterLines(settings, "quote");
+  const footerLines = settingsCustomerDocumentFooterLines(settings, "quote");
   const contactLine = settingsContactLine(settings);
   const primaryContact = settingsPrimaryContact(settings);
   const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
@@ -364,7 +364,7 @@ export function AppointmentConfirmationDocument({ customer, quoteItems, workspac
   const settings = workspaceSettings || defaultWorkspaceSettings(null);
   const company = settings.companyProfile;
   const brandName = settingsBrandName(settings);
-  const footerLines = settingsFooterLines(settings, "email");
+  const footerLines = settingsCustomerDocumentFooterLines(settings, "email");
   const contactLine = settingsContactLine(settings);
   const primaryContact = settingsPrimaryContact(settings);
   const appointmentTitle = appointmentDocumentTitle(customer.appointmentType).replace("KLIMAlin", brandName);
