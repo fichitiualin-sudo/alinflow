@@ -24,6 +24,7 @@ type WarehousePanelProps = {
   productBusy: boolean;
   productMessage: string;
   onAddClimateProduct: () => void;
+  onSyncKlimalinProducts: () => void | Promise<void>;
   onUpdateProductName: (productId: string, value: string) => void;
   onUpdateProductDevicePrice: (productId: string, value: string) => void;
   onUpdateProductInstallPrice: (productId: string, value: string) => void;
@@ -82,6 +83,7 @@ export function WarehousePanel({
   productBusy,
   productMessage,
   onAddClimateProduct,
+  onSyncKlimalinProducts,
   onUpdateProductName,
   onUpdateProductDevicePrice,
   onUpdateProductInstallPrice,
@@ -158,6 +160,7 @@ export function WarehousePanel({
             productBusy={productBusy}
             productMessage={productMessage}
             onAddClimateProduct={onAddClimateProduct}
+            onSyncKlimalinProducts={onSyncKlimalinProducts}
             onUpdateProductName={onUpdateProductName}
             onUpdateProductDevicePrice={onUpdateProductDevicePrice}
             onUpdateProductInstallPrice={onUpdateProductInstallPrice}
@@ -317,6 +320,7 @@ type ClimateProductManagerProps = Pick<WarehousePanelProps,
   | "productBusy"
   | "productMessage"
   | "onAddClimateProduct"
+  | "onSyncKlimalinProducts"
   | "onUpdateProductName"
   | "onUpdateProductDevicePrice"
   | "onUpdateProductInstallPrice"
@@ -336,6 +340,7 @@ function ClimateProductManager({
   productBusy,
   productMessage,
   onAddClimateProduct,
+  onSyncKlimalinProducts,
   onUpdateProductName,
   onUpdateProductDevicePrice,
   onUpdateProductInstallPrice,
@@ -352,6 +357,15 @@ function ClimateProductManager({
 
       {showClimateProductManager ? (
         <div className="mt-5 space-y-5">
+          <button
+            type="button"
+            onClick={() => void onSyncKlimalinProducts()}
+            disabled={productBusy}
+            className="w-full rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60"
+          >
+            {productBusy ? "Szinkronizálás folyamatban..." : "KLIMAlin kínálat és árak szinkronizálása"}
+          </button>
+
           <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
             A készülék árát és a szerelési árat külön add meg. Az ügyfélnek mutatott ár: készülék ár + szerelési ár.
           </div>

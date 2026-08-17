@@ -12,6 +12,29 @@ export function productSlug(value: string) {
     .replace(/^-+|-+$/g, "") || `klima-${Date.now()}`;
 }
 
+export function klimalinProductNameKeys(value?: string | null) {
+  const exact = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("hu-HU")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const compatible = exact
+    .replace(/\bmono split klima\b/g, " ")
+    .replace(/\bsplit klima\b/g, " ")
+    .replace(/\bklimaberendezes\b/g, " ")
+    .replace(/\bhuzatmentes\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return Array.from(new Set([exact, compatible].filter(Boolean)));
+}
+
+export function matchesKlimalinProductName(left?: string | null, right?: string | null) {
+  const leftKeys = new Set(klimalinProductNameKeys(left));
+  return klimalinProductNameKeys(right).some((key) => leftKeys.has(key));
+}
+
 export function productPriceText(product: Pick<ClimateProduct, "price">) {
   return `${Number(product.price || 0).toLocaleString("hu-HU")} Ft (telepítéssel együtt)`;
 }
@@ -43,6 +66,11 @@ export function normalizeProduct(product: any): ClimateProduct {
     installPrice,
     priceText: product?.priceText || productPriceText({ price }),
     active: product?.active !== false,
+    externalSource: product?.externalSource ?? product?.external_source ?? undefined,
+    externalKey: product?.externalKey ?? product?.external_key ?? undefined,
+    productUrl: product?.productUrl ?? product?.product_url ?? undefined,
+    imageUrl: product?.imageUrl ?? product?.image_url ?? undefined,
+    lastSyncedAt: product?.lastSyncedAt ?? product?.last_synced_at ?? undefined,
   };
 }
 
@@ -85,6 +113,31 @@ export function cleanQuoteItems(items?: QuoteItem[]) {
 
 export function prod(id: string) {
   return ACTIVE_PRODUCTS.find((p: any) => p.id === id) || EMPTY_PRODUCT;
+}
+
+export function itemProductMedia(item: QuoteItem) {
+  const product = isKnownProductId(item.productId) ? prod(item.productId) : undefined;
+  if (!item.isManual && product && (product.imageUrl || product.productUrl)) {
+    return {
+      imageUrl: product.imageUrl,
+      productUrl: product.productUrl,
+    };
+  }
+
+  const displayedName = item.customName?.trim() || product?.name;
+  if (!displayedName) return {};
+
+  const catalogMatches = ACTIVE_PRODUCTS.filter((candidate) => (
+    candidate.externalSource === "klimalin"
+    && Boolean(candidate.imageUrl || candidate.productUrl)
+    && matchesKlimalinProductName(displayedName, candidate.name)
+  ));
+  if (catalogMatches.length !== 1) return {};
+
+  return {
+    imageUrl: catalogMatches[0].imageUrl,
+    productUrl: catalogMatches[0].productUrl,
+  };
 }
 
 export function qty(items: QuoteItem[]) {

@@ -1,8 +1,8 @@
 import type { Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { displayAddress, ft } from "@/lib/alinflow/format";
-import { isQuoteAlternatives, itemName, itemPriceLine, itemQuantity, itemTotal } from "@/lib/alinflow/products";
-import { settingsContactLine, settingsContentLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
+import { isQuoteAlternatives, itemName, itemPriceLine, itemProductMedia, itemQuantity, itemTotal } from "@/lib/alinflow/products";
+import { settingsContactLine, settingsContentLines, settingsCustomerDocumentFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 
 type QuotePreviewPanelProps = {
@@ -49,7 +49,7 @@ export function QuotePreviewPanel({
   const shownQuoteIssuedAt = formatQuoteIssuedAt(quoteIssuedAt);
   const quote = workspaceSettings.quoteSettings;
   const company = workspaceSettings.companyProfile;
-  const footerLines = settingsFooterLines(workspaceSettings, "quote");
+  const footerLines = settingsCustomerDocumentFooterLines(workspaceSettings, "quote");
   const contactLine = settingsContactLine(workspaceSettings);
   const primaryContact = settingsPrimaryContact(workspaceSettings);
   const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
@@ -106,9 +106,13 @@ export function QuotePreviewPanel({
               </div>
 
               <div className="mt-6 space-y-3">
-                {quoteItems.map((item, index) => (
+                {quoteItems.map((item, index) => {
+                  const media = itemProductMedia(item);
+                  return (
                   <div key={index} className="quote-item flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 md:flex-row md:items-start md:justify-between">
-                    <div>
+                    <div className="flex min-w-0 gap-3">
+                      {media.imageUrl ? <img src={media.imageUrl} alt={itemName(item)} className="h-20 w-20 shrink-0 rounded-xl border border-slate-200 bg-white object-contain p-1" /> : null}
+                      <div>
                       {quoteIsAlternatives ? (
                         <span className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-700">
                           {index + 1}. lehetőség
@@ -116,10 +120,13 @@ export function QuotePreviewPanel({
                       ) : null}
                       <p className="font-black">{itemQuantity(item)} db · {itemName(item)}</p>
                       <p className="text-sm text-slate-500">{itemPriceLine(item)}</p>
+                      {media.productUrl ? <a href={media.productUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-black text-cyan-700 underline">Termék megtekintése a KLIMAlin oldalon</a> : null}
+                      </div>
                     </div>
                     <b>{quoteIsAlternatives ? "Ajánlati ár: " : ""}{ft(itemTotal(item))}</b>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="quote-second-page mt-6 rounded-2xl bg-slate-100 p-5">

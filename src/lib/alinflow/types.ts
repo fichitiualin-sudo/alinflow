@@ -70,6 +70,20 @@ export type ClimateProduct = {
   installPrice: number;
   priceText?: string;
   active?: boolean;
+  externalSource?: string;
+  externalKey?: string;
+  productUrl?: string;
+  imageUrl?: string;
+  lastSyncedAt?: string;
+};
+
+export type KlimalinCatalogProduct = {
+  externalKey: string;
+  name: string;
+  price: number;
+  installPrice: number;
+  productUrl: string;
+  imageUrl?: string;
 };
 
 export type InventoryItem = {

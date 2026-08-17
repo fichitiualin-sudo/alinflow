@@ -11,7 +11,7 @@ import {
   defaultWorkspaceSettings,
   normalizeWorkspaceSettings,
   settingsBrandName,
-  settingsFooterLines,
+  settingsCustomerDocumentFooterLines,
 } from "@/lib/alinflow/workspace-settings";
 
 export const runtime = "nodejs";
@@ -66,7 +66,7 @@ function uniqueEmailRef(prefix: string) {
 }
 
 function footerHtml(settings: WorkspaceSettings) {
-  const lines = settingsFooterLines(settings, "email");
+  const lines = settingsCustomerDocumentFooterLines(settings, "email");
   if (!lines.length) return "";
   const [firstLine, ...rest] = lines;
   return `Üdvözlettel,<br><strong style="color:#020617">${escapeHtml(firstLine)}</strong>${rest.length ? `<br>${rest.map(escapeHtml).join("<br>")}` : ""}`;

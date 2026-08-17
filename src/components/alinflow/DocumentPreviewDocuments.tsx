@@ -1,11 +1,11 @@
 import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
-import { isQuoteAlternatives, itemName, itemQuantity, itemTotal, itemUnitPrice, total } from "@/lib/alinflow/products";
+import { isQuoteAlternatives, itemName, itemProductMedia, itemQuantity, itemTotal, itemUnitPrice, total } from "@/lib/alinflow/products";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { DEFAULT_SELLER_COMPANY } from "@/lib/alinflow/purchase-declarations";
-import { defaultWorkspaceSettings, settingsBrandName, settingsContactLine, settingsContentLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
+import { defaultWorkspaceSettings, settingsBrandName, settingsContactLine, settingsContentLines, settingsCustomerDocumentFooterLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 
 function formatDocumentDate(value?: string) {
   if (!value) return "nincs megadva";
@@ -273,7 +273,7 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
   const settings = workspaceSettings || defaultWorkspaceSettings(null);
   const quote = settings.quoteSettings;
   const company = settings.companyProfile;
-  const footerLines = settingsFooterLines(settings, "quote");
+  const footerLines = settingsCustomerDocumentFooterLines(settings, "quote");
   const contactLine = settingsContactLine(settings);
   const primaryContact = settingsPrimaryContact(settings);
   const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
@@ -317,16 +317,23 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
     </div>
 
     <div className="mt-6 space-y-3">
-      {items.map((item, index)=><div key={`${item.productId}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+      {items.map((item, index) => {
+        const media = itemProductMedia(item);
+        return <div key={`${item.productId}-${index}`} className="rounded-2xl border border-slate-200 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+          <div className="flex min-w-0 gap-3">
+            {media.imageUrl ? <img src={media.imageUrl} alt={itemName(item)} className="h-20 w-20 shrink-0 rounded-xl border border-slate-200 bg-white object-contain p-1" /> : null}
+            <div>
             {quoteIsAlternatives ? <span className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-700">{index + 1}. lehetőség</span> : null}
             <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
             <p className="mt-1 text-sm text-slate-600">{ft(itemUnitPrice(item))} / db · telepítéssel együtt</p>
+            {media.productUrl ? <a href={media.productUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-black text-cyan-700 underline">Termék megtekintése a KLIMAlin oldalon</a> : null}
+            </div>
           </div>
           <p className="text-xl font-black">{quoteIsAlternatives ? "Ajánlati ár: " : ""}{ft(itemTotal(item))}</p>
         </div>
-      </div>)}
+      </div>;
+      })}
     </div>
 
     <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
@@ -357,7 +364,7 @@ export function AppointmentConfirmationDocument({ customer, quoteItems, workspac
   const settings = workspaceSettings || defaultWorkspaceSettings(null);
   const company = settings.companyProfile;
   const brandName = settingsBrandName(settings);
-  const footerLines = settingsFooterLines(settings, "email");
+  const footerLines = settingsCustomerDocumentFooterLines(settings, "email");
   const contactLine = settingsContactLine(settings);
   const primaryContact = settingsPrimaryContact(settings);
   const appointmentTitle = appointmentDocumentTitle(customer.appointmentType).replace("KLIMAlin", brandName);
