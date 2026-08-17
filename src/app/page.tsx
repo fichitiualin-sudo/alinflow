@@ -14,6 +14,7 @@ import type {
   DocumentPreviewType,
   DocumentRecord,
   InventoryItem,
+  KlimalinCatalogProduct,
   LeadImportCandidate,
   PurchaseDeclaration,
   QuoteItem,
@@ -55,6 +56,7 @@ import {
   itemInstallPrice,
   itemInstallTotal,
   itemName,
+  itemProductMedia,
   itemPriceLine,
   itemQuantity,
   itemTotal,
@@ -1271,6 +1273,11 @@ export default function Home() {
       price: row.price,
       install_price: row.install_price,
       active: row.active,
+      external_source: row.external_source,
+      external_key: row.external_key,
+      product_url: row.product_url,
+      image_url: row.image_url,
+      last_synced_at: row.last_synced_at,
     });
   }
 
@@ -1448,13 +1455,21 @@ export default function Home() {
     }
     setProductBusy(true);
     try {
-      const { error } = await supabase.from("climate_products").upsert(withWorkspace({
+      const payload: Record<string, unknown> = withWorkspace({
         id: clean.id,
         name: clean.name.trim(),
         price: clean.price,
         install_price: clean.installPrice,
         active: true,
-      }), { onConflict: "id" });
+      });
+      if (clean.externalSource) {
+        payload.external_source = clean.externalSource;
+        payload.external_key = clean.externalKey || null;
+        payload.product_url = clean.productUrl || null;
+        payload.image_url = clean.imageUrl || null;
+        payload.last_synced_at = clean.lastSyncedAt || null;
+      }
+      const { error } = await supabase.from("climate_products").upsert(payload, { onConflict: "id" });
       if (error) throw error;
       const nextProducts = sortProducts(products.map((item) => item.id === clean.id ? clean : item));
       setProducts(nextProducts);
@@ -1463,6 +1478,90 @@ export default function Home() {
       setProductMessage(`${clean.name} mentve ✅`);
     } catch (error: any) {
       setProductMessage(`Klíma mentési hiba: ${error.message}. Futtasd a CLIMATE_PRODUCTS_SQL.sql fájlt a Supabase-ben.`);
+    } finally {
+      setProductBusy(false);
+    }
+  }
+
+  function catalogProductMatchKey(value?: string | null) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("hu-HU")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  async function syncKlimalinProducts() {
+    const workspaceId = currentWorkspaceId();
+    if (!workspaceId) {
+      setProductMessage("A KLIMAlin szinkronizáláshoz aktív munkaterület szükséges.");
+      return;
+    }
+
+    setProductBusy(true);
+    setProductMessage("KLIMAlin kínálat beolvasása...");
+    try {
+      const response = await fetch("/api/sync-klimalin-products", { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result?.error || "A KLIMAlin kínálat nem olvasható be.");
+
+      const catalog = Array.isArray(result?.products) ? result.products as KlimalinCatalogProduct[] : [];
+      const fetchedAt = String(result?.fetchedAt || new Date().toISOString());
+      if (!catalog.length) throw new Error("A KLIMAlin kínálat üres.");
+
+      const byExternalKey = new Map(products
+        .filter((product) => product.externalSource === "klimalin" && product.externalKey)
+        .map((product) => [product.externalKey as string, product]));
+      const byName = new Map(products.map((product) => [catalogProductMatchKey(product.name), product]));
+      const workspaceSuffix = workspaceId.replace(/-/g, "").slice(0, 8);
+
+      const syncedProducts = catalog.map((source) => {
+        const existing = byExternalKey.get(source.externalKey) || byName.get(catalogProductMatchKey(source.name));
+        return normalizeProduct({
+          id: existing?.id || `klimalin-${productSlug(source.externalKey)}-${workspaceSuffix}`,
+          name: source.name,
+          price: source.price,
+          installPrice: source.installPrice,
+          active: true,
+          externalSource: "klimalin",
+          externalKey: source.externalKey,
+          productUrl: source.productUrl,
+          imageUrl: source.imageUrl,
+          lastSyncedAt: fetchedAt,
+        });
+      });
+
+      const rows = syncedProducts.map((product) => ({
+        id: product.id,
+        workspace_id: workspaceId,
+        name: product.name,
+        price: product.price,
+        install_price: product.installPrice,
+        active: true,
+        external_source: product.externalSource,
+        external_key: product.externalKey,
+        product_url: product.productUrl || null,
+        image_url: product.imageUrl || null,
+        last_synced_at: product.lastSyncedAt,
+      }));
+      const { error } = await supabase.from("climate_products").upsert(rows, { onConflict: "id" });
+      if (error) throw error;
+
+      const syncedById = new Map(syncedProducts.map((product) => [product.id, product]));
+      const merged = sortProducts([
+        ...products.map((product) => syncedById.get(product.id) || product),
+        ...syncedProducts.filter((product) => !products.some((existing) => existing.id === product.id)),
+      ]);
+      setProducts(merged);
+      setActiveProducts(merged);
+      setInventory((previous) => ensureInventoryForProducts(previous, merged));
+      setProductMessage(`${syncedProducts.length} KLIMAlin klíma és ár frissítve. A kézi termékek és a készlet megmaradtak.`);
+    } catch (error: any) {
+      const migrationHint = /external_source|external_key|product_url|image_url|last_synced_at/i.test(error?.message || "")
+        ? " Előbb futtasd a 20260817_ADD_KLIMALIN_PRODUCT_SYNC.sql migrációt."
+        : "";
+      setProductMessage(`KLIMAlin szinkronizálási hiba: ${error?.message || "ismeretlen hiba"}.${migrationHint}`);
     } finally {
       setProductBusy(false);
     }
@@ -4313,6 +4412,7 @@ export default function Home() {
         productBusy={productBusy}
         productMessage={productMessage}
         onAddClimateProduct={addClimateProduct}
+        onSyncKlimalinProducts={syncKlimalinProducts}
         onUpdateProductName={updateProductName}
         onUpdateProductDevicePrice={updateProductDevicePrice}
         onUpdateProductInstallPrice={updateProductInstallPrice}
@@ -4364,12 +4464,17 @@ export default function Home() {
       },
       pricingMode: customer.quotePricingMode || "bundle",
       quoteIssuedAt: issuedAt,
-      items: items.map((item) => ({
-        name: itemName(item),
-        quantity: itemQuantity(item),
-        unitPrice: itemUnitPrice(item),
-        totalPrice: itemTotal(item),
-      })),
+      items: items.map((item) => {
+        const media = itemProductMedia(item);
+        return {
+          name: itemName(item),
+          quantity: itemQuantity(item),
+          unitPrice: itemUnitPrice(item),
+          totalPrice: itemTotal(item),
+          productUrl: media.productUrl,
+          imageUrl: media.imageUrl,
+        };
+      }),
       totalAmount: quoteTotal,
       installerAmount,
       materialAmount,

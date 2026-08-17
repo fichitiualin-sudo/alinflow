@@ -26,6 +26,8 @@ type QuoteItem = {
   quantity?: number;
   unitPrice?: number;
   totalPrice?: number;
+  productUrl?: string;
+  imageUrl?: string;
 };
 
 type QuotePricingMode = "bundle" | "alternatives";
@@ -59,6 +61,17 @@ function escapeHtml(value: unknown) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function safeKlimalinUrl(value: unknown) {
+  const raw = safeText(value);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" && url.hostname === "klimalin.hu" ? url.href : "";
+  } catch {
+    return "";
+  }
 }
 
 
@@ -107,6 +120,8 @@ function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePri
       const name = escapeHtml(item.name || "Klímaberendezés");
       const unitPrice = Number(item.unitPrice || 0);
       const totalPrice = Number(item.totalPrice || (unitPrice * qty) || totalAmount || 0);
+      const productUrl = safeKlimalinUrl(item.productUrl);
+      const imageUrl = safeKlimalinUrl(item.imageUrl);
       const priceLine = qty > 1
         ? `${ft(unitPrice || Math.round(totalPrice / qty))} / db <span style="white-space:nowrap">(szereléssel együtt)</span>`
         : `${ft(totalPrice)} <span style="white-space:nowrap">(szereléssel együtt)</span>`;
@@ -116,8 +131,10 @@ function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePri
       return `
         <div style="border:1px solid #e5e7eb;border-radius:18px;padding:18px 20px;margin:14px 0;background:${quoteIsAlternatives ? "#f8fafc" : "#ffffff"}">
           ${optionBadge}
+          ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${name}" width="120" height="120" style="display:block;width:120px;height:120px;object-fit:contain;border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;margin:0 0 14px 0" />` : ""}
           <div style="font-size:18px;line-height:1.35;font-weight:900;color:#020617">${qty} db · ${name}</div>
           <div style="margin-top:7px;font-size:14px;color:#64748b;line-height:1.45">${priceLine}</div>
+          ${productUrl ? `<div style="margin-top:9px"><a href="${escapeHtml(productUrl)}" style="font-size:14px;font-weight:800;color:#0891b2;text-decoration:underline">Termék megtekintése a KLIMAlin oldalon</a></div>` : ""}
           <div style="margin-top:13px;padding-top:13px;border-top:1px solid #e5e7eb;font-size:19px;font-weight:900;color:#020617">${quoteIsAlternatives ? "Ajánlati ár: " : ""}${ft(totalPrice)}</div>
         </div>
       `;

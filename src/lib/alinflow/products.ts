@@ -43,6 +43,11 @@ export function normalizeProduct(product: any): ClimateProduct {
     installPrice,
     priceText: product?.priceText || productPriceText({ price }),
     active: product?.active !== false,
+    externalSource: product?.externalSource ?? product?.external_source ?? undefined,
+    externalKey: product?.externalKey ?? product?.external_key ?? undefined,
+    productUrl: product?.productUrl ?? product?.product_url ?? undefined,
+    imageUrl: product?.imageUrl ?? product?.image_url ?? undefined,
+    lastSyncedAt: product?.lastSyncedAt ?? product?.last_synced_at ?? undefined,
   };
 }
 
@@ -85,6 +90,15 @@ export function cleanQuoteItems(items?: QuoteItem[]) {
 
 export function prod(id: string) {
   return ACTIVE_PRODUCTS.find((p: any) => p.id === id) || EMPTY_PRODUCT;
+}
+
+export function itemProductMedia(item: QuoteItem) {
+  if (!isKnownProductId(item.productId) || item.isManual) return {};
+  const product = prod(item.productId);
+  return {
+    imageUrl: product.imageUrl,
+    productUrl: product.productUrl,
+  };
 }
 
 export function qty(items: QuoteItem[]) {
