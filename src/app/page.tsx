@@ -4251,7 +4251,7 @@ export default function Home() {
         stockOf={stockOf}
         reservedForProduct={reservedForProduct}
         customerStatusLabel={customerStatusLabel}
-        customerHasSentQuote={customerHasSentQuote}
+        customerHasSentQuote={customerHasSentQuoteAwaitingAppointment}
         onBack={() => goBack()}
         onOpenTask={openTask}
         onOpenCustomer={openCustomer}
@@ -4882,6 +4882,12 @@ export default function Home() {
     return normalizeStatus(customer.status) === "Ajánlat elküldve"
       || Boolean(sentDocumentTimestamp(quoteDoc))
       || Boolean(sentDocumentTimestamp(appointmentQuoteDoc));
+  }
+
+  function customerHasSentQuoteAwaitingAppointment(customer: Customer) {
+    if (!customerHasSentQuote(customer)) return false;
+    if (!customer.date || normalizeStatus(customer.status) === "Lemondva") return true;
+    return !isInstallationAppointment(customer.appointmentType);
   }
 
   function customerStatusLabel(customer: Customer) {
@@ -6341,7 +6347,7 @@ export default function Home() {
       {renderQuickAppointmentDialog()}
       {renderQuickAppointmentEmailPrompt()}
 
-      <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuote).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
+      <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuoteAwaitingAppointment).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
 
       <section className="space-y-6 xl:hidden">
         <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment}/>
