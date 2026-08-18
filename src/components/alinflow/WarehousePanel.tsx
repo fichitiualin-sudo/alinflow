@@ -29,6 +29,7 @@ type WarehousePanelProps = {
   onUpdateProductDevicePrice: (productId: string, value: string) => void;
   onUpdateProductInstallPrice: (productId: string, value: string) => void;
   onSaveClimateProduct: (product: ClimateProduct) => void | Promise<void>;
+  onDeleteClimateProduct: (product: ClimateProduct) => void | Promise<void>;
   stockOf: (productId: string) => number;
   reservedForProduct: (productId: string) => number;
   addStock: (productId: string, amount: number) => void | Promise<void>;
@@ -88,6 +89,7 @@ export function WarehousePanel({
   onUpdateProductDevicePrice,
   onUpdateProductInstallPrice,
   onSaveClimateProduct,
+  onDeleteClimateProduct,
   stockOf,
   reservedForProduct,
   addStock,
@@ -145,28 +147,28 @@ export function WarehousePanel({
   return (
     <Shell>
       <Back onClick={onBack} />
+      <ClimateProductManager
+        products={products}
+        showClimateProductManager={showClimateProductManager}
+        onToggleClimateProductManager={onToggleClimateProductManager}
+        newProductName={newProductName}
+        onNewProductName={onNewProductName}
+        newProductPrice={newProductPrice}
+        onNewProductPrice={onNewProductPrice}
+        newProductInstallPrice={newProductInstallPrice}
+        onNewProductInstallPrice={onNewProductInstallPrice}
+        productBusy={productBusy}
+        productMessage={productMessage}
+        onAddClimateProduct={onAddClimateProduct}
+        onSyncKlimalinProducts={onSyncKlimalinProducts}
+        onUpdateProductName={onUpdateProductName}
+        onUpdateProductDevicePrice={onUpdateProductDevicePrice}
+        onUpdateProductInstallPrice={onUpdateProductInstallPrice}
+        onSaveClimateProduct={onSaveClimateProduct}
+        onDeleteClimateProduct={onDeleteClimateProduct}
+      />
       <Layout>
         <Main>
-          <ClimateProductManager
-            products={products}
-            showClimateProductManager={showClimateProductManager}
-            onToggleClimateProductManager={onToggleClimateProductManager}
-            newProductName={newProductName}
-            onNewProductName={onNewProductName}
-            newProductPrice={newProductPrice}
-            onNewProductPrice={onNewProductPrice}
-            newProductInstallPrice={newProductInstallPrice}
-            onNewProductInstallPrice={onNewProductInstallPrice}
-            productBusy={productBusy}
-            productMessage={productMessage}
-            onAddClimateProduct={onAddClimateProduct}
-            onSyncKlimalinProducts={onSyncKlimalinProducts}
-            onUpdateProductName={onUpdateProductName}
-            onUpdateProductDevicePrice={onUpdateProductDevicePrice}
-            onUpdateProductInstallPrice={onUpdateProductInstallPrice}
-            onSaveClimateProduct={onSaveClimateProduct}
-          />
-
           <Card title="Klíma készlet">
             <div className="space-y-3">
               {productPagination.items.map((product) => {
@@ -325,6 +327,7 @@ type ClimateProductManagerProps = Pick<WarehousePanelProps,
   | "onUpdateProductDevicePrice"
   | "onUpdateProductInstallPrice"
   | "onSaveClimateProduct"
+  | "onDeleteClimateProduct"
 >;
 
 function ClimateProductManager({
@@ -345,6 +348,7 @@ function ClimateProductManager({
   onUpdateProductDevicePrice,
   onUpdateProductInstallPrice,
   onSaveClimateProduct,
+  onDeleteClimateProduct,
 }: ClimateProductManagerProps) {
   return (
     <Card title="Klímatípusok és árak">
@@ -412,9 +416,14 @@ function ClimateProductManager({
                       <p className="text-slate-400">Készülék + szerelés</p>
                       <p className="font-black text-slate-100">{ft(customerPrice)}</p>
                     </div>
-                    <button onClick={() => onSaveClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
-                      Mentés
-                    </button>
+                    <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
+                      <button type="button" onClick={() => onSaveClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
+                        Mentés
+                      </button>
+                      <button type="button" onClick={() => onDeleteClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-red-500 px-5 py-4 font-black text-white disabled:cursor-wait disabled:opacity-60">
+                        Törlés
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
