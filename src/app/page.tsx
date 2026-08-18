@@ -1484,6 +1484,31 @@ export default function Home() {
     }
   }
 
+  async function deleteClimateProduct(product: ClimateProduct) {
+    const confirmed = window.confirm(
+      `Biztosan törlöd ezt a klímát az aktív kínálatból?\n\n${product.name}\n\nA korábbi ajánlatok és munkák adatai megmaradnak.`
+    );
+    if (!confirmed) return;
+
+    setProductBusy(true);
+    try {
+      const { error } = await workspaceQuery(supabase
+        .from("climate_products")
+        .update({ active: false })
+        .eq("id", product.id));
+      if (error) throw error;
+
+      const nextProducts = products.filter((item) => item.id !== product.id);
+      setProducts(nextProducts);
+      setActiveProducts(nextProducts);
+      setProductMessage(`${product.name} törölve az aktív klímák közül.`);
+    } catch (error: any) {
+      setProductMessage(`Klíma törlési hiba: ${error?.message || "ismeretlen hiba"}`);
+    } finally {
+      setProductBusy(false);
+    }
+  }
+
   async function syncKlimalinProducts() {
     const workspaceId = currentWorkspaceId();
     if (!workspaceId) {
@@ -4409,6 +4434,7 @@ export default function Home() {
         onUpdateProductDevicePrice={updateProductDevicePrice}
         onUpdateProductInstallPrice={updateProductInstallPrice}
         onSaveClimateProduct={saveClimateProduct}
+        onDeleteClimateProduct={deleteClimateProduct}
         stockOf={stockOf}
         reservedForProduct={reservedForProduct}
         addStock={addStock}
