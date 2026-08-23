@@ -84,3 +84,18 @@ Státusz: <státusz>
 Ne legyen külön `Ár:` sor, ha az ár már a klíma sor végén szerepel.
 
 Felmérés és karbantartás esetén az esemény címe, időtartama és leírása a megfelelő típushoz igazodjon. Karbantartásnál ne jelenjen meg új klímaeladásként ár vagy készletfoglalás.
+
+### Jövőbeli események beolvasása
+
+A főoldali `Naptár frissítése` gomb csak a frissítés pillanatától kezdődő Google Naptár-eseményeket olvassa be. A már elmúlt eseményeket nem módosítja. A Google eseményazonosító külön kapcsolótáblába kerül, ezért az ismételt frissítés nem hoz létre újabb példányt ugyanabból az időpontból.
+
+Az importhoz szükséges beállítások:
+
+1. Futtasd a `docs/sql/20260823_ADD_GOOGLE_CALENDAR_IMPORT.sql` migrációt, majd a hozzá tartozó ellenőrző SQL-t.
+2. A Vercelben add meg érzékeny környezeti változóként a szolgáltatásfiók teljes JSON-ját `GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON` néven. Alternatívaként base64 formában használható a `GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON_BASE64` név.
+3. A Google Naptárat megtekintési jogosultsággal oszd meg a JSON-ban szereplő `client_email` címmel.
+4. Az AlinFlow `Beállítások` oldalán add meg az adott munkaterülethez tartozó Google naptár azonosítóját, és mentsd a beállítást.
+
+A szolgáltatásfiók titkos kulcsa kizárólag szerveroldali környezeti változó lehet. Nem kerülhet Supabase táblába vagy böngészőből elérhető `NEXT_PUBLIC_` változóba.
+
+Az import az egyértelműen felismerhető szerelési, felmérési és karbantartási eseményeket kezeli. Először email, telefonszám, majd név és cím alapján keres meglévő ügyfelet. Bizonytalan vagy személyes eseményt kihagy, és ezt a frissítés eredményében jelzi.

@@ -258,6 +258,11 @@ function isMissingWorkspaceSettingsSchemaError(error: any) {
   return text.includes("workspace_settings") && (text.includes("relation") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
 }
 
+function isMissingCalendarSettingsSchemaError(error: any) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
+  return text.includes("calendar_settings") && (text.includes("column") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
+}
+
 function isMissingMaintenanceItemsTableError(error: any) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLocaleLowerCase("hu-HU");
   return text.includes("maintenance_appointment_items") && (text.includes("relation") || text.includes("schema") || text.includes("cache") || text.includes("could not find"));
@@ -413,6 +418,8 @@ export default function Home() {
   const [materialInventory,setMaterialInventory] = useState(MATERIAL_STOCK);
   const [message,setMessage] = useState("");
   const [maintenanceMapGeocodingBusy,setMaintenanceMapGeocodingBusy] = useState(false);
+  const [calendarImportBusy,setCalendarImportBusy] = useState(false);
+  const [calendarImportMessage,setCalendarImportMessage] = useState("");
   const [user,setUser] = useState<User | null>(null);
   const [authLoading,setAuthLoading] = useState(true);
   const [dataLoading,setDataLoading] = useState(false);
@@ -574,6 +581,10 @@ export default function Home() {
     setWorkspaceSettingsBusy(false);
 
     if (error) {
+      if (isMissingCalendarSettingsSchemaError(error)) {
+        setWorkspaceSettingsMessage("A Google Naptár beállítás mentéséhez előbb futtasd a 20260823_ADD_GOOGLE_CALENDAR_IMPORT.sql fájlt.");
+        return;
+      }
       if (isMissingWorkspaceSettingsSchemaError(error)) {
         setWorkspaceSettingsSchemaAvailable(false);
         setWorkspaceSettingsMessage("A mentéshez előbb futtasd a workspace settings Supabase SQL-t.");
@@ -1280,6 +1291,48 @@ export default function Home() {
       image_url: row.image_url,
       last_synced_at: row.last_synced_at,
     });
+  }
+
+  async function refreshGoogleCalendar() {
+    if (!activeWorkspace?.id) {
+      setCalendarImportMessage("A naptár frissítéséhez nincs aktív munkaterület.");
+      return;
+    }
+
+    try {
+      setCalendarImportBusy(true);
+      setCalendarImportMessage("A jövőbeli Google Naptár-időpontok beolvasása folyamatban...");
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("A naptár frissítéséhez jelentkezz be újra.");
+
+      const response = await fetch("/api/import-google-calendar", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ workspaceId: activeWorkspace.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "A Google Naptár nem frissíthető.");
+
+      await loadCustomersFromDb({ background: true });
+
+      const imported = Number(payload?.imported || 0);
+      const updated = Number(payload?.updated || 0);
+      const linked = Number(payload?.linked || 0);
+      const skipped = Number(payload?.skipped || 0);
+      const firstIssue = Array.isArray(payload?.issues) && payload.issues.length ? String(payload.issues[0]) : "";
+      setCalendarImportMessage(
+        `Frissítés kész: ${imported} új, ${updated} frissített, ${linked} meglévőhöz kapcsolt időpont${skipped ? `, ${skipped} kihagyva` : ""}.${firstIssue ? ` Első észrevétel: ${firstIssue}` : ""}`,
+      );
+    } catch (error: any) {
+      setCalendarImportMessage(`Naptárfrissítési hiba: ${error?.message || "ismeretlen hiba"}`);
+    } finally {
+      setCalendarImportBusy(false);
+    }
   }
 
   function ensureInventoryForProducts(currentInventory: InventoryItem[], productList: ClimateProduct[]) {
@@ -6473,7 +6526,7 @@ export default function Home() {
       <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuoteAwaitingAppointment).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
 
       <section className="space-y-6 xl:hidden">
-        <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment}/>
+        <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment} onRefresh={refreshGoogleCalendar} refreshing={calendarImportBusy} refreshMessage={calendarImportMessage}/>
         {renderCustomerSearchPanel()}
         {renderDraftNoticePanel()}
         {renderDashboardLeadsPanel()}
@@ -6483,7 +6536,7 @@ export default function Home() {
 
       <section className="hidden gap-6 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] xl:items-start 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
         <div className="space-y-6">
-          <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment}/>
+          <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment} onRefresh={refreshGoogleCalendar} refreshing={calendarImportBusy} refreshMessage={calendarImportMessage}/>
           {renderDashboardLeadsPanel()}
         </div>
 
