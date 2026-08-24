@@ -80,10 +80,12 @@ import {
   displayAddress,
   ft,
   fullCustomerAddress,
+  iso,
   mapsHref,
   offsetIso,
   todayIso,
 } from "@/lib/alinflow/format";
+import { weekStart } from "@/lib/alinflow/calendar";
 import {
   appointmentBookedDocumentType,
   appointmentEmailDocumentType,
@@ -1300,8 +1302,18 @@ export default function Home() {
     }
 
     try {
+      const rangeStartDate = mode === "week"
+        ? weekStart(calDate)
+        : new Date(calDate.getFullYear(), calDate.getMonth(), 1);
+      const rangeEndDate = mode === "week"
+        ? new Date(rangeStartDate.getFullYear(), rangeStartDate.getMonth(), rangeStartDate.getDate() + 7)
+        : new Date(calDate.getFullYear(), calDate.getMonth() + 1, 1);
+      const rangeStart = iso(rangeStartDate);
+      const rangeEnd = iso(rangeEndDate);
+      const visiblePeriod = mode === "week" ? "látható hét" : "látható hónap";
+
       setCalendarImportBusy(true);
-      setCalendarImportMessage("A jövőbeli Google Naptár-időpontok beolvasása folyamatban...");
+      setCalendarImportMessage(`A ${visiblePeriod} Google Naptár-időpontjainak beolvasása folyamatban...`);
 
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -1313,7 +1325,7 @@ export default function Home() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ workspaceId: activeWorkspace.id }),
+        body: JSON.stringify({ workspaceId: activeWorkspace.id, rangeStart, rangeEnd }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "A Google Naptár nem frissíthető.");

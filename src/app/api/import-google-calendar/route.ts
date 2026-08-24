@@ -68,8 +68,65 @@ type ParsedEvent = {
   recognized: boolean;
 };
 
+type CalendarImportRange = {
+  startDate: string;
+  endDate: string;
+  timeMin: string;
+  timeMax: string;
+};
+
 function safeText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function validIsoDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function budapestOffsetMs(instant: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Budapest",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value || 0);
+  const representedAsUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return representedAsUtc - instant.getTime();
+}
+
+function budapestMidnightIso(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const localMidnightAsUtc = Date.UTC(year, month - 1, day);
+  let timestamp = localMidnightAsUtc;
+  for (let pass = 0; pass < 2; pass += 1) {
+    timestamp = localMidnightAsUtc - budapestOffsetMs(new Date(timestamp));
+  }
+  return new Date(timestamp).toISOString();
+}
+
+function calendarImportRange(startDate: string, endDate: string): CalendarImportRange {
+  if (!validIsoDate(startDate) || !validIsoDate(endDate)) {
+    throw new Error("A naptárfrissítés dátumtartománya hibás.");
+  }
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  const dayCount = (end.getTime() - start.getTime()) / 86_400_000;
+  if (dayCount <= 0 || dayCount > 32) {
+    throw new Error("A naptárfrissítés legfeljebb egy látható hónapot olvashat be.");
+  }
+  return {
+    startDate,
+    endDate,
+    timeMin: budapestMidnightIso(startDate),
+    timeMax: budapestMidnightIso(endDate),
+  };
 }
 
 function normalized(value: unknown) {
@@ -149,13 +206,14 @@ async function googleAccessToken(account: GoogleServiceAccount) {
   return String(body.access_token);
 }
 
-async function futureCalendarEvents(calendarId: string, accessToken: string) {
+async function calendarEventsInRange(calendarId: string, accessToken: string, range: CalendarImportRange) {
   const events: GoogleCalendarEvent[] = [];
   let pageToken = "";
 
   for (let page = 0; page < 20; page += 1) {
     const params = new URLSearchParams({
-      timeMin: new Date().toISOString(),
+      timeMin: range.timeMin,
+      timeMax: range.timeMax,
       singleEvents: "true",
       orderBy: "startTime",
       showDeleted: "false",
@@ -355,6 +413,12 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const workspaceId = safeText(body?.workspaceId);
     if (!workspaceId) return Response.json({ error: "Hiányzik az aktív munkaterület." }, { status: 400 });
+    let importRange: CalendarImportRange;
+    try {
+      importRange = calendarImportRange(safeText(body?.rangeStart), safeText(body?.rangeEnd));
+    } catch (error: any) {
+      return Response.json({ error: error?.message || "A naptárfrissítés dátumtartománya hibás." }, { status: 400 });
+    }
 
     const { data: membership, error: membershipError } = await auth.supabase
       .from("workspace_members")
@@ -388,7 +452,7 @@ export async function POST(request: Request) {
     const accessToken = await googleAccessToken(account);
     let rawEvents: GoogleCalendarEvent[];
     try {
-      rawEvents = await futureCalendarEvents(calendarId, accessToken);
+      rawEvents = await calendarEventsInRange(calendarId, accessToken, importRange);
     } catch (error: any) {
       throw new Error(`${error?.message || "A Google Naptár nem olvasható"} A naptárat olvasási joggal oszd meg ezzel a szolgáltatásfiókkal: ${account.client_email}`);
     }
@@ -582,6 +646,9 @@ export async function POST(request: Request) {
       updated,
       linked,
       skipped,
+      rangeStart: importRange.startDate,
+      rangeEnd: importRange.endDate,
+      totalEvents: rawEvents.length,
       totalFutureEvents: rawEvents.length,
       issues: issues.slice(0, 20),
       serviceAccountEmail: account.client_email,
