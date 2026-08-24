@@ -99,3 +99,5 @@ Az importhoz szükséges beállítások:
 A szolgáltatásfiók titkos kulcsa kizárólag szerveroldali környezeti változó lehet. Nem kerülhet Supabase táblába vagy böngészőből elérhető `NEXT_PUBLIC_` változóba.
 
 Az import az egyértelműen felismerhető szerelési, felmérési és karbantartási eseményeket kezeli. Először email, telefonszám, majd név és cím alapján keres meglévő ügyfelet. Bizonytalan vagy személyes eseményt kihagy, és ezt a frissítés eredményében jelzi.
+
+Gyors, mezőnevek nélküli rögzítésnél az esemény címe legyen `Szerelés`, `Felmérés` vagy `Karbantartás`, a leírás sorainak sorrendje pedig: ügyfélnév, telefonszám, email, teljes cím, opcionálisan klíma. A részletes `Kulcs: érték` formátum továbbra is használható.

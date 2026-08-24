@@ -224,6 +224,34 @@ function appointmentTypeFromText(value: string) {
   return null;
 }
 
+function isAppointmentTypeLine(value: string) {
+  return /^(szerel[eé]s|telep[ií]t[eé]s|felm[eé]r[eé]s|karbantart[áa]s)$/i.test(safeText(value));
+}
+
+function simpleEventFields(summary: string, description: string) {
+  const lines = `${summary}\n${description}`
+    .split(/\r?\n/)
+    .map(safeText)
+    .filter(Boolean);
+  const typeIndex = lines.findIndex(isAppointmentTypeLine);
+  if (typeIndex < 0) return null;
+
+  let firstValueIndex = typeIndex + 1;
+  while (isAppointmentTypeLine(lines[firstValueIndex] || "")) firstValueIndex += 1;
+  const [name = "", phone = "", email = "", address = "", ...needParts] = lines.slice(firstValueIndex);
+  const validPhone = normalizedPhone(phone).length >= 7;
+  const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!name || !validPhone || !validEmail || !address) return null;
+
+  return {
+    name,
+    phone,
+    email,
+    address,
+    need: needParts.join(" + "),
+  };
+}
+
 function nameFromSummary(summary: string) {
   return safeText(summary
     .replace(/^\s*(szerel[eé]s|telep[ií]t[eé]s|felm[eé]r[eé]s|karbantart[aá]s)\s*[–—\-:]\s*/i, "")
@@ -239,21 +267,22 @@ function parseGoogleEvent(event: GoogleCalendarEvent): ParsedEvent | null {
   const summary = safeText(event.summary);
   const description = safeText(event.description);
   const fields = descriptionFields(description);
+  const simpleFields = fields.size === 0 ? simpleEventFields(summary, description) : null;
   const explicitType = appointmentTypeFromText(firstField(fields, ["Időpont típusa", "Munka típusa"]));
   const inferredType = appointmentTypeFromText(`${summary}\n${description}`);
   const appointmentType = explicitType || inferredType || "installation";
   const structured = ["ugyfel", "telefon", "email", "idopont tipusa", "munka tipusa"].some((key) => fields.has(key));
-  const recognized = Boolean(explicitType || inferredType || structured);
-  const name = firstField(fields, ["Ügyfél", "Név"]) || nameFromSummary(summary);
+  const recognized = Boolean(explicitType || inferredType || structured || simpleFields);
+  const name = firstField(fields, ["Ügyfél", "Név"]) || simpleFields?.name || nameFromSummary(summary);
 
   return {
     eventId,
     summary,
     name,
-    phone: firstField(fields, ["Telefon", "Telefonszám"]),
-    email: firstField(fields, ["Email", "E-mail"]),
-    address: safeText(event.location) || firstField(fields, ["Cím", "Helyszín"]),
-    need: firstField(fields, ["Igény", "Munka", "Klíma"]),
+    phone: firstField(fields, ["Telefon", "Telefonszám"]) || simpleFields?.phone || "",
+    email: firstField(fields, ["Email", "E-mail"]) || simpleFields?.email || "",
+    address: safeText(event.location) || firstField(fields, ["Cím", "Helyszín"]) || simpleFields?.address || "",
+    need: firstField(fields, ["Igény", "Munka", "Klíma"]) || simpleFields?.need || "",
     notes: ["Google Naptárból importálva.", description, event.htmlLink ? `Google esemény: ${event.htmlLink}` : ""].filter(Boolean).join("\n"),
     appointmentType,
     scheduledDate: scheduled.date,
