@@ -344,7 +344,11 @@ export async function POST(request: Request) {
       .eq("workspace_id", workspaceId)
       .maybeSingle();
     if (settingsError) {
-      return Response.json({ error: "Előbb futtasd a Google Naptár import Supabase migrációját." }, { status: 409 });
+      console.error("Google Calendar settings lookup failed", settingsError);
+      return Response.json(
+        { error: `Google Naptár beállítási adatbázis-hiba (${settingsError.code || "ismeretlen"}): ${settingsError.message}` },
+        { status: 409 },
+      );
     }
     const calendarId = safeText((settings?.calendar_settings as any)?.googleCalendarId);
     if (!calendarId) {
@@ -378,12 +382,16 @@ export async function POST(request: Request) {
         .from("google_calendar_event_links")
         .select("google_event_id,appointment_id")
         .eq("workspace_id", workspaceId)
-        .eq("google_calendar_id", calendarId)
-        .in("google_event_id", eventIds);
+        .eq("google_calendar_id", calendarId);
       if (error) {
-        return Response.json({ error: "Előbb futtasd a Google Naptár import Supabase migrációját." }, { status: 409 });
+        console.error("Google Calendar event link lookup failed", error);
+        return Response.json(
+          { error: `Google Naptár kapcsolati adatbázis-hiba (${error.code || "ismeretlen"}): ${error.message}` },
+          { status: 409 },
+        );
       }
-      links = (data || []) as EventLinkRow[];
+      const eventIdSet = new Set(eventIds);
+      links = ((data || []) as EventLinkRow[]).filter((link) => eventIdSet.has(link.google_event_id));
     }
 
     const customers = (customerData || []) as CustomerRow[];
