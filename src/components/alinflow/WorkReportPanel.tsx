@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
@@ -188,6 +188,7 @@ function SignaturePad({ value, onChange }: { value?: string; onChange: (value: s
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
 
   function prepareCanvas(redrawValue = value) {
     const canvas = canvasRef.current;
@@ -223,7 +224,16 @@ function SignaturePad({ value, onChange }: { value?: string; onChange: (value: s
     const onResize = () => prepareCanvas(value);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [value]);
+  }, [value, fullscreen]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [fullscreen]);
 
   function pointFromEvent(event: any) {
     const canvas = canvasRef.current;
@@ -253,11 +263,11 @@ function SignaturePad({ value, onChange }: { value?: string; onChange: (value: s
     onChange("");
   }
 
-  return (
-    <div className="mt-4 rounded-[1.5rem] border border-white/10 bg-white p-3">
+  function renderCanvas(className: string) {
+    return (
       <canvas
         ref={canvasRef}
-        className="h-56 w-full rounded-2xl bg-white"
+        className={`${className} rounded-2xl bg-white`}
         style={{ touchAction: "none" }}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -277,7 +287,52 @@ function SignaturePad({ value, onChange }: { value?: string; onChange: (value: s
         onPointerCancel={finishSignature}
         onPointerLeave={() => { if (drawingRef.current) finishSignature(); }}
       />
-      <button onClick={clearSignature} className="document-action-button mt-3 w-full rounded-2xl bg-slate-900 px-5 py-4 font-black text-white">Aláírás törlése</button>
-    </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="mt-4 rounded-[1.5rem] border-2 border-cyan-300/70 bg-cyan-300/10 p-3 shadow-lg shadow-cyan-950/30">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="font-black text-cyan-100">Az ügyfél ezen a fehér területen írjon alá.</p>
+          <button
+            type="button"
+            onClick={() => setFullscreen(true)}
+            className="document-action-button rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950"
+          >
+            Teljes képernyős aláírás
+          </button>
+        </div>
+        {!fullscreen ? renderCanvas("h-56 w-full") : null}
+        <button type="button" onClick={clearSignature} className="document-action-button mt-3 w-full rounded-2xl bg-slate-900 px-5 py-4 font-black text-white">Aláírás törlése</button>
+      </div>
+
+      {fullscreen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Teljes képernyős ügyfél-aláírás"
+          className="fixed inset-0 z-[100] flex flex-col overflow-y-auto bg-slate-950 p-3 text-slate-100 sm:p-6"
+        >
+          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-black sm:text-2xl">Ügyfél aláírása</h2>
+              <p className="text-sm text-slate-300">Írjon alá a nagy, fehér területen.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFullscreen(false)}
+              className="rounded-2xl bg-cyan-300 px-5 py-3 font-black text-slate-950"
+            >
+              Vissza a munkalaphoz
+            </button>
+          </div>
+          <div className="mx-auto mt-3 flex min-h-[70dvh] w-full max-w-6xl flex-1 flex-col rounded-[2rem] border-2 border-cyan-300 bg-white p-3 shadow-2xl shadow-cyan-950/60">
+            {renderCanvas("min-h-64 flex-1 w-full")}
+            <button type="button" onClick={clearSignature} className="mt-3 w-full rounded-2xl bg-slate-900 px-5 py-4 font-black text-white">Aláírás törlése</button>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

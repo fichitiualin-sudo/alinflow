@@ -756,8 +756,9 @@ export function WorkPagePanel({
             {renderMaintenanceSection()}
           </div>
 
-          <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
-            <div className="space-y-3">
+          <div id="work-close-actions" className="scroll-mt-4">
+            <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
+              <div className="space-y-3">
               {isSurvey ? null : (
                 <ActionButton
                   color="cyan"
@@ -827,8 +828,9 @@ export function WorkPagePanel({
               )}
               {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
               {selected.status !== "Lezárva" ? <ActionButton color="red" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} icon="×" /> : null}
-            </div>
-          </Card>
+              </div>
+            </Card>
+          </div>
 
         </Side>
       </Layout>

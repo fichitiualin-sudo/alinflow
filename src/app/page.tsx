@@ -411,7 +411,8 @@ export default function Home() {
   const [materialOverrides,setMaterialOverrides] = useState<Record<string,string>>({});
   const [inventory,setInventory] = useState<InventoryItem[]>(DEFAULT_INVENTORY);
   const [materialInventory,setMaterialInventory] = useState(MATERIAL_STOCK);
-  const [message,setMessage] = useState("");
+  const [message,setMessageState] = useState("");
+  const [workFocusTarget,setWorkFocusTarget] = useState<"close-actions" | null>(null);
   const [maintenanceMapGeocodingBusy,setMaintenanceMapGeocodingBusy] = useState(false);
   const [user,setUser] = useState<User | null>(null);
   const [authLoading,setAuthLoading] = useState(true);
@@ -489,6 +490,14 @@ export default function Home() {
   const activeWorkspaceIdRef = useRef<string | null>(null);
   const detailDataLoadedRef = useRef<Record<string, boolean>>({});
   const detailDataLoadingRef = useRef<Record<string, boolean>>({});
+
+  function setMessage(nextMessage: string) {
+    setMessageState(nextMessage);
+    if (!nextMessage || typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
 
   useEffect(() => {
     currentViewRef.current = view;
@@ -904,6 +913,15 @@ export default function Home() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [view]);
+
+  useEffect(() => {
+    if (view !== "work" || workFocusTarget !== "close-actions") return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("work-close-actions")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setWorkFocusTarget(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [view, workFocusTarget]);
 
 
   async function requestDataLoadForUser(currentUser: User, force = false) {
@@ -5677,6 +5695,7 @@ export default function Home() {
         updateWorkHistory(updatedSelected);
       }
       setMessage(sendEmail ? `${workReportTitle(selected.appointmentType)} mentve és emailben elküldve ✅` : `${workReportTitle(selected.appointmentType)} mentve ✅`);
+      setWorkFocusTarget("close-actions");
       replaceView("work");
     } catch (error: any) {
       setMessage(`Munkalap hiba: ${error.message}`);
