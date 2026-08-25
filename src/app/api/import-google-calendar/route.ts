@@ -286,28 +286,63 @@ function isAppointmentTypeLine(value: string) {
   return /^(szerel[eé]s|telep[ií]t[eé]s|felm[eé]r[eé]s|karbantart[áa]s)$/i.test(safeText(value));
 }
 
-function simpleEventFields(summary: string, description: string) {
-  const lines = `${summary}\n${description}`
+function looksLikeAddress(value: string) {
+  const text = normalized(value);
+  return /^\d{4}\s+\S/.test(safeText(value))
+    || /\b(utca|ut|ter|koz|korut|krt|setany|fasor|dulo|park|sor)\b/.test(text);
+}
+
+function simpleLinesFields(value: string) {
+  const lines = value
     .split(/\r?\n/)
     .map(safeText)
     .filter(Boolean);
   const typeIndex = lines.findIndex(isAppointmentTypeLine);
-  if (typeIndex < 0) return null;
+  const values = lines.filter((line) => !isAppointmentTypeLine(line));
+  const phoneIndex = values.findIndex((line) => normalizedPhone(line).length >= 7 && normalizedPhone(line).length <= 15);
+  const emailIndex = values.findIndex((line) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(line));
+  const addressIndex = values.findIndex(looksLikeAddress);
+  const nameIndex = values.findIndex((line, index) => index !== phoneIndex && index !== emailIndex && index !== addressIndex);
+  if (nameIndex < 0 || phoneIndex < 0 || addressIndex < 0) return null;
 
-  let firstValueIndex = typeIndex + 1;
-  while (isAppointmentTypeLine(lines[firstValueIndex] || "")) firstValueIndex += 1;
-  const [name = "", phone = "", email = "", address = "", ...needParts] = lines.slice(firstValueIndex);
-  const validPhone = normalizedPhone(phone).length >= 7;
-  const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  if (!name || !validPhone || !validEmail || !address) return null;
+  const usedIndexes = new Set([nameIndex, phoneIndex, emailIndex, addressIndex]);
+  const needParts = values.filter((_, index) => !usedIndexes.has(index));
+  if (typeIndex < 0 && needParts.length === 0) return null;
 
   return {
-    name,
-    phone,
-    email,
-    address,
+    name: values[nameIndex],
+    phone: values[phoneIndex],
+    email: emailIndex >= 0 ? values[emailIndex] : "",
+    address: values[addressIndex],
     need: needParts.join(" + "),
   };
+}
+
+function legacySummaryFields(summary: string) {
+  const parts = summary.split(/\s*,\s*/).map(safeText).filter(Boolean);
+  const phoneIndex = parts.findIndex((part) => normalizedPhone(part).length >= 7 && normalizedPhone(part).length <= 15);
+  if (phoneIndex <= 0 || phoneIndex >= parts.length - 1) return null;
+
+  const remainder = parts.slice(phoneIndex + 1).join(", ");
+  const needSeparator = remainder.lastIndexOf(". ");
+  if (needSeparator < 0) return null;
+  const address = safeText(remainder.slice(0, needSeparator + 1));
+  const need = safeText(remainder.slice(needSeparator + 2));
+  if (!address || !need) return null;
+
+  return {
+    name: parts.slice(0, phoneIndex).join(", "),
+    phone: parts[phoneIndex],
+    email: "",
+    address,
+    need,
+  };
+}
+
+function simpleEventFields(summary: string, description: string) {
+  return simpleLinesFields(description)
+    || simpleLinesFields(`${summary}\n${description}`)
+    || legacySummaryFields(summary);
 }
 
 function nameFromSummary(summary: string) {
