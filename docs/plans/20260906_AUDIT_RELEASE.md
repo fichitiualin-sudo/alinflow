@@ -71,7 +71,25 @@ Never repair historical records by deletion or guessed reassignment.
   transitive security fixes. No forced dependency upgrades were used.
 - The complete npm audit now reports zero known vulnerabilities. All 70 tests,
   TypeScript checking and the normal Turbopack production build pass with synthetic
-  build-only Supabase settings. Production deployment of this follow-up is pending.
+  build-only Supabase settings. PR #90 merged as
+  `69de21a9204fe1630005d539fb26969c4b68d7d7`; production deployment
+  `CSzhkm2EfpcKwynHoQ3CXDuoTZDT` is Ready.
+
+## Approved Write Acceptance
+
+- Owner approved a disposable, clearly named release-test customer, climate
+  product and appointments, including cleanup. Existing business records must
+  remain unchanged; no real invoices or emails may be sent.
+- Customer/appointment creation, postal-code completion, manual billing and
+  a visibly synthetic signature saved successfully through the production UI.
+  Mobile signature save returned to the same installation's closing actions.
+- The zero-stock test produced a visible top-of-page error and made no deduction.
+- Found a further client-side blocker: shortage of a material reserved by other
+  jobs prevented completion even when this job needed zero of that material.
+  The stock check now skips unused materials while preserving reservations for
+  materials this job actually needs. Three regressions include the reproduced
+  failure, a real shortage and exact remaining availability.
+- Full acceptance and deletion of the disposable test records remain in progress.
 
 ## Local Restore Boundary
 
