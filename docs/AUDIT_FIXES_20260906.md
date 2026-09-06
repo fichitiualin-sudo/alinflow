@@ -41,6 +41,10 @@ R03: a kiadási mobilpróba során talált mentetlen karbantartási visszalépé
 javítva: Vissza esetén az eredeti telepítés és annak tételei állnak vissza.
 Ez nem hoz létre vagy töröl adatbázisrekordot.
 
+R04: a készletellenőrzés nem akadályozza a lezárást olyan anyag más munkák miatti
+hiánya miatt, amelyből az aktuális munka nulla mennyiséget használ. A ténylegesen
+szükséges anyagok foglalási és készletvédelme változatlan.
+
 ## Élesítési Sorrend
 
 1. Először külön tesztkörnyezetben, a telepített sémával egyező adatbázison próbáld ki a kiadást. A helyi tesztadatbázis szintetikus sémát használ.
@@ -62,7 +66,7 @@ nem történeti készletmozgás-rekonstrukció. A régebbi hibás részlevonáso
 
 ## Ellenőrzések
 
-- 70 sikeres Node-teszt, 0 sikertelen, 0 kihagyott a teljes futásban.
+- 73 sikeres Node-teszt, 0 sikertelen, 0 kihagyott a teljes futásban.
 - Az éles public/auth sémák és adatok helyi visszaállításán is sikeres migráció és 10 regressziós eset; külön natív PostgreSQL-másolaton kétkapcsolatos készletütközési teszt.
 - Valódi PostgreSQL-motoron, helyi PGlite-adatbázisban futtatott migráció és SQL-függvények. A migráció kétszer lefutott, idempotens volt a tesztsémán.
 - Szándékosan hibára futtatott tételbeszúrás és anyaglevonás igazolja a visszagördülést. Ismételt lezárás nem von le ismét készletet.

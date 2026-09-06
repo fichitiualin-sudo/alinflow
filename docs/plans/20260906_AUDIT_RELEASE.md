@@ -58,8 +58,8 @@ Never repair historical records by deletion or guessed reassignment.
   Production deployment `HbafDhVrVNe7dtiWVoDfYb8Kc5hW` succeeded. Repeated
   authenticated 390x844 testing confirms Back restores the original completed
   installation, its products and closing actions without saving the draft.
-- Full write/signature acceptance with disposable UI records awaits the owner's
-  confirmation. No real invoice, email or stock operation was sent during UI checks.
+- Owner subsequently approved disposable write/signature acceptance; results are
+  recorded below. No real invoice or email was sent.
 
 ## Dependency Security Follow-Up
 
@@ -71,7 +71,45 @@ Never repair historical records by deletion or guessed reassignment.
   transitive security fixes. No forced dependency upgrades were used.
 - The complete npm audit now reports zero known vulnerabilities. All 70 tests,
   TypeScript checking and the normal Turbopack production build pass with synthetic
-  build-only Supabase settings. Production deployment of this follow-up is pending.
+  build-only Supabase settings. PR #90 merged as
+  `69de21a9204fe1630005d539fb26969c4b68d7d7`; production deployment
+  `CSzhkm2EfpcKwynHoQ3CXDuoTZDT` is Ready.
+
+## Approved Write Acceptance
+
+- Owner approved a disposable, clearly named release-test customer, climate
+  product and appointments, including cleanup. Existing business records must
+  remain unchanged; no real invoices or emails may be sent.
+- Customer/appointment creation, postal-code completion, manual billing and
+  a visibly synthetic signature saved successfully through the production UI.
+  Mobile signature save returned to the same installation's closing actions.
+- The zero-stock test produced a visible top-of-page error and made no deduction.
+- Found a further client-side blocker: shortage of a material reserved by other
+  jobs prevented completion even when this job needed zero of that material.
+  The stock check now skips unused materials while preserving reservations for
+  materials this job actually needs. Three regressions include the reproduced
+  failure, a real shortage and exact remaining availability.
+- Two installation appointments retain distinct quantities and quote IDs after
+  reload. The second does not inherit the first report, signature or checklist.
+- Rescheduling the first installation preserves its report ID/signature digest
+  and leaves stock unchanged. Merely opening a maintenance report does not save it.
+- A separate synthetic maintenance signature saved and returned to the same
+  customer's maintenance actions. Cancelling that maintenance preserved both
+  installations and both signed reports; only maintenance became cancelled.
+- Product-archive confirmation stalled the browser automation; no archive change
+  was persisted. This test and authenticated export remain unverified.
+- The unused-material fix passes all 73 tests, TypeScript and production build,
+  but remains local: the push approval was denied, and explicit owner approval
+  for upload/merge/deployment has been requested. No alternate upload was used.
+- Full installation completion and repeat-deduction UI acceptance remain blocked
+  on deploying that fix. Gate 8 is not complete.
+- All disposable production data was removed in a guarded SQL transaction after
+  inspecting foreign keys. Every remaining public row was fingerprinted before
+  commit. All 19 final table counts/digests match the pre-test baseline, including
+  inventory and material stock. Cleanup logs are private and outside Git.
+- Local PostgreSQL was stopped. The unresponsive test tab could not be closed or
+  its viewport override reset through the browser API; manual dismissal/closing
+  may be needed before the next browser acceptance session.
 
 ## Local Restore Boundary
 

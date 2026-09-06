@@ -218,6 +218,26 @@ test("A07/A12: stock completion uses one transactional RPC and no snapshot rollb
   assert.equal(declarations.has("deductStockIfNeeded"), false);
 });
 
+for (const [label, needed, reserved, stock, shortage] of [
+  ["unused material shortage does not block this work", 0, 24, 23, false],
+  ["used material still respects other reservations", 1, 23, 23, true],
+  ["exactly available used material can be completed", 1, 23, 24, false],
+]) {
+  test("Release: " + label, () => {
+    const checkedScopes = [];
+    const f = h.functions(["stockErrorMessage"], { ...base, selected: customer, quoteItems: [],
+      materialInventory: [{ name: "Bracket", stock, unit: "db" }],
+      usedMaterialAmountForStock: () => needed,
+      materialReserved: (name, workId) => { checkedScopes.push(workId); return reserved; },
+    });
+    const message = f.stockErrorMessage();
+    if (shortage) assert.match(message, /Bracket.*készlethiányos/);
+    else assert.equal(message, "");
+    if (needed === 0) assert.equal(checkedScopes.length, 0);
+    else assert.ok(checkedScopes.every(id => id === customer.activeAppointmentId));
+  });
+}
+
 test("A08: cancellation replaces the existing history entry immediately", async () => {
   let history = { [customer.id]: [customer] }, customers = [customer];
   const f = h.functions(["cancelAppointment", "promoteCustomerWork", "updateWorkHistory",

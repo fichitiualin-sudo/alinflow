@@ -3811,6 +3811,7 @@ export default function Home() {
 
     const shortageMaterial = materialInventory.find((item: any) => {
       const needed = usedMaterialAmountForStock(item.name);
+      if (needed <= 0) return false;
       return needed + materialReserved(item.name, selected.activeAppointmentId || selected.id) > item.stock;
     });
     if (shortageMaterial) {
