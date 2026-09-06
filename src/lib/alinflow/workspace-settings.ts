@@ -50,6 +50,9 @@ export type WorkspaceSettings = {
     workReportFooterText: string;
     quoteFooterText: string;
   };
+  calendarSettings: {
+    googleCalendarId: string;
+  };
 };
 
 export type WorkspaceSettingsRow = {
@@ -59,6 +62,7 @@ export type WorkspaceSettingsRow = {
   email_settings?: Record<string, unknown> | null;
   billing_settings?: Record<string, unknown> | null;
   document_settings?: Record<string, unknown> | null;
+  calendar_settings?: Record<string, unknown> | null;
 };
 
 type WorkspaceLike = {
@@ -136,6 +140,9 @@ const GENERIC_SETTINGS: WorkspaceSettings = {
     workReportFooterText: "",
     quoteFooterText: "",
   },
+  calendarSettings: {
+    googleCalendarId: "",
+  },
 };
 
 const KLIMALIN_SETTINGS: WorkspaceSettings = {
@@ -186,6 +193,9 @@ const KLIMALIN_SETTINGS: WorkspaceSettings = {
   documentSettings: {
     workReportFooterText: "Adorján Alin · KLIMAlin\nklimalin.hu · legkondikalkulator.hu · 06 30 700 4908",
     quoteFooterText: "Adorján Alin · KLIMAlin\nklimalin.hu · legkondikalkulator.hu · 06 30 700 4908",
+  },
+  calendarSettings: {
+    googleCalendarId: "",
   },
 };
 
@@ -282,6 +292,9 @@ export function normalizeWorkspaceSettings(value: unknown, fallback = defaultWor
       workReportFooterText: optionalText(source.documentSettings?.workReportFooterText, fallback.documentSettings.workReportFooterText),
       quoteFooterText: optionalText(source.documentSettings?.quoteFooterText, fallback.documentSettings.quoteFooterText),
     },
+    calendarSettings: {
+      googleCalendarId: optionalText(source.calendarSettings?.googleCalendarId, fallback.calendarSettings.googleCalendarId),
+    },
   };
 }
 
@@ -293,6 +306,7 @@ export function workspaceSettingsFromRow(row: WorkspaceSettingsRow | null | unde
     emailSettings: row.email_settings || {},
     billingSettings: row.billing_settings || {},
     documentSettings: row.document_settings || {},
+    calendarSettings: row.calendar_settings || {},
   }, fallback);
 }
 
@@ -305,6 +319,7 @@ export function workspaceSettingsToRow(settings: WorkspaceSettings, workspaceId:
     email_settings: normalized.emailSettings,
     billing_settings: normalized.billingSettings,
     document_settings: normalized.documentSettings,
+    calendar_settings: normalized.calendarSettings,
     updated_by: updatedBy || null,
     updated_at: new Date().toISOString(),
   };
