@@ -8,6 +8,7 @@ type DocumentRow = {
   status: string;
   appointmentType?: AppointmentType;
   reportId?: string;
+  appointmentId?: string;
   purchaseDeclarationId?: string;
   reportDate?: string;
   reportTime?: string;
@@ -20,6 +21,7 @@ function actionCustomerFor(customer: Customer, row: DocumentRow): Customer {
     date: row.reportDate || customer.date,
     time: row.reportTime || customer.time,
     activeWorkReportId: row.reportId,
+    activeAppointmentId: row.reportId ? row.appointmentId : customer.activeAppointmentId,
   };
 }
 

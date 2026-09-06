@@ -92,22 +92,23 @@ export function isKnownProductId(productId?: string) {
 }
 
 export function isCustomQuoteItem(item: QuoteItem) {
-  return Boolean(item.isManual || item.customName?.trim() || (item.productId && !isKnownProductId(item.productId)));
+  return Boolean(item.isManual || item.customName?.trim() || (item.productId && !isKnownProductId(item.productId) && !item.productName));
 }
 
 export function isQuoteItemFilled(item: QuoteItem) {
-  return Boolean(item.customName?.trim() || isKnownProductId(item.productId));
+  return Boolean(item.customName?.trim() || item.productName?.trim() || isKnownProductId(item.productId));
 }
 
 export function cleanQuoteItems(items?: QuoteItem[]) {
   return (items || []).filter(isQuoteItemFilled).map((item) => ({
     ...item,
     quantity: itemQuantity(item),
-    productId: isKnownProductId(item.productId) ? item.productId : "",
+    productId: item.productId || "",
+    productName: item.productName || (isKnownProductId(item.productId) ? prod(item.productId).name : undefined),
     customName: item.customName?.trim() || undefined,
     customPrice: item.customPrice === "" ? undefined : item.customPrice,
     customInstallPrice: item.customInstallPrice === "" ? undefined : item.customInstallPrice,
-    isManual: item.isManual || !isKnownProductId(item.productId),
+    isManual: item.isManual || !item.productId,
   }));
 }
 
@@ -147,6 +148,7 @@ export function qty(items: QuoteItem[]) {
 export function itemName(item: QuoteItem) {
   const custom = item.customName?.trim();
   if (custom) return custom;
+  if (item.productName) return item.productName;
   if (isKnownProductId(item.productId)) return prod(item.productId).name;
   return item.isManual ? "Egyedi klíma" : "Válassz klímát";
 }
@@ -222,12 +224,13 @@ export function quoteItemFromRow(row: any): QuoteItem {
   const matchedProduct = productById || productByName;
 
   return {
-    productId: matchedProduct?.id || "",
+    productId: description.productId || matchedProduct?.id || "",
+    productName: row.product_name || matchedProduct?.name,
     quantity: Number(row.quantity || 1),
-    customPrice: Number(row.unit_price || matchedProduct?.price || 0),
+    customPrice: Number(row.unit_price ?? matchedProduct?.price ?? 0),
     customInstallPrice: description.installPrice,
-    customName: matchedProduct ? undefined : row.product_name,
-    isManual: !matchedProduct,
+    customName: description.productId || matchedProduct ? undefined : row.product_name,
+    isManual: !description.productId && !matchedProduct,
   };
 }
 

@@ -122,7 +122,8 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
     .filter((customer) => customer.status !== "Lemondva");
   const maintenanceWorks = uniqueWorks
     .filter((customer) => normalizeAppointmentType(customer.appointmentType) === "maintenance")
-    .filter((customer) => customer.status !== "Lemondva");
+    .filter((customer) => customer.status === "Lezárva")
+    .filter((customer) => customer.date && customer.date <= toIsoDate(new Date()));
 
   const maintenanceByInstallation = new Map<string, Customer[]>();
   maintenanceWorks.forEach((maintenance) => {

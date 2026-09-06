@@ -47,6 +47,7 @@ export type CustomerTimelineState = {
 
 export type QuoteItem = {
   productId: string;
+  productName?: string;
   quantity: number | "";
   customPrice?: number | "";
   customInstallPrice?: number | "";
@@ -130,6 +131,11 @@ export type Customer = {
   quotePricingMode?: QuotePricingMode;
   isFresh?: boolean;
   stockDeducted?: boolean;
+  stockDeductedAt?: string;
+  materialUsage?: {
+    materials: Array<{ name: string; qty: string; unit: string; isExtra?: boolean }>;
+    overrides: Record<string, string>;
+  };
   maintenanceInstallationIds?: string[];
   maintenanceInstallations?: MaintenanceInstallationSummary[];
   maintenanceOptOut?: boolean;

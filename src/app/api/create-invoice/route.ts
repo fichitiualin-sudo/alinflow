@@ -1,4 +1,5 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
+import { authorizeCustomerRequest, apiErrorResponse, ApiError } from "@/lib/alinflow/server-auth";
 import { cleanQuoteItems, itemDeviceTotal, itemInstallTotal, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 
@@ -66,7 +67,10 @@ function agentKeyEnvName(kind: BillingInvoiceKind) {
   return kind === "device" ? "SZAMLAZZ_DEVICE_AGENT_KEY" : "SZAMLAZZ_LABOR_AGENT_KEY";
 }
 
-function getAgentKey(kind: BillingInvoiceKind) {
+function getAgentKey(kind: BillingInvoiceKind, workspaceId: string) {
+  if (!readEnv("SZAMLAZZ_WORKSPACE_ID").trim() || readEnv("SZAMLAZZ_WORKSPACE_ID").trim() !== workspaceId) {
+    throw new ApiError("Ehhez a munkaterülethez nincs számlakibocsátó beállítva. Ellenőrizd a szerveren a SZAMLAZZ_WORKSPACE_ID értékét.", 403);
+  }
   if (kind === "combined") return readEnv("SZAMLAZZ_COMBINED_AGENT_KEY") || readEnv("SZAMLAZZ_DEVICE_AGENT_KEY");
   return readEnv(agentKeyEnvName(kind));
 }
@@ -339,6 +343,7 @@ async function sendInvoiceXml(xml: string) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as InvoiceRequest;
+    const { workspaceId } = await authorizeCustomerRequest(request, body);
     const kind = body.kind === "device" || body.kind === "labor" || body.kind === "maintenance" || body.kind === "combined" ? body.kind : null;
     const amount = parseAmount(body.amount);
     const customer = body.customer;
@@ -347,7 +352,7 @@ export async function POST(request: Request) {
     if (!amount) return Response.json({ ok: false, error: "Hiányzik az érvényes számlaösszeg." }, { status: 400 });
     if (!customer?.id) return Response.json({ ok: false, error: "Hiányzik az ügyfél." }, { status: 400 });
 
-    const agentKey = getAgentKey(kind);
+    const agentKey = getAgentKey(kind, workspaceId);
     if (!agentKey) {
       const envName = kind === "combined" ? "SZAMLAZZ_COMBINED_AGENT_KEY vagy SZAMLAZZ_DEVICE_AGENT_KEY" : agentKeyEnvName(kind);
       return Response.json({ ok: false, error: `Hiányzik a ${envName} környezeti változó.` }, { status: 500 });
@@ -357,6 +362,6 @@ export async function POST(request: Request) {
     const result = await sendInvoiceXml(buildInvoiceXml({ ...body, kind, amount, customer, sendEmail }, agentKey));
     return Response.json({ ok: true, ...result, emailSent: sendEmail });
   } catch (error: any) {
-    return Response.json({ ok: false, error: error.message || "Számlázási hiba." }, { status: 500 });
+    return apiErrorResponse(error);
   }
 }

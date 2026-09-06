@@ -45,6 +45,7 @@ export function workReportSignatureState(
 export function emptyWorkReport(customer?: Customer): WorkReport {
   return {
     customerId: customer?.id,
+    appointmentId: customer?.activeAppointmentId,
     appointmentType: customer?.appointmentType,
     workDate: customer?.date,
     workTime: customer?.time,

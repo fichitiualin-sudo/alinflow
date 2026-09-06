@@ -10,7 +10,6 @@ export function appointmentIntervalsForDay(customers: Customer[], date: string, 
   const dayCustomers = customers.filter((customer) => {
     if (customer.date !== date || customer.status === "Lemondva") return false;
     if (selectedAppointmentId && customer.activeAppointmentId === selectedAppointmentId) return false;
-    if (!selectedAppointmentId && selectedCustomerId && customer.id === selectedCustomerId) return false;
     return true;
   });
   return dayCustomers.map((customer) => appointmentInterval(customer)).filter(Boolean) as { start: number; end: number }[];
