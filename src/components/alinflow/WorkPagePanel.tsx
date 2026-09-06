@@ -35,7 +35,7 @@ type MaterialItem = {
   isExtra?: boolean;
 };
 
-type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string; relatedClimateSummary?: string; relatedClimateAddress?: string };
+type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; appointmentId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string; relatedClimateSummary?: string; relatedClimateAddress?: string };
 type WorkActionDates = {
   appointmentEmail?: string;
   workReport?: string;
@@ -617,7 +617,7 @@ export function WorkPagePanel({
                     ) : (
                       <label className="block">
                         <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Klíma</span>
-                        <ProductSelect products={products} value={it.productId} onChange={(value) => onUpdateQuoteProduct(i, value)} disabled={!canEditWorkResources} />
+                        <ProductSelect products={products} value={it.productId} snapshotName={it.productName} onChange={(value) => onUpdateQuoteProduct(i, value)} disabled={!canEditWorkResources} />
                       </label>
                     )}
                     <label className="block">
@@ -1357,6 +1357,7 @@ function MaintenanceHistory({
       date: row.reportDate || selected.date,
       time: row.reportTime || selected.time,
       activeWorkReportId: row.reportId,
+      activeAppointmentId: row.appointmentId,
     };
   }
 
@@ -1501,12 +1502,14 @@ function EditField({ label, value, onChange }: { label: string; value: string; o
   );
 }
 
-function ProductSelect({ products, value, onChange, disabled = false }: { products: ClimateProduct[]; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+function ProductSelect({ products, value, snapshotName, onChange, disabled = false }: { products: ClimateProduct[]; value: string; snapshotName?: string; onChange: (value: string) => void; disabled?: boolean }) {
   const sorted = sortProducts(products);
-  const selectValue = sorted.some((product) => product.id === value) ? value : "";
+  const archived = Boolean(value && snapshotName && !sorted.some((product) => product.id === value));
+  const selectValue = archived || sorted.some((product) => product.id === value) ? value : "";
   return (
     <select value={selectValue} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="input disabled:cursor-not-allowed disabled:opacity-60">
       <option value="">Válassz klímát...</option>
+      {archived ? <option value={value}>{snapshotName} (archivált)</option> : null}
       {sorted.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
     </select>
   );

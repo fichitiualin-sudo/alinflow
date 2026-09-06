@@ -1,3 +1,4 @@
+import { authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import {
   defaultWorkspaceSettings,
@@ -169,13 +170,14 @@ function thankYouEmailHtml(customer: Customer, items: QuoteItem[], workspaceSett
 
 export async function POST(request: Request) {
   try {
+    const body = await request.json();
+    await authorizeCustomerRequest(request, body);
     const apiKey = process.env.RESEND_API_KEY;
     const configuredFrom = process.env.EMAIL_FROM;
     const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
 
     if (!apiKey) return Response.json({ error: "Hiányzik a RESEND_API_KEY környezeti változó." }, { status: 500 });
 
-    const body = await request.json();
     const customer: Customer = body.customer || {};
     const items: QuoteItem[] = Array.isArray(body.items) ? body.items : [];
     const workspaceSettings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
@@ -209,6 +211,6 @@ export async function POST(request: Request) {
 
     return Response.json({ ok: true, id: result?.id });
   } catch (error: any) {
-    return Response.json({ error: error?.message || "Ismeretlen köszönő email küldési hiba." }, { status: 500 });
+    return apiErrorResponse(error);
   }
 }

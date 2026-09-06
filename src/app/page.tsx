@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { readAllRows } from "@/lib/alinflow/pagination";
+import { materialAmountForWork, stockMaterialQuantities } from "@/lib/alinflow/materials";
+import { reportBelongsToWork } from "@/lib/alinflow/report-scope";
 
 import type {
   AppointmentType,
@@ -183,6 +186,7 @@ type PageDocumentRow = {
   status: string;
   appointmentType?: AppointmentType;
   reportId?: string;
+  appointmentId?: string;
   purchaseDeclarationId?: string;
   reportDate?: string;
   reportTime?: string;
@@ -199,11 +203,6 @@ type WorkActionDates = {
   maintenanceDone?: string;
   fullClose?: string;
   cancelled?: string;
-};
-
-type StockDeductionSnapshot = {
-  inventoryBefore: InventoryItem[];
-  materialInventoryBefore: any[];
 };
 
 type QuickAppointmentCustomerMode = "new" | "existing";
@@ -407,8 +406,12 @@ export default function Home() {
   const [scheduleAppointmentType,setScheduleAppointmentType] = useState<AppointmentType>("installation");
   const [quickAppointment,setQuickAppointment] = useState<QuickAppointmentDraft | null>(null);
   const [quickAppointmentEmailPrompt,setQuickAppointmentEmailPrompt] = useState<Customer | null>(null);
-  const [materials,setMaterials] = useState(DEFAULT_MATERIALS);
+  const [materials,setMaterials] = useState<NonNullable<Customer["materialUsage"]>["materials"]>(DEFAULT_MATERIALS);
   const [materialOverrides,setMaterialOverrides] = useState<Record<string,string>>({});
+  useEffect(() => {
+    setMaterials((selected.materialUsage?.materials ?? DEFAULT_MATERIALS).map((item) => ({ ...item })));
+    setMaterialOverrides({ ...(selected.materialUsage?.overrides ?? {}) });
+  }, [selected.id, selected.activeAppointmentId]);
   const [inventory,setInventory] = useState<InventoryItem[]>(DEFAULT_INVENTORY);
   const [materialInventory,setMaterialInventory] = useState(MATERIAL_STOCK);
   const [message,setMessageState] = useState("");
@@ -455,6 +458,8 @@ export default function Home() {
   const [documentPreviewDeclarationId,setDocumentPreviewDeclarationId] = useState<string | undefined>(undefined);
   const [quoteIssuedAt,setQuoteIssuedAt] = useState("");
   const [workReportBusy,setWorkReportBusy] = useState(false);
+  const [workReportLoadBlocked,setWorkReportLoadBlocked] = useState(false);
+  const workReportLoadSequence = useRef(0);
   const [workReportEmailBusy,setWorkReportEmailBusy] = useState(false);
   const [editCustomer,setEditCustomer] = useState(false);
   const [allowWorkResourceEdit,setAllowWorkResourceEdit] = useState(false);
@@ -523,6 +528,15 @@ export default function Home() {
   function workspaceQuery<T>(query: T): T {
     const workspaceId = currentWorkspaceId();
     return workspaceId ? (query as any).eq("workspace_id", workspaceId) : query;
+  }
+
+  function readWorkspaceRows(table: string, configure: (query: any) => any = (query) => query, key = "id") {
+    const workspaceId = currentWorkspaceId();
+    return readAllRows<any>((from, to) => {
+      let query = supabase.from(table).select("*");
+      if (workspaceId) query = query.eq("workspace_id", workspaceId);
+      return configure(query).order(key, { ascending: true }).range(from, to);
+    });
   }
 
   function withWorkspace<T extends Record<string, any>>(row: T): T & { workspace_id?: string } {
@@ -1311,12 +1325,7 @@ export default function Home() {
   async function loadProductsFromDb() {
     const fallback = sortProducts(PRODUCTS as any);
     try {
-      const query = workspaceQuery(supabase
-        .from("climate_products")
-        .select("*")
-        .eq("active", true)
-        .order("name", { ascending: true }));
-      const { data, error } = await query;
+      const { data, error } = await readWorkspaceRows("climate_products", (query) => query.eq("active", true).order("name"));
 
       if (error) throw error;
 
@@ -1397,7 +1406,7 @@ export default function Home() {
 
   async function loadInventoryFromDb(productList: ClimateProduct[]) {
     try {
-      const { data, error } = await workspaceQuery(supabase.from("inventory_stock").select("*"));
+      const { data, error } = await readWorkspaceRows("inventory_stock", undefined, "product_id");
       if (error) throw error;
       setInventory(climateInventoryFromRows(data, productList, !currentWorkspaceId()));
     } catch (error: any) {
@@ -1406,7 +1415,7 @@ export default function Home() {
     }
 
     try {
-      const { data, error } = await workspaceQuery(supabase.from("material_inventory").select("*"));
+      const { data, error } = await readWorkspaceRows("material_inventory", undefined, "name");
       if (error) throw error;
       setMaterialInventory(materialInventoryFromRows(data, !currentWorkspaceId()));
     } catch (error: any) {
@@ -1415,21 +1424,21 @@ export default function Home() {
     }
   }
 
-  async function persistClimateStock(productId: string, stock: number) {
-    const { error } = await supabase.from("inventory_stock").upsert(withWorkspace({
-      product_id: productId,
-      stock: Math.max(0, Number(stock || 0)),
-    }), { onConflict: workspaceOnConflict("workspace_id,product_id", "product_id") });
+  async function adjustClimateStock(productId: string, delta: number) {
+    const { data, error } = await supabase.rpc("adjust_climate_stock", {
+      p_workspace_id: currentWorkspaceId(), p_product_id: productId, p_delta: delta,
+    });
     if (error) throw error;
+    return Number(data);
   }
 
   async function persistMaterialStock(item: any) {
-    const { error } = await supabase.from("material_inventory").upsert(withWorkspace({
+    const { error } = await supabase.from("material_inventory").insert(withWorkspace({
       name: item.name,
       stock: Math.max(0, Number(item.stock || 0)),
       unit: item.unit || "db",
       low_at: Number(item.lowAt ?? item.low_at ?? 0) || 0,
-    }), { onConflict: workspaceOnConflict("workspace_id,name", "name") });
+    }));
     if (error) throw error;
   }
 
@@ -1490,13 +1499,13 @@ export default function Home() {
       }
       const { error } = await supabase.from("climate_products").upsert(payload, { onConflict: "id" });
       if (error) throw error;
-      const nextProducts = sortProducts(products.map((item) => item.id === clean.id ? clean : item));
-      setProducts(nextProducts);
-      setActiveProducts(nextProducts);
-      setInventory((prev) => ensureInventoryForProducts(prev, nextProducts));
+      setProducts((prev) => sortProducts([...prev.filter((item) => item.id !== clean.id), clean]));
+      setInventory((prev) => ensureInventoryForProducts(prev, [clean]));
       setProductMessage(`${clean.name} mentve ✅`);
+      return true;
     } catch (error: any) {
       setProductMessage(`Klíma mentési hiba: ${error.message}. Futtasd a CLIMATE_PRODUCTS_SQL.sql fájlt a Supabase-ben.`);
+      return false;
     } finally {
       setProductBusy(false);
     }
@@ -1623,9 +1632,7 @@ export default function Home() {
     }
     if (currentWorkspaceId()) id = `${baseId}-${crypto.randomUUID().slice(0, 8)}`;
     const product = normalizeProduct({ id, name, price: devicePrice + installPrice, installPrice, active: true });
-    setProducts((prev) => sortProducts([...prev, product]));
-    setInventory((prev) => ensureInventoryForProducts(prev, [product]));
-    await saveClimateProduct(product);
+    if (!await saveClimateProduct(product)) return;
     setNewProductName("");
     setNewProductPrice("");
     setNewProductInstallPrice(String(DEFAULT_INSTALL_PRICE));
@@ -1750,16 +1757,14 @@ export default function Home() {
 
     try {
       const [workReportResult, documentResult, checklistResult, purchaseDeclarationResult] = await Promise.all([
-        workspaceQuery(supabase.from("work_reports").select("*").in("customer_id", idsToLoad).order("created_at", { ascending: false })),
-        workspaceQuery(supabase.from("documents").select("*").in("customer_id", idsToLoad).order("created_at", { ascending: false })),
-        workspaceQuery(supabase.from("work_checklists").select("*").in("customer_id", idsToLoad)),
-        workspaceQuery(supabase.from("purchase_declarations").select("*").in("customer_id", idsToLoad).order("created_at", { ascending: false })),
+        readWorkspaceRows("work_reports", (query) => query.in("customer_id", idsToLoad).order("created_at", { ascending: false })),
+        readWorkspaceRows("documents", (query) => query.in("customer_id", idsToLoad).order("created_at", { ascending: false })),
+        readWorkspaceRows("work_checklists", (query) => query.in("customer_id", idsToLoad).order("customer_id"), "appointment_id"),
+        readWorkspaceRows("purchase_declarations", (query) => query.in("customer_id", idsToLoad).order("created_at", { ascending: false })),
       ]);
 
-      if (workReportResult.error) console.warn("work_reports részletes betöltési hiba", workReportResult.error.message);
-      if (documentResult.error) console.warn("documents részletes betöltési hiba", documentResult.error.message);
-      if (checklistResult.error) console.warn("work_checklists részletes betöltési hiba", checklistResult.error.message);
-      if (purchaseDeclarationResult.error && !isMissingSellerTableError(purchaseDeclarationResult.error)) console.warn("purchase_declarations részletes betöltési hiba", purchaseDeclarationResult.error.message);
+      const failed = [workReportResult, documentResult, checklistResult, purchaseDeclarationResult].find((result) => result.error);
+      if (failed) throw failed.error;
 
       const idSet = new Set(idsToLoad);
       const loadedReportsByKey: Record<string, WorkReport> = {};
@@ -1850,6 +1855,7 @@ export default function Home() {
       replaceLoadedDetailIds(idsToLoad);
     } catch (error: any) {
       console.warn("Részletes ügyféladatok betöltési hiba", error?.message || error);
+      setMessage(`Az ügyfél dokumentumai nem tölthetők be: ${error?.message || error}. Próbáld újra a frissítést.`);
       const failedPatch = Object.fromEntries(idsToLoad.map((id) => [id, false]));
       detailDataLoadingRef.current = { ...detailDataLoadingRef.current, ...failedPatch };
       setDetailDataLoadingByCustomer((prev) => ({ ...prev, ...failedPatch }));
@@ -1862,22 +1868,12 @@ export default function Home() {
   }
 
   async function fetchAllExportRows(tableName: string, orderColumn: string | null = "created_at") {
-    const pageSize = 1000;
-    const rows: any[] = [];
-
-    for (let from = 0; ; from += pageSize) {
-      let query: any = workspaceQuery(supabase.from(tableName).select("*"));
-      if (orderColumn) query = query.order(orderColumn, { ascending: false });
-
-      const { data, error } = await query.range(from, from + pageSize - 1);
-      if (error) throw new Error(`${tableName}: ${error.message}`);
-
-      const pageRows = data || [];
-      rows.push(...pageRows);
-      if (pageRows.length < pageSize) break;
-    }
-
-    return rows;
+    const { data, error } = await readWorkspaceRows(tableName, (query) => {
+      if (tableName === "work_checklists") return query.order("customer_id");
+      return orderColumn ? query.order(orderColumn, { ascending: false }) : query;
+    }, tableName === "work_checklists" ? "appointment_id" : "id");
+    if (error) throw new Error(`${tableName}: ${error.message}`);
+    return data;
   }
 
   async function fetchOptionalExportRows(tableName: string, orderColumn: string | null = "created_at") {
@@ -2506,12 +2502,12 @@ export default function Home() {
       const loadedProductsPromise = loadProductsFromDb();
       const loadedSellersPromise = loadSellerCompaniesFromDb();
       const dataPromise = Promise.all([
-        workspaceQuery(supabase.from("customers").select("*").order("created_at", { ascending: false })),
-        workspaceQuery(supabase.from("quotes").select("*").order("created_at", { ascending: false })),
-        workspaceQuery(supabase.from("quote_items").select("*")),
-        workspaceQuery(supabase.from("appointments").select("*").order("created_at", { ascending: false })),
-        workspaceQuery(supabase.from("jobs").select("*").order("created_at", { ascending: false })),
-        workspaceQuery(supabase.from("maintenance_appointment_items").select("*")),
+        readWorkspaceRows("customers", (query) => query.order("created_at", { ascending: false })),
+        readWorkspaceRows("quotes", (query) => query.order("created_at", { ascending: false })),
+        readWorkspaceRows("quote_items"),
+        readWorkspaceRows("appointments", (query) => query.order("created_at", { ascending: false })),
+        readWorkspaceRows("jobs", (query) => query.order("created_at", { ascending: false })),
+        readWorkspaceRows("maintenance_appointment_items"),
       ]);
 
       const loadedProducts = await loadedProductsPromise;
@@ -2527,7 +2523,8 @@ export default function Home() {
         maintenanceLinkResult,
       ] = await dataPromise;
 
-      const { data: customerRows, error: customerError } = customerResult;
+      const { data: customerRows } = customerResult;
+      const customerError = [customerResult, quoteResult, itemResult, appointmentResult, jobResult, maintenanceLinkResult].find((result) => result.error)?.error;
 
       if (customerError) {
         setMessage(`Nem sikerült betölteni az ügyfeleket: ${customerError.message}`);
@@ -2696,8 +2693,10 @@ export default function Home() {
         productId: effectiveQuoteItems[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
         stockDeducted: appointment?.id
-          ? stockDeductedFromWorkStatus(appointment.status)
+          ? Boolean(appointment.stock_deducted_at) || stockDeductedFromWorkStatus(appointment.status)
           : Boolean(row.stock_deducted) || stockDeductedFromWorkStatus(row.status),
+        stockDeductedAt: appointment?.stock_deducted_at || undefined,
+        materialUsage: appointment?.material_usage || undefined,
         maintenanceInstallationIds: loadedAppointmentType === "maintenance" ? maintenanceInstallations.map((installation) => installation.appointmentId) : undefined,
         maintenanceInstallations: loadedAppointmentType === "maintenance" ? maintenanceInstallations : undefined,
         maintenanceOptOut: Boolean(appointment?.maintenance_opt_out),
@@ -2791,7 +2790,7 @@ export default function Home() {
   };
 
   async function saveAppointmentWithJobMirror(customer: Customer, quoteId?: string): Promise<PersistCustomerResult> {
-    const { data, error } = await supabase.rpc("save_appointment_with_job_mirror", {
+    const { data, error } = await supabase.rpc("save_appointment_with_resources", {
       p_appointment_id: customer.activeAppointmentId || null,
       p_customer_id: customer.id,
       p_quote_id: quoteId || null,
@@ -2804,6 +2803,7 @@ export default function Home() {
       p_notes: customer.notes || customer.need || null,
       p_created_by: user?.id || null,
       p_workspace_id: currentWorkspaceId(),
+      p_material_usage: customer.materialUsage || null,
     });
 
     if (error) throw error;
@@ -2870,78 +2870,43 @@ export default function Home() {
     const cleanedQuoteItems = cleanQuoteItems(customer.quoteItems || []);
     let quoteId = customer.activeQuoteId;
     if (quoteId && customer.activeAppointmentId) {
-      const { data: quoteScope } = await workspaceQuery(supabase
+      const { data: quoteScope, error } = await workspaceQuery(supabase
         .from("quotes")
         .select("appointment_id")
         .eq("id", quoteId))
         .maybeSingle();
+      if (error) throw error;
       if (quoteScope?.appointment_id && quoteScope.appointment_id !== customer.activeAppointmentId) {
         quoteId = undefined;
       }
     }
     if (!quoteId && customer.activeAppointmentId) {
-      const { data: appointmentQuote } = await workspaceQuery(supabase
+      const { data: appointmentQuote, error } = await workspaceQuery(supabase
         .from("appointments")
         .select("quote_id")
         .eq("id", customer.activeAppointmentId))
         .maybeSingle();
+      if (error) throw error;
       quoteId = appointmentQuote?.quote_id || undefined;
     }
     const shouldPersistQuote = options.persistQuote ?? Boolean(quoteId || cleanedQuoteItems.length);
-    if (shouldPersistQuote && !quoteId && !customer.date) {
-      const { data: existingQuotes } = await workspaceQuery(supabase
-        .from("quotes")
-        .select("id")
-        .eq("customer_id", customer.id))
-        .limit(1);
-      quoteId = existingQuotes?.[0]?.id as string | undefined;
-    }
-
     if (shouldPersistQuote) {
-      const quotePayload = withWorkspace({
-        customer_id: customer.id,
-        appointment_id: customer.activeAppointmentId || null,
-        status: normalizeStatus(customer.status || "Ajánlat elküldve"),
-        total_amount: total(cleanedQuoteItems),
-        notes: quotePricingModeToNotes(customer.quotePricingMode),
-        created_by: user.id,
+      const { data, error } = await supabase.rpc("save_quote_with_items", {
+        p_workspace_id: currentWorkspaceId(),
+        p_quote_id: quoteId || null,
+        p_customer_id: customer.id,
+        p_appointment_id: customer.activeAppointmentId || null,
+        p_status: normalizeStatus(customer.status || "Ajánlat elküldve"),
+        p_notes: quotePricingModeToNotes(customer.quotePricingMode),
+        p_items: cleanedQuoteItems.map((item) => quoteItemToRow(item, quoteId || "")),
       });
-
-      if (quoteId) {
-        const { error } = await workspaceQuery(supabase.from("quotes").update(quotePayload).eq("id", quoteId));
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.from("quotes").insert(quotePayload).select("id").single();
-        if (error) throw error;
-        quoteId = data.id;
-      }
-
-      if (quoteId) {
-        await workspaceQuery(supabase.from("quote_items").delete().eq("quote_id", quoteId));
-        const rowsToInsert = cleanedQuoteItems;
-        if (rowsToInsert.length) {
-          const { error } = await supabase.from("quote_items").insert(rowsToInsert.map((item) => withWorkspace(quoteItemToRow(item, quoteId as string))));
-          if (error) throw error;
-        }
-      }
+      if (error) throw error;
+      if (typeof data !== "string" || !data) throw new Error("Az ajánlat mentése nem adott vissza azonosítót.");
+      quoteId = data;
     }
 
     if (customer.date) {
       const result = await saveAppointmentWithJobMirror(customer, quoteId);
-      if (result.appointmentId && quoteId) {
-        const [quoteLinkResult, appointmentLinkResult] = await Promise.all([
-          workspaceQuery(supabase
-            .from("quotes")
-            .update({ appointment_id: result.appointmentId })
-            .eq("id", quoteId)),
-          workspaceQuery(supabase
-            .from("appointments")
-            .update({ quote_id: quoteId })
-            .eq("id", result.appointmentId)),
-        ]);
-        if (quoteLinkResult.error) throw quoteLinkResult.error;
-        if (appointmentLinkResult.error) throw appointmentLinkResult.error;
-      }
       return { ...result, quoteId };
     }
 
@@ -3240,6 +3205,8 @@ export default function Home() {
       activeWorkReportId: undefined,
       status: "Időpont foglalva",
       stockDeducted: false,
+      stockDeductedAt: undefined,
+      materialUsage: undefined,
       quoteItems: quoteItemsForAppointment,
       productId: quoteItemsForAppointment[0]?.productId || undefined,
       maintenanceInstallationIds: appointmentType === "maintenance" ? quickAppointment.maintenanceInstallationIds : undefined,
@@ -3310,6 +3277,11 @@ export default function Home() {
 
   function startInstallationScheduleFromQuote() {
     updateCustomerStatus("Ajánlat elküldve");
+    if (!isInstallationAppointment(selected.appointmentType)) {
+      setSelected((prev) => ({ ...prev, appointmentType: "installation", date: undefined, time: undefined,
+        activeAppointmentId: undefined, activeQuoteId: undefined, activeWorkReportId: undefined,
+        stockDeducted: false, stockDeductedAt: undefined, materialUsage: undefined }));
+    }
     setScheduleAppointmentType("installation");
     setScheduleDate(todayIso());
     setScheduleTime((previous) => {
@@ -3321,54 +3293,19 @@ export default function Home() {
 
 
   async function persistWorkChecklist(customer: Customer, checklist: WorkChecklistState) {
-    if (!customer.id || !user) return;
-
-    const basePayload = withWorkspace({
-      customer_id: customer.id,
-      appointment_id: customer.activeAppointmentId || null,
-      worksheet: checklist.worksheet,
-      signature: checklist.signature,
-      purchase_declaration: checklist.purchaseDeclaration,
-      alin_invoice: checklist.alinInvoice,
-      amova_invoice: checklist.amovaInvoice,
-      nkvh: checklist.nkvh,
-      docs_sent: checklist.docsSent,
-      updated_by: user.id,
+    if (!customer.id || !user) throw new Error("A mentéshez jelentkezz be és válassz ügyfelet.");
+    if (!customer.activeAppointmentId) throw new Error("Az ellenőrzőlistához mentett időpont szükséges.");
+    const payload = withWorkspace({
+      customer_id: customer.id, appointment_id: customer.activeAppointmentId,
+      worksheet: checklist.worksheet, signature: checklist.signature,
+      purchase_declaration: checklist.purchaseDeclaration, alin_invoice: checklist.alinInvoice,
+      amova_invoice: checklist.amovaInvoice, nkvh: checklist.nkvh, docs_sent: checklist.docsSent,
+      updated_by: user.id, completed_at: checklist.completedAt || {},
     });
-    const payload = {
-      ...basePayload,
-      completed_at: checklist.completedAt || {},
-    };
-
-    const { error } = await supabase
-      .from("work_checklists")
-      .upsert(payload, { onConflict: customer.activeAppointmentId ? workspaceOnConflict("workspace_id,customer_id,appointment_id", "customer_id,appointment_id") : "customer_id" });
-
-    if (error && isMissingChecklistCompletedAtColumnError(error)) {
-      const { appointment_id, completed_at, ...basePayloadWithoutScopedColumns } = basePayload as any;
-      const { error: retryError } = await supabase
-        .from("work_checklists")
-        .upsert(basePayloadWithoutScopedColumns, { onConflict: "customer_id" });
-      if (retryError) {
-        console.warn("work_checklists mentési hiba", retryError.message);
-        setMessage("A lezárási ellenőrzőlista nem mentődött. Futtasd a WORK_CHECKLIST_SQL.sql fájlt a Supabase-ben.");
-      }
-      return;
-    }
-
-    if (error && customer.activeAppointmentId) {
-      const { appointment_id, completed_at, ...legacyPayload } = payload as any;
-      const { error: retryError } = await supabase
-        .from("work_checklists")
-        .upsert(legacyPayload, { onConflict: "customer_id" });
-      if (retryError) console.warn("work_checklists mentĂ©si hiba", retryError.message);
-      return;
-    }
-
-    if (error) {
-      console.warn("work_checklists mentési hiba", error.message);
-      setMessage("A lezárási ellenőrzőlista nem mentődött. Futtasd a WORK_CHECKLIST_SQL.sql fájlt a Supabase-ben.");
-    }
+    const { error } = await supabase.from("work_checklists").upsert(payload, {
+      onConflict: workspaceOnConflict("workspace_id,customer_id,appointment_id", "customer_id,appointment_id"),
+    });
+    if (error) throw new Error(`Az ellenőrzőlista nem mentődött: ${error.message}`);
   }
 
   async function updateChecklistForCustomer(customer: Customer, patch: Partial<WorkChecklistState>) {
@@ -3381,9 +3318,9 @@ export default function Home() {
       else delete completedAt[key];
     });
     const next: WorkChecklistState = { ...base, ...patch, completedAt };
+    await persistWorkChecklist(customer, next);
     setWorkChecklist(next);
     setWorkChecklistsByCustomer((prev) => ({ ...prev, [workScopeKey(customer)]: next }));
-    await persistWorkChecklist(customer, next);
     return next;
   }
 
@@ -3394,17 +3331,10 @@ export default function Home() {
       return;
     }
 
-    const nextValue = !base[key];
-    const completedAt: WorkChecklistCompletedAt = { ...(base.completedAt || {}) };
-    if (nextValue) completedAt[key] = completedAt[key] || new Date().toISOString();
-    else delete completedAt[key];
-
-    const next: WorkChecklistState = { ...base, [key]: nextValue, completedAt };
-    setWorkChecklist(next);
-
-    if (selected.id) {
-      setWorkChecklistsByCustomer((prev) => ({ ...prev, [workScopeKey(selected)]: next }));
-      await persistWorkChecklist(selected, next);
+    try {
+      await updateChecklistForCustomer(selected, { [key]: !base[key] });
+    } catch (error: any) {
+      setMessage(error.message);
     }
   }
 
@@ -3429,14 +3359,17 @@ export default function Home() {
 
   async function markManualInvoice(kind: BillingInvoiceKind) {
     if (!selected.id) return;
+    try {
+      if (kind === "combined") {
+        await updateChecklistForCustomer(selected, { amovaInvoice: true, alinInvoice: true });
+      } else {
+        await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
+      }
 
-    if (kind === "combined") {
-      await updateChecklistForCustomer(selected, { amovaInvoice: true, alinInvoice: true });
-    } else {
-      await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
+      setMessage("Kézi számlázás készre jelölve.");
+    } catch (error: any) {
+      setMessage(error.message);
     }
-
-    setMessage("Kézi számlázás készre jelölve.");
   }
 
   async function createInvoice(kind: BillingInvoiceKind, amountValue: string, paymentMethod: BillingPaymentMethod, sendEmail = false) {
@@ -3461,7 +3394,7 @@ export default function Home() {
     setMessage(`${label} számla készítése folyamatban...`);
 
     try {
-      const response = await fetch("/api/create-invoice", {
+      const response = await authenticatedFetch("/api/create-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3688,6 +3621,7 @@ export default function Home() {
     setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {
       ...it,
       productId,
+      productName: isKnownProductId(productId) ? prod(productId).name : undefined,
       isManual: !isKnownProductId(productId),
       customName: isKnownProductId(productId) ? undefined : it.customName,
       customPrice: isKnownProductId(productId) ? prod(productId).price : (it.customPrice ?? 0),
@@ -3699,7 +3633,8 @@ export default function Home() {
   }
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
-    const wasExistingSchedule = Boolean(selected.date);
+    const typeChanged = normalizeAppointmentType(selected.appointmentType) !== normalizedScheduleAppointmentType;
+    const wasExistingSchedule = Boolean(selected.date) && !typeChanged;
     const slotToValidate = normalizeAppointmentTimeInput(scheduleTime);
     if (!slotToValidate) {
       setMessage("Adj meg érvényes időpontot, például 10:00 vagy 13:30.");
@@ -3711,7 +3646,7 @@ export default function Home() {
       appointmentType: normalizedScheduleAppointmentType,
       items: quoteItems,
       selectedCustomerId: selected.id,
-      selectedAppointmentId: selected.activeAppointmentId,
+      selectedAppointmentId: typeChanged ? undefined : selected.activeAppointmentId,
       time: slotToValidate,
     });
     if (!slotIsAvailable) {
@@ -3737,7 +3672,13 @@ export default function Home() {
       date:scheduleDate,
       time:slotToValidate,
       appointmentType: normalizedScheduleAppointmentType,
-      status:"Időpont foglalva",
+      activeAppointmentId: typeChanged ? undefined : selected.activeAppointmentId,
+      activeQuoteId: typeChanged ? undefined : selected.activeQuoteId,
+      activeWorkReportId: typeChanged ? undefined : selected.activeWorkReportId,
+      stockDeducted: typeChanged ? false : selected.stockDeducted,
+      stockDeductedAt: typeChanged ? undefined : selected.stockDeductedAt,
+      materialUsage: typeChanged ? undefined : selected.materialUsage,
+      status: !typeChanged && selected.stockDeducted ? selected.status : "Időpont foglalva",
       quoteItems: scheduledQuoteItems,
       productId: scheduledQuoteItems[0]?.productId || undefined,
       maintenanceInstallationIds,
@@ -3791,6 +3732,7 @@ export default function Home() {
     const updated: Customer = {
       ...selected,
       quoteItems: updatedQuoteItems,
+      materialUsage: { materials, overrides: materialOverrides },
       productId: updatedQuoteItems[0]?.productId || selected.productId,
       time: updatedTime,
       status: selected.status || "Időpont foglalva",
@@ -3799,6 +3741,7 @@ export default function Home() {
     };
 
     try {
+      stockMaterialQuantities(updatedQuoteItems, updated.materialUsage);
       const persisted = await persistCustomerToDb(updated);
       const savedUpdated: Customer = {
         ...updated,
@@ -3861,51 +3804,33 @@ export default function Home() {
     return "";
   }
 
-  async function deductStockIfNeeded(): Promise<StockDeductionSnapshot | undefined> {
-    if (selected.stockDeducted) return undefined;
-
-    const changedInventory: InventoryItem[] = [];
-    const nextInventory = inventory.map(item => {
-      const used = quoteItems
-        .filter(q => q.productId === item.productId)
-        .reduce((sum, q) => sum + itemQuantity(q), 0);
-      if (used <= 0) return item;
-      const nextItem = { ...item, stock: Math.max(0, item.stock - used) };
-      changedInventory.push(nextItem);
-      return nextItem;
+  async function completeInstallation(status: Customer["status"]): Promise<Customer> {
+    const materialUsage = { materials, overrides: materialOverrides };
+    const quantities = stockMaterialQuantities(quoteItems, materialUsage);
+    const draft = { ...selected, quoteItems: cleanQuoteItems(quoteItems), materialUsage };
+    const persisted = await persistCustomerToDb(draft);
+    const appointmentId = persisted?.appointmentId || draft.activeAppointmentId;
+    if (!appointmentId) throw new Error("A lezáráshoz mentett időpont szükséges.");
+    const { data, error } = await supabase.rpc("complete_installation", {
+      p_appointment_id: appointmentId,
+      p_workspace_id: currentWorkspaceId(),
+      p_status: status,
+      p_material_usage: materialUsage,
+      p_material_quantities: quantities,
     });
-
-    const changedMaterials: any[] = [];
-    const nextMaterials = materialInventory.map((item: any) => {
-      const used = usedMaterialAmountForStock(item.name);
-      if (used <= 0) return item;
-      const nextItem = { ...item, stock: Math.max(0, Math.round((item.stock - used) * 10) / 10) };
-      changedMaterials.push(nextItem);
-      return nextItem;
-    });
-
-    await Promise.all([
-      ...changedInventory.map((item) => persistClimateStock(item.productId, item.stock)),
-      ...changedMaterials.map((item) => persistMaterialStock(item)),
-    ]);
-
-    setInventory(nextInventory);
-    setMaterialInventory(nextMaterials);
-    return {
-      inventoryBefore: inventory,
-      materialInventoryBefore: materialInventory,
-    };
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result?.stock_deducted_at) throw new Error("A lezárás nem igazolta a készletlevonást. Frissítsd az adatokat.");
+    const saved: Customer = { ...draft, activeAppointmentId: appointmentId,
+      activeQuoteId: persisted?.quoteId || draft.activeQuoteId,
+      status: result.status, stockDeducted: true, stockDeductedAt: result.stock_deducted_at,
+      isFresh: false, updatedAt: new Date().toISOString() };
+    setSelected(saved);
+    promoteCustomerWork(saved);
+    await loadInventoryFromDb(products);
+    return saved;
   }
 
-  async function restoreStockDeduction(snapshot?: StockDeductionSnapshot) {
-    if (!snapshot) return;
-    await Promise.all([
-      ...snapshot.inventoryBefore.map((item) => persistClimateStock(item.productId, item.stock)),
-      ...snapshot.materialInventoryBefore.map((item: any) => persistMaterialStock(item)),
-    ]);
-    setInventory(snapshot.inventoryBefore);
-    setMaterialInventory(snapshot.materialInventoryBefore);
-  }
 
   async function markInstallationDone() {
     const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
@@ -3983,25 +3908,12 @@ export default function Home() {
       updatedAt: changedAt,
     };
 
-    let stockRollback: StockDeductionSnapshot | undefined;
     try {
-      if (isInstallation) stockRollback = await deductStockIfNeeded();
-      await persistCustomerToDb(updated);
-      await logDocument(updated, "installation_done", `${appointmentTypeLabel(updated.appointmentType)} kész – admin folyamatban`, "Kész", changedAt);
-      setSelected(updated);
-      promoteCustomerWork(updated);
+      await completeInstallation(updated.status);
       setAllowWorkResourceEdit(false);
       setMessage(`${appointmentTypeLabel(updated.appointmentType)} kész ✅ Admin még folyamatban.`);
       replaceView("work");
     } catch (error: any) {
-      if (stockRollback) {
-        try {
-          await restoreStockDeduction(stockRollback);
-        } catch (restoreError: any) {
-          setMessage(`Mentési hiba: ${error.message}. A készlet visszaállítása sem sikerült: ${restoreError.message}`);
-          return;
-        }
-      }
       setMessage(`Mentési hiba: ${error.message}`);
     }
   }
@@ -4029,25 +3941,19 @@ export default function Home() {
       updatedAt: changedAt,
     };
 
-    let stockRollback: StockDeductionSnapshot | undefined;
     try {
-      if (isInstallation) stockRollback = await deductStockIfNeeded();
-      await persistCustomerToDb(updated);
-      await logDocument(updated, "work_closed", "Teljes lezárás", "Lezárva", changedAt);
-      setSelected(updated);
-      promoteCustomerWork(updated);
+      if (isInstallation) {
+        await completeInstallation(updated.status);
+      } else {
+        await persistCustomerToDb(updated);
+        await logDocument(updated, "work_closed", "Teljes lezárás", "Lezárva", changedAt);
+        setSelected(updated);
+        promoteCustomerWork(updated);
+      }
       setAllowWorkResourceEdit(false);
       setMessage("Munka teljesen lezárva ✅ A naptárban sötétzöld lezárt munkaként megmarad.");
       returnToLastMenu();
     } catch (error: any) {
-      if (stockRollback) {
-        try {
-          await restoreStockDeduction(stockRollback);
-        } catch (restoreError: any) {
-          setMessage(`Mentési hiba: ${error.message}. A készlet visszaállítása sem sikerült: ${restoreError.message}`);
-          return;
-        }
-      }
       setMessage(`Mentési hiba: ${error.message}`);
     }
   }
@@ -4115,7 +4021,7 @@ export default function Home() {
 
     try {
       await persistCustomerToDb(updated);
-      const cancelledUpdated: Customer = { ...updated, activeAppointmentId: undefined };
+      const cancelledUpdated: Customer = updated;
       setSelected(cancelledUpdated);
       promoteCustomerWork(cancelledUpdated);
       setMessage("Időpont törölve / lemondva ✅ A foglalás felszabadult.");
@@ -4168,6 +4074,8 @@ export default function Home() {
       activeWorkReportId: undefined,
       status: "Időpont foglalva",
       stockDeducted: false,
+      stockDeductedAt: undefined,
+      materialUsage: undefined,
       maintenanceInstallationIds: installationIds,
       maintenanceInstallations,
       isFresh: true,
@@ -4218,17 +4126,9 @@ export default function Home() {
 
   async function addStock(productId: string, amount: number) {
     if (!Number.isFinite(amount) || amount === 0) return;
-    const nextStock = Math.max(0, stockOf(productId) + amount);
-    setInventory((prev) => {
-      const exists = prev.some((item) => item.productId === productId);
-      if (exists) {
-        return prev.map((item) => item.productId === productId ? { ...item, stock: nextStock } : item);
-      }
-      return [...prev, { productId, stock: nextStock }];
-    });
-
     try {
-      await persistClimateStock(productId, nextStock);
+      const nextStock = await adjustClimateStock(productId, amount);
+      setInventory((prev) => [...prev.filter((item) => item.productId !== productId), { productId, stock: nextStock }]);
       setMessage("Klíma készlet mentve ✅");
     } catch (error: any) {
       setMessage(`Klíma készlet mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
@@ -4256,15 +4156,14 @@ export default function Home() {
 
     return Math.round(activeJobs.reduce((sum: number, customer: any) => {
       const items = customer.quoteItems ?? [];
-      const climateCount = Math.max(1, items.reduce((s: number, item: any) => s + itemQuantity(item), 0));
 
       // Ha az aktuálisan megnyitott munkán módosítod az anyagmennyiséget,
       // akkor a raktár lefoglalás és a készlethiány figyelmeztetés már ezt vegye figyelembe.
-      if (customer.id === selected.id) {
+      if (workScopeKey(customer) === workScopeKey(selected)) {
         return sum + usedMaterialAmountForStock(materialName);
       }
 
-      return sum + (baseMaterialAmountPerClimate(materialName) * climateCount);
+      return sum + materialAmountForWork(materialName, items, customer.materialUsage);
     }, 0) * 10) / 10;
   }
 
@@ -4272,11 +4171,12 @@ export default function Home() {
     if (!Number.isFinite(amount) || amount === 0) return;
     const current = materialInventory.find((item: any) => item.name === materialName);
     if (!current) return;
-    const nextItem = { ...current, stock: Math.max(0, Math.round((Number(current.stock || 0) + amount) * 10) / 10) };
-    setMaterialInventory((prev: any[]) => prev.map((item: any) => item.name === materialName ? nextItem : item));
-
     try {
-      await persistMaterialStock(nextItem);
+      const { data, error } = await supabase.rpc("adjust_material_stock", {
+        p_workspace_id: currentWorkspaceId(), p_name: materialName, p_delta: amount,
+      });
+      if (error) throw error;
+      setMaterialInventory((prev: any[]) => prev.map((item: any) => item.name === materialName ? { ...item, stock: Number(data) } : item));
       setMessage("Anyagkészlet mentve ✅");
     } catch (error: any) {
       setMessage(`Anyagkészlet mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
@@ -4350,16 +4250,7 @@ export default function Home() {
   }
 
   function usedMaterialAmountForStock(itemName: string) {
-    const climateCount = climateCountForMaterials();
-    const selectedConsole = materials.find((m:any) => m.name === "Konzol")?.qty ?? "450-es konzol";
-
-    if (itemName === "450-es konzol") return selectedConsole === "450-es konzol" ? climateCount : 0;
-    if (itemName === "550-es konzol") return selectedConsole === "550-es konzol" ? climateCount : 0;
-
-    const material = materials.find((m:any) => m.name === itemName);
-    if (!material) return 0;
-
-    return toNumber(finalMaterialQty(material));
+    return materialAmountForWork(itemName, quoteItems, { materials, overrides: materialOverrides });
   }
 
 
@@ -4451,7 +4342,7 @@ export default function Home() {
         onUpdateProductName={updateProductName}
         onUpdateProductDevicePrice={updateProductDevicePrice}
         onUpdateProductInstallPrice={updateProductInstallPrice}
-        onSaveClimateProduct={saveClimateProduct}
+        onSaveClimateProduct={async (product) => { await saveClimateProduct(product); }}
         onDeleteClimateProduct={deleteClimateProduct}
         stockOf={stockOf}
         reservedForProduct={reservedForProduct}
@@ -4478,6 +4369,16 @@ export default function Home() {
   }
 
 
+  async function authenticatedFetch(url: string, init: RequestInit) {
+    const { data, error } = await supabase.auth.getSession();
+    const workspaceId = currentWorkspaceId();
+    if (error || !data.session?.access_token || !workspaceId) throw new Error("A művelethez jelentkezz be és válassz munkaterületet.");
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${data.session.access_token}`);
+    return fetch(url, { ...init, headers,
+      body: JSON.stringify({ ...JSON.parse(String(init.body || "{}")), workspaceId }) });
+  }
+
   function quotePayload(customer: Customer = selected, items: QuoteItem[] = quoteItems, issuedAt = quoteIssuedAt || new Date().toISOString()) {
     const quoteTotal = total(items);
     const quoteCount = qty(items);
@@ -4487,6 +4388,7 @@ export default function Home() {
     return {
       customer: {
         id: customer.id,
+        activeAppointmentId: customer.activeAppointmentId,
         name: customer.name,
         city: customer.city,
         postalCode: customer.postalCode,
@@ -4535,11 +4437,16 @@ export default function Home() {
     try {
       const issuedAt = view === "quotePreview" && quoteIssuedAt ? quoteIssuedAt : new Date().toISOString();
       setQuoteIssuedAt(issuedAt);
+      const draft = { ...selected, quoteItems };
+      const persisted = await persistCustomerToDb(draft);
+      const savedCustomer = { ...draft, activeQuoteId: persisted?.quoteId || draft.activeQuoteId,
+        activeAppointmentId: persisted?.appointmentId || draft.activeAppointmentId };
+      setSelected(savedCustomer);
 
-      const response = await fetch("/api/send-quote", {
+      const response = await authenticatedFetch("/api/send-quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(quotePayload(selected, quoteItems, issuedAt)),
+        body: JSON.stringify(quotePayload(savedCustomer, quoteItems, issuedAt)),
       });
       const result = await response.json().catch(() => ({}));
 
@@ -4549,7 +4456,7 @@ export default function Home() {
 
       const quoteSentAt = new Date().toISOString();
       const updated: Customer = {
-        ...selected,
+        ...savedCustomer,
         status: "Ajánlat elküldve",
         quoteItems,
         quotePricingMode: selected.quotePricingMode || "bundle",
@@ -4582,7 +4489,7 @@ export default function Home() {
     try {
       const appointmentType = normalizeAppointmentType(customer.appointmentType);
       const appointmentQuoteItems = customer.quoteItems || quoteItems;
-      const response = await fetch("/api/send-appointment", {
+      const response = await authenticatedFetch("/api/send-appointment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(quotePayload(customer, appointmentQuoteItems)),
@@ -4644,7 +4551,7 @@ export default function Home() {
     setMessage("Köszönő email küldése folyamatban...");
 
     try {
-      const response = await fetch("/api/send-thank-you", {
+      const response = await authenticatedFetch("/api/send-thank-you", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(quotePayload(targetCustomer, targetCustomer.quoteItems || quoteItems)),
@@ -4675,6 +4582,7 @@ export default function Home() {
     return {
       customer: {
         id: customer.id,
+        activeAppointmentId: customer.activeAppointmentId,
         name: customer.name,
         city: customer.city,
         postalCode: customer.postalCode,
@@ -4933,50 +4841,11 @@ export default function Home() {
 
   function savedReportFor(customer: Customer = selected, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
     if (!customer.id) return undefined;
-    const normalizedType = normalizeAppointmentType(type);
-
-    if (normalizedType === "maintenance") {
-      const reports = maintenanceReportsFor(customer);
-      if (customer.activeWorkReportId) {
-        const exact = reports.find((report) => report.id === customer.activeWorkReportId);
-        if (exact) return exact;
-      }
-      if (workReport.customerId === customer.id && normalizeAppointmentType(workReport.appointmentType) === "maintenance") {
-        if (!customer.activeWorkReportId || workReport.id === customer.activeWorkReportId || sameReportAppointment(workReport, customer)) return workReport;
-      }
-      return currentMaintenanceReportFor(customer);
-    }
-
-    if (customer.activeAppointmentId) {
-      const exact = Object.values(workReportsByCustomer).find((report) => (
-        report.customerId === customer.id
-        && report.appointmentId === customer.activeAppointmentId
-        && normalizeAppointmentType(report.appointmentType) === normalizedType
-      ));
-      if (exact) return exact;
-
-      if (
-        workReport.customerId === customer.id
-        && workReport.appointmentId === customer.activeAppointmentId
-        && normalizeAppointmentType(workReport.appointmentType) === normalizedType
-      ) return workReport;
-
-      const dateMatchedLegacyReport = Object.values(workReportsByCustomer).find((report) => (
-        report.customerId === customer.id
-        && !report.appointmentId
-        && normalizeAppointmentType(report.appointmentType) === normalizedType
-        && sameReportAppointment(report, customer)
-      ));
-      return dateMatchedLegacyReport;
-    }
-
-    if (
-      workReport.customerId === customer.id
-      && normalizeAppointmentType(workReport.appointmentType) === normalizedType
-      && (!customer.activeAppointmentId || !workReport.appointmentId || workReport.appointmentId === customer.activeAppointmentId)
-    ) return workReport;
-    const key = workReportMapKey(customer.id, normalizedType);
-    return workReportsByCustomer[key] || Object.values(workReportsByCustomer).find((report) => report.customerId === customer.id && normalizeAppointmentType(report.appointmentType) === normalizedType);
+    const candidates = [
+      ...Object.values(workReportsByCustomer), ...(maintenanceReportsByCustomer[customer.id] || []), workReport,
+    ].filter((report) => report.id && reportBelongsToWork(report, customer, type));
+    const unique = Array.from(new Map(candidates.map((report) => [report.id, report])).values());
+    return unique.length === 1 ? unique[0] : undefined;
   }
 
   function docsFor(customer: Customer) {
@@ -5056,26 +4925,10 @@ export default function Home() {
 
     const { data, error } = await supabase
       .from("documents")
-      .upsert(payload, { onConflict: customer.activeAppointmentId ? workspaceOnConflict("workspace_id,customer_id,document_type,appointment_id", "customer_id,document_type,appointment_id") : "customer_id,document_type" })
+      .upsert(payload, { onConflict: "workspace_id,customer_id,document_type,appointment_id" })
       .select("*")
       .single();
-    if (error && customer.activeAppointmentId) {
-      const { appointment_id, ...legacyPayload } = payload;
-      const retry = await supabase
-        .from("documents")
-        .upsert(legacyPayload, { onConflict: "customer_id,document_type" })
-        .select("*")
-        .single();
-      if (retry.error) return undefined;
-      const saved = documentFromRow(retry.data);
-      setDocumentsByCustomer((prev) => {
-        const current = prev[customer.id] || [];
-        const withoutCurrent = current.filter((doc) => doc.type !== saved.type);
-        return { ...prev, [customer.id]: [saved, ...withoutCurrent] };
-      });
-      return saved;
-    }
-    if (error) return undefined;
+    if (error) throw new Error(`A dokumentum állapota nem mentődött: ${error.message}`);
 
     const saved = documentFromRow(data);
     setDocumentsByCustomer((prev) => {
@@ -5214,6 +5067,7 @@ export default function Home() {
       action: "MaintenanceReport",
       appointmentType: "maintenance",
       reportId: report.id,
+      appointmentId: report.appointmentId,
       reportDate: report.workDate,
       reportTime: report.workTime,
       reportDateLabel: formatMaintenanceReportDate(report),
@@ -5244,143 +5098,65 @@ export default function Home() {
 
 
   async function loadWorkReportFor(customer: Customer, reportId?: string) {
-    const activeReportId = reportId || customer.activeWorkReportId;
+    const sequence = ++workReportLoadSequence.current;
+    setWorkReportLoadBlocked(true);
     const targetType = normalizeAppointmentType(customer.appointmentType);
-    const emptyReport = {
-      ...emptyWorkReport(customer),
-      workDate: customer.date || scheduleDate,
-      workTime: customer.time || scheduleTime || shownTime,
-    };
-    setWorkReport(emptyReport);
-    if (!customer.id) return;
-
-    if (activeReportId) {
-      const cachedReport = maintenanceReportsFor(customer).find((report) => report.id === activeReportId);
-      if (cachedReport) {
-        setWorkReport({ ...cachedReport, signerName: cachedReport.signerName || customer.name || "" });
+    const activeReportId = reportId || customer.activeWorkReportId;
+    setWorkReport({ ...emptyWorkReport(customer), workDate: customer.date || scheduleDate,
+      workTime: customer.time || scheduleTime || shownTime });
+    try {
+      if (!customer.id) throw new Error("Előbb válassz mentett ügyfelet.");
+      let query = workspaceQuery(supabase.from("work_reports").select("*").eq("customer_id", customer.id));
+      if (activeReportId) query = query.eq("id", activeReportId);
+      else if (customer.activeAppointmentId) query = query.eq("appointment_id", customer.activeAppointmentId);
+      else if (customer.date) {
+        query = query.is("appointment_id", null).eq("work_date", customer.date).eq("work_time", customer.time || "08:00");
+      } else {
+        throw new Error("A munkalaphoz előbb ments egy időpontot.");
+      }
+      const { data, error } = await query.eq("appointment_type", targetType).order("created_at", { ascending: false }).limit(2);
+      if (sequence !== workReportLoadSequence.current) return;
+      if (error) throw error;
+      if (!data?.length) {
+        if (activeReportId) throw new Error("A kiválasztott munkalap nem található.");
+        setWorkReportLoadBlocked(false);
         return;
       }
-
-      const { data, error } = await workspaceQuery(supabase
-        .from("work_reports")
-        .select("*")
-        .eq("id", activeReportId))
-        .maybeSingle();
-
-      if (error) {
-        setMessage(`Munkalap betöltési hiba: ${error.message}`);
-        return;
+      if (data.length !== 1) throw new Error("Több munkalap tartozik az időponthoz. Válaszd ki a konkrét dokumentumot a naplóból.");
+      const report = workReportFromRow(data[0]);
+      if (!reportBelongsToWork(report, customer)) throw new Error("A munkalap másik munkához tartozik.");
+      setWorkReport({ ...report, signerName: report.signerName || customer.name });
+      setWorkReportLoadBlocked(false);
+      if (targetType === "maintenance") {
+        setMaintenanceReportsByCustomer(prev => ({ ...prev, [customer.id]:
+          [report, ...(prev[customer.id] || []).filter(item => item.id !== report.id)].sort(compareWorkReportsDesc) }));
+      } else {
+        setWorkReportsByCustomer(prev => ({ ...prev, [workReportKeyFromReport(report, customer.id)]: report }));
       }
-      if (data) {
-        const loadedReport = workReportFromRow(data);
-        setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
-        if (normalizeAppointmentType(loadedReport.appointmentType) === "maintenance") {
-          setMaintenanceReportsByCustomer((prev) => {
-            const current = prev[customer.id] || [];
-            const without = current.filter((report) => report.id !== loadedReport.id);
-            return { ...prev, [customer.id]: [loadedReport, ...without].sort(compareWorkReportsDesc) };
-          });
-        }
-      }
-      return;
+    } catch (error: any) {
+      if (sequence === workReportLoadSequence.current) setMessage(`Munkalap betöltési hiba: ${error.message}`);
     }
+  }
 
-    if (customer.activeAppointmentId) {
-      const cachedAppointmentReport = [
-        ...maintenanceReportsFor(customer),
-        ...Object.values(workReportsByCustomer).filter((report) => report.customerId === customer.id),
-      ].find((report) => report.appointmentId === customer.activeAppointmentId);
-      if (cachedAppointmentReport) {
-        setWorkReport({ ...cachedAppointmentReport, signerName: cachedAppointmentReport.signerName || customer.name || "" });
-        return;
-      }
-
-      const { data, error } = await workspaceQuery(supabase
-        .from("work_reports")
-        .select("*")
-        .eq("appointment_id", customer.activeAppointmentId)
-        .order("created_at", { ascending: false })
-        .limit(1))
-        .maybeSingle();
-
-      if (!error && data) {
-        const loadedReport = { ...workReportFromRow(data), workDescription: data.work_description || defaultWorkDescription(targetType) };
-        setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
-        if (normalizeAppointmentType(loadedReport.appointmentType) === "maintenance") {
-          setMaintenanceReportsByCustomer((prev) => {
-            const current = prev[customer.id] || [];
-            const without = current.filter((report) => report.id !== loadedReport.id);
-            return { ...prev, [customer.id]: [loadedReport, ...without].sort(compareWorkReportsDesc) };
-          });
-        } else {
-          setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(customer.id, targetType)]: loadedReport }));
-        }
-        return;
-      }
-    }
-
-    if (targetType === "maintenance") {
-      const currentReport = currentMaintenanceReportFor(customer);
-      if (currentReport) {
-        setWorkReport({ ...currentReport, signerName: currentReport.signerName || customer.name || "" });
-        return;
-      }
-      return;
-    }
-
-    const alreadyLoaded = savedReportFor(customer, targetType);
-    if (alreadyLoaded) {
-      setWorkReport({ ...alreadyLoaded, signerName: alreadyLoaded.signerName || customer.name || "" });
-      return;
-    }
-
-    const query = workspaceQuery(supabase
-      .from("work_reports")
-      .select("*")
-      .eq("customer_id", customer.id)
-      .eq("appointment_type", targetType)
-      .order("created_at", { ascending: false })
-      .limit(1))
-      .maybeSingle();
-
-    const { data, error } = await query;
-
-    if (error) {
-      if (targetType === "installation" && errorMentionsWorkReportType(error)) {
-        const fallback = await workspaceQuery(supabase
-          .from("work_reports")
-          .select("*")
-          .eq("customer_id", customer.id))
-          .maybeSingle();
-        if (fallback.error) {
-          setMessage("A munkalap tábla még nincs kész vagy nem tölthető be. Futtasd a munkalap SQL-t a Supabase-ben.");
-          return;
-        }
-        if (fallback.data) {
-          const loadedReport = { ...workReportFromRow({ ...fallback.data, appointment_type: "installation" }), workDescription: fallback.data.work_description || defaultWorkDescription("installation") };
-          setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
-          setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(customer.id, "installation")]: loadedReport }));
-        }
-        return;
-      }
-      setMessage("A munkalap külön mentéséhez futtasd a SUPABASE_WORK_REPORT_TIPUS_OSZLOP.sql fájlt a Supabase-ben.");
-      return;
-    }
-
-    if (data) {
-      const loadedReport = { ...workReportFromRow(data), workDescription: data.work_description || defaultWorkDescription(targetType) };
-      setWorkReport({ ...loadedReport, signerName: loadedReport.signerName || customer.name || "" });
-      setWorkReportsByCustomer((prev) => ({ ...prev, [workReportMapKey(customer.id, targetType)]: loadedReport }));
-    }
+  function customerForReport(customer: Customer, reportId?: string): Customer {
+    const report = reportId ? [...Object.values(workReportsByCustomer), ...(maintenanceReportsByCustomer[customer.id] || [])]
+      .find((item) => item.id === reportId && item.customerId === customer.id) : undefined;
+    const appointmentId = report ? report.appointmentId : customer.activeAppointmentId;
+    const work = appointmentId ? allWorkCustomers.find((item) => item.id === customer.id && item.activeAppointmentId === appointmentId) : undefined;
+    return { ...customer, ...work, activeAppointmentId: appointmentId, activeWorkReportId: reportId,
+      appointmentType: report?.appointmentType || work?.appointmentType || customer.appointmentType,
+      date: report?.workDate || work?.date || customer.date,
+      time: report?.workTime || work?.time || customer.time,
+      quoteItems: work?.quoteItems || (appointmentId === customer.activeAppointmentId ? customer.quoteItems : []) || [] };
   }
 
   function openWorkReportFor(customer: Customer = selected, reportId?: string) {
     const activeReportId = reportId || customer.activeWorkReportId;
-    const customerForReport = { ...customer, activeWorkReportId: activeReportId, quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems };
+    const scopedCustomer = customerForReport(customer, activeReportId);
     setDocumentPreviewReportId(activeReportId);
-    setSelected(customerForReport);
-    setQuoteItems(customerForReport.quoteItems);
-    void loadWorkReportFor(customerForReport, activeReportId);
+    setSelected(scopedCustomer);
+    setQuoteItems(scopedCustomer.quoteItems || []);
+    void loadWorkReportFor(scopedCustomer, activeReportId);
     navigateToView("workReport");
   }
 
@@ -5390,9 +5166,9 @@ export default function Home() {
 
   function openDocumentPreview(customer: Customer, type: DocumentPreviewType, purchaseDeclarationId?: string, reportId?: string) {
     const activeReportId = reportId || customer.activeWorkReportId;
-    const customerForPreview = { ...customer, activeWorkReportId: activeReportId, quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems };
+    const customerForPreview = customerForReport(customer, activeReportId);
     setSelected(customerForPreview);
-    setQuoteItems(customerForPreview.quoteItems);
+    setQuoteItems(customerForPreview.quoteItems || []);
     setDocumentPreviewType(type);
     setDocumentPreviewReportId(activeReportId);
     setDocumentPreviewDeclarationId(purchaseDeclarationId);
@@ -5446,6 +5222,15 @@ export default function Home() {
   }
 
   async function saveWorkReport(sendEmail = false) {
+    if (workReportBusy) return;
+    if (workReportLoadBlocked) {
+      setMessage("A munkalap még nem töltődött be biztonságosan. Nyisd meg újra a dokumentumot.");
+      return;
+    }
+    if (!reportBelongsToWork(workReport, selected)) {
+      setMessage("Ez a munkalap másik munkához tartozik. Nyisd meg a megfelelő időpont dokumentumai közül.");
+      return;
+    }
     if (!selected.id) {
       setMessage("Előbb mentsd az ügyfelet, utána készíthető munkalap.");
       return;
@@ -5494,8 +5279,6 @@ export default function Home() {
         signed_at: signedAt,
         created_by: user?.id || null,
       });
-      const { appointment_id, ...payloadWithoutHistoryLink } = basePayload;
-
       const currentReportId = workReport.id || reportToSave.id || selected.activeWorkReportId;
       let data: any = null;
       let error: any = null;
@@ -5516,42 +5299,15 @@ export default function Home() {
         error = result.error;
       }
 
-      if (error && errorMentionsWorkReportHistoryLink(error)) {
-        const existingReport = currentAppointmentType === "maintenance" ? undefined : savedReportFor(selected, currentAppointmentType);
-        const retryReportId = currentReportId || existingReport?.id;
-        const retryResult = retryReportId
-          ? await workspaceQuery(supabase.from("work_reports").update(payloadWithoutHistoryLink).eq("id", retryReportId)).select("*").single()
-          : await supabase.from("work_reports").insert(payloadWithoutHistoryLink).select("*").single();
-        data = retryResult.data;
-        error = retryResult.error;
-      }
-
-      if (error && currentAppointmentType === "installation" && errorMentionsWorkReportType(error)) {
-        const { appointment_type, ...fallbackPayload } = payloadWithoutHistoryLink;
-        const fallbackExistingReport = savedReportFor(selected, currentAppointmentType);
-        const fallbackReportId = currentReportId || fallbackExistingReport?.id;
-        const fallbackResult = fallbackReportId
-          ? await workspaceQuery(supabase
-              .from("work_reports")
-              .update(fallbackPayload)
-              .eq("id", fallbackReportId))
-              .select("*")
-              .single()
-          : await supabase
-              .from("work_reports")
-              .insert(fallbackPayload)
-              .select("*")
-              .single();
-        data = fallbackResult.data;
-        error = fallbackResult.error;
-      }
-
       if (error) {
         if (currentAppointmentType === "maintenance" && errorMentionsWorkReportType(error)) {
           throw new Error("A karbantartási munkalap külön mentéséhez futtasd a SUPABASE_WORK_REPORT_TIPUS_OSZLOP.sql fájlt a Supabase-ben.");
         }
         throw error;
       }
+
+      // Keep the saved identity even if a later email or checklist update fails.
+      setWorkReport(workReportFromRow(data));
 
       if (data?.id && !data.legacy_source_key) {
         const legacySourceKey = `work_reports:${data.id}`;
@@ -5568,7 +5324,7 @@ export default function Home() {
       let emailSentAt = data?.email_sent_at || undefined;
       if (sendEmail) {
         setWorkReportEmailBusy(true);
-        const response = await fetch("/api/send-work-report", {
+        const response = await authenticatedFetch("/api/send-work-report", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(workReportPayload(reportToSave, { ...selected, quoteItems })),
@@ -6366,7 +6122,7 @@ export default function Home() {
       scheduleDate={scheduleDate}
       shownTime={shownTime}
       workReport={workReport}
-      workReportBusy={workReportBusy}
+      workReportBusy={workReportBusy || workReportLoadBlocked}
       workReportEmailBusy={workReportEmailBusy}
       message={message}
       sellerCompanies={sellerCompanies}

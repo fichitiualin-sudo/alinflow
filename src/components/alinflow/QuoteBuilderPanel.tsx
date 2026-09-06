@@ -28,12 +28,14 @@ type QuoteBuilderPanelProps = {
   onAddManualQuoteItem: () => void;
 };
 
-function ProductSelect({ products, value, onChange, disabled = false }: { products: ClimateProduct[]; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+function ProductSelect({ products, value, snapshotName, onChange, disabled = false }: { products: ClimateProduct[]; value: string; snapshotName?: string; onChange: (value: string) => void; disabled?: boolean }) {
   const sorted = sortProducts(products);
-  const selectValue = sorted.some((product) => product.id === value) ? value : "";
+  const archived = Boolean(value && snapshotName && !sorted.some((product) => product.id === value));
+  const selectValue = archived || sorted.some((product) => product.id === value) ? value : "";
   return (
     <select value={selectValue} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="input disabled:cursor-not-allowed disabled:opacity-60">
       <option value="">Válassz klímát...</option>
+      {archived ? <option value={value}>{snapshotName} (archivált)</option> : null}
       {sorted.map((product: any) => (
         <option key={product.id} value={product.id}>{product.name}</option>
       ))}
@@ -87,7 +89,7 @@ export function QuoteBuilderPanel({
                     {isCustomQuoteItem(item) ? (
                       <input className="input" value={item.customName || ""} onChange={(event) => onUpdateQuoteItem(index, "customName", event.target.value)} placeholder="Klíma/tétel megnevezése" />
                     ) : (
-                      <ProductSelect products={products} value={item.productId} onChange={(value) => onUpdateQuoteProduct(index, value)} />
+                      <ProductSelect products={products} value={item.productId} snapshotName={item.productName} onChange={(value) => onUpdateQuoteProduct(index, value)} />
                     )}
                     <input className="input" type="number" min={1} value={item.quantity} onChange={(event) => onUpdateQuoteItem(index, "quantity", numericInputValue(event.target.value))} />
                     <input className="input" type="number" min={0} value={item.customPrice ?? itemUnitPrice(item)} onChange={(event) => onUpdateQuoteItem(index, "customPrice", priceInputValue(event.target.value))} />
