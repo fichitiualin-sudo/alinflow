@@ -58,8 +58,8 @@ Never repair historical records by deletion or guessed reassignment.
   Production deployment `HbafDhVrVNe7dtiWVoDfYb8Kc5hW` succeeded. Repeated
   authenticated 390x844 testing confirms Back restores the original completed
   installation, its products and closing actions without saving the draft.
-- Full write/signature acceptance with disposable UI records awaits the owner's
-  confirmation. No real invoice, email or stock operation was sent during UI checks.
+- Owner subsequently approved disposable write/signature acceptance; results are
+  recorded below. No real invoice or email was sent.
 
 ## Dependency Security Follow-Up
 
@@ -89,7 +89,27 @@ Never repair historical records by deletion or guessed reassignment.
   The stock check now skips unused materials while preserving reservations for
   materials this job actually needs. Three regressions include the reproduced
   failure, a real shortage and exact remaining availability.
-- Full acceptance and deletion of the disposable test records remain in progress.
+- Two installation appointments retain distinct quantities and quote IDs after
+  reload. The second does not inherit the first report, signature or checklist.
+- Rescheduling the first installation preserves its report ID/signature digest
+  and leaves stock unchanged. Merely opening a maintenance report does not save it.
+- A separate synthetic maintenance signature saved and returned to the same
+  customer's maintenance actions. Cancelling that maintenance preserved both
+  installations and both signed reports; only maintenance became cancelled.
+- Product-archive confirmation stalled the browser automation; no archive change
+  was persisted. This test and authenticated export remain unverified.
+- The unused-material fix passes all 73 tests, TypeScript and production build,
+  but remains local: the push approval was denied, and explicit owner approval
+  for upload/merge/deployment has been requested. No alternate upload was used.
+- Full installation completion and repeat-deduction UI acceptance remain blocked
+  on deploying that fix. Gate 8 is not complete.
+- All disposable production data was removed in a guarded SQL transaction after
+  inspecting foreign keys. Every remaining public row was fingerprinted before
+  commit. All 19 final table counts/digests match the pre-test baseline, including
+  inventory and material stock. Cleanup logs are private and outside Git.
+- Local PostgreSQL was stopped. The unresponsive test tab could not be closed or
+  its viewport override reset through the browser API; manual dismissal/closing
+  may be needed before the next browser acceptance session.
 
 ## Local Restore Boundary
 
