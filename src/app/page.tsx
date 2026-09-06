@@ -1529,11 +1529,6 @@ export default function Home() {
   }
 
   async function deleteClimateProduct(product: ClimateProduct) {
-    const confirmed = window.confirm(
-      `Biztosan törlöd ezt a klímát az aktív kínálatból?\n\n${product.name}\n\nA korábbi ajánlatok és munkák adatai megmaradnak.`
-    );
-    if (!confirmed) return;
-
     setProductBusy(true);
     try {
       const { error } = await workspaceQuery(supabase
@@ -1545,9 +1540,11 @@ export default function Home() {
       const nextProducts = products.filter((item) => item.id !== product.id);
       setProducts(nextProducts);
       setActiveProducts(nextProducts);
-      setProductMessage(`${product.name} törölve az aktív klímák közül.`);
+      setProductMessage(`${product.name} archiválva. A korábbi ajánlatok és munkák adatai megmaradtak.`);
+      return true;
     } catch (error: any) {
-      setProductMessage(`Klíma törlési hiba: ${error?.message || "ismeretlen hiba"}`);
+      setProductMessage(`Klíma archiválási hiba: ${error?.message || "ismeretlen hiba"}`);
+      return false;
     } finally {
       setProductBusy(false);
     }
