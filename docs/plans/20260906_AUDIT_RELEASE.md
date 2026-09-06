@@ -54,8 +54,24 @@ Never repair historical records by deletion or guessed reassignment.
 - Found an additional UI-only defect: cancelling new maintenance returned to a
   work page with an unsaved maintenance selection. Follow-up preserves/restores
   the original installation; two additional regression tests pass.
+- PR #89 merged as `8377f6865d6166f6e3c12ccc1545ae349eb2d8f9`.
+  Production deployment `HbafDhVrVNe7dtiWVoDfYb8Kc5hW` succeeded. Repeated
+  authenticated 390x844 testing confirms Back restores the original completed
+  installation, its products and closing actions without saving the draft.
 - Full write/signature acceptance with disposable UI records awaits the owner's
   confirmation. No real invoice, email or stock operation was sent during UI checks.
+
+## Dependency Security Follow-Up
+
+- The previously unavailable npm audit completed and reported four high-severity
+  production dependency findings. This is an advisory result, not evidence of an
+  exploit against this application.
+- In an isolated worktree with its own dependency installation, upgraded Next.js
+  from 16.2.6 to 16.3.4 and PostCSS from 8.5.14 to 8.5.23, including compatible
+  transitive security fixes. No forced dependency upgrades were used.
+- The complete npm audit now reports zero known vulnerabilities. All 70 tests,
+  TypeScript checking and the normal Turbopack production build pass with synthetic
+  build-only Supabase settings. Production deployment of this follow-up is pending.
 
 ## Local Restore Boundary
 
