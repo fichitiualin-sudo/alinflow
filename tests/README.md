@@ -58,4 +58,4 @@ independent authenticated connections, then drops only that disposable clone.
 It tests simultaneous completion, stock exhaustion, repeated completion and
 concurrent delta adjustments. Never point these tests at a hosted database.
 
-The complete release run has 68 passing tests, with both database suites enabled.
+The complete release run has 70 passing tests, with both database suites enabled.

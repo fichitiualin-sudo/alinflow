@@ -37,6 +37,10 @@ R02: a jelenlegi globális Számla Agent-kulcsok csak az explicit
 hiányzó beállítás esetén a számlázás tiltott. Ez nem többcéges kulcstároló:
 továbbra is tisztázni kell, mely munkaterületek mely számlakibocsátóhoz tartoznak.
 
+R03: a kiadási mobilpróba során talált mentetlen karbantartási visszalépési hiba
+javítva: Vissza esetén az eredeti telepítés és annak tételei állnak vissza.
+Ez nem hoz létre vagy töröl adatbázisrekordot.
+
 ## Élesítési Sorrend
 
 1. Először külön tesztkörnyezetben, a telepített sémával egyező adatbázison próbáld ki a kiadást. A helyi tesztadatbázis szintetikus sémát használ.
@@ -58,7 +62,7 @@ nem történeti készletmozgás-rekonstrukció. A régebbi hibás részlevonáso
 
 ## Ellenőrzések
 
-- 68 sikeres Node-teszt, 0 sikertelen, 0 kihagyott a teljes futásban.
+- 70 sikeres Node-teszt, 0 sikertelen, 0 kihagyott a teljes futásban.
 - Az éles public/auth sémák és adatok helyi visszaállításán is sikeres migráció és 10 regressziós eset; külön natív PostgreSQL-másolaton kétkapcsolatos készletütközési teszt.
 - Valódi PostgreSQL-motoron, helyi PGlite-adatbázisban futtatott migráció és SQL-függvények. A migráció kétszer lefutott, idempotens volt a tesztsémán.
 - Szándékosan hibára futtatott tételbeszúrás és anyaglevonás igazolja a visszagördülést. Ismételt lezárás nem von le ismét készletet.
