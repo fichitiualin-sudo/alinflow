@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ClimateProduct } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
 
@@ -29,7 +29,7 @@ type WarehousePanelProps = {
   onUpdateProductDevicePrice: (productId: string, value: string) => void;
   onUpdateProductInstallPrice: (productId: string, value: string) => void;
   onSaveClimateProduct: (product: ClimateProduct) => void | Promise<void>;
-  onDeleteClimateProduct: (product: ClimateProduct) => void | Promise<void>;
+  onDeleteClimateProduct: (product: ClimateProduct) => Promise<boolean>;
   stockOf: (productId: string) => number;
   reservedForProduct: (productId: string) => number;
   addStock: (productId: string, amount: number) => void | Promise<void>;
@@ -350,10 +350,37 @@ function ClimateProductManager({
   onSaveClimateProduct,
   onDeleteClimateProduct,
 }: ClimateProductManagerProps) {
+  const [archiveProductId, setArchiveProductId] = useState<string | null>(null);
+  const [archiveAttempted, setArchiveAttempted] = useState(false);
+  const archiveInFlight = useRef(false);
+  const archiveTrigger = useRef<HTMLButtonElement | null>(null);
+
+  function cancelArchive() {
+    if (archiveInFlight.current) return;
+    setArchiveProductId(null);
+    archiveTrigger.current?.focus();
+  }
+
+  async function confirmArchive(product: ClimateProduct) {
+    if (productBusy || archiveInFlight.current || archiveProductId !== product.id) return;
+    archiveInFlight.current = true;
+    setArchiveAttempted(true);
+    try {
+      if (await onDeleteClimateProduct(product)) setArchiveProductId(null);
+    } finally {
+      archiveInFlight.current = false;
+    }
+  }
+
   return (
     <Card title="Klímatípusok és árak">
       <button
-        onClick={onToggleClimateProductManager}
+        onClick={() => {
+          if (productBusy) return;
+          setArchiveProductId(null);
+          onToggleClimateProductManager();
+        }}
+        disabled={productBusy}
         className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
       >
         {showClimateProductManager ? "Klímatípus-kezelő bezárása" : "Klímatípus-kezelő megnyitása"}
@@ -420,16 +447,37 @@ function ClimateProductManager({
                       <button type="button" onClick={() => onSaveClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
                         Mentés
                       </button>
-                      <button type="button" onClick={() => onDeleteClimateProduct(product)} disabled={productBusy} className="rounded-2xl bg-red-500 px-5 py-4 font-black text-white disabled:cursor-wait disabled:opacity-60">
+                      <button type="button" onClick={(event) => {
+                        archiveTrigger.current = event.currentTarget;
+                        setArchiveAttempted(false);
+                        setArchiveProductId(product.id);
+                      }} aria-expanded={archiveProductId === product.id} disabled={productBusy} className="rounded-2xl bg-red-500 px-5 py-4 font-black text-white disabled:cursor-wait disabled:opacity-60">
                         Törlés
                       </button>
                     </div>
                   </div>
+                  {archiveProductId === product.id ? (
+                    <div role="group" aria-label={`Klíma archiválása: ${product.name}`} onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelArchive();
+                      }
+                    }} className="mt-4 rounded-2xl border-2 border-amber-300 bg-slate-950 p-4">
+                      <p className="font-black text-amber-200">Archiválod ezt a klímát?</p>
+                      <p className="mt-2 break-words font-black text-white">{product.name}</p>
+                      <p className="mt-2 text-sm text-slate-200">Csak az aktív kínálatból kerül ki. A korábbi ajánlatok, munkák és munkalapok megmaradnak.</p>
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <button type="button" autoFocus onClick={cancelArchive} disabled={productBusy} className="rounded-xl bg-slate-700 px-5 py-4 font-black text-white disabled:opacity-60">Mégse</button>
+                        <button type="button" onClick={() => void confirmArchive(product)} disabled={productBusy} className="rounded-xl bg-red-500 px-5 py-4 font-black text-white disabled:cursor-wait disabled:opacity-60">{productBusy ? "Archiválás..." : "Archiválás"}</button>
+                      </div>
+                      {archiveAttempted && !productBusy && productMessage ? <p role="status" className="mt-3 text-sm font-bold text-slate-100">{productMessage}</p> : null}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
           </div>
-          {productMessage ? <div className="rounded-2xl bg-slate-950/70 p-4 text-sm font-bold text-slate-100">{productMessage}</div> : null}
+          {productMessage ? <div role="status" className="rounded-2xl bg-slate-950/70 p-4 text-sm font-bold text-slate-100">{productMessage}</div> : null}
         </div>
       ) : null}
     </Card>
