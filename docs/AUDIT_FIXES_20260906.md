@@ -69,11 +69,11 @@ nem történeti készletmozgás-rekonstrukció. A régebbi hibás részlevonáso
 - API-hívások és Supabase-kliens helyettesítve: a tesztek nem küldenek valódi számlát vagy levelet.
 - Archivált termékek szerkesztői React szerveroldali rendereléssel is ellenőrizve.
 - `tsc --noEmit --incremental false`: sikeres.
-- `npm run build -- --webpack`: sikeres, szintetikus Supabase-környezeti változókkal.
+- `npm run build`: sikeres Turbopackkel is, szintetikus Supabase-környezeti változókkal, külön függőségtelepítéssel.
 
-A helyi `node_modules` a másik, azonos lockfájlt használó munkakönyvtárra mutat.
-Emiatt a build webpackkel futott; Turbopack ezt a könyvtárkapcsolatot nem kezeli.
-Normál kiadásnál a projekt saját függőségtelepítését kell használni.
+A kezdeti audit munkakönyvtára könyvtárkapcsolatot használt, ezért ott webpackkel
+futott a build. A biztonsági függőségfrissítés már saját `node_modules` mappában
+lett ellenőrizve, a projekt normál buildparancsával.
 
 ## Határok
 
@@ -81,7 +81,7 @@ Normál kiadásnál a projekt saját függőségtelepítését kell használni.
 - A PGlite sorosítja a kéréseket; ezt kiegészíti a sikeres, két valódi PostgreSQL-kapcsolatos készletütközési és ismételt lezárási teszt. A SQL stabil sorrendű sorzárakat és relatív készletmódosítást használ.
 - A teljes ügyfél, ajánlat és időpont mentése továbbra sem egyetlen tranzakció; a javítás az ajánlati tételcserét, az időpont erőforrás-kapcsolatait és a készletlezárást védi.
 - A számlázási hitelesítés nem számlaszolgáltatói idempotenciamegoldás. Bizonytalan szolgáltatóválasz után ellenőrizni kell a számla létrejöttét az ismétlés előtt.
-- Az npm sérülékenységi audit a korábbi hálózati/jóváhagyási korlátozás miatt nem teljes. Nincs sérülékenységmentességi állítás.
+- Az npm audit időközben lefutott. A Next.js 16.3.4, PostCSS 8.5.23 és a kompatibilis közvetett javítások után 0 ismert sérülékenységet jelez. Ez nem általános biztonsági garancia; a javító kiadás állapota az élesítési naplóban szerepel.
 - A külön fejlesztési ágon lévő Google Naptár-import nem része ennek a main-alapú javításnak.
 
 Visszaállításkor az új adatmezőket és dokumentumokat meg kell tartani.
