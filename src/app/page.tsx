@@ -489,6 +489,7 @@ export default function Home() {
 
   const currentViewRef = useRef<View>(view);
   const viewHistoryRef = useRef<View[]>([]);
+  const maintenanceReturnRef = useRef<Customer | null>(null);
   const loadedUserIdRef = useRef<string | null>(null);
   const loadCustomersPromiseRef = useRef<Promise<void> | null>(null);
   const initialDataReadyRef = useRef(false);
@@ -695,6 +696,22 @@ export default function Home() {
   }
 
   function goBack(fallbackView: View = "dashboard") {
+    const source = maintenanceReturnRef.current;
+    if (currentViewRef.current === "schedule" && source && source.id === selected.id
+      && selected.appointmentType === "maintenance" && !selected.activeAppointmentId) {
+      maintenanceReturnRef.current = null;
+      setSelected(source);
+      setQuoteItems(source.quoteItems || EMPTY_QUOTE_ITEMS);
+      setScheduleDate(source.date || todayIso());
+      setScheduleTime(firstAppointmentTime(source.time));
+      setScheduleAppointmentType(normalizeAppointmentType(source.appointmentType));
+      setWorkReport(emptyWorkReport(source));
+      setWorkChecklist(effectiveChecklistFor(source));
+      setAllowWorkResourceEdit(false);
+      clearCustomerDraft(source.id);
+      setDraftNotice(readCustomerDraft());
+      setMessage("Az új karbantartás nem került mentésre. Visszatértél az eredeti munkához.");
+    }
     const history = viewHistoryRef.current;
     const previousView = history.pop();
     viewHistoryRef.current = history;
@@ -3705,6 +3722,7 @@ export default function Home() {
       promoteCustomerWork(savedUpdated);
       setSelected(savedUpdated);
 
+      maintenanceReturnRef.current = null;
       if (sendAppointmentNotice) {
         const sent = await sendAppointmentEmailFor(savedUpdated);
         setMessage(sent ? (wasExistingSchedule ? "Időpont módosítva és tájékoztató email elküldve ✅" : "Időpont mentve és tájékoztató email elküldve ✅") : "Időpont mentve, de az email küldése nem sikerült.");
@@ -4051,6 +4069,10 @@ export default function Home() {
   }
 
   function startMaintenanceForCustomer(customer: Customer) {
+    maintenanceReturnRef.current = customer.id === selected.id
+      && customer.activeAppointmentId === selected.activeAppointmentId
+      ? { ...customer, quoteItems: cleanQuoteItems(quoteItems), materialUsage: { materials, overrides: materialOverrides } }
+      : customer;
     const changedAt = new Date().toISOString();
     const installationWorks = customerInstallationWorks(customer);
     const installationIds = installationWorks.map((work) => work.activeAppointmentId).filter(Boolean) as string[];

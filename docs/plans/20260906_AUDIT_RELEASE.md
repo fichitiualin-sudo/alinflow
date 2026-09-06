@@ -20,7 +20,7 @@ Never repair historical records by deletion or guessed reassignment.
   checklist/document uniqueness and dependent foreign keys.
 - Production and Preview now have the explicitly approved issuer-workspace
   binding. Existing server-side invoice keys were not changed.
-- 68 tests passed, including native restored-schema and two-connection stock
+- 70 tests passed, including native restored-schema and two-connection stock
   contention tests. Local migration repeated successfully; all 16 verification
   checks passed and all seven issue counts are zero after the approved repair.
 - All 19 public tables retain their row counts. Legacy values match the backup,
@@ -41,8 +41,21 @@ Never repair historical records by deletion or guessed reassignment.
 - [x] 4. Configure the confirmed invoice workspace in Vercel.
 - [x] 5. Apply the production migration after all prerequisites pass.
 - [x] 6. Run production verification; investigate every nonzero issue count.
-- [ ] 7. Deploy the verified application revision and verify Vercel readiness.
+- [x] 7. Deploy the verified application revision and verify Vercel readiness.
 - [ ] 8. Verify authenticated desktop/mobile workflows and refresh client tabs.
+
+## Browser Acceptance Progress
+
+- PR #88 merged as `0796e3ed8646459dfccce3fbecb9bcbff865538d`.
+  Production Vercel deployment `3gSzL9irtx5hqP88eNeL7pww9w2a` succeeded.
+- Refreshed authenticated production page loads existing customers, appointments,
+  reports and stock. A 390x844 viewport displays maintenance controls without
+  horizontal overflow. Two historical installations remain distinct.
+- Found an additional UI-only defect: cancelling new maintenance returned to a
+  work page with an unsaved maintenance selection. Follow-up preserves/restores
+  the original installation; two additional regression tests pass.
+- Full write/signature acceptance with disposable UI records awaits the owner's
+  confirmation. No real invoice, email or stock operation was sent during UI checks.
 
 ## Local Restore Boundary
 

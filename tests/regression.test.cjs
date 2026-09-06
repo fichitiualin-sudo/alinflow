@@ -10,11 +10,44 @@ const scopes = h.load("src/lib/alinflow/report-scope.ts");
 const materials = h.load("src/lib/alinflow/materials.ts");
 const base = { ...products, ...appointments, ...reports, ...scopes,
   workspaceQuery: identity, withWorkspace: identity, workspaceOnConflict: identity,
+  maintenanceReturnRef: { current: null },
   user: { id: "test-user" }, currentWorkspaceId: () => "test-workspace", normalizeStatus: identity };
 const customer = { id: "test-customer", name: "Test Customer", email: "test@example.invalid",
   address: "Test 1", city: "Test", postalCode: "0000", date: "2026-09-06", time: "08:00",
   appointmentType: "installation", activeAppointmentId: "installation-B", quoteItems: [],
   status: "Időpont foglalva" };
+
+test("Release: leaving unsaved maintenance restores the original work without writes", () => {
+  const source = { ...customer, status: "Lezárva", stockDeducted: true,
+    activeWorkReportId: "original-report", quoteItems: [{ productId: "original", quantity: 3 }] };
+  const ref = { current: source }, history = { current: ["dashboard", "work"] };
+  let restored, items, view, cleared;
+  h.functions(["goBack"], { ...base, selected: { ...source, appointmentType: "maintenance", activeAppointmentId: undefined },
+    currentViewRef: { current: "schedule" }, maintenanceReturnRef: ref, viewHistoryRef: history,
+    setSelected: v => restored=v, setQuoteItems: v => items=v, setScheduleDate: noop,
+    setScheduleTime: noop, setScheduleAppointmentType: noop, setWorkReport: noop,
+    setWorkChecklist: noop, effectiveChecklistFor: () => ({}), setAllowWorkResourceEdit: noop,
+    clearCustomerDraft: id => cleared=id, readCustomerDraft: () => null, setDraftNotice: noop,
+    setMessage: noop, replaceView: v => view=v,
+  }).goBack();
+  assert.equal(restored,source);
+  assert.equal(items,source.quoteItems);
+  assert.equal(restored.activeWorkReportId,"original-report");
+  assert.equal(restored.stockDeducted,true);
+  assert.equal(ref.current,null);
+  assert.equal(cleared,source.id);
+  assert.equal(view,"work");
+});
+
+test("Release: back from an existing maintenance schedule does not replace the work", () => {
+  let writes=0, view;
+  h.functions(["goBack"], { ...base, selected: { ...customer, appointmentType: "maintenance", activeAppointmentId: "saved-maintenance" },
+    currentViewRef: { current: "schedule" }, maintenanceReturnRef: { current: customer },
+    viewHistoryRef: { current: ["work"] }, setSelected: () => writes++, replaceView: v => view=v,
+  }).goBack();
+  assert.equal(writes,0);
+  assert.equal(view,"work");
+});
 
 test("A03: archived catalog items retain identity, name, quantity and historical price", () => {
   products.setActiveProducts([{ id: "ac", name: "Original AC", price: 300000, installPrice: 70000 }]);
