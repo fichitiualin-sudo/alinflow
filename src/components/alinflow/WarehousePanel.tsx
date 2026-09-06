@@ -467,8 +467,8 @@ function ClimateProductManager({
                       <p className="mt-2 break-words font-black text-white">{product.name}</p>
                       <p className="mt-2 text-sm text-slate-200">Csak az aktív kínálatból kerül ki. A korábbi ajánlatok, munkák és munkalapok megmaradnak.</p>
                       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <button type="button" autoFocus onClick={cancelArchive} disabled={productBusy} className="rounded-xl bg-slate-700 px-5 py-4 font-black text-white disabled:opacity-60">Mégse</button>
-                        <button type="button" onClick={() => void confirmArchive(product)} disabled={productBusy} className="rounded-xl bg-red-500 px-5 py-4 font-black text-white disabled:cursor-wait disabled:opacity-60">{productBusy ? "Archiválás..." : "Archiválás"}</button>
+                        <button type="button" autoFocus onClick={cancelArchive} disabled={productBusy} className="rounded-xl bg-slate-200 px-5 py-4 font-black text-slate-950 disabled:opacity-60">Mégse</button>
+                        <button type="button" onClick={() => void confirmArchive(product)} disabled={productBusy} className="rounded-xl bg-red-500 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">{productBusy ? "Archiválás..." : "Archiválás"}</button>
                       </div>
                       {archiveAttempted && !productBusy && productMessage ? <p role="status" className="mt-3 text-sm font-bold text-slate-100">{productMessage}</p> : null}
                     </div>
