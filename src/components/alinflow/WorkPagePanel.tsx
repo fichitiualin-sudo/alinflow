@@ -66,6 +66,7 @@ function WorkSectionToggleButton({
     <button
       type="button"
       onClick={onClick}
+      aria-expanded={open}
       className={`group flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black text-slate-950 shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]`}
     >
       <span className="min-w-0 leading-tight">{label}</span>
@@ -339,6 +340,7 @@ export function WorkPagePanel({
   const maintenanceFinished = isMaintenance && selected.status === "Lezárva";
   const canStartMaintenance = installationFinished || maintenanceFinished;
   const [showMaterials, setShowMaterials] = useState(false);
+  const [showPhotos, setShowPhotos] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(true);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
@@ -675,11 +677,19 @@ export function WorkPagePanel({
             </div> : null}
           </Card> : null}
 
-          <WorkPhotosPanel
+          <div className="mt-4">
+            <WorkSectionToggleButton
+              label={showPhotos ? "Munkafotók elrejtése" : "Munkafotók megjelenítése"}
+              open={showPhotos}
+              onClick={() => setShowPhotos((open) => !open)}
+            />
+          </div>
+
+          {showPhotos ? <WorkPhotosPanel
             key={`${workspaceId || ""}:${selected.id}:${selected.activeAppointmentId || ""}`}
             customer={selected}
             workspaceId={workspaceId}
-          />
+          /> : null}
 
           {isInstallation ? (
             <div className="mt-4">
