@@ -69,6 +69,7 @@ PGlite suite with active workspace membership and the deployed work-scope trigge
 ```powershell
 npm install --prefix .photo-test --no-package-lock --no-audit --no-fund @electric-sql/pglite
 node tests/work-photos-sql.test.mjs
+node tests/work-photo-remove-sql.test.mjs
 ```
 
 This isolated dependency directory is ignored and never shipped with the app.

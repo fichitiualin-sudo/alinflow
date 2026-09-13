@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import type { Customer, WorkPhoto, WorkPhotoContext } from "@/lib/alinflow/types";
 import {
   WORK_PHOTO_PAGE_SIZE,
+  deleteWorkPhoto,
   listWorkPhotos,
   prepareWorkPhoto,
   refreshWorkPhotoUrl,
@@ -26,8 +27,8 @@ type UploadEntry = {
   error?: string;
 };
 
-type UploadSnapshot = { queue: UploadEntry[]; busy: boolean; savedVersion: number };
-const EMPTY_UPLOAD_SNAPSHOT: UploadSnapshot = { queue: [], busy: false, savedVersion: 0 };
+type UploadSnapshot = { queue: UploadEntry[]; busy: boolean; deletingPhotoId: string | null; savedVersion: number };
+const EMPTY_UPLOAD_SNAPSHOT: UploadSnapshot = { queue: [], busy: false, deletingPhotoId: null, savedVersion: 0 };
 const emptyUploadSnapshot = () => EMPTY_UPLOAD_SNAPSHOT;
 const noSubscription = () => () => {};
 const noUser = () => null;
@@ -53,7 +54,7 @@ export function createWorkPhotoQueueManager(operations = { prepareWorkPhoto, upl
     };
 
     function process(ids: number[]): Promise<void> {
-      if (revoked || snapshot.busy || !ids.length) return running;
+      if (revoked || snapshot.busy || snapshot.deletingPhotoId || !ids.length) return running;
       publish({ ...snapshot, busy: true });
       running = (async () => {
         try {
@@ -97,6 +98,7 @@ export function createWorkPhotoQueueManager(operations = { prepareWorkPhoto, upl
       addFiles(files: File[], context: WorkPhotoContext): Promise<void> {
         if (revoked) throw new Error("A képfeltöltéshez jelentkezz be újra.");
         if (snapshot.busy) throw new Error("Várd meg a folyamatban lévő képek mentését.");
+        if (snapshot.deletingPhotoId) throw new Error("Várd meg a kép törlését.");
         const failed = snapshot.queue.filter((entry) => entry.status === "error");
         if (files.length + failed.length > WORK_PHOTO_PAGE_SIZE) {
           throw new Error(`Egyszerre legfeljebb ${WORK_PHOTO_PAGE_SIZE} kép tölthető fel. Válassz kevesebb képet, vagy távolítsd el a sikertelen tételeket a listából.`);
@@ -107,7 +109,21 @@ export function createWorkPhotoQueueManager(operations = { prepareWorkPhoto, upl
       },
       retryFailed: () => process(snapshot.queue.filter((entry) => entry.status === "error").map((entry) => entry.id)),
       removeFailed(id: number) {
-        if (!revoked && !snapshot.busy) publish({ ...snapshot, queue: snapshot.queue.filter((entry) => entry.id !== id || entry.status !== "error") });
+        if (!revoked && !snapshot.busy && !snapshot.deletingPhotoId) publish({ ...snapshot, queue: snapshot.queue.filter((entry) => entry.id !== id || entry.status !== "error") });
+      },
+      beginDelete(photoId: string) {
+        if (revoked || snapshot.busy || snapshot.deletingPhotoId || !photoId) return false;
+        publish({ ...snapshot, deletingPhotoId: photoId });
+        return true;
+      },
+      finishDelete(photoId: string, succeeded: boolean) {
+        if (revoked || snapshot.deletingPhotoId !== photoId) return;
+        publish({
+          ...snapshot,
+          deletingPhotoId: null,
+          queue: succeeded ? snapshot.queue.filter((entry) => entry.prepared?.photo.id !== photoId) : snapshot.queue,
+          savedVersion: snapshot.savedVersion + (succeeded ? 1 : 0),
+        });
       },
       revoke() {
         revoked = true;
@@ -133,7 +149,10 @@ export function createWorkPhotoQueueManager(operations = { prepareWorkPhoto, upl
       if (!session) { session = createSession(userId); sessions.set(key, session); }
       return session;
     },
-    hasUnfinishedUploads: () => [...sessions.values()].some((session) => session.getSnapshot().queue.some((entry) => entry.status !== "done")),
+    hasUnfinishedUploads: () => [...sessions.values()].some((session) => {
+      const snapshot = session.getSnapshot();
+      return Boolean(snapshot.deletingPhotoId) || snapshot.queue.some((entry) => entry.status !== "done");
+    }),
   };
 }
 
@@ -173,16 +192,19 @@ export function WorkPhotosPanel({ customer, workspaceId }: { customer: Customer;
   const [loading, setLoading] = useState(true);
   const [galleryError, setGalleryError] = useState("");
   const [selectionError, setSelectionError] = useState("");
+  const [photoToDelete, setPhotoToDelete] = useState<WorkPhoto | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const uploadUserId = useSyncExternalStore(uploadQueues.subscribeUser, uploadQueues.getUserId, noUser);
   const uploadSession = useMemo(() => context && uploadUserId ? uploadQueues.getSession(context) : null, [context, uploadUserId]);
-  const { queue, busy, savedVersion } = useSyncExternalStore(uploadSession?.subscribe || noSubscription, uploadSession?.getSnapshot || emptyUploadSnapshot, emptyUploadSnapshot);
+  const { queue, busy, deletingPhotoId, savedVersion } = useSyncExternalStore(uploadSession?.subscribe || noSubscription, uploadSession?.getSnapshot || emptyUploadSnapshot, emptyUploadSnapshot);
+  const deleting = deletingPhotoId !== null;
   const [preview, setPreview] = useState<PhotoPreview | null>(null);
   const mounted = useRef(false);
   const galleryRequest = useRef(0);
   const previewRequest = useRef(0);
   const lastSavedVersion = useRef(0);
+  const deletionRefreshPage = useRef<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const cameraInput = useRef<HTMLInputElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const previewTrigger = useRef<HTMLButtonElement | null>(null);
   const dialogTitleId = useId();
@@ -201,10 +223,15 @@ export function WorkPhotosPanel({ customer, workspaceId }: { customer: Customer;
     const request = ++galleryRequest.current;
     setLoading(true);
     setGalleryError("");
+    if (!uploadSession?.getSnapshot().deletingPhotoId) { setPhotoToDelete(null); setDeleteError(""); }
     try {
-      const result = context
+      let result = context
         ? await listWorkPhotos(context, nextPage)
         : { photos: [], hasMore: false };
+      while (context && nextPage > 0 && !result.photos.length) {
+        nextPage -= 1;
+        result = await listWorkPhotos(context, nextPage);
+      }
       if (!mounted.current || request !== galleryRequest.current) return;
       setPhotos(result.photos);
       setHasMore(result.hasMore);
@@ -215,19 +242,21 @@ export function WorkPhotosPanel({ customer, workspaceId }: { customer: Customer;
     } finally {
       if (mounted.current && request === galleryRequest.current) setLoading(false);
     }
-  }, [context]);
+  }, [context, uploadSession]);
 
   useEffect(() => {
     void loadPhotos(0);
   }, [loadPhotos]);
 
   useEffect(() => {
-    if (!busy && savedVersion !== lastSavedVersion.current) {
+    if (!busy && !deleting && savedVersion !== lastSavedVersion.current) {
       lastSavedVersion.current = savedVersion;
       // Gallery errors remain separate from the completed upload queue.
-      void loadPhotos(0);
+      const nextPage = deletionRefreshPage.current ?? 0;
+      deletionRefreshPage.current = null;
+      void loadPhotos(nextPage);
     }
-  }, [busy, savedVersion, loadPhotos]);
+  }, [busy, deleting, savedVersion, loadPhotos]);
 
   function selectFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files || []);
@@ -266,24 +295,43 @@ export function WorkPhotosPanel({ customer, workspaceId }: { customer: Customer;
     if (previewTrigger.current?.isConnected) previewTrigger.current.focus();
   }
 
+  async function confirmDelete() {
+    if (!photoToDelete || !context || !uploadSession || !uploadSession.beginDelete(photoToDelete.id)) return;
+    const photo = photoToDelete;
+    let succeeded = false;
+    setDeleteError("");
+    galleryRequest.current += 1;
+    try {
+      await deleteWorkPhoto(photo, context);
+      succeeded = true;
+      if (!mounted.current) return;
+      setPhotos((current) => current.filter((item) => item.id !== photo.id));
+      setPhotoToDelete(null);
+      deletionRefreshPage.current = page;
+    } catch (error) {
+      if (mounted.current) setDeleteError(workPhotoErrorMessage(error, "A képet nem sikerült törölni. Próbáld újra."));
+    } finally {
+      if (mounted.current) setLoading(false);
+      uploadSession.finishDelete(photo.id, succeeded);
+    }
+  }
+
   const failedEntries = queue.filter((entry) => entry.status === "error");
   const completedCount = queue.filter((entry) => entry.status === "done").length;
 
   return (
     <Card title="Munkafotók">
-      <p className="text-sm text-slate-300">Opcionális. A képeket feltöltés előtt automatikusan tömörítjük, legfeljebb 500 kB-ra.</p>
       {context ? (
         <p className="mt-3 rounded-2xl bg-slate-950/60 p-3 text-sm font-bold text-cyan-100">Új képek ehhez a munkához: {workLabel(context)}</p>
       ) : (
         <p className="mt-3 text-sm font-bold text-amber-200">Képet elmentett munkához tölthetsz fel. Előbb válassz céget és rögzíts időpontot.</p>
       )}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-        <button type="button" className={`${buttonClass} bg-cyan-300 text-slate-950`} disabled={busy || !uploadSession} onClick={() => fileInput.current?.click()}>Képek kiválasztása</button>
-        <button type="button" className={`${buttonClass} bg-white/10 text-cyan-100 ring-1 ring-cyan-200/20`} disabled={busy || !uploadSession} onClick={() => cameraInput.current?.click()}>Fénykép készítése</button>
-        <input ref={fileInput} type="file" accept="image/*,.heic,.heif" multiple hidden disabled={busy || !uploadSession} onChange={selectFiles} aria-label="Munkafotók kiválasztása" />
-        <input ref={cameraInput} type="file" accept="image/*,.heic,.heif" capture="environment" hidden disabled={busy || !uploadSession} onChange={selectFiles} aria-label="Munkafotó készítése" />
+        <button type="button" className={`${buttonClass} bg-cyan-300 text-slate-950`} disabled={busy || deleting || !uploadSession} onClick={() => fileInput.current?.click()}>Képek kiválasztása</button>
+        <input ref={fileInput} type="file" accept="image/*,.heic,.heif" multiple hidden disabled={busy || deleting || !uploadSession} onChange={selectFiles} aria-label="Munkafotók kiválasztása" />
       </div>
       {selectionError ? <p role="alert" className="mt-3 text-sm text-amber-200">{selectionError}</p> : null}
+      {deleting ? <p role="status" className="mt-3 text-sm text-slate-200">Kép törlése folyamatban…</p> : null}
       {queue.length ? (
         <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/40 p-3">
           <p role="status" className="text-sm font-bold text-slate-200">
@@ -300,51 +348,69 @@ export function WorkPhotosPanel({ customer, workspaceId }: { customer: Customer;
                 </div>
                 {entry.error ? <p className="mt-1 break-words text-amber-200">{entry.error}</p> : null}
                 {entry.status === "error" ? (
-                  <button type="button" disabled={busy} onClick={() => { uploadSession?.removeFailed(entry.id); setSelectionError(""); }} className="mt-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">Eltávolítás a listából</button>
+                  <button type="button" disabled={busy || deleting} onClick={() => { uploadSession?.removeFailed(entry.id); setSelectionError(""); }} className="mt-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">Eltávolítás a listából</button>
                 ) : null}
               </li>
             ))}
           </ul>
-          {failedEntries.length ? <button type="button" disabled={busy || !uploadSession} onClick={() => void uploadSession?.retryFailed()} className={`${buttonClass} mt-3 bg-amber-300/20 text-amber-100`}>Sikertelen képek újrapróbálása</button> : null}
+          {failedEntries.length ? <button type="button" disabled={busy || deleting || !uploadSession} onClick={() => void uploadSession?.retryFailed()} className={`${buttonClass} mt-3 bg-amber-300/20 text-amber-100`}>Sikertelen képek újrapróbálása</button> : null}
         </div>
       ) : null}
 
       <div className="mt-6 border-t border-white/10 pt-4" aria-busy={loading}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-black text-slate-100">Ehhez a munkához feltöltött képek</h3>
-          <button type="button" disabled={loading || busy || !context} className="rounded-xl bg-white/10 px-3 py-2 text-sm font-bold text-cyan-100 disabled:opacity-50" onClick={() => void loadPhotos(page)}>Frissítés</button>
+          <button type="button" disabled={loading || busy || deleting || !context} className="rounded-xl bg-white/10 px-3 py-2 text-sm font-bold text-cyan-100 disabled:opacity-50" onClick={() => void loadPhotos(page)}>Frissítés</button>
         </div>
         {loading ? <p role="status" className="mt-4 text-sm text-slate-300">Képek betöltése…</p> : null}
         {galleryError ? (
           <div role="alert" className="mt-4 rounded-2xl bg-amber-300/10 p-4 text-sm text-amber-100">
             <p>{galleryError}</p>
-            <button type="button" disabled={loading || busy} className={`${buttonClass} mt-3 bg-white/10`} onClick={() => void loadPhotos(page)}>Betöltés újrapróbálása</button>
+            <button type="button" disabled={loading || busy || deleting} className={`${buttonClass} mt-3 bg-white/10`} onClick={() => void loadPhotos(page)}>Betöltés újrapróbálása</button>
           </div>
         ) : null}
         {!loading && !galleryError && !photos.length ? <p className="mt-4 rounded-2xl border border-dashed border-white/10 p-4 text-sm text-slate-400">Még nincs feltöltött munkafotó.</p> : null}
         {photos.length ? (
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
             {photos.map((photo) => (
-              <button key={photo.id} type="button" onClick={(event) => openPhoto(photo, event.currentTarget)} aria-label={`Munkafotó megnyitása: ${workLabel(photo)}`} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-200">
-                {photo.url && !photo.urlError ? (
-                  // Private, short-lived URLs are loaded directly without a shared image cache.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={photo.url} alt={`Munkafotó – ${workLabel(photo)}`} loading="lazy" className="aspect-[4/3] w-full object-cover" onError={() => setPhotos((current) => current.map((item) => item.id === photo.id ? { ...item, urlError: "Az előnézet nem tölthető be." } : item))} />
-                ) : <span className="flex aspect-[4/3] items-center justify-center p-3 text-center text-xs text-amber-100">Az előnézet nem tölthető be. Koppints a megnyitáshoz.</span>}
-                <span className="block p-3">
-                  <span className="block break-words text-sm font-black text-slate-100">{appointmentTypeLabel(photo.appointmentType)}</span>
-                  <span className="mt-1 block break-words text-xs text-slate-300">{photo.workDate.replaceAll("-", ".")}{photo.workTime ? ` · ${photo.workTime}` : ""}</span>
-                  <span className="mt-1 block text-xs text-slate-400">{Math.ceil(photo.sizeBytes / 1000)} kB</span>
-                </span>
-              </button>
+              <div key={photo.id} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
+                <button type="button" disabled={deleting} onClick={(event) => openPhoto(photo, event.currentTarget)} aria-label={`Munkafotó megnyitása: ${workLabel(photo)}`} className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-50">
+                  {photo.url && !photo.urlError ? (
+                    // Private, short-lived URLs are loaded directly without a shared image cache.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={photo.url} alt={`Munkafotó – ${workLabel(photo)}`} loading="lazy" className="aspect-[4/3] w-full object-cover" onError={() => setPhotos((current) => current.map((item) => item.id === photo.id ? { ...item, urlError: "Az előnézet nem tölthető be." } : item))} />
+                  ) : <span className="flex aspect-[4/3] items-center justify-center p-3 text-center text-xs text-amber-100">Az előnézet nem tölthető be. Koppints a megnyitáshoz.</span>}
+                  <span className="block p-3">
+                    <span className="block break-words text-sm font-black text-slate-100">{appointmentTypeLabel(photo.appointmentType)}</span>
+                    <span className="mt-1 block break-words text-xs text-slate-300">{photo.workDate.replaceAll("-", ".")}{photo.workTime ? ` · ${photo.workTime}` : ""}</span>
+                    <span className="mt-1 block text-xs text-slate-400">{Math.ceil(photo.sizeBytes / 1000)} kB</span>
+                  </span>
+                </button>
+                <div className="border-t border-white/10 p-3">
+                  {photoToDelete?.id === photo.id || deletingPhotoId === photo.id ? (
+                    <div>
+                      <p className="text-sm font-bold text-slate-100">Végleg törlöd ezt a képet?</p>
+                      {deleteError ? <p role="alert" className="mt-2 break-words text-sm text-amber-200">{deleteError}</p> : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" disabled={deleting} onClick={() => { setPhotoToDelete(null); setDeleteError(""); }} className={`${buttonClass} bg-white/10 text-slate-100`}>Mégse</button>
+                        <button type="button" disabled={deleting || busy || !uploadSession} onClick={() => void confirmDelete()} className={`${buttonClass} bg-red-600 text-white`}>
+                          {deleting ? "Törlés…" : deleteError ? "Törlés újrapróbálása" : "Kép törlése"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" disabled={loading || busy || deleting || !uploadSession} onClick={() => { setPhotoToDelete(photo); setDeleteError(""); }} aria-label={`Munkafotó törlése: ${workLabel(photo)}`} className={`${buttonClass} w-full bg-red-600 text-white`}>Törlés</button>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         ) : null}
         {page > 0 || hasMore ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <button type="button" disabled={page === 0 || loading || busy} onClick={() => void loadPhotos(page - 1)} className={`${buttonClass} bg-white/10 text-cyan-100`}>Előző</button>
+            <button type="button" disabled={page === 0 || loading || busy || deleting} onClick={() => void loadPhotos(page - 1)} className={`${buttonClass} bg-white/10 text-cyan-100`}>Előző</button>
             <span className="text-sm text-slate-300">{page + 1}. oldal</span>
-            <button type="button" disabled={!hasMore || loading || busy} onClick={() => void loadPhotos(page + 1)} className={`${buttonClass} bg-white/10 text-cyan-100`}>Következő</button>
+            <button type="button" disabled={!hasMore || loading || busy || deleting} onClick={() => void loadPhotos(page + 1)} className={`${buttonClass} bg-white/10 text-cyan-100`}>Következő</button>
           </div>
         ) : null}
       </div>
