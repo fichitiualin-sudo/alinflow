@@ -209,7 +209,33 @@ export function createWorkPhotoStore(client: SupabaseClient, compress = compress
     return data.signedUrl;
   }
 
-  return { prepareWorkPhoto, uploadWorkPhoto, listWorkPhotos, refreshWorkPhotoUrl };
+  async function deleteWorkPhoto(photo: WorkPhoto, context: WorkPhotoContext): Promise<void> {
+    const snapshot = { ...photo };
+    const scope = { ...context };
+    if (!hasWorkPhotoScope(scope) || !hasWorkPhotoScope(snapshot) || !UUID.test(snapshot.id)
+      || snapshot.workspaceId !== scope.workspaceId || snapshot.customerId !== scope.customerId
+      || snapshot.appointmentId !== scope.appointmentId || snapshot.storagePath !== storagePathFor(scope, snapshot.id)) {
+      throw new Error("A kép nem ehhez a munkához tartozik. Nyisd meg újra a munkát.");
+    }
+    await currentUserId();
+    const { data, error } = await client.from("work_photos").select("id")
+      .eq("id", snapshot.id).eq("workspace_id", scope.workspaceId).eq("customer_id", scope.customerId)
+      .eq("appointment_id", scope.appointmentId).eq("storage_path", snapshot.storagePath).maybeSingle();
+    if (error) throw error;
+    if (data) {
+      // Keep metadata until Storage confirms removal, so interrupted deletions remain retryable.
+      const { error: removeError } = await storage.remove([snapshot.storagePath]);
+      if (removeError) throw removeError;
+    }
+    // The server checks membership and physical object absence, including on repeated requests.
+    const { error: finishError } = await client.rpc("finish_work_photo_delete", {
+      p_photo_id: snapshot.id, p_workspace_id: scope.workspaceId,
+      p_customer_id: scope.customerId, p_appointment_id: scope.appointmentId,
+    });
+    if (finishError) throw finishError;
+  }
+
+  return { prepareWorkPhoto, uploadWorkPhoto, listWorkPhotos, refreshWorkPhotoUrl, deleteWorkPhoto };
 }
 
-export const { prepareWorkPhoto, uploadWorkPhoto, listWorkPhotos, refreshWorkPhotoUrl } = createWorkPhotoStore(supabase);
+export const { prepareWorkPhoto, uploadWorkPhoto, listWorkPhotos, refreshWorkPhotoUrl, deleteWorkPhoto } = createWorkPhotoStore(supabase);

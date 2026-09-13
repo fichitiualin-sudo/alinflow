@@ -67,6 +67,120 @@ function setup(operations = {}) {
   return { manager, preparations, uploads };
 }
 
+test("deleting a saved photo removes its uncertain retry without affecting other failed files", async () => {
+  const { manager, uploads } = setup({ uploadWorkPhoto: async () => { throw new Error("Network timeout"); } });
+  const session = manager.getSession(context());
+  await session.addFiles([photoFile("wrong.jpg"), photoFile("keep.jpg")], context());
+  const deletedId = uploads[0].photo.id;
+  assert.equal(session.beginDelete(deletedId), true);
+  session.finishDelete(deletedId, true);
+  assert.equal(session.getSnapshot().deletingPhotoId, null);
+  assert.equal(session.getSnapshot().savedVersion, 1);
+  assert.equal(session.getSnapshot().queue.length, 1);
+  assert.equal(session.getSnapshot().queue[0].name, "keep.jpg");
+  await session.retryFailed();
+  assert.equal(uploads.filter((item) => item.photo.id === deletedId).length, 1);
+  assert.equal(uploads.length, 3);
+});
+
+test("a delayed deletion remains locked after remount while other work stays usable", async () => {
+  const deletion = deferred();
+  const { manager, uploads } = setup({ uploadWorkPhoto: async (item) => {
+    if (item.photo.appointmentId === APPOINTMENT_A) throw new Error("Unknown metadata result");
+  } });
+  const original = manager.getSession(context());
+  const unsubscribe = original.subscribe(() => {});
+  await original.addFiles([photoFile("wrong.jpg"), photoFile("keep.jpg")], context());
+  const deletedId = uploads[0].photo.id;
+  assert.equal(original.beginDelete(deletedId), true);
+  const pendingDeletion = (async () => {
+    let succeeded = false;
+    try { await deletion.promise; succeeded = true; }
+    finally { original.finishDelete(deletedId, succeeded); }
+  })();
+  unsubscribe();
+  const otherWork = context({ appointmentId: APPOINTMENT_B });
+  await manager.getSession(otherWork).addFiles([photoFile("other-work.jpg")], otherWork);
+  const remounted = manager.getSession(context());
+  assert.strictEqual(remounted, original);
+  assert.equal(remounted.getSnapshot().deletingPhotoId, deletedId);
+  assert.equal(remounted.beginDelete(deletedId), false);
+  assert.equal(remounted.beginDelete(uploads[1].photo.id), false);
+  assert.throws(() => remounted.addFiles([photoFile("new.jpg")], context()), /Várd meg a kép törlését/);
+  await remounted.retryFailed();
+  remounted.removeFailed(remounted.getSnapshot().queue[0].id);
+  assert.equal(remounted.getSnapshot().queue.length, 2);
+  assert.equal(uploads.length, 3);
+  deletion.resolve();
+  await pendingDeletion;
+  assert.equal(remounted.getSnapshot().deletingPhotoId, null);
+  assert.equal(remounted.getSnapshot().savedVersion, 1);
+  assert.deepEqual(remounted.getSnapshot().queue.map((entry) => entry.name), ["keep.jpg"]);
+  await remounted.retryFailed();
+  assert.equal(uploads.length, 4);
+  assert.equal(uploads.filter((item) => item.photo.id === deletedId).length, 1);
+  assert.equal(manager.getSession(otherWork).getSnapshot().queue[0].status, "done");
+});
+
+test("a failed deletion releases its lock and preserves the exact prepared upload for retry", async () => {
+  let failUpload = true;
+  const { manager, uploads } = setup({ uploadWorkPhoto: async () => {
+    if (failUpload) throw new Error("Unknown metadata result");
+  } });
+  const session = manager.getSession(context());
+  await session.addFiles([photoFile()], context());
+  const originalPreparation = uploads[0];
+  const photoId = originalPreparation.photo.id;
+  assert.equal(session.beginDelete(photoId), true);
+  session.finishDelete(crypto.randomUUID(), true);
+  assert.equal(session.getSnapshot().deletingPhotoId, photoId);
+  session.finishDelete(photoId, false);
+  assert.equal(session.getSnapshot().deletingPhotoId, null);
+  assert.equal(session.getSnapshot().savedVersion, 0);
+  assert.strictEqual(session.getSnapshot().queue[0].prepared, originalPreparation);
+  failUpload = false;
+  await session.retryFailed();
+  assert.strictEqual(uploads[1], originalPreparation);
+  assert.equal(session.getSnapshot().savedVersion, 1);
+});
+
+test("deletion cannot begin during an upload and keeps the unload guard active without a queue", async () => {
+  const compression = deferred();
+  const { manager } = setup({ prepareWorkPhoto: async () => compression.promise });
+  const session = manager.getSession(context());
+  const pending = session.addFiles([photoFile()], context());
+  const photoId = crypto.randomUUID();
+  assert.equal(session.beginDelete(photoId), false);
+  compression.resolve(prepared(context()));
+  await pending;
+  const empty = manager.getSession(context({ appointmentId: APPOINTMENT_B }));
+  assert.equal(manager.hasUnfinishedUploads(), false);
+  assert.equal(empty.getSnapshot().queue.length, 0);
+  assert.equal(empty.beginDelete(photoId), true);
+  assert.equal(manager.hasUnfinishedUploads(), true);
+  empty.finishDelete(photoId, false);
+  assert.equal(manager.hasUnfinishedUploads(), false);
+  assert.equal(empty.beginDelete(photoId), true);
+  empty.finishDelete(photoId, true);
+  assert.equal(manager.hasUnfinishedUploads(), false);
+});
+
+test("an old deletion completion cannot repopulate session state after the authenticated user changes", () => {
+  const { manager } = setup();
+  const oldSession = manager.getSession(context());
+  const photoId = crypto.randomUUID();
+  assert.equal(oldSession.beginDelete(photoId), true);
+  manager.setUser(USER_B);
+  const newSession = manager.getSession(context());
+  assert.equal(oldSession.getSnapshot().deletingPhotoId, null);
+  assert.equal(newSession.getSnapshot().deletingPhotoId, null);
+  assert.equal(oldSession.beginDelete(photoId), false);
+  oldSession.finishDelete(photoId, true);
+  assert.equal(oldSession.getSnapshot().savedVersion, 0);
+  assert.equal(newSession.getSnapshot().savedVersion, 0);
+  assert.equal(manager.hasUnfinishedUploads(), false);
+});
+
 test("navigation preserves all pending files in their original work and cannot start a second worker", async () => {
   const firstCompression = deferred();
   let compressionCount = 0;

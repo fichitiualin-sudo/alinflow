@@ -147,6 +147,13 @@ visszautasított ügyféltörlés nem törölheti a dokumentumokat sem:
 `delete_customer_preserving_photos(customer, workspace)` egy tranzakcióban
 ellenőrzi és végzi a már létező ügyféltörlési műveletet.
 
+A képenkénti törléshez ezután a
+[`sql/WORK_PHOTO_DELETION.sql`](sql/WORK_PHOTO_DELETION.sql) migráció szükséges.
+Az aktív munkaterület-tag előbb Storage API-val törli a kiválasztott fájlt,
+majd a `finish_work_photo_delete` ellenőrzi a pontos munkahatókört és a fizikai
+objektum hiányát, mielőtt eltávolítja a metaadatot. Közvetlen metaadat-DELETE
+jogosultság nincs; megszakadt törlés ugyanazzal az azonosítóval újrapróbálható.
+
 ## Korábbi tervezési irány
 
 A többcéges rendszerben minden domain-rekordhoz `company_id` szükséges, RLS védelemmel. Ezt a jelenlegi rendszer stabilizálása előtt nem szabad elkezdeni.

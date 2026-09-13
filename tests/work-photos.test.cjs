@@ -67,8 +67,8 @@ function rowFor(prepared) {
 function createBackend() {
   const backend = {
     rows: new Map(), objects: new Map(), userId: USER_A, authError: null,
-    lookupPlans: [], uploadPlans: [], insertPlans: [], signPlans: [], removePlans: [],
-    calls: { lookups: [], uploads: [], inserts: [], downloads: [], removes: [], ranges: [], signs: [] },
+    lookupPlans: [], uploadPlans: [], insertPlans: [], signPlans: [], removePlans: [], rpcPlans: [],
+    calls: { auth: [], lookups: [], uploads: [], inserts: [], downloads: [], removes: [], ranges: [], signs: [], rpcs: [], events: [] },
   };
   const storage = {
     async upload(objectPath, blob, options) {
@@ -85,10 +85,11 @@ function createBackend() {
     },
     async remove(paths) {
       backend.calls.removes.push([...paths]);
+      backend.calls.events.push("storage.remove");
       const plan = backend.removePlans.shift();
-      if (plan?.error) return { error: plan.error };
+      if (plan?.error && !plan.commit) return { error: plan.error };
       paths.forEach((objectPath) => backend.objects.delete(objectPath));
-      return { data: paths, error: null };
+      return { data: paths, error: plan?.error || null };
     },
     async createSignedUrls(paths, lifetime) {
       backend.calls.signs.push({ paths: [...paths], lifetime });
@@ -97,8 +98,27 @@ function createBackend() {
     },
   };
   backend.client = {
-    auth: { getUser: async () => ({ data: { user: backend.userId ? { id: backend.userId } : null }, error: backend.authError }) },
+    auth: { getUser: async () => {
+      backend.calls.auth.push(backend.userId);
+      return { data: { user: backend.userId ? { id: backend.userId } : null }, error: backend.authError };
+    } },
     storage: { from(bucket) { assert.equal(bucket, "work-photos"); return storage; } },
+    async rpc(name, args) {
+      assert.equal(name, "finish_work_photo_delete");
+      backend.calls.rpcs.push({ name, args: { ...args } });
+      backend.calls.events.push("finish_work_photo_delete");
+      const plan = backend.rpcPlans.shift();
+      if (plan?.error && !plan.commit) return { data: null, error: plan.error };
+      const expectedPath = `${args.p_workspace_id}/${args.p_customer_id}/${args.p_appointment_id}/${args.p_photo_id}.jpg`;
+      const row = backend.rows.get(args.p_photo_id);
+      if (row && (row.workspace_id !== args.p_workspace_id || row.customer_id !== args.p_customer_id
+        || row.appointment_id !== args.p_appointment_id || row.storage_path !== expectedPath)) {
+        return { data: null, error: { code: "42501", message: "Photo does not belong to this work" } };
+      }
+      if (backend.objects.has(expectedPath)) return { data: null, error: { code: "55000", message: "Storage object still exists" } };
+      backend.rows.delete(args.p_photo_id);
+      return { data: null, error: plan?.error || null };
+    },
     from(table) {
       assert.equal(table, "work_photos");
       const filters = [];
@@ -143,6 +163,20 @@ function createBackend() {
 function setup(compressor = compress) {
   const backend = createBackend();
   return { backend, store: createWorkPhotoStore(backend.client, compressor) };
+}
+
+async function savedPhoto(backend, store, scope = context()) {
+  const prepared = await store.prepareWorkPhoto(file(), scope);
+  backend.rows.set(prepared.photo.id, rowFor(prepared));
+  backend.objects.set(prepared.photo.storagePath, prepared.blob);
+  return { ...prepared.photo };
+}
+
+function deleteArgs(photo) {
+  return {
+    p_photo_id: photo.id, p_workspace_id: photo.workspaceId,
+    p_customer_id: photo.customerId, p_appointment_id: photo.appointmentId,
+  };
 }
 
 test("work contexts require workspace, customer and saved appointment ids plus a real date", () => {
@@ -461,4 +495,201 @@ test("individual missing or failed signed URLs do not hide the other photos", as
   assert.equal(byId.get(prepared[0].photo.id).urlError, undefined);
   assert.ok(byId.get(prepared[1].photo.id).urlError);
   assert.ok(byId.get(prepared[2].photo.id).urlError);
+});
+
+test("deleting a saved photo removes only its exact work object before finishing metadata deletion", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  const untouched = [];
+  for (const scope of [context(), context({ workspaceId: WORKSPACE_B }), context({ customerId: CUSTOMER_B }), context({ appointmentId: APPOINTMENT_B })]) {
+    untouched.push(await savedPhoto(backend, store, scope));
+  }
+  await store.deleteWorkPhoto(photo, context());
+  assert.equal(backend.rows.has(photo.id), false);
+  assert.equal(backend.objects.has(photo.storagePath), false);
+  assert.ok(untouched.every((item) => backend.rows.has(item.id) && backend.objects.has(item.storagePath)));
+  assert.deepEqual(backend.calls.removes, [[photo.storagePath]]);
+  assert.deepEqual(backend.calls.lookups.map((filters) => Object.fromEntries(filters)), [{
+    id: photo.id, workspace_id: WORKSPACE_A, customer_id: CUSTOMER_A,
+    appointment_id: APPOINTMENT_A, storage_path: photo.storagePath,
+  }]);
+  assert.deepEqual(backend.calls.rpcs, [{ name: "finish_work_photo_delete", args: deleteArgs(photo) }]);
+  assert.deepEqual(backend.calls.events, ["storage.remove", "finish_work_photo_delete"]);
+});
+
+test("a rescheduled work can delete its photo using the stable appointment id", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  await store.deleteWorkPhoto(photo, context({ workDate: "2026-12-01", workTime: "16:00" }));
+  assert.equal(backend.rows.size, 0);
+  assert.equal(backend.objects.size, 0);
+});
+
+test("repeating deletion of an absent photo skips storage but still verifies scope through the RPC", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  backend.rows.delete(photo.id);
+  backend.objects.delete(photo.storagePath);
+  await store.deleteWorkPhoto(photo, context());
+  await store.deleteWorkPhoto(photo, context());
+  assert.equal(backend.calls.removes.length, 0);
+  assert.equal(backend.calls.rpcs.length, 2);
+  assert.ok(backend.calls.rpcs.every((call) => JSON.stringify(call.args) === JSON.stringify(deleteArgs(photo))));
+});
+
+test("absent metadata never authorizes removal of an object that still exists", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  backend.rows.delete(photo.id);
+  await assert.rejects(store.deleteWorkPhoto(photo, context()));
+  assert.equal(backend.calls.removes.length, 0);
+  assert.equal(backend.calls.rpcs.length, 1);
+  assert.equal(backend.objects.has(photo.storagePath), true);
+});
+
+test("storage deletion failure preserves metadata and prevents metadata deletion RPC", async (t) => {
+  for (const committed of [false, true]) {
+    await t.test(committed ? "lost successful storage response" : "storage rejected deletion", async () => {
+      const { backend, store } = setup();
+      const photo = await savedPhoto(backend, store);
+      backend.removePlans.push({ commit: committed, error: { message: "Network timeout" } });
+      await assert.rejects(store.deleteWorkPhoto(photo, context()));
+      assert.equal(backend.rows.has(photo.id), true);
+      assert.equal(backend.objects.has(photo.storagePath), !committed);
+      assert.equal(backend.calls.rpcs.length, 0);
+      await store.deleteWorkPhoto(photo, context());
+      assert.equal(backend.rows.has(photo.id), false);
+      assert.equal(backend.objects.has(photo.storagePath), false);
+      assert.deepEqual(backend.calls.removes, [[photo.storagePath], [photo.storagePath]]);
+      assert.equal(backend.calls.rpcs.length, 1);
+    });
+  }
+});
+
+test("a failed deletion RPC keeps metadata so the same photo can be retried after its object was removed", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  backend.rpcPlans.push({ error: { message: "Failed to fetch" } });
+  await assert.rejects(store.deleteWorkPhoto(photo, context()));
+  assert.equal(backend.objects.has(photo.storagePath), false);
+  assert.equal(backend.rows.has(photo.id), true);
+  await store.deleteWorkPhoto(photo, context());
+  assert.equal(backend.rows.has(photo.id), false);
+  assert.deepEqual(backend.calls.removes, [[photo.storagePath], [photo.storagePath]]);
+  assert.equal(backend.calls.rpcs.length, 2);
+});
+
+test("a lost committed deletion RPC response can be safely retried without removing another object", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  const other = await savedPhoto(backend, store);
+  backend.rpcPlans.push({ commit: true, error: { message: "Network timeout" } });
+  await assert.rejects(store.deleteWorkPhoto(photo, context()));
+  assert.equal(backend.rows.has(photo.id), false);
+  assert.equal(backend.objects.has(photo.storagePath), false);
+  await store.deleteWorkPhoto(photo, context());
+  assert.equal(backend.calls.removes.length, 1);
+  assert.equal(backend.calls.rpcs.length, 2);
+  assert.equal(backend.rows.has(other.id), true);
+  assert.equal(backend.objects.has(other.storagePath), true);
+});
+
+test("deletion rejects invalid or different work scope before authentication or storage access", async (t) => {
+  const mutations = {
+    "different workspace": (photo, scope) => { scope.workspaceId = WORKSPACE_B; },
+    "different customer": (photo, scope) => { scope.customerId = CUSTOMER_B; },
+    "different appointment": (photo, scope) => { scope.appointmentId = APPOINTMENT_B; },
+    "missing selected workspace": (photo, scope) => { scope.workspaceId = undefined; },
+    "legacy selected appointment": (photo, scope) => { scope.appointmentId = `jobs:${APPOINTMENT_A}`; },
+    "invalid photo UUID": (photo) => { photo.id = "local-photo"; },
+    "invalid photo workspace": (photo) => { photo.workspaceId = undefined; },
+    "legacy photo path": (photo) => { photo.storagePath = `${CUSTOMER_A}/${photo.id}.jpg`; },
+    "another work path": (photo) => { photo.storagePath = `${WORKSPACE_A}/${CUSTOMER_A}/${APPOINTMENT_B}/${photo.id}.jpg`; },
+    "traversal path": (photo) => { photo.storagePath = `${WORKSPACE_A}/${CUSTOMER_A}/${APPOINTMENT_A}/../${photo.id}.jpg`; },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    await t.test(name, async () => {
+      const { backend, store } = setup();
+      const original = await savedPhoto(backend, store);
+      const photo = { ...original }, scope = context();
+      const authCalls = backend.calls.auth.length;
+      mutate(photo, scope);
+      await assert.rejects(store.deleteWorkPhoto(photo, scope));
+      assert.equal(backend.calls.auth.length, authCalls);
+      assert.equal(backend.calls.lookups.length, 0);
+      assert.equal(backend.calls.removes.length, 0);
+      assert.equal(backend.calls.rpcs.length, 0);
+      assert.equal(backend.rows.has(original.id), true);
+      assert.equal(backend.objects.has(original.storagePath), true);
+    });
+  }
+});
+
+test("deletion requires a valid authenticated user before metadata or storage access", async (t) => {
+  for (const authState of [{ userId: null }, { userId: "legacy-user" }, { authError: { message: "Session expired" } }]) {
+    await t.test(JSON.stringify(authState), async () => {
+      const { backend, store } = setup();
+      const photo = await savedPhoto(backend, store);
+      Object.assign(backend, authState);
+      await assert.rejects(store.deleteWorkPhoto(photo, context()));
+      assert.equal(backend.calls.lookups.length, 0);
+      assert.equal(backend.calls.removes.length, 0);
+      assert.equal(backend.calls.rpcs.length, 0);
+      assert.equal(backend.rows.has(photo.id), true);
+    });
+  }
+});
+
+test("a failed or forbidden metadata lookup does not remove the object or call the deletion RPC", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  backend.lookupPlans.push({ data: null, error: { code: "42501", message: "Permission denied" } });
+  await assert.rejects(store.deleteWorkPhoto(photo, context()));
+  assert.equal(backend.calls.removes.length, 0);
+  assert.equal(backend.calls.rpcs.length, 0);
+  assert.equal(backend.rows.has(photo.id), true);
+  assert.equal(backend.objects.has(photo.storagePath), true);
+});
+
+test("metadata hidden by access policy still requires server authorization before deletion can succeed", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  backend.lookupPlans.push({ data: null, error: null });
+  backend.rpcPlans.push({ error: { code: "42501", message: "Workspace membership required" } });
+  await assert.rejects(store.deleteWorkPhoto(photo, context()));
+  assert.equal(backend.calls.removes.length, 0);
+  assert.equal(backend.calls.rpcs.length, 1);
+  assert.equal(backend.rows.has(photo.id), true);
+  assert.equal(backend.objects.has(photo.storagePath), true);
+});
+
+test("another authorized user of the same work may delete a photo uploaded by a colleague", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  assert.equal(backend.rows.get(photo.id).created_by, USER_A);
+  backend.userId = USER_B;
+  await store.deleteWorkPhoto(photo, context());
+  assert.equal(backend.rows.has(photo.id), false);
+  assert.equal(backend.objects.has(photo.storagePath), false);
+  assert.equal(backend.calls.rpcs.length, 1);
+});
+
+test("deletion snapshots both the photo and selected work before awaiting authentication", async () => {
+  const { backend, store } = setup();
+  const photo = await savedPhoto(backend, store);
+  const original = { ...photo };
+  const scope = context();
+  const authentication = deferred();
+  backend.client.auth.getUser = () => authentication.promise;
+  const pending = store.deleteWorkPhoto(photo, scope);
+  Object.assign(photo, context({ workspaceId: WORKSPACE_B, customerId: CUSTOMER_B, appointmentId: APPOINTMENT_B }));
+  photo.id = APPOINTMENT_C;
+  photo.storagePath = `${WORKSPACE_B}/${CUSTOMER_B}/${APPOINTMENT_B}/${APPOINTMENT_C}.jpg`;
+  Object.assign(scope, context({ workspaceId: WORKSPACE_B, customerId: CUSTOMER_B, appointmentId: APPOINTMENT_B }));
+  authentication.resolve({ data: { user: { id: USER_A } }, error: null });
+  await pending;
+  assert.deepEqual(backend.calls.removes, [[original.storagePath]]);
+  assert.deepEqual(backend.calls.rpcs[0].args, deleteArgs(original));
+  assert.equal(backend.rows.has(original.id), false);
+  assert.equal(backend.objects.has(original.storagePath), false);
 });
