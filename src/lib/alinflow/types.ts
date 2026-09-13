@@ -243,3 +243,23 @@ export type CustomerDraft = {
   allowWorkResourceEdit: boolean;
   at: number;
 };
+
+export type WorkPhotoContext = {
+  workspaceId: string;
+  customerId: string;
+  appointmentId: string;
+  appointmentType: AppointmentType;
+  workDate: string;
+  workTime: string;
+};
+
+export type WorkPhoto = WorkPhotoContext & {
+  id: string;
+  storagePath: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  createdAt: string;
+  url?: string;
+  urlError?: string;
+};

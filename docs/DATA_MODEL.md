@@ -128,6 +128,25 @@ customer
 9. Az új `appointments` tábla legacy backfillje egyedi `legacy_source_key` mezőt és unique indexet igényel.
 10. Az átmeneti kettős írásban az `appointments` az elsődleges rekord, a `jobs` csak kompatibilitási tükör lehet.
 
-## Jövőbeli irány
+## Munkafotók (2026-09-13)
+
+A `work_photos` rekord stabil `workspace_id`, `customer_id` és `appointment_id`
+kapcsolatot tárol. A `Customer.activeAppointmentId` választja ki a munkát; a
+feltöltéskori típus/dátum/idő külön történeti pillanatkép. Az átütemezés nem
+változtatja meg a képek munkához rendelését. Mentett időpont nélkül a feltöltés
+nem engedélyezett; a dokumentumok és a lezárás továbbra sem igényelnek fényképet.
+
+A privát `work-photos` bucketben a JPEG útvonala
+`<workspace>/<customer>/<appointment>/<photo>.jpg`. A böngésző legfeljebb
+1920 pixeles, 500000 bájtos képet készít és elhagyja az EXIF-adatokat.
+A galéria 10 képet tölt oldalanként, rövid élettartamú aláírt URL-ekkel.
+A hozzáférés a meglévő aktív munkaterület-tagságra épül.
+
+SQL: [`sql/WORK_PHOTOS.sql`](sql/WORK_PHOTOS.sql). A kapcsolt fotók miatt
+visszautasított ügyféltörlés nem törölheti a dokumentumokat sem:
+`delete_customer_preserving_photos(customer, workspace)` egy tranzakcióban
+ellenőrzi és végzi a már létező ügyféltörlési műveletet.
+
+## Korábbi tervezési irány
 
 A többcéges rendszerben minden domain-rekordhoz `company_id` szükséges, RLS védelemmel. Ezt a jelenlegi rendszer stabilizálása előtt nem szabad elkezdeni.

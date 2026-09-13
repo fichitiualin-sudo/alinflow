@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, MaintenanceInstallationSummary, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
 import { Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
+import { WorkPhotosPanel } from "@/components/alinflow/WorkPhotosPanel";
 import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
@@ -205,6 +206,7 @@ function InstalledClimateMaintenanceCard({
 
 type WorkPagePanelProps = {
   selected: Customer;
+  workspaceId?: string | null;
   scheduleDate: string;
   scheduleTime: string;
   shownTime: string;
@@ -268,6 +270,7 @@ type WorkPagePanelProps = {
 
 export function WorkPagePanel({
   selected,
+  workspaceId,
   scheduleDate,
   scheduleTime,
   shownTime,
@@ -671,6 +674,12 @@ export function WorkPagePanel({
               {canEditWorkResources && isInstallation ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={onSaveWorkChanges}>Módosítás mentése az időpontra</button> : null}
             </div> : null}
           </Card> : null}
+
+          <WorkPhotosPanel
+            key={`${workspaceId || ""}:${selected.id}:${selected.activeAppointmentId || ""}`}
+            customer={selected}
+            workspaceId={workspaceId}
+          />
 
           {isInstallation ? (
             <div className="mt-4">

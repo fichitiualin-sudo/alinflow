@@ -59,3 +59,19 @@ It tests simultaneous completion, stock exhaustion, repeated completion and
 concurrent delta adjustments. Never point these tests at a hosted database.
 
 The complete release run has 70 passing tests, with both database suites enabled.
+
+## Optional work photos
+
+`npm test` includes photo scope, retry, navigation queue and atomic customer
+deletion client regressions. The additive photo migration has a separate local
+PGlite suite with active workspace membership and the deployed work-scope trigger:
+
+```powershell
+npm install --prefix .photo-test --no-package-lock --no-audit --no-fund @electric-sql/pglite
+node tests/work-photos-sql.test.mjs
+```
+
+This isolated dependency directory is ignored and never shipped with the app.
+The suite uses synthetic data only; it must not be pointed at production.
+The photo release results and limitations are recorded in
+[`WORK_PHOTOS_PLAN.md`](../docs/WORK_PHOTOS_PLAN.md).
