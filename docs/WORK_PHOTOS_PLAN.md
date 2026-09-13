@@ -54,4 +54,8 @@ Vercelben az előző kiadás visszaállítható; az additív fotótábla és buc
 `tests/work-photo-deletion.test.cjs`, `tests/work-photos-sql.test.mjs`.
 
 ## Kiadás
-Az éles migráció és a Vercel-kiadás eredményét a bekapcsolás után rögzítjük.
+- A `WORK_PHOTOS.sql` 2026-09-13-án az éles Supabase-projekten kétszer sikeresen lefutott. Az összes korábbi tábla rekordszáma változatlan.
+- Ellenőrizve: privát bucket, kizárólag JPEG, 500000 bájtos korlát; metadata RLS bekapcsolva; authenticated SELECT/INSERT engedett, UPDATE/DELETE és anon SELECT tiltott; 11 Storage policy; atomi törlő RPC elérhető.
+- GitHub: [PR #94](https://github.com/fichitiualin-sudo/alinflow/pull/94), `codex/work-photos-release`.
+- A Vercel preview sikeres (`8ce6ce3`, deployment `2ABzczugN4ww3CtE1nH5vwcsuv33`); bejelentkezés nélkül kizárólag a belépési oldal jelenik meg.
+- Éles cél: `https://www.alinflow.hu/`. Az éles kiadás után a meglévő bejelentkezett munkamenettel ellenőrizzük a munkaoldalt és az üres fotógaléria betöltését. Valós ügyfélhez nem töltünk fel mesterséges tesztképet.
