@@ -488,6 +488,8 @@ export default function Home() {
   }, [quoteItems]);
 
   const currentViewRef = useRef<View>(view);
+  const selectedCustomerIdRef = useRef(selected.id);
+  selectedCustomerIdRef.current = selected.id;
   const viewHistoryRef = useRef<View[]>([]);
   const maintenanceReturnRef = useRef<Customer | null>(null);
   const loadedUserIdRef = useRef<string | null>(null);
@@ -3554,43 +3556,22 @@ export default function Home() {
 
   async function deleteCustomer(customer: Customer) {
     if (!customer?.id) return;
+    const workspaceId = currentWorkspaceId();
     const confirmed = window.confirm(`Biztosan törlöd ezt az ügyfelet / érdeklődőt?\n\n${customer.name || "Névtelen ügyfél"}\n\nEz a művelet véglegesen eltávolítja az ügyfelet és a hozzá tartozó időpontot / ajánlatot.`);
     if (!confirmed) return;
 
     try {
       setMessage("");
 
-      await workspaceQuery(supabase.from("documents").delete().eq("customer_id", customer.id));
-      await workspaceQuery(supabase.from("work_checklists").delete().eq("customer_id", customer.id));
-      await workspaceQuery(supabase.from("work_reports").delete().eq("customer_id", customer.id));
-      await workspaceQuery(supabase.from("jobs").delete().eq("customer_id", customer.id));
-
-      const { data: quoteRows, error: quoteReadError } = await workspaceQuery(supabase
-        .from("quotes")
-        .select("id")
-        .eq("customer_id", customer.id));
-      if (quoteReadError) throw quoteReadError;
-
-      const quoteIds = (quoteRows || []).map((quote: any) => quote.id).filter(Boolean);
-      if (quoteIds.length) {
-        const { error: itemDeleteError } = await workspaceQuery(supabase
-          .from("quote_items")
-          .delete()
-          .in("quote_id", quoteIds));
-        if (itemDeleteError) throw itemDeleteError;
-      }
-
-      const { error: quoteDeleteError } = await workspaceQuery(supabase
-        .from("quotes")
-        .delete()
-        .eq("customer_id", customer.id));
-      if (quoteDeleteError) throw quoteDeleteError;
-
-      const { error: customerDeleteError } = await workspaceQuery(supabase
-        .from("customers")
-        .delete()
-        .eq("id", customer.id));
+      if (!workspaceId) throw new Error("Az ügyfél törléséhez válassz munkaterületet.");
+      // Check photo retention and delete the customer graph in one transaction.
+      // A rejected deletion must not remove the customer's documents first.
+      const { error: customerDeleteError } = await supabase.rpc("delete_customer_preserving_photos", {
+        p_customer_id: customer.id,
+        p_workspace_id: workspaceId,
+      });
       if (customerDeleteError) throw customerDeleteError;
+      if (currentWorkspaceId() !== workspaceId) return;
 
       setCustomers((prev) => prev.filter((item) => item.id !== customer.id));
       setDocumentsByCustomer((prev) => {
@@ -3609,7 +3590,7 @@ export default function Home() {
         return next;
       });
 
-      if (selected.id === customer.id) {
+      if (selectedCustomerIdRef.current === customer.id) {
         setSelected(EMPTY_CUSTOMER);
         setQuoteItems(EMPTY_QUOTE_ITEMS);
         returnToLastMenu();
@@ -3618,7 +3599,7 @@ export default function Home() {
       clearCustomerDraft(customer.id);
       setMessage("Ügyfél törölve ✅");
     } catch (error: any) {
-      setMessage(`Törlési hiba: ${error.message}`);
+      if (currentWorkspaceId() === workspaceId) setMessage(`Törlési hiba: ${error.message}`);
     }
   }
   function step(d:number) {
@@ -6168,6 +6149,7 @@ export default function Home() {
     <Shell>
       <WorkPagePanel
         selected={selected}
+        workspaceId={activeWorkspace?.id}
         scheduleDate={scheduleDate}
         scheduleTime={scheduleTime}
         shownTime={shownTime}
