@@ -24,7 +24,7 @@ Az `appointment_devices` egyedi `(appointment_id, product_key, unit_number)` kul
 
 A köszönő email tartós küldési naplója és két szűk RPC-je biztosítja a duplikációvédelmet. Az email tartalma és szolgáltatói kulcsa a bizonytalan eredményű újrapróbálások során változatlan; a Resend megőrzési idején túl kézi ellenőrzés szükséges. A kliens kizárólag a sikeres teljes lezárás után indítja; a szerver maga is ellenőrzi a mentett státuszt.
 
-A H tarifa választható, ellenőrzött E.ON/ELMŰ és MVM Démász hivatalos formát használ. Az elosztó nincs automatikusan előválasztva. Részletes források: [H_TARIFF_FORMS.md](H_TARIFF_FORMS.md). A PDF-küldés mentett munkalap- és nyilatkozat-azonosítókra támaszkodik, a megfelelő saját aláírással.
+A H tarifa választható, ellenőrzött E.ON/ELMŰ, MVM Démász és MVM Émász hivatalos formát használ. Az elosztó nincs automatikusan előválasztva. Részletes források: [H_TARIFF_FORMS.md](H_TARIFF_FORMS.md). A PDF-küldés mentett munkalap- és nyilatkozat-azonosítókra támaszkodik, a megfelelő saját aláírással.
 
 ## Implementációs lépések
 1. Párhuzamos, célzott feltárás: email/értékelési link; PDF-csatolmány; H tarifa; készülékfotó és OCR.
@@ -48,11 +48,11 @@ A kód az előző kiadásra visszaállítható. Az additív adatokat visszaáll�
 ## Módosított fájlok, eredmények és nyitott kérdések
 
 - Implementáció és független review elkészült mind az öt részhez.
-- `npx tsc --noEmit`: sikeres. `npm run build`: sikeres, a font és a két hivatalos sablon a szerver deployment trace-ben ellenőrizve.
-- `npm test`: 225 sikeres, 2 korábbi natív PostgreSQL-restore ellenőrzés környezeti okból kihagyva; nincs bukás. A PGlite útvonala a helyi tesztfuttatásban megadva.
+- `npx tsc --noEmit`: sikeres. `npm run build`: sikeres, a font és a három hivatalos sablon a szerver deployment trace-ben ellenőrizve.
+- `npm test`: 229 sikeres, 2 korábbi natív PostgreSQL-restore ellenőrzés környezeti okból kihagyva; nincs bukás. A PGlite útvonala a helyi tesztfuttatásban megadva.
 - Új külön SQL-próbák: 18 készülék-/fotó-/H tarifa- és 17 köszönőemail-ellenőrzés sikeres. LF/CRLF ismételhetőség, régi adatmegőrzés, aktív tagság, pontos scope, fotótörlés és bizonytalan email-újrapróbálás lefedve.
 - Böngészőben 390 és 1366 képpontos nézet ellenőrizve, nincs vízszintes túlcsordulás. Szintetikus adattáblán valódi OCR: `TESTABC012345`; kiválasztás, mentés és újratöltés a megfelelő beltéri készülékhez tartotta a számot. H tarifa hiányzóadat-jelzése és a PDF emailgombok ellenőrizve.
-- Magyar ékezetes, külön aláírású munkalap/nyilatkozat és hosszú munkalap PDF renderelve. Mindkét H formán több készülék, összes eredeti oldal, mezőfa, widgetek és látható kitöltés ellenőrizve.
+- Magyar ékezetes, külön aláírású munkalap/nyilatkozat és hosszú munkalap PDF renderelve. Mindhárom H formán több készülék, összes eredeti oldal, mezőfa, widgetek és látható kitöltés ellenőrizve. Émász: 4 oldal és 32 egyedi mező, hosszú gyári számok; a közös kültéri egységű multi rendszer egyértelmű különkitöltési jelzést kap. A 17 H-teszt sikeres.
 - Élő migráció előtt 20 public tábla 3981 sorának és a Storage metaadatainak mentése: Downloads `Supabase Snippet Untitled query (3).csv`, SHA256 `C6DE15CD9F04240E9EC75814743013885A2DA75B86A8CC1AB095CCE4B1C5E20C`. Nem tartalmazza a Storage képfájlok bináris másolatát; ezeket a migráció nem módosítja.
 - Teljes sémaaudit függvény-/triggerdefiníciókkal: Downloads `Supabase Snippet Untitled query (4).csv`, SHA256 `9BD3BDF8CFEA99AB411411A0EBF4B5DC00774DAEAFB6017E6E0EF9AEE7F7536E`. A két mentés személyes adatai a repón kívül maradnak.
 - Kiadás előtti alapállapot: 598 ügyfél, 781 időpont, 513 dokumentum, 113 munkalap, 70 vásárlási nyilatkozat, 7 munkafotó és 7 Storage objektum. A három új tábla és három új függvénynév szabad.
@@ -60,7 +60,7 @@ A kód az előző kiadásra visszaállítható. Az additív adatokat visszaáll�
 - Kiadás: `codex/installation-documents-and-device-photos` ág. A merge és az éles Vercel-készültség a GitHub PR ellenőrzéseiben követhető; a kész éles felületet a kiadás után csak olvasással ellenőrizzük.
 - Korábbi fotó-SQL regressziók: 42 alap- és 20 törlési próba is sikeres.
 
-Más elosztó (például MVM Émász) nyomtatványának támogatásához annak pontos formája szükséges. A felhasználó elosztóválasztását a felület kezeli; ellenőrizetlen nyomtatványt nem nevez át megfelelőnek.
+A felhasználó elosztóválasztását a felület kezeli; az eredeti elosztói nyomtatványok és azok saját kötelező mezői alapján készülnek a PDF-ek.
 
 ## Fájljegyzék
 
@@ -76,6 +76,7 @@ Más elosztó (például MVM Émász) nyomtatványának támogatásához annak p
 - [package.json](../package.json)
 - [public/forms/h-tariff/eon-25-htb-1-2.pdf](../public/forms/h-tariff/eon-25-htb-1-2.pdf)
 - [public/forms/h-tariff/mvm-aszab-10-ny03.pdf](../public/forms/h-tariff/mvm-aszab-10-ny03.pdf)
+- [public/forms/h-tariff/mvm-emasz-m050-01.pdf](../public/forms/h-tariff/mvm-emasz-m050-01.pdf)
 - [src/app/api/h-tariff/pdf/route.ts](../src/app/api/h-tariff/pdf/route.ts)
 - [src/app/api/send-thank-you/route.ts](../src/app/api/send-thank-you/route.ts)
 - [src/app/api/send-work-report/route.ts](../src/app/api/send-work-report/route.ts)

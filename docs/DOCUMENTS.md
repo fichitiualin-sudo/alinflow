@@ -6,7 +6,7 @@ A munkalap mentési képernyőjén a **Mentés és PDF-ek küldése** előbb elm
 
 A PDF megőrzi a dokumentum saját aláírását, magyar ékezeteit és a mentett adatpillanatképet. Hiányzó vagy más időponthoz tartozó dokumentumot nem helyettesít a legutóbbi ügyféldokumentummal. A PDF-ek a küldéskor készülnek, nem foglalnak külön Supabase Storage tárhelyet.
 
-A munka Dokumentumok részében külön lenyitható **H tarifás nyomtatvány** található. Az ellenőrzött hivatalos E.ON és MVM Démász űrlap a telepítés összes aktuális készülékének mentett adatait használja. A hiányzó műszaki adatok kitölthetők, a nyomtatvány PDF-ben letölthető. Aláírást nem másol át. Részletes források és szabályok: [H_TARIFF_FORMS.md](H_TARIFF_FORMS.md).
+A munka Dokumentumok részében külön lenyitható **H tarifás nyomtatvány** található. Az ellenőrzött hivatalos E.ON/ELMŰ, MVM Démász és MVM Émász űrlap a telepítés összes aktuális készülékének mentett adatait használja. A hiányzó adatok kitölthetők, a nyomtatvány PDF-ben letölthető. Aláírást nem másol át. Részletes források és szabályok: [H_TARIFF_FORMS.md](H_TARIFF_FORMS.md).
 
 ## Alapelv
 

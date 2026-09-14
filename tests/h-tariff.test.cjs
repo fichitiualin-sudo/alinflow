@@ -19,7 +19,7 @@ test("H tariff starts without an assumed distributor and ignores technical guess
   assert.equal(defaults.applicantName, "Saved name");
   assert.equal(defaults.installerName, "Saved installer");
   assert.equal(defaults.totalSimultaneousElectricalKw, "");
-  assert.equal(h.normalizeHTariffData({ provider: "mvm-emasz", signature: "FORGED", applicantName: {} }).provider, "");
+  assert.equal(h.normalizeHTariffData({ provider: "unsupported", signature: "FORGED", applicantName: {} }).provider, "");
   assert.equal(h.normalizeHTariffData({ signature: "FORGED" }).signature, undefined);
 });
 
@@ -63,16 +63,49 @@ test("E.ON groups only identical technical systems; MVM has one form per physica
   const units = [device(1), device(2), device(3, { scop: "4.7" }), device(4, { outdoorModel: "OTHER" })];
   assert.deepEqual(h.hTariffDeviceGroups("eon", units).map((group) => group.length), [2, 1, 1]);
   assert.deepEqual(h.hTariffDeviceGroups("mvm-demasz", units).map((group) => group.length), [1, 1, 1, 1]);
+  assert.deepEqual(h.hTariffDeviceGroups("mvm-emasz", units).map((group) => group.length), [1, 1, 1, 1]);
+});
+
+const emaszData = (patch = {}) => data("mvm-emasz", { emaszConsumptionPlaceIdentifier: "21234567", installerFgasIdentifier: "TESZT-FGAS-123456", caseNumber: "", ...patch });
+
+test("Émász requires saved exact model pairs, serials and F-gas contact data without unrelated technical fields", () => {
+  const fields = ["manufacturer", "indoorModel", "outdoorModel", "indoorSerial", "outdoorSerial"];
+  const unit = device();
+  unit.data = Object.fromEntries(fields.map((key) => [key, unit.data[key]]));
+  assert.deepEqual(h.validateHTariff(emaszData(), [unit], scope), []);
+  assert.deepEqual(h.validateHTariff(emaszData(), [device(1, { scop: "2", nominalElectricalKw: "bad", heatingCapacityKw: "bad", systemType: "" })], scope), []);
+  for (const key of fields) {
+    const issues = h.validateHTariff(emaszData(), [{ ...unit, data: { ...unit.data, [key]: "" } }], scope);
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0].deviceField, key);
+  }
+  for (const key of ["applicantName", "installationAddress", "emaszConsumptionPlaceIdentifier", "installerName", "installerFgasIdentifier", "installerPhone", "installerEmail", "location", "date"]) {
+    assert.ok(h.validateHTariff(emaszData({ [key]: "" }), [unit], scope).some((issue) => issue.field === key));
+  }
+  assert.ok(h.validateHTariff(emaszData({ date: "2026-02-31" }), [unit], scope).some((issue) => issue.field === "date"));
+  assert.equal(h.normalizeHTariffData({ provider: "mvm-emasz", installerFgasIdentifier: " 123 ", caseNumber: " REF ", emaszConsumptionPlaceIdentifier: " 21234567 " }).caseNumber, "REF");
+  assert.equal(h.defaultHTariffData({ name: "Name" }, { companyProfile: {} }).installerFgasIdentifier, "");
+});
+
+test("Émász refuses duplicate outdoor serials instead of inventing separate systems for a multisplit", async () => {
+  const units = [device(1, { outdoorSerial: "OUT-SHARED" }), device(2, { outdoorSerial: " out-shared " })];
+  const issues = h.validateHTariff(emaszData(), units, scope);
+  assert.equal(issues.length, 2);
+  assert.ok(issues.every((issue) => issue.deviceField === "outdoorSerial" && /multi rendszer/.test(issue.label)));
+  await assert.rejects(buildHTariffPdf(emaszData(), units, scope), /multi rendszer/);
+  assert.deepEqual(h.validateHTariff(emaszData(), [device(1), device(2)], scope), []);
+  assert.deepEqual(h.validateHTariff(data(), units, scope), []);
+  assert.deepEqual(h.validateHTariff(data("mvm-demasz"), units, scope), []);
 });
 
 test("official source templates have their audited exact hashes", () => {
-  const files = { "eon-25-htb-1-2.pdf": "8fe2323df2f4635cf0cc194dc2ca23af06ca8557deccc4e72d5f80b422a2e945", "mvm-aszab-10-ny03.pdf": "c8756b5b3311d113fdc3efa3a7c4169ada99a52c5b3c85192d835b578d829048" };
+  const files = { "eon-25-htb-1-2.pdf": "8fe2323df2f4635cf0cc194dc2ca23af06ca8557deccc4e72d5f80b422a2e945", "mvm-aszab-10-ny03.pdf": "c8756b5b3311d113fdc3efa3a7c4169ada99a52c5b3c85192d835b578d829048", "mvm-emasz-m050-01.pdf": "d4e12a798a491041bf77058d6ceab5c37a466eea13f65071674205b029a4a16b" };
   for (const [name, hash] of Object.entries(files)) assert.equal(createHash("sha256").update(fs.readFileSync(path.resolve("public/forms/h-tariff", name))).digest("hex"), hash);
 });
 
-for (const provider of ["eon", "mvm-demasz"]) test(`${provider} PDF contains complete official pages and canonical editable fields for every form`, async () => {
-  const units = [device(1), device(2, provider === "eon" ? { outdoorModel: "OUT-50-TEST" } : {})];
-  const bytes = await buildHTariffPdf(data(provider), units, scope);
+for (const provider of ["eon", "mvm-demasz", "mvm-emasz"]) test(`${provider} PDF contains complete official pages and canonical editable fields for every form`, async () => {
+  const units = [device(1), device(2, provider === "eon" ? { outdoorModel: "OUT-50-TEST" } : provider === "mvm-emasz" ? { indoorSerial: "TESZT-IN-00123456789012345678901234567890", outdoorSerial: "TESZT-OUT-00987654321098765432109876543210" } : {})];
+  const bytes = await buildHTariffPdf(provider === "mvm-emasz" ? emaszData() : data(provider), units, scope);
   const pdf = await PDFDocument.load(bytes);
   assert.equal(pdf.getPageCount(), 4);
   assert.equal(pdf.getForm().getTextField("h_1.applicantName").getText(), "TESZT Őri Tűnde");
@@ -81,6 +114,15 @@ for (const provider of ["eon", "mvm-demasz"]) test(`${provider} PDF contains com
   else {
     assert.equal(pdf.getForm().getTextField("h_2.indoorModel").getText(), "IN-35-TEST");
     assert.equal(pdf.getForm().getTextField("h_2.outdoorModel").getText(), "OUT-35-TEST");
+  }
+  if (provider === "mvm-emasz") {
+    assert.equal(pdf.getForm().getTextField("h_2.indoorSerial").getText(), units[1].data.indoorSerial);
+    assert.equal(pdf.getForm().getTextField("h_2.outdoorSerial").getText(), units[1].data.outdoorSerial);
+    assert.equal(pdf.getForm().getTextField("h_1.tariff").getText(), "H");
+    assert.equal(pdf.getForm().getTextField("h_1.installerFgasIdentifier").getText(), emaszData().installerFgasIdentifier);
+    assert.equal(pdf.getForm().getTextField("h_1.emaszConsumptionPlaceIdentifier").getText(), emaszData().emaszConsumptionPlaceIdentifier);
+    assert.equal(pdf.getForm().getTextField("h_1.caseNumber").getText() || "", "");
+    assert.equal(pdf.getForm().getFields().length, 32);
   }
   const fields = pdf.getForm().getFields();
   assert.equal(new Set(fields.map((field) => field.getName())).size, fields.length);
@@ -109,6 +151,21 @@ test("E.ON count is populated and Hungarian source data survives roundtrip", asy
 test("invalid or unreasonably long values stop PDF generation instead of clipping or inventing", async () => {
   await assert.rejects(buildHTariffPdf(data(), [device(1, { scop: "" })], scope), /SCOP/);
   await assert.rejects(buildHTariffPdf(data("eon", { applicantName: "Long".repeat(300) }), [device()], scope), /túl hosszú/);
+  await assert.rejects(buildHTariffPdf(emaszData(), [device(1, { indoorSerial: "S".repeat(200) })], scope), /túl hosszú/);
+});
+
+test("Émász request roundtrips its own identifier, optional case number and F-gas identifier", async () => {
+  let saved;
+  const values = emaszData({ caseNumber: "TESZT-CASE-123" });
+  const store = loadTypeScript("src/lib/alinflow/h-tariff-store.ts", { "@/lib/supabase": { supabase: database((op) => {
+    if (op.method === "insert") saved = op.value;
+    return { data: { data: saved.data, updated_at: "version-1" }, error: null };
+  }) } });
+  const result = await store.saveHTariffRequest(scope, values);
+  assert.deepEqual(saved.data, values);
+  assert.deepEqual(result.data, values);
+  const loaded = await store.loadHTariffRequest(scope);
+  assert.deepEqual(loaded.data, values);
 });
 
 test("H tariff storage reads and updates exact scope with optimistic versioning", async () => {

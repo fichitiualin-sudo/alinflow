@@ -16,6 +16,12 @@ export const H_TARIFF_PROVIDERS = {
     version: "Á-SZAB-10-NY03, 2025.05.16.",
     source: "https://mvmhalozat.hu/attachments/40414",
   },
+  "mvm-emasz": {
+    label: "MVM Émász",
+    template: "mvm-emasz-m050-01.pdf",
+    version: "M_050_01",
+    source: "https://mvmemaszhalozat.hu/elmu/file/downloadfile?id=6d2b087e-92d7-40fc-a8b9-9db2b7a19677",
+  },
 } as const;
 export type HTariffProvider = keyof typeof H_TARIFF_PROVIDERS;
 export const H_TARIFF_DATA_FIELDS = [
@@ -23,6 +29,7 @@ export const H_TARIFF_DATA_FIELDS = [
   "meteringPointIdentifier", "totalSimultaneousElectricalKw", "location", "date",
   "installerName", "installerAddress", "installerPhone", "installerEmail",
   "electricianName", "electricianAddress", "electricianPhone", "electricianEmail", "notes",
+  "emaszConsumptionPlaceIdentifier", "caseNumber", "installerFgasIdentifier",
 ] as const;
 export type HTariffDataField = typeof H_TARIFF_DATA_FIELDS[number];
 export type HTariffData = Record<HTariffDataField, string> & { provider: HTariffProvider | "" };
@@ -55,15 +62,23 @@ export const H_TARIFF_MVM_DEVICE_FIELDS: readonly HTariffDeviceField[] = [
   { key: "heatingSeasonKwh", label: "Becsült fogyasztás a fűtési időszakban (kWh)" },
   { key: "summerSeasonKwh", label: "Becsült fogyasztás a nyári időszakban (kWh)" },
 ];
+export const H_TARIFF_EMASZ_DEVICE_FIELDS: readonly HTariffDeviceField[] = [
+  { key: "manufacturer", label: "Gyártó / márka" },
+  { key: "indoorModel", label: "Beltéri egység pontos típusa" },
+  { key: "outdoorModel", label: "Kültéri egység pontos típusa" },
+  { key: "indoorSerial", label: "Beltéri egység teljes gyári száma (S/N)" },
+  { key: "outdoorSerial", label: "Kültéri egység teljes gyári száma (S/N)" },
+];
 
 export function hTariffDeviceFields(provider: HTariffData["provider"]) {
+  if (provider === "mvm-emasz") return [...H_TARIFF_EMASZ_DEVICE_FIELDS];
   return [...H_TARIFF_COMMON_DEVICE_FIELDS, ...(provider === "eon" ? H_TARIFF_EON_DEVICE_FIELDS : provider === "mvm-demasz" ? H_TARIFF_MVM_DEVICE_FIELDS : [])];
 }
 
 export function normalizeHTariffData(value: unknown): HTariffData {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const fields = Object.fromEntries(H_TARIFF_DATA_FIELDS.map((key) => [key, typeof source[key] === "string" ? source[key].trim().slice(0, key === "notes" ? 1000 : 250) : ""])) as Record<HTariffDataField, string>;
-  const provider = source.provider === "eon" || source.provider === "mvm-demasz" ? source.provider : "";
+  const provider = source.provider === "eon" || source.provider === "mvm-demasz" || source.provider === "mvm-emasz" ? source.provider : "";
   return { ...fields, provider };
 }
 
@@ -108,6 +123,15 @@ export function validateHTariff(data: HTariffData, devices: AppointmentDevice[],
     if (!(Number(hTariffNumber(data.totalSimultaneousElectricalKw)) > 0)) issues.push({ field: "totalSimultaneousElectricalKw", label: "Teljes egyidejű villamos teljesítmény (pozitív kW)" });
     require("location", "Keltezés helye");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date) || Number.isNaN(Date.parse(`${data.date}T12:00:00Z`)) || new Date(`${data.date}T12:00:00Z`).toISOString().slice(0, 10) !== data.date) issues.push({ field: "date", label: "Érvényes keltezési dátum" });
+  } else if (data.provider === "mvm-emasz") {
+    require("installationAddress", "A telepítés teljes címe, irányítószámmal");
+    require("emaszConsumptionPlaceIdentifier", "Émász felhasználási hely azonosító");
+    require("installerName", "F-gázos kivitelező neve");
+    require("installerFgasIdentifier", "F-gáz ügyfélazonosító (NKH)");
+    require("installerPhone", "F-gázos kivitelező telefonszáma");
+    require("installerEmail", "F-gázos kivitelező email címe");
+    require("location", "Keltezés helye");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date) || Number.isNaN(Date.parse(`${data.date}T12:00:00Z`)) || new Date(`${data.date}T12:00:00Z`).toISOString().slice(0, 10) !== data.date) issues.push({ field: "date", label: "Érvényes keltezési dátum" });
   }
   if (!devices.length) issues.push({ label: "Legalább egy elmentett készülék szükséges." });
   if (devices.length > 100) issues.push({ label: "Egy dokumentum legfeljebb 100 készüléket tartalmazhat." });
@@ -121,12 +145,12 @@ export function validateHTariff(data: HTariffData, devices: AppointmentDevice[],
       if (field.optional) continue;
       if (!value || (field.options && !field.options.some(([key]) => key === value))) issues.push({ deviceId, deviceField: field.key, label: field.label });
     }
-    for (const key of ["nominalElectricalKw", "heatingCapacityKw", "scop", ...(data.provider === "eon" ? ["nominalCurrentA", "maximumCurrentA"] : [])] as DeviceDataField[]) {
+    for (const key of (data.provider === "mvm-emasz" ? [] : ["nominalElectricalKw", "heatingCapacityKw", "scop", ...(data.provider === "eon" ? ["nominalCurrentA", "maximumCurrentA"] : [])]) as DeviceDataField[]) {
       if (!device.data[key]?.trim()) continue;
       const value = hTariffNumber(device.data[key]);
       if (value === null || value <= 0) issues.push({ deviceId, deviceField: key, label: `${hTariffDeviceFields(data.provider).find((f) => f.key === key)?.label || key}: pozitív szám szükséges.` });
     }
-    if (hTariffNumber(device.data.scop) !== null && Number(hTariffNumber(device.data.scop)) < 3.4) issues.push({ deviceId, deviceField: "scop", label: "A nyomtatvány legalább 3,4 SCOP értéket ír elő. Ellenőrizd a gyártói adatlapot." });
+    if (data.provider !== "mvm-emasz" && hTariffNumber(device.data.scop) !== null && Number(hTariffNumber(device.data.scop)) < 3.4) issues.push({ deviceId, deviceField: "scop", label: "A nyomtatvány legalább 3,4 SCOP értéket ír elő. Ellenőrizd a gyártói adatlapot." });
     for (const key of (data.provider === "mvm-demasz" ? ["heatingSeasonKwh", "summerSeasonKwh"] : data.provider === "eon" ? ["supplementaryHeaterKw"] : []) as DeviceDataField[]) {
       if (!device.data[key]?.trim()) continue;
       const value = hTariffNumber(device.data[key]);
@@ -144,13 +168,20 @@ export function validateHTariff(data: HTariffData, devices: AppointmentDevice[],
         }
       }
     }
+    if (data.provider === "mvm-emasz") {
+      const serial = (value: string | undefined) => value?.normalize("NFKC").replace(/\s/g, "").toUpperCase() || "";
+      const outdoorSerial = serial(device.data.outdoorSerial);
+      if (outdoorSerial && devices.some((other) => other !== device && serial(other.data.outdoorSerial) === outdoorSerial)) {
+        issues.push({ deviceId, deviceField: "outdoorSerial", label: "Több készülékhez azonos kültéri gyári szám tartozik. Ellenőrizd az adatokat; közös kültéri egységű multi rendszerhez az Émász nyilatkozatot külön, az összes beltéri egységgel kell kitölteni. Ehhez a rendszerhez itt nem készíthető PDF." });
+      }
+    }
   }
   return issues.filter((issue, index) => issues.findIndex((other) => other.field === issue.field && other.deviceId === issue.deviceId && other.deviceField === issue.deviceField && other.label === issue.label) === index);
 }
 
 /** E.ON groups identical systems; differing technical values must never be collapsed. */
 export function hTariffDeviceGroups(provider: HTariffProvider, devices: AppointmentDevice[]): AppointmentDevice[][] {
-  if (provider === "mvm-demasz") return devices.map((device) => [device]);
+  if (provider !== "eon") return devices.map((device) => [device]);
   const groups = new Map<string, AppointmentDevice[]>();
   const fields = hTariffDeviceFields(provider).map((field) => field.key);
   for (const device of devices) {

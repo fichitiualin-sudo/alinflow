@@ -89,6 +89,23 @@ export async function buildHTariffPdf(data: HTariffData, devices: AppointmentDev
         field(`${role}Phone`, data[`${role}Phone`], [role === "electrician" ? 174.95 : 391.18, 257.73, role === "electrician" ? 116.31 : 170.08, 10.77], { size: 8 });
         field(`${role}Email`, data[`${role}Email`], [role === "electrician" ? 168.95 : 385.51, 241.91, role === "electrician" ? 122.31 : 175.75, 10.77], { size: 8 });
       }
+    } else if (data.provider === "mvm-emasz") {
+      field("applicantName", data.applicantName, [129.480, 706.560, 388.255, 20.400]);
+      field("installationAddress", data.installationAddress, [171.183, 683.955, 347.097, 20.280]);
+      field("emaszConsumptionPlaceIdentifier", data.emaszConsumptionPlaceIdentifier, [180.592, 661.230, 338.475, 20.400]);
+      field("caseNumber", data.caseNumber, [132.205, 638.565, 386.192, 20.400]);
+      field("tariff", "H", [131.733, 616.320, 386.565, 19.560]);
+      field("manufacturer", technical.manufacturer || "", [137.045, 523.560, 377.735, 20.400]);
+      field("model", hTariffModel(technical), [100.366, 500.062, 414.894, 20.400]);
+      field("outdoorModel", technical.outdoorModel || "", [188.163, 476.564, 326.801, 20.400]);
+      field("indoorModel", technical.indoorModel || "", [188.184, 453.067, 327.445, 20.400]);
+      field("outdoorSerial", technical.outdoorSerial || "", [172.669, 429.569, 342.360, 20.400]);
+      field("indoorSerial", technical.indoorSerial || "", [172.713, 406.071, 342.860, 20.400]);
+      field("installerName", data.installerName, [94.516, 242.467, 422.396, 20.400]);
+      field("installerFgasIdentifier", data.installerFgasIdentifier, [186.012, 218.504, 330.496, 20.400]);
+      field("installerPhone", data.installerPhone, [126.575, 194.541, 390.185, 20.400]);
+      field("installerEmail", data.installerEmail, [119.698, 170.578, 397.586, 20.400]);
+      field("dateAndLocation", `${data.location}, ${data.date.replaceAll("-", ".")}.`, [140.825, 128.031, 258.360, 20.400]);
     } else {
       const topField = (name: string, value: string, x: number, top: number, width: number, height: number, options?: Parameters<typeof field>[3]) => field(name, value, [x, page.getHeight() - top - height, width, height], options);
       topField("applicantName", data.applicantName, 198, 161, 362, 20, { size: 11 });

@@ -127,7 +127,7 @@ function ScopedHTariffPanel({ customer, workspaceId, workspaceSettings, devices:
             </select>
           </label>
           {data.provider ? <p className="text-sm text-slate-300">
-            {data.provider === "eon" ? "Azonos pontos típus és műszaki adatok esetén egy lap készül, darabszámmal. Eltérő készülékhez külön lap tartozik." : "Minden készülékhez külön nyilatkozati lap készül."}{" "}
+            {data.provider === "eon" ? "Azonos pontos típus és műszaki adatok esetén egy lap készül, darabszámmal. Eltérő készülékhez külön lap tartozik." : data.provider === "mvm-emasz" ? "Minden önálló beltéri–kültéri párhoz külön H tarifás nyilatkozat készül. Közös kültéri egységű multi rendszerhez külön kitöltés szükséges, az összes beltéri egységgel." : "Minden készülékhez külön nyilatkozati lap készül."}{" "}
             <a href={H_TARIFF_PROVIDERS[data.provider].source} target="_blank" rel="noreferrer" className="font-bold text-cyan-200 underline">Hivatalos nyomtatvány</a>
           </p> : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -139,6 +139,12 @@ function ScopedHTariffPanel({ customer, workspaceId, workspaceSettings, devices:
               {textField("postalCode", "Felhasználási hely irányítószáma")}
               {textField("installationAddress", "Felhasználási hely címe")}
               {textField("totalSimultaneousElectricalKw", "H kör teljes egyidejű villamos teljesítménye (kW)")}
+              {textField("location", "Keltezés helye")}{textField("date", "Keltezés dátuma", "date")}
+            </> : null}
+            {data.provider === "mvm-emasz" ? <>
+              {textField("installationAddress", "A telepítés teljes címe, irányítószámmal")}
+              {textField("emaszConsumptionPlaceIdentifier", "Émász felhasználási hely azonosító")}
+              {textField("caseNumber", "Ügyiratszám (első igénybejelentés előtt elhagyható)")}
               {textField("location", "Keltezés helye")}{textField("date", "Keltezés dátuma", "date")}
             </> : null}
           </div>
@@ -156,6 +162,13 @@ function ScopedHTariffPanel({ customer, workspaceId, workspaceSettings, devices:
               <textarea value={data.notes} disabled={busy || loading} maxLength={1000} rows={3} className={inputClass} onChange={(event) => update("notes", event.target.value)} />
             </label>
           </> : null}
+          {data.provider === "mvm-emasz" ? <fieldset className="rounded-2xl border border-white/10 p-3">
+            <legend className="px-1 text-sm font-black text-slate-100">F-gázos kivitelező</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {textField("installerName", "Név")}{textField("installerFgasIdentifier", "F-gáz ügyfélazonosító (NKH)")}
+              {textField("installerPhone", "Telefonszám", "tel")}{textField("installerEmail", "Email", "email")}
+            </div>
+          </fieldset> : null}
           {!loading && !entries.length ? <p className="text-sm text-amber-200">Ehhez a telepítéshez még nincs készülék megadva. Előbb rögzítsd és mentsd a készülékeket a munkánál.</p> : null}
           {entries.map((entry) => {
             const key = deviceSlotKey(entry.slot);
