@@ -81,6 +81,12 @@ A `WorkReport` több rekordot enged ugyanahhoz az ügyfélhez. A szerelési és 
 
 ## Supabase fő táblák
 
+### Belső beszerzési árak (2026-09-14)
+
+Az `inventory_purchase_prices` önálló belső tábla: `(workspace_id, item_type, item_key)` elsődleges kulcs, `purchase_price` opcionális HUF egységár, `tax_basis` kötelező `net`/`gross`, szerveroldali `created_at` és `updated_at`. Klímánál a termékazonosító, anyagnál a pontos anyagnév kapcsolja a saját munkaterület létező készlettételéhez. Aktív tagság szükséges; anonim hozzáférés és közvetlen törlés nincs. Kiürített ár `null`, nem nulla. Párhuzamos szerkesztés ellen az előző szerververzióra szűrő mentés véd.
+
+Csak a Raktár tölti be, saját komponensállapotba. A beszerzési ár nem része a `ClimateProduct`, `QuoteItem`, `Customer` vagy cégbeállítás objektumnak, így az ajánlatok, emailek, számlák, naptárbejegyzések és dokumentumok nem kapják meg. A katalógusszinkron és a készletműveletek nem írják ezt a táblát. Migráció: `docs/sql/INVENTORY_PURCHASE_PRICES.sql`; terv: [WAREHOUSE_PURCHASE_PRICES_PLAN.md](WAREHOUSE_PURCHASE_PRICES_PLAN.md).
+
 ### Készülékadatok, adattábla-fotók és H tarifa (2026-09-14)
 
 - `appointment_devices`: egy sor fizikai készülékenként a pontos telepítésen belül. Egyedi kulcs: `(appointment_id, product_key, unit_number)`. A gyártó, pontos beltéri/kültéri típus, két sorozatszám és H tarifás műszaki értékek a `data` JSON-ban vannak.

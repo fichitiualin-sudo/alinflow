@@ -100,8 +100,8 @@ export function isQuoteItemFilled(item: QuoteItem) {
 }
 
 export function cleanQuoteItems(items?: QuoteItem[]) {
+  // Customer documents may persist these objects; never copy unknown internal fields.
   return (items || []).filter(isQuoteItemFilled).map((item) => ({
-    ...item,
     quantity: itemQuantity(item),
     productId: item.productId || "",
     productName: item.productName || (isKnownProductId(item.productId) ? prod(item.productId).name : undefined),
