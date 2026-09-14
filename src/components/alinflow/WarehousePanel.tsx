@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { ClimateProduct } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
+import { inventoryPriceKey } from "@/lib/alinflow/inventory-purchase-prices";
+import { InventoryPurchasePriceEditor, useInventoryPurchasePrices } from "./InventoryPurchasePrice";
 
 type MaterialInventoryItem = {
   name: string;
@@ -10,6 +12,7 @@ type MaterialInventoryItem = {
 };
 
 type WarehousePanelProps = {
+  workspaceId?: string;
   onBack: () => void;
   products: ClimateProduct[];
   materialInventory: MaterialInventoryItem[];
@@ -42,34 +45,8 @@ function productDevicePrice(product: ClimateProduct) {
   return Math.max(0, Number(product.price || 0) - Number(product.installPrice || 0));
 }
 
-const WAREHOUSE_PAGE_SIZE = 10;
-
-function paginate<T>(items: T[], page: number) {
-  const pageCount = Math.max(1, Math.ceil(items.length / WAREHOUSE_PAGE_SIZE));
-  const currentPage = Math.min(Math.max(1, page), pageCount);
-  const start = (currentPage - 1) * WAREHOUSE_PAGE_SIZE;
-  return {
-    currentPage,
-    pageCount,
-    items: items.slice(start, start + WAREHOUSE_PAGE_SIZE),
-  };
-}
-
-function PaginationControls({ currentPage, pageCount, totalCount, onPageChange }: { currentPage: number; pageCount: number; totalCount: number; onPageChange: (page: number) => void }) {
-  if (totalCount <= WAREHOUSE_PAGE_SIZE) return null;
-
-  return (
-    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-bold text-slate-300 sm:flex-row sm:items-center sm:justify-between">
-      <span>{currentPage}. oldal / {pageCount} · maximum {WAREHOUSE_PAGE_SIZE} tétel oldalanként</span>
-      <div className="grid grid-cols-2 gap-2 sm:flex">
-        <button type="button" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)} className="rounded-xl bg-white/10 px-4 py-2 font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40">Előző</button>
-        <button type="button" disabled={currentPage >= pageCount} onClick={() => onPageChange(currentPage + 1)} className="rounded-xl bg-cyan-300 px-4 py-2 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Következő</button>
-      </div>
-    </div>
-  );
-}
-
 export function WarehousePanel({
+  workspaceId,
   onBack,
   products,
   materialInventory,
@@ -97,24 +74,17 @@ export function WarehousePanel({
   addMaterialStock,
   onAddMaterialItem,
 }: WarehousePanelProps) {
-  const [productPage, setProductPage] = useState(1);
-  const [materialPage, setMaterialPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const purchasePrices = useInventoryPurchasePrices(workspaceId);
   const [showMaterialManager, setShowMaterialManager] = useState(false);
   const [newMaterialName, setNewMaterialName] = useState("");
   const [newMaterialUnit, setNewMaterialUnit] = useState("db");
   const [newMaterialStock, setNewMaterialStock] = useState("0");
   const [newMaterialLowAt, setNewMaterialLowAt] = useState("1");
   const [materialMessage, setMaterialMessage] = useState("");
-  const productPagination = paginate(products, productPage);
-  const materialPagination = paginate(materialInventory, materialPage);
-
-  useEffect(() => {
-    setProductPage(1);
-  }, [products.length]);
-
-  useEffect(() => {
-    setMaterialPage(1);
-  }, [materialInventory.length]);
+  const query = search.trim().toLocaleLowerCase("hu-HU");
+  const visibleProducts = products.filter((product) => product.name.toLocaleLowerCase("hu-HU").includes(query));
+  const visibleMaterials = materialInventory.filter((item) => item.name.toLocaleLowerCase("hu-HU").includes(query));
 
   async function addMaterialItem() {
     const name = newMaterialName.trim();
@@ -167,11 +137,22 @@ export function WarehousePanel({
         onSaveClimateProduct={onSaveClimateProduct}
         onDeleteClimateProduct={onDeleteClimateProduct}
       />
+      <div className="space-y-3 print:hidden">
+        <label className="block text-sm font-bold text-slate-300">Keresés a klímák és anyagok között
+          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Klíma vagy anyag neve" className="input mt-2" />
+        </label>
+        <p className="text-sm text-slate-400">A beszerzési árak csak a belső raktárban láthatók, ügyféldokumentumba és emailbe nem kerülnek.</p>
+        {purchasePrices.loading ? <p role="status" className="text-sm text-slate-300">Beszerzési árak betöltése...</p> : null}
+        {purchasePrices.error ? <div role="alert" className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+          <p>{purchasePrices.error}</p>
+          <button type="button" onClick={purchasePrices.retry} className="mt-2 rounded-xl bg-white/10 px-3 py-2 font-bold">Árak betöltésének újrapróbálása</button>
+        </div> : null}
+      </div>
       <Layout>
         <Main>
           <Card title="Klíma készlet">
             <div className="space-y-3">
-              {productPagination.items.map((product) => {
+              {visibleProducts.map((product) => {
                 const stock = stockOf(product.id);
                 const reserved = reservedForProduct(product.id);
                 const free = stock - reserved;
@@ -190,6 +171,11 @@ export function WarehousePanel({
                       </div>
                     </div>
 
+                    <InventoryPurchasePriceEditor
+                      item={{ itemType: "climate", itemKey: product.id }} itemName={product.name} unit="db"
+                      price={purchasePrices.prices.get(inventoryPriceKey({ itemType: "climate", itemKey: product.id }))}
+                      disabled={purchasePrices.loading || Boolean(purchasePrices.error)} onSave={purchasePrices.save}
+                    />
                     {reserved > stock ? (
                       <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/20 p-4 text-sm font-black text-red-100">
                         Figyelem: {reserved - stock} db-bal több van lefoglalva, mint amennyi raktáron van.
@@ -212,7 +198,7 @@ export function WarehousePanel({
                 );
               })}
             </div>
-            <PaginationControls currentPage={productPagination.currentPage} pageCount={productPagination.pageCount} totalCount={products.length} onPageChange={setProductPage} />
+            {!visibleProducts.length ? <p className="mt-3 text-sm text-slate-400">{query ? "Nincs megfelelő klíma." : "Nincs aktív klímatípus."}</p> : null}
           </Card>
 
           <Card title="Szerelési anyagok">
@@ -249,7 +235,7 @@ export function WarehousePanel({
             ) : null}
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {materialPagination.items.map((item) => {
+              {visibleMaterials.map((item) => {
                 const reserved = materialReserved(item.name);
                 const free = item.stock - reserved;
                 const status = free <= 0 ? "hiány" : free <= item.lowAt ? "alacsony" : "rendben";
@@ -270,6 +256,11 @@ export function WarehousePanel({
                       <StockBadge label="Szabad" value={`${free} ${item.unit}`} tone={free > 0 ? "green" : "red"} />
                     </div>
 
+                    <InventoryPurchasePriceEditor
+                      item={{ itemType: "material", itemKey: item.name }} itemName={item.name} unit={item.unit}
+                      price={purchasePrices.prices.get(inventoryPriceKey({ itemType: "material", itemKey: item.name }))}
+                      disabled={purchasePrices.loading || Boolean(purchasePrices.error)} onSave={purchasePrices.save}
+                    />
                     {reserved > item.stock ? (
                       <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/20 p-4 text-sm font-black text-red-100">
                         Figyelem: {reserved - item.stock} {item.unit} hiányzik a lefoglalt munkákhoz.
@@ -292,7 +283,7 @@ export function WarehousePanel({
                 );
               })}
             </div>
-            <PaginationControls currentPage={materialPagination.currentPage} pageCount={materialPagination.pageCount} totalCount={materialInventory.length} onPageChange={setMaterialPage} />
+            {!visibleMaterials.length ? <p className="mt-3 text-sm text-slate-400">{query ? "Nincs megfelelő szerelési anyag." : "Nincs szerelési anyag a raktárban."}</p> : null}
           </Card>
         </Main>
 

@@ -111,8 +111,16 @@ npm run build
 
 ## Listák és reszponzivitás
 
-- [ ] Legfeljebb 10 rekord jelenik meg oldalanként.
+- [ ] A lapozott listákon legfeljebb 10 rekord jelenik meg oldalanként; a Raktárban minden készlettétel egy folyamatos listában látszik.
 - [ ] Lapozás működik.
 - [ ] Mobil dashboard sorrend helyes.
 - [ ] Asztali Raktár gyorsnézet fent, jobb oldalon van.
 - [ ] A gombok nem érnek össze és nem csúsznak ki.
+
+## Belső beszerzési árak
+
+- [ ] Ár mentése és visszatöltése megőrzi az összeget és a nettó/bruttó jelölést.
+- [ ] Hiányzó ár és nulla megkülönböztethető; betöltési hiba mellett ár nem menthető.
+- [ ] Munkaterületváltás, kijelentkezés és későn érkező válasz nem hagyhat látható idegen belső árat.
+- [ ] Ajánlat, email, számla, naptár, nyilatkozat, munkalap és export nem tartalmaz belső ármezőt.
+- [ ] Nyomtatáskor a beszerzési ár és a szerkesztője egyaránt rejtett.

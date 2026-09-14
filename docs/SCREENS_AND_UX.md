@@ -47,6 +47,10 @@ A Raktár gyorsnézet a jobb oldali oszlop tetejére igazodjon. Ne csússzon az 
 - lapozáskor ne töltse újra az egész alkalmazást;
 - dokumentumoknál csak az aktuális oldal részletes adatai töltődjenek.
 
+### Raktár (2026-09-14)
+
+A klíma- és anyagkészlet kivétel az általános lapozás alól: minden készlettétel egy folyamatos oldalon jelenik meg, közös név szerinti keresővel. A beszerzési egységár külön belső blokk, nettó/bruttó jelöléssel; üresen „Nincs megadva”, a mentett nulla „0 Ft”. Szerkesztése nem módosít készletet vagy eladási árat. A teljes beszerzésiár-blokk nyomtatáskor rejtett.
+
 ## Naptár
 
 - az aznapi események kezdési idő szerint rendezve;

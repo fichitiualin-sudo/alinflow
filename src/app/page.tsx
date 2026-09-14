@@ -4330,6 +4330,8 @@ export default function Home() {
   if (view === "warehouse") {
     return (
       <WarehousePanel
+        key={`${activeWorkspace?.id || "no-workspace"}:${user?.id || "no-user"}`}
+        workspaceId={activeWorkspace?.id}
         onBack={() => goBack()}
         products={products}
         materialInventory={materialInventory}
