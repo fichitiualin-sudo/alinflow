@@ -120,7 +120,10 @@ npm run build
 ## Belső beszerzési árak
 
 - [ ] Ár mentése és visszatöltése megőrzi az összeget és a nettó/bruttó jelölést.
+- [ ] A kijelzés mindig bruttó; nettó 100 000 Ft megadása 127 000 Ft bruttóként jelenik meg.
+- [ ] A készletérték és lefoglalt/szabad része helyes, hiányzó árnál részösszeget jelez; kereséskor nem változik.
+- [ ] Készleten lévő tételek elöl, utánuk a többi, mindkét csoport magyar betűrendben.
 - [ ] Hiányzó ár és nulla megkülönböztethető; betöltési hiba mellett ár nem menthető.
 - [ ] Munkaterületváltás, kijelentkezés és későn érkező válasz nem hagyhat látható idegen belső árat.
 - [ ] Ajánlat, email, számla, naptár, nyilatkozat, munkalap és export nem tartalmaz belső ármezőt.
-- [ ] Nyomtatáskor a beszerzési ár és a szerkesztője egyaránt rejtett.
+- [ ] Nyomtatáskor a beszerzési ár, a szerkesztője és a készletérték-összesítő egyaránt rejtett.

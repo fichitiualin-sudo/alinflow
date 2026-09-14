@@ -49,7 +49,9 @@ A Raktár gyorsnézet a jobb oldali oszlop tetejére igazodjon. Ne csússzon az 
 
 ### Raktár (2026-09-14)
 
-A klíma- és anyagkészlet kivétel az általános lapozás alól: minden készlettétel egy folyamatos oldalon jelenik meg, közös név szerinti keresővel. A beszerzési egységár külön belső blokk, nettó/bruttó jelöléssel; üresen „Nincs megadva”, a mentett nulla „0 Ft”. Szerkesztése nem módosít készletet vagy eladási árat. A teljes beszerzésiár-blokk nyomtatáskor rejtett.
+A klíma- és anyagkészlet kivétel az általános lapozás alól: minden készlettétel egy folyamatos oldalon jelenik meg, közös név szerinti keresővel. Mindkét listán először a pozitív fizikai készletű tételek, majd a további tételek jelennek meg, csoportonként magyar betűrendben. A beszerzési egységár külön belső blokk, mindig bruttó összeggel; üresen „Nincs megadva”, a mentett nulla „0 Ft”. Nettó bevitel esetén a kijelzés 27% áfával számol, a mentett eredeti összeg és ártípus szerkesztéskor megmarad. Szerkesztése nem módosít készletet vagy eladási árat.
+
+Felül a teljes klíma- és anyagkészlet bruttó beszerzési értéke, ebből a lefoglalt és a szabad rész látszik. A lefoglalt rész legfeljebb a tényleges fizikai készlet; a hiány figyelmeztetése továbbra is a tételnél jelenik meg. Hiányzó beszerzési ár esetén egyértelmű részösszeg-jelzés szükséges. A kereső nem módosítja az összesítőt. Az árak és az összesítő nyomtatáskor rejtettek. A korábbi „Raktár logika” és „Mit jelent?” kártyák nem szerepelnek a felületen.
 
 ## Naptár
 
