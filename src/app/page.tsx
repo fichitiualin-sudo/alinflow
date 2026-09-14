@@ -3938,9 +3938,10 @@ export default function Home() {
       updatedAt: changedAt,
     };
 
+    let completedInstallation: Customer | undefined;
     try {
       if (isInstallation) {
-        await completeInstallation(updated.status);
+        completedInstallation = await completeInstallation(updated.status);
       } else {
         await persistCustomerToDb(updated);
         await logDocument(updated, "work_closed", "Teljes lezárás", "Lezárva", changedAt);
@@ -3952,7 +3953,11 @@ export default function Home() {
       returnToLastMenu();
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
+      return;
     }
+    // Email failure cannot roll back or be confused with a successful closure.
+    // The server persists one delivery per installation, including safe retries.
+    if (completedInstallation) await sendThankYouEmailFor(completedInstallation, true);
   }
 
   async function cancelAppointment() {
@@ -4530,21 +4535,20 @@ export default function Home() {
   }
 
 
-  async function sendThankYouEmailFor(customer: Customer = selected) {
+  async function sendThankYouEmailFor(customer: Customer = selected, automatic = false) {
     const targetCustomer = {
       ...customer,
       quoteItems: customer.quoteItems?.length ? customer.quoteItems : quoteItems,
-      appointmentType: "installation" as AppointmentType,
+      appointmentType: normalizeAppointmentType(customer.appointmentType),
     };
 
     if (!targetCustomer.email?.trim()) {
-      setMessage("A köszönő email elküldéséhez előbb add meg az ügyfél email címét.");
+      setMessage(`${automatic ? "A telepítés lezárva. " : ""}A köszönő email elküldéséhez add meg az ügyfél email címét, majd a Dokumentumoknál próbáld újra a küldést.`);
       return false;
     }
 
-    const installationDone = targetCustomer.status === "Szerelés kész – admin folyamatban" || targetCustomer.status === "Lezárva" || Boolean(targetCustomer.stockDeducted) || Boolean(savedReportFor(targetCustomer, "installation")?.id);
-    if (!installationDone) {
-      setMessage("A köszönő emailt a telepítés után érdemes elküldeni.");
+    if (targetCustomer.appointmentType !== "installation" || targetCustomer.status !== "Lezárva") {
+      setMessage("A köszönő email a telepítés teljes lezárásakor küldhető.");
       return false;
     }
 
@@ -4563,12 +4567,18 @@ export default function Home() {
         throw new Error(result?.error || "Nem sikerült elküldeni a köszönő emailt.");
       }
 
-      const sentAt = new Date().toISOString();
-      await logDocument(targetCustomer, "thank_you_email", "Köszönő email", "Elküldve", sentAt);
-      setMessage("Köszönő email elküldve ✅");
+      const { data: document, error: readError } = await workspaceQuery(supabase.from("documents").select("*")
+        .eq("customer_id", targetCustomer.id).eq("appointment_id", targetCustomer.activeAppointmentId!)
+        .eq("document_type", "thank_you_email")).maybeSingle();
+      if (!readError && document) {
+        const saved = documentFromRow(document);
+        setDocumentsByCustomer((prev) => ({ ...prev, [targetCustomer.id]: [saved, ...(prev[targetCustomer.id] || [])
+          .filter((doc) => doc.type !== saved.type || doc.appointmentId !== saved.appointmentId)] }));
+      }
+      setMessage(`${automatic ? "Telepítés lezárva. " : ""}${result.alreadySent ? "A köszönő emailt már elküldtük." : "Köszönő email elküldve ✅"}`);
       return true;
     } catch (error: any) {
-      setMessage(`Köszönő email küldési hiba: ${error.message}`);
+      setMessage(`${automatic ? "A telepítés lezárva. " : ""}Köszönő email küldési hiba: ${error.message} A Dokumentumoknál újrapróbálhatod.`);
       return false;
     } finally {
       setThankYouEmailBusy(false);
@@ -4576,52 +4586,65 @@ export default function Home() {
   }
 
 
-  function workReportPayload(report: WorkReport = workReport, customer: Customer = selected) {
-    const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
-    const declarationItems = items.filter((_, index) => purchaseDeclarationItemKeys.includes(String(index)));
-    const seller = sellerSnapshot(sellerCompanies, selectedSellerId);
+  function workReportPayload(report: Pick<WorkReport, "id">, customer: Customer, declarationIds: string[], documents: "work_report" | "purchase_declaration" | "both") {
     return {
       customer: {
         id: customer.id,
         activeAppointmentId: customer.activeAppointmentId,
-        name: customer.name,
-        city: customer.city,
-        postalCode: customer.postalCode,
-        phone: customer.phone,
         email: customer.email,
-        address: customer.address,
-        need: customer.need,
-        date: customer.date,
-        time: customer.time,
-        appointmentType: normalizeAppointmentType(customer.appointmentType),
       },
-      pricingMode: customer.quotePricingMode || "bundle",
-      items: items.map((item) => ({
-        name: itemName(item),
-        quantity: itemQuantity(item),
-        unitPrice: itemUnitPrice(item),
-        totalPrice: itemTotal(item),
-      })),
-      purchaseDeclaration: {
-        seller,
-        items: (declarationItems.length ? declarationItems : items).map((item) => ({
-          name: itemName(item),
-          quantity: itemQuantity(item),
-          unitPrice: itemUnitPrice(item),
-          totalPrice: itemTotal(item),
-        })),
-      },
-      report: {
-        workDescription: report.workDescription,
-        notes: report.notes,
-        signatureDataUrl: report.signatureDataUrl,
-        signerName: report.signerName || customer.name,
-        signedAt: report.signedAt,
-        workDate: report.workDate || customer.date,
-        workTime: report.workTime || customer.time,
-      },
+      workReportId: report.id,
+      purchaseDeclarationIds: declarationIds,
+      documents,
       settings: workspaceSettings,
     };
+  }
+
+  async function sendSavedWorkDocuments(customer: Customer, documents: "work_report" | "purchase_declaration" | "both", declarationId?: string) {
+    if (workReportEmailBusy) return;
+    const declarations = purchaseDeclarationsFor(customer);
+    const declaration = declarationId ? declarations.find((item) => item.id === declarationId) : undefined;
+    const reportId = declaration?.workReportId || customer.activeWorkReportId || savedReportFor(customer)?.id;
+    const declarationIds = (documents === "work_report" ? [] : declaration ? [declaration.id]
+      : declarations.filter((item) => item.workReportId === reportId).map((item) => item.id))
+      .filter((id): id is string => Boolean(id));
+    if (!customer.email?.trim()) { setMessage("A PDF küldéséhez add meg az ügyfél email címét."); return; }
+    if (!reportId || !customer.activeAppointmentId || (declarationId && !declaration)) {
+      setMessage("Előbb nyisd meg és mentsd el az adott munka aláírt dokumentumát."); return;
+    }
+    setWorkReportEmailBusy(true);
+    setMessage("A mentett dokumentumok PDF-jeinek küldése folyamatban...");
+    try {
+      const response = await authenticatedFetch("/api/send-work-report", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(workReportPayload({ id: reportId }, customer, declarationIds, documents)),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "A PDF-küldés nem sikerült.");
+      const sentAt = new Date().toISOString();
+      try {
+        if (result.workReportId) {
+          const { error } = await workspaceQuery(supabase.from("work_reports").update({ email_sent_at: sentAt })
+            .eq("id", reportId).eq("customer_id", customer.id).eq("appointment_id", customer.activeAppointmentId));
+          if (error) throw error;
+          setWorkReportsByCustomer((prev) => Object.fromEntries(Object.entries(prev).map(([key, report]) =>
+            [key, report.id === reportId ? { ...report, emailSentAt: sentAt } : report])));
+          setMaintenanceReportsByCustomer((prev) => ({ ...prev, [customer.id]: (prev[customer.id] || [])
+            .map((report) => report.id === reportId ? { ...report, emailSentAt: sentAt } : report) }));
+          await logDocument(customer, "work_report", workReportTitle(customer.appointmentType), "Elküldve", sentAt);
+        }
+        if (result.purchaseDeclarationIds?.length) await logDocument(customer, "purchase_declaration", "Vásárlási nyilatkozat", "Elküldve", sentAt);
+        if (documents === "both" && result.workReportId && result.purchaseDeclarationIds?.length) {
+          await updateChecklistForCustomer(customer, { docsSent: true });
+        }
+      } catch {
+        setMessage("A PDF-mellékleteket elküldtük, de a küldés állapota nem mentődött. Ellenőrizd a Dokumentumoknál.");
+        return;
+      }
+      setMessage("A dokumentumok PDF-mellékletként elküldve ✅");
+    } catch (error: any) {
+      setMessage(`PDF-küldési hiba: ${error.message}`);
+    } finally { setWorkReportEmailBusy(false); }
   }
 
   function workReportsForCustomer(customer: Customer, type?: AppointmentType) {
@@ -5032,6 +5055,7 @@ export default function Home() {
           action: "Nyilatkozat",
           appointmentType: "installation" as AppointmentType,
           reportId: declaration.workReportId,
+          appointmentId: declaration.appointmentId,
           purchaseDeclarationId: declaration.id,
         });
       });
@@ -5323,22 +5347,7 @@ export default function Home() {
       }
 
       let emailSentAt = data?.email_sent_at || undefined;
-      if (sendEmail) {
-        setWorkReportEmailBusy(true);
-        const response = await authenticatedFetch("/api/send-work-report", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(workReportPayload(reportToSave, { ...selected, quoteItems })),
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result?.error || "Nem sikerült elküldeni a munkalap emailt.");
-
-        emailSentAt = new Date().toISOString();
-        await workspaceQuery(supabase.from("work_reports").update({ email_sent_at: emailSentAt }).eq("id", data.id));
-      }
-
       const hasSignedReport = hasValidWorkReportSignature(reportToSave);
-      const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
       const isMaintenanceReport = currentAppointmentType === "maintenance";
       let savedPurchaseDeclaration: PurchaseDeclaration | null = null;
       if (!isMaintenanceReport && hasSignedReport) {
@@ -5391,6 +5400,22 @@ export default function Home() {
         }
         savedPurchaseDeclaration = declarationFromRow(declarationResult.data);
       }
+      // Both signed snapshots must exist before the server renders attachments.
+      if (sendEmail) {
+        setWorkReportEmailBusy(true);
+        const response = await authenticatedFetch("/api/send-work-report", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(workReportPayload({ id: data.id }, selected,
+            savedPurchaseDeclaration?.id ? [savedPurchaseDeclaration.id] : [], isMaintenanceReport ? "work_report" : "both")),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result?.error || "Nem sikerült elküldeni a PDF-mellékleteket.");
+        emailSentAt = new Date().toISOString();
+        const deliveryUpdate = await workspaceQuery(supabase.from("work_reports").update({ email_sent_at: emailSentAt })
+          .eq("id", data.id).eq("customer_id", selected.id).eq("appointment_id", selected.activeAppointmentId!));
+        if (deliveryUpdate.error) throw new Error("A PDF-eket elküldtük, de a küldés állapota nem mentődött.");
+      }
+      const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
       if (!isMaintenanceReport) {
         await logDocument(
           selected,
@@ -5929,7 +5954,7 @@ export default function Home() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <p className="min-w-0 font-black leading-tight md:flex-1">{row.title}</p>
           <div className="flex flex-wrap items-center gap-2 md:justify-end">
-            <DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview}/>
+            <DocumentLibraryActionButtons customer={customer} row={row} ready={documentIsReady(customer, row)} onPreview={openDocumentPreview} onSendPdf={sendSavedWorkDocuments} pdfEmailBusy={workReportEmailBusy}/>
             <span className={`w-fit shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span>
           </div>
         </div>
@@ -6149,6 +6174,8 @@ export default function Home() {
     <Shell>
       <WorkPagePanel
         selected={selected}
+        onSendPdf={sendSavedWorkDocuments}
+        pdfEmailBusy={workReportEmailBusy}
         workspaceId={activeWorkspace?.id}
         scheduleDate={scheduleDate}
         scheduleTime={scheduleTime}

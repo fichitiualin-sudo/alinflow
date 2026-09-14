@@ -19,6 +19,11 @@ function hasWorkPhotoScope(context: Pick<WorkPhotoContext, "workspaceId" | "cust
   return Boolean(context && UUID.test(context.workspaceId) && UUID.test(context.customerId) && UUID.test(context.appointmentId));
 }
 
+function hasDeviceScope(context: WorkPhotoContext): boolean {
+  return context.deviceId ? UUID.test(context.deviceId) && context.appointmentType === "installation"
+    && (context.deviceSide === "indoor" || context.deviceSide === "outdoor") : !context.deviceSide;
+}
+
 function isWorkDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
@@ -71,6 +76,8 @@ function photoFromRow(row: Record<string, unknown>): WorkPhoto {
     width: Number(row.width),
     height: Number(row.height),
     createdAt: String(row.created_at),
+    deviceId: row.device_id ? String(row.device_id) : undefined,
+    deviceSide: row.device_side === "indoor" || row.device_side === "outdoor" ? row.device_side : undefined,
   };
 }
 
@@ -89,6 +96,8 @@ function photoRow(prepared: PreparedWorkPhoto) {
     width: photo.width,
     height: photo.height,
     created_by: prepared.createdBy,
+    device_id: photo.deviceId || null,
+    device_side: photo.deviceSide || null,
   };
 }
 
@@ -105,7 +114,7 @@ export function createWorkPhotoStore(client: SupabaseClient, compress = compress
   async function prepareWorkPhoto(file: File, context: WorkPhotoContext): Promise<PreparedWorkPhoto> {
     // Snapshot before awaiting compression: changing the selected work must not move a photo.
     const snapshot = { ...context };
-    if (!hasWorkPhotoScope(snapshot) || !isWorkDate(snapshot.workDate)) throw new Error("Előbb mentsd el az időpontot a munkához.");
+    if (!hasWorkPhotoScope(snapshot) || !isWorkDate(snapshot.workDate) || !hasDeviceScope(snapshot)) throw new Error("Előbb mentsd el az időpontot és a készüléket a munkához.");
     const createdBy = await currentUserId();
     const compressed = await compress(file);
     const id = crypto.randomUUID();
@@ -144,7 +153,7 @@ export function createWorkPhotoStore(client: SupabaseClient, compress = compress
 
   async function uploadWorkPhoto(prepared: PreparedWorkPhoto): Promise<void> {
     const photo = prepared.photo;
-    if (!hasWorkPhotoScope(photo) || !UUID.test(photo.id) || !UUID.test(prepared.createdBy) || !isWorkDate(photo.workDate)
+    if (!hasWorkPhotoScope(photo) || !hasDeviceScope(photo) || !UUID.test(photo.id) || !UUID.test(prepared.createdBy) || !isWorkDate(photo.workDate)
       || prepared.blob.type !== "image/jpeg" || prepared.blob.size < 1 || prepared.blob.size > WORK_PHOTO_MAX_OUTPUT_BYTES
       || photo.sizeBytes !== prepared.blob.size || !Number.isInteger(photo.width) || !Number.isInteger(photo.height)
       || photo.width < 1 || photo.height < 1
@@ -181,8 +190,11 @@ export function createWorkPhotoStore(client: SupabaseClient, compress = compress
   async function listWorkPhotos(context: WorkPhotoContext, page: number): Promise<{ photos: WorkPhoto[]; hasMore: boolean }> {
     if (!hasWorkPhotoScope(context)) return { photos: [], hasMore: false };
     const offset = (Number.isFinite(page) ? Math.max(0, Math.floor(page)) : 0) * WORK_PHOTO_PAGE_SIZE;
-    const { data, error } = await client.from("work_photos").select("*")
-      .eq("workspace_id", context.workspaceId).eq("customer_id", context.customerId).eq("appointment_id", context.appointmentId)
+    let query = client.from("work_photos").select("*")
+      .eq("workspace_id", context.workspaceId).eq("customer_id", context.customerId).eq("appointment_id", context.appointmentId);
+    if (!hasDeviceScope(context)) throw new Error("Válaszd ki a megfelelő készüléket.");
+    query = context.deviceId ? query.eq("device_id", context.deviceId).eq("device_side", context.deviceSide!) : query.is("device_id", null);
+    const { data, error } = await query
       .order("created_at", { ascending: false }).order("id", { ascending: false })
       .range(offset, offset + WORK_PHOTO_PAGE_SIZE);
     if (error) throw error;
@@ -214,13 +226,16 @@ export function createWorkPhotoStore(client: SupabaseClient, compress = compress
     const scope = { ...context };
     if (!hasWorkPhotoScope(scope) || !hasWorkPhotoScope(snapshot) || !UUID.test(snapshot.id)
       || snapshot.workspaceId !== scope.workspaceId || snapshot.customerId !== scope.customerId
-      || snapshot.appointmentId !== scope.appointmentId || snapshot.storagePath !== storagePathFor(scope, snapshot.id)) {
+      || snapshot.appointmentId !== scope.appointmentId || snapshot.storagePath !== storagePathFor(scope, snapshot.id)
+      || snapshot.deviceId !== scope.deviceId || snapshot.deviceSide !== scope.deviceSide || !hasDeviceScope(snapshot)) {
       throw new Error("A kép nem ehhez a munkához tartozik. Nyisd meg újra a munkát.");
     }
     await currentUserId();
-    const { data, error } = await client.from("work_photos").select("id")
+    let query = client.from("work_photos").select("id")
       .eq("id", snapshot.id).eq("workspace_id", scope.workspaceId).eq("customer_id", scope.customerId)
-      .eq("appointment_id", scope.appointmentId).eq("storage_path", snapshot.storagePath).maybeSingle();
+      .eq("appointment_id", scope.appointmentId).eq("storage_path", snapshot.storagePath);
+    query = scope.deviceId ? query.eq("device_id", scope.deviceId).eq("device_side", scope.deviceSide!) : query.is("device_id", null);
+    const { data, error } = await query.maybeSingle();
     if (error) throw error;
     if (data) {
       // Keep metadata until Storage confirms removal, so interrupted deletions remain retryable.
@@ -235,7 +250,14 @@ export function createWorkPhotoStore(client: SupabaseClient, compress = compress
     if (finishError) throw finishError;
   }
 
-  return { prepareWorkPhoto, uploadWorkPhoto, listWorkPhotos, refreshWorkPhotoUrl, deleteWorkPhoto };
+  async function downloadWorkPhoto(photo: WorkPhoto): Promise<Blob> {
+    if (!hasWorkPhotoScope(photo) || !UUID.test(photo.id) || photo.storagePath !== storagePathFor(photo, photo.id)) throw new Error("A kép azonosítása nem megfelelő.");
+    const { data, error } = await storage.download(photo.storagePath);
+    if (error || !data) throw new Error("Az adattábla-fotó nem tölthető be. Próbáld újra.");
+    return data;
+  }
+
+  return { prepareWorkPhoto, uploadWorkPhoto, listWorkPhotos, refreshWorkPhotoUrl, deleteWorkPhoto, downloadWorkPhoto };
 }
 
-export const { prepareWorkPhoto, uploadWorkPhoto, listWorkPhotos, refreshWorkPhotoUrl, deleteWorkPhoto } = createWorkPhotoStore(supabase);
+export const { prepareWorkPhoto, uploadWorkPhoto, listWorkPhotos, refreshWorkPhotoUrl, deleteWorkPhoto, downloadWorkPhoto } = createWorkPhotoStore(supabase);

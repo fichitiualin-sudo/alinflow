@@ -61,6 +61,7 @@ function rowFor(prepared) {
     work_date: photo.workDate, work_time: photo.workTime, storage_path: photo.storagePath,
     size_bytes: photo.sizeBytes, width: photo.width, height: photo.height,
     created_by: prepared.createdBy, created_at: photo.createdAt,
+    device_id: photo.deviceId || null, device_side: photo.deviceSide || null,
   };
 }
 
@@ -126,6 +127,7 @@ function createBackend() {
       const builder = {
         select() { return builder; },
         eq(column, value) { filters.push([column, value]); return builder; },
+        is(column, value) { filters.push([column, value]); return builder; },
         order(column, options) { ordering.push([column, options]); return builder; },
         async maybeSingle() {
           backend.calls.lookups.push([...filters]);
@@ -138,7 +140,7 @@ function createBackend() {
           backend.calls.inserts.push({ ...row });
           const plan = backend.insertPlans.shift();
           if (!plan && backend.rows.has(row.id)) return { error: { code: "23505", message: "Duplicate id" } };
-          if (!plan?.error || plan.commit) backend.rows.set(row.id, { ...row, created_at: "2026-09-13T10:00:00.000Z" });
+          if (!plan?.error || plan.commit) backend.rows.set(row.id, { device_id: null, device_side: null, ...row, created_at: "2026-09-13T10:00:00.000Z" });
           return { data: null, error: plan?.error || null };
         },
         async range(start, end) {
@@ -189,6 +191,44 @@ test("work contexts require workspace, customer and saved appointment ids plus a
   assert.equal(workPhotoContext(customer, "legacy-workspace"), null);
   assert.equal(workPhotoContext({ ...customer, activeAppointmentId: undefined, activeWorkReportId: APPOINTMENT_A }, WORKSPACE_A), null);
   assert.equal(workPhotoContext({ ...customer, activeAppointmentId: `jobs:${APPOINTMENT_A}` }, WORKSPACE_A), null);
+});
+
+test("general photos and each device side are separate galleries and deletion scopes", async () => {
+  const { backend, store } = setup();
+  const deviceId = "88888888-8888-4888-8888-888888888888";
+  const indoor = context({ deviceId, deviceSide: "indoor" });
+  const outdoor = context({ deviceId, deviceSide: "outdoor" });
+  const other = context({ deviceId: "99999999-9999-4999-8999-999999999999", deviceSide: "indoor" });
+  const snapshots = await Promise.all([context(), indoor, outdoor, other].map((scope) => savedPhoto(backend, store, scope)));
+  for (const [index, scope] of [context(), indoor, outdoor, other].entries()) {
+    const gallery = await store.listWorkPhotos(scope, 0);
+    assert.deepEqual(gallery.photos.map((photo) => photo.id), [snapshots[index].id]);
+  }
+  await assert.rejects(store.deleteWorkPhoto(snapshots[1], outdoor), /nem ehhez/);
+  await assert.rejects(store.deleteWorkPhoto(snapshots[1], context()), /nem ehhez/);
+  assert.equal(backend.calls.removes.length, 0);
+  await store.deleteWorkPhoto(snapshots[1], indoor);
+  assert.equal(backend.rows.size, 3);
+  assert.ok(backend.rows.has(snapshots[0].id));
+  assert.ok(backend.rows.has(snapshots[2].id));
+});
+
+test("a retry cannot relabel a photo between work gallery and device gallery", async () => {
+  const { backend, store } = setup();
+  const prepared = await store.prepareWorkPhoto(file(), context());
+  backend.rows.set(prepared.photo.id, { ...rowFor(prepared), device_id: USER_A, device_side: "indoor" });
+  await assert.rejects(store.uploadWorkPhoto(prepared), /más feltöltéshez/);
+  assert.equal(backend.calls.uploads.length, 0);
+  assert.equal(backend.calls.removes.length, 0);
+});
+
+test("device photos require a saved device, a side and an installation", async () => {
+  for (const invalid of [{ deviceId: USER_A }, { deviceSide: "indoor" }, { deviceId: "legacy", deviceSide: "indoor" },
+    { deviceId: USER_A, deviceSide: "outdoor", appointmentType: "maintenance" }]) {
+    const { backend, store } = setup();
+    await assert.rejects(store.prepareWorkPhoto(file(), context(invalid)), /mentsd el/);
+    assert.equal(backend.calls.auth.length, 0);
+  }
 });
 
 test("missing or legacy work scope cannot prepare photos or issue a gallery query", async (t) => {
@@ -511,7 +551,7 @@ test("deleting a saved photo removes only its exact work object before finishing
   assert.deepEqual(backend.calls.removes, [[photo.storagePath]]);
   assert.deepEqual(backend.calls.lookups.map((filters) => Object.fromEntries(filters)), [{
     id: photo.id, workspace_id: WORKSPACE_A, customer_id: CUSTOMER_A,
-    appointment_id: APPOINTMENT_A, storage_path: photo.storagePath,
+    appointment_id: APPOINTMENT_A, storage_path: photo.storagePath, device_id: null,
   }]);
   assert.deepEqual(backend.calls.rpcs, [{ name: "finish_work_photo_delete", args: deleteArgs(photo) }]);
   assert.deepEqual(backend.calls.events, ["storage.remove", "finish_work_photo_delete"]);

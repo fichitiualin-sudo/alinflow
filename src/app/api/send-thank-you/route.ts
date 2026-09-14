@@ -1,4 +1,5 @@
-import { authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
+import { authorizeCustomerRequest, apiErrorResponse, ApiError } from "@/lib/alinflow/server-auth";
+import { sendInstallationThankYouOnce } from "@/lib/alinflow/thank-you-delivery";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import {
   defaultWorkspaceSettings,
@@ -36,10 +37,6 @@ function escapeHtml(value: unknown) {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#039;");
-}
-
-function uniqueEmailRef(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function footerHtml(settings: WorkspaceSettings) {
@@ -153,6 +150,7 @@ function thankYouEmailHtml(customer: Customer, items: QuoteItem[], workspaceSett
             <div style="margin-top:14px;display:block">
               ${links.map((link) => `<a href="${escapeHtml(link.url)}" style="display:inline-block;margin:0 8px 8px 0;background:${link.color};color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 16px;font-weight:800;font-size:14px">${escapeHtml(link.label)}</a>`).join("")}
             </div>
+            ${links.some((link) => link.label === "Facebook értékelés") ? `<p style="margin:4px 0 0;color:#64748b;font-size:13px;line-height:1.5">A Facebook az értékeléshez bejelentkezést kérhet.</p>` : ""}
           </div>` : ""}
 
           <div style="background:#fff8dc;border-radius:18px;padding:18px 20px;margin-bottom:22px;color:#334155;font-size:15px;line-height:1.65">
@@ -171,7 +169,10 @@ function thankYouEmailHtml(customer: Customer, items: QuoteItem[], workspaceSett
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    await authorizeCustomerRequest(request, body);
+    const { client, workspaceId, appointment } = await authorizeCustomerRequest(request, body);
+    if (!appointment || appointment.appointment_type !== "installation" || appointment.status !== "Lezárva") {
+      throw new ApiError("Köszönő email csak a teljesen lezárt telepítéshez küldhető.", 409);
+    }
     const apiKey = process.env.RESEND_API_KEY;
     const configuredFrom = process.env.EMAIL_FROM;
     const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
@@ -188,28 +189,20 @@ export async function POST(request: Request) {
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
 
-    const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const result = await sendInstallationThankYouOnce({
+      client, workspaceId, customerId: body.customer.id, appointmentId: appointment.id, apiKey,
+      payload: {
         from,
         to: [to],
         reply_to: replyTo,
         subject: `${workspaceSettings.emailSettings.thankYouTitle} – ${brandName}`,
         headers: {
-          "X-Entity-Ref-ID": uniqueEmailRef("alinflow-thank-you"),
+          "X-Entity-Ref-ID": `alinflow-thank-you-${workspaceId}-${appointment.id}`,
         },
         html: thankYouEmailHtml(customer, items, workspaceSettings),
-      }),
+      },
     });
-
-    const result = await resendResponse.json().catch(() => ({}));
-    if (!resendResponse.ok) return Response.json({ error: result?.message || "A Resend nem tudta elküldeni az emailt." }, { status: resendResponse.status });
-
-    return Response.json({ ok: true, id: result?.id });
+    return Response.json(result);
   } catch (error: any) {
     return apiErrorResponse(error);
   }

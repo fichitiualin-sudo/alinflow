@@ -5,7 +5,9 @@ import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, Climate
 import { Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { WorkPhotosPanel } from "@/components/alinflow/WorkPhotosPanel";
-import { DocumentActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
+import { AppointmentDevicesPanel } from "@/components/alinflow/AppointmentDevicesPanel";
+import { HTariffPanel } from "@/components/alinflow/HTariffPanel";
+import { DocumentActionButtons, documentStatusClass, type SendPdfDocuments } from "@/components/alinflow/DocumentCards";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
   cleanQuoteItems,
@@ -257,6 +259,8 @@ type WorkPagePanelProps = {
   onSendQuoteEmail: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
   onSendThankYouEmailFor: (customer: Customer) => void;
+  onSendPdf?: SendPdfDocuments;
+  pdfEmailBusy?: boolean;
   onOpenWorkReport: () => void;
   onMarkInstallationDone: () => void;
   onCancelAppointment: () => void;
@@ -321,6 +325,8 @@ export function WorkPagePanel({
   onSendQuoteEmail,
   onSendAppointmentEmailFor,
   onSendThankYouEmailFor,
+  onSendPdf,
+  pdfEmailBusy,
   onOpenWorkReport,
   onMarkInstallationDone,
   onCancelAppointment,
@@ -478,6 +484,8 @@ export function WorkPagePanel({
               onSendAppointmentEmailFor={onSendAppointmentEmailFor}
               onSendThankYouEmailFor={onSendThankYouEmailFor}
               onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
+              onSendPdf={onSendPdf}
+              pdfEmailBusy={pdfEmailBusy}
             />
           </Card>
         ) : null}
@@ -675,6 +683,10 @@ export function WorkPagePanel({
               {workResourceEditLocked && !allowWorkResourceEdit ? <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={() => onSetAllowWorkResourceEdit(true)}>Módosítás engedélyezése</button> : null}
               {canEditWorkResources && isInstallation ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={onSaveWorkChanges}>Módosítás mentése az időpontra</button> : null}
             </div> : null}
+            {isInstallation ? <AppointmentDevicesPanel
+              key={`${workspaceId || ""}:${selected.id}:${selected.activeAppointmentId || ""}`}
+              customer={{ ...selected, quoteItems }} workspaceId={workspaceId || null}
+            /> : null}
           </Card> : null}
 
           <div className="mt-4">
@@ -752,6 +764,10 @@ export function WorkPagePanel({
           />
 
           {showDocuments ? <Card title="Dokumentumok">
+            {isInstallation ? <HTariffPanel
+              key={`${workspaceId || ""}:${selected.id}:${selected.activeAppointmentId || ""}`}
+              customer={selected} workspaceId={workspaceId || null} workspaceSettings={workspaceSettings}
+            /> : null}
             <div className="space-y-3">
               {documentRows.map((row) => (
                 <DocumentRowCard
@@ -766,6 +782,8 @@ export function WorkPagePanel({
                   onSendQuoteEmail={onSendQuoteEmail}
                   onSendAppointmentEmailFor={onSendAppointmentEmailFor}
                   onSendThankYouEmailFor={onSendThankYouEmailFor}
+                  onSendPdf={onSendPdf}
+                  pdfEmailBusy={pdfEmailBusy}
                 />
               ))}
             </div>
@@ -1306,6 +1324,8 @@ function DocumentRowCard({
   onSendQuoteEmail,
   onSendAppointmentEmailFor,
   onSendThankYouEmailFor,
+  onSendPdf,
+  pdfEmailBusy,
 }: {
   selected: Customer;
   row: DocumentRow;
@@ -1317,6 +1337,8 @@ function DocumentRowCard({
   onSendQuoteEmail: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
   onSendThankYouEmailFor: (customer: Customer) => void;
+  onSendPdf?: SendPdfDocuments;
+  pdfEmailBusy?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
@@ -1338,6 +1360,8 @@ function DocumentRowCard({
         appointmentEmailBusy={appointmentEmailBusy}
         thankYouEmailBusy={thankYouEmailBusy}
         onSendThankYou={onSendThankYouEmailFor}
+        onSendPdf={onSendPdf}
+        pdfEmailBusy={pdfEmailBusy}
       />
     </div>
   );
@@ -1350,6 +1374,8 @@ function MaintenanceHistory({
   onOpenDocumentPreview,
   onOpenWorkReportFor,
   onStartMaintenanceForCustomer,
+  onSendPdf,
+  pdfEmailBusy,
 }: {
   selected: Customer;
   rows: DocumentRow[];
@@ -1363,6 +1389,8 @@ function MaintenanceHistory({
   onSendAppointmentEmailFor: (customer: Customer) => void;
   onSendThankYouEmailFor: (customer: Customer) => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
+  onSendPdf?: SendPdfDocuments;
+  pdfEmailBusy?: boolean;
 }) {
   if (!rows.length && !canStartMaintenance) return null;
 
@@ -1422,6 +1450,7 @@ function MaintenanceHistory({
                   {isCancelled ? <p className="mt-1 text-xs font-black text-red-200">Lemondva</p> : row.status ? <p className="mt-1 text-xs font-bold text-slate-400">{row.status}</p> : null}
                 </div>
                 {isCancelled ? null : hasReport ? (
+                  <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => onOpenDocumentPreview(customerForRow, "work_report", row.reportId)}
@@ -1429,6 +1458,10 @@ function MaintenanceHistory({
                   >
                     Megtekintés
                   </button>
+                  {onSendPdf ? <button type="button" disabled={pdfEmailBusy}
+                    className="document-action-button rounded-xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 disabled:opacity-50"
+                    onClick={() => onSendPdf(customerForRow, "work_report")}>{pdfEmailBusy ? "Küldés..." : "PDF emailben"}</button> : null}
+                  </div>
                 ) : (
                   <button
                     type="button"

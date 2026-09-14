@@ -251,6 +251,8 @@ export type WorkPhotoContext = {
   appointmentType: AppointmentType;
   workDate: string;
   workTime: string;
+  deviceId?: string;
+  deviceSide?: "indoor" | "outdoor";
 };
 
 export type WorkPhoto = WorkPhotoContext & {

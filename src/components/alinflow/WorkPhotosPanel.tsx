@@ -144,7 +144,7 @@ export function createWorkPhotoQueueManager(operations = { prepareWorkPhoto, upl
     },
     getSession(context: WorkPhotoContext) {
       if (!userId) return null;
-      const key = `${userId}:${context.workspaceId}:${context.customerId}:${context.appointmentId}`;
+      const key = `${userId}:${context.workspaceId}:${context.customerId}:${context.appointmentId}:${context.deviceId || "work"}:${context.deviceSide || ""}`;
       let session = sessions.get(key);
       if (!session) { session = createSession(userId); sessions.set(key, session); }
       return session;
@@ -184,8 +184,15 @@ function workLabel(context: WorkPhotoContext) {
   return `${appointmentTypeLabel(context.appointmentType)} · ${context.workDate.replaceAll("-", ".")}${context.workTime ? ` · ${context.workTime}` : ""}`;
 }
 
-export function WorkPhotosPanel({ customer, workspaceId }: { customer: Customer; workspaceId?: string | null }) {
-  const context = useMemo(() => workPhotoContext(customer, workspaceId), [customer, workspaceId]);
+export function WorkPhotosPanel({ customer, workspaceId, device, onRecognizeSerial, recognizing = false }: {
+  customer: Customer; workspaceId?: string | null;
+  device?: { id: string; side: "indoor" | "outdoor" };
+  onRecognizeSerial?: (photo: WorkPhoto) => void; recognizing?: boolean;
+}) {
+  const context = useMemo(() => {
+    const base = workPhotoContext(customer, workspaceId);
+    return base && device ? { ...base, deviceId: device.id, deviceSide: device.side } : base;
+  }, [customer, workspaceId, device?.id, device?.side]);
   const [photos, setPhotos] = useState<WorkPhoto[]>([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -320,7 +327,7 @@ export function WorkPhotosPanel({ customer, workspaceId }: { customer: Customer;
   const completedCount = queue.filter((entry) => entry.status === "done").length;
 
   return (
-    <Card title="Munkafotók">
+    <Card title={device ? `${device.side === "indoor" ? "Beltéri" : "Kültéri"} adattábla-fotók` : "Munkafotók"}>
       {context ? (
         <p className="mt-3 rounded-2xl bg-slate-950/60 p-3 text-sm font-bold text-cyan-100">Új képek ehhez a munkához: {workLabel(context)}</p>
       ) : (
@@ -387,6 +394,7 @@ export function WorkPhotosPanel({ customer, workspaceId }: { customer: Customer;
                   </span>
                 </button>
                 <div className="border-t border-white/10 p-3">
+                  {onRecognizeSerial ? <button type="button" disabled={loading || busy || deleting || recognizing} onClick={() => onRecognizeSerial(photo)} className={`${buttonClass} mb-2 w-full bg-cyan-300 text-slate-950`}>S/N felismerése</button> : null}
                   {photoToDelete?.id === photo.id || deletingPhotoId === photo.id ? (
                     <div>
                       <p className="text-sm font-bold text-slate-100">Végleg törlöd ezt a képet?</p>

@@ -153,7 +153,7 @@ export function WorkReportPanel({
           <Card title="Műveletek">
             <div className="grid grid-cols-1 gap-3">
               <StepButton color="green" onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>
-              <StepButton color="blue" onClick={()=>onSave(true)}>{workReportEmailBusy ? "Email küldése..." : isMaintenance ? "Karbantartási munkalap email" : "Mentés és email küldése"}</StepButton>
+              <StepButton color="blue" onClick={()=>onSave(true)}>{workReportEmailBusy ? "PDF-ek küldése..." : isMaintenance ? "Munkalap küldése PDF-ben" : "Mentés és PDF-ek küldése"}</StepButton>
             </div>
           </Card>
           <Card title="Email állapot">
