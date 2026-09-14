@@ -81,6 +81,15 @@ A `WorkReport` több rekordot enged ugyanahhoz az ügyfélhez. A szerelési és 
 
 ## Supabase fő táblák
 
+### Készülékadatok, adattábla-fotók és H tarifa (2026-09-14)
+
+- `appointment_devices`: egy sor fizikai készülékenként a pontos telepítésen belül. Egyedi kulcs: `(appointment_id, product_key, unit_number)`. A gyártó, pontos beltéri/kültéri típus, két sorozatszám és H tarifás műszaki értékek a `data` JSON-ban vannak.
+- `h_tariff_requests`: egy mentett H tarifás adatkészlet telepítési időpontonként, választott elosztóval. Mindkét új tábla munkaterület-/ügyfél-/időpont-kapcsolata változtathatatlan; aktív tagság és megfelelő telepítés szükséges. Az `updated_at` szerveroldali verziója megakadályozza a párhuzamos szerkesztés észrevétlen felülírását.
+- `work_photos.device_id` és `device_side`: opcionális készülékkapcsolat; a kettő együtt tölthető ki. Kompozit FK tiltja a más ügyfélhez, munkához vagy munkaterülethez tartozó készüléket. A normál munkafotókban mindkettő `null`. A képek a korábbi privát Storage bucketben maradnak.
+- `installation_thank_you_deliveries`: tartós küldési napló. Nincs közvetlen kliensoldali táblahozzáférés; a két szűk RPC tagságot, ügyfelet, pontos telepítést és teljes lezárást ellenőriz. A sikeres küldés a `documents` rekorddal egy tranzakcióban naplózódik.
+
+Migrációk: `docs/sql/APPOINTMENT_DEVICES.sql` és `docs/sql/INSTALLATION_THANK_YOU.sql`. A fotók alap- és törlési migrációja után futtatandók, friss mentéssel és sémaaudittal. A készülékadatokból nem történik automatikus visszaírás régi munkalapba vagy vásárlási nyilatkozatba.
+
 A jelenlegi projektben használt vagy korábban bevezetett fő táblák:
 
 - `customers`

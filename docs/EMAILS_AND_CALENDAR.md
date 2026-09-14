@@ -48,7 +48,11 @@ A típus, dátum, kezdési idő és helyszín legyen egyértelmű. A karbantart�
 
 ## Köszönő email
 
-Telepítés után kézzel küldhető.
+Az új telepítés teljes lezárásának sikeres mentése után automatikusan indul, ha az ügyfélnek van mentett email-címe. A „Szerelés kész – admin folyamatban” állapot, a karbantartás lezárása, a lap betöltése és a korábban lezárt munkák nem indítanak automatikus küldést. A kézi gomb a teljesen lezárt telepítés küldését indítja vagy próbálja újra; már elküldött emailt nem dupláz.
+
+A szerver a mentett munkaterülethez, ügyfélhez és telepítési időponthoz ellenőrzi a jogosultságot és a „Lezárva” állapotot. Az `INSTALLATION_THANK_YOU.sql` migráció tartós, időpontonként egy küldési naplót vezet. Sikeres szolgáltatói elfogadás után a szerver ugyanabban az adatbázis-tranzakcióban jelöli elküldöttnek a naplót és az adott időpont `thank_you_email` dokumentumát. Emailhiba nem vonja vissza a munka lezárását.
+
+Párhuzamos kérésnél legfeljebb kétperces foglalás védi a küldést. Bizonytalan hálózati eredmény után az újrapróbálás az eredeti, szerver által aláírt tartalmat és ugyanazt a Resend `Idempotency-Key` kulcsot használja; az időközben megváltozott címzett esetén ellenőrzést kér. A [Resend 24 órás megőrzése](https://resend.com/docs/dashboard/emails/idempotency-keys) miatt 23 órán túl a bizonytalan eredmény automatikus újraküldése tiltott, ilyenkor a szolgáltatói napló ellenőrzése szükséges. Az API-kulcs cseréje után a régi kulccsal aláírt, bizonytalan küldés szintén ellenőrzést igényel. Biztos kezdeti elutasítás után javított beállításokkal új kísérlet indulhat.
 
 Tartalma:
 
@@ -66,7 +70,13 @@ Google értékelési URL:
 https://g.page/r/CaTB2608T1bZEBM/review
 ```
 
-A környezeti változó felülírhatja az alaplinket, ha be van állítva.
+A linkeket a munkaterület mentett emailbeállításai adják. A KLIMAlin Facebook értékelési URL-je:
+
+```text
+https://www.facebook.com/100094506956317/reviews/
+```
+
+2026-09-14-én az élő AlinFlow beállításában ez a cím szerepelt; a Facebookon a KLIMAlin értékelési nézete nyílt meg. A `profile.php?id=100094506956317&sk=reviews` változat ugyanoda vezetett. Az ellenőrzött alaplinket megtartjuk. A Facebook az értékeléshez saját bejelentkezést kérhet; ezt a levél röviden jelzi.
 
 ## Google Naptár
 

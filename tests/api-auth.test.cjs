@@ -24,7 +24,12 @@ function apiHarness(failure) {
     outgoing.push({ url: String(url), options });
     if (String(url).includes("szamlazz.hu")) return new Response("<valasz><sikeres>true</sikeres><szamlaszam>TEST-ONLY</szamlaszam></valasz>");
     return Response.json({ id: "TEST-ONLY" });
-  } }, { "@supabase/supabase-js": { createClient: () => db } });
+  } }, {
+    "@supabase/supabase-js": { createClient: () => db },
+    // Authentication must finish before document queries or font/PDF work starts.
+    "@/lib/alinflow/document-pdf-data": { loadSavedPdfBundle: async () => { throw Error("PDF source accessed before authentication"); } },
+    "@/lib/alinflow/document-pdf-render": { createSavedPdfAttachments: async () => { throw Error("PDF generated before authentication"); } },
+  });
   const body = { workspaceId, customer: { id: customerId, name: "Supplied Customer",
     email: "STORED@example.invalid", activeAppointmentId: "appointment" }, kind: "maintenance", amount: 12000,
     items: [], quoteItems: [], report: {} };

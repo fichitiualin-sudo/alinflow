@@ -2,6 +2,9 @@
 
 import type { AppointmentType, Customer, DocumentPreviewType } from "@/lib/alinflow/types";
 
+export type SendPdfDocuments = (customer: Customer, documents: "work_report" | "purchase_declaration" | "both", declarationId?: string) => void;
+type PdfActionProps = { onSendPdf?: SendPdfDocuments; pdfEmailBusy?: boolean };
+
 type DocumentRow = {
   action: string;
   title: string;
@@ -40,12 +43,14 @@ export function DocumentLibraryActionButtons({
   row,
   ready,
   onPreview,
+  onSendPdf,
+  pdfEmailBusy,
 }: {
   customer: Customer;
   row: DocumentRow;
   ready: boolean;
   onPreview: (customer: Customer, type: DocumentPreviewType, purchaseDeclarationId?: string) => void;
-}) {
+} & PdfActionProps) {
   if (!ready && row.action !== "MaintenanceBundle") return null;
 
   const actionCustomer = actionCustomerFor(customer, row);
@@ -61,6 +66,7 @@ export function DocumentLibraryActionButtons({
       <div className={buttonRow}>
         <button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Munkalap</button>
         <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Nyilatkozat</button>
+        <PdfEmailButton customer={actionCustomer} row={row} onSendPdf={onSendPdf} pdfEmailBusy={pdfEmailBusy} />
       </div>
     );
   }
@@ -68,10 +74,10 @@ export function DocumentLibraryActionButtons({
     return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "all_work_reports")} className={bundleButton}>Összes munkalap megtekintése / nyomtatása</button></div>;
   }
   if (row.action === "MaintenanceReport" || row.action === "Munkalap") {
-    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Megtekintés / nyomtatás</button></div>;
+    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Megtekintés / nyomtatás</button><PdfEmailButton customer={actionCustomer} row={row} onSendPdf={onSendPdf} pdfEmailBusy={pdfEmailBusy} /></div>;
   }
   if (row.action === "Nyilatkozat") {
-    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés / nyomtatás</button></div>;
+    return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés / nyomtatás</button><PdfEmailButton customer={actionCustomer} row={row} onSendPdf={onSendPdf} pdfEmailBusy={pdfEmailBusy} /></div>;
   }
   if (row.action === "Ajánlat") {
     return <div className={buttonRow}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={quoteButton}>Ajánlat megtekintése</button></div>;
@@ -94,6 +100,8 @@ export function DocumentActionButtons({
   quoteEmailBusy,
   thankYouEmailBusy,
   appointmentEmailBusy,
+  onSendPdf,
+  pdfEmailBusy,
 }: {
   customer: Customer;
   row: DocumentRow;
@@ -105,7 +113,7 @@ export function DocumentActionButtons({
   quoteEmailBusy: boolean;
   thankYouEmailBusy?: boolean;
   appointmentEmailBusy: boolean;
-}) {
+} & PdfActionProps) {
   const actionCustomer = actionCustomerFor(customer, row);
   const baseButton = "document-action-button rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-wait disabled:opacity-60";
   const viewButton = `${baseButton} bg-white/10 text-white hover:bg-white/15`;
@@ -120,6 +128,7 @@ export function DocumentActionButtons({
         <button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Munkalap</button>
         <button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Nyilatkozat</button>
         <button onClick={() => onEditWorkReport(actionCustomer)} className={`${editButton} sm:col-span-2`}>Szerkesztés / aláírás</button>
+        <PdfEmailButton customer={actionCustomer} row={row} onSendPdf={onSendPdf} pdfEmailBusy={pdfEmailBusy} />
       </div>
     );
   }
@@ -131,14 +140,15 @@ export function DocumentActionButtons({
       <div className={gridClass}>
         <button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Megtekintés</button>
         <button onClick={() => onEditWorkReport(actionCustomer)} className={editButton}>Szerkesztés / aláírás</button>
+        <PdfEmailButton customer={actionCustomer} row={row} onSendPdf={onSendPdf} pdfEmailBusy={pdfEmailBusy} />
       </div>
     );
   }
   if (row.action === "Munkalap") {
-    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={editButton}>Szerkesztés / aláírás</button></div>;
+    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "work_report")} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={editButton}>Szerkesztés / aláírás</button><PdfEmailButton customer={actionCustomer} row={row} onSendPdf={onSendPdf} pdfEmailBusy={pdfEmailBusy} /></div>;
   }
   if (row.action === "Nyilatkozat") {
-    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={helperButton}>Aláíráshoz</button></div>;
+    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={helperButton}>Aláíráshoz</button><PdfEmailButton customer={actionCustomer} row={row} onSendPdf={onSendPdf} pdfEmailBusy={pdfEmailBusy} /></div>;
   }
   if (row.action === "Ajánlat") {
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={viewButton}>Megtekintés</button><button onClick={onSendQuote} disabled={quoteEmailBusy} className={thankButton}>{quoteEmailBusy ? "Küldés..." : "Email"}</button></div>;
@@ -150,4 +160,14 @@ export function DocumentActionButtons({
     return <button onClick={() => onSendThankYou?.(actionCustomer)} disabled={thankYouEmailBusy} className={`mt-3 w-full ${thankButton}`}>{thankYouEmailBusy ? "Küldés..." : "Köszönő email küldése"}</button>;
   }
   return null;
+}
+
+function PdfEmailButton({ customer, row, onSendPdf, pdfEmailBusy }: { customer: Customer; row: DocumentRow } & PdfActionProps) {
+  if (!onSendPdf) return null;
+  const documents = row.action === "MunkalapNyilatkozat" ? "both" : row.action === "Nyilatkozat" ? "purchase_declaration" : "work_report";
+  return <button type="button" disabled={pdfEmailBusy}
+    className="document-action-button email-action-button rounded-2xl bg-emerald-400/20 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/30 disabled:opacity-50 sm:col-span-2"
+    onClick={() => onSendPdf(customer, documents, row.purchaseDeclarationId)}>
+    {pdfEmailBusy ? "PDF küldése..." : documents === "both" ? "PDF-ek küldése emailben" : "PDF küldése emailben"}
+  </button>;
 }
