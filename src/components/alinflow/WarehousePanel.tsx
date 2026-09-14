@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import type { ClimateProduct } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
 import { inventoryPriceKey } from "@/lib/alinflow/inventory-purchase-prices";
+import { groupWarehouseItems, summarizeWarehouseValue } from "@/lib/alinflow/warehouse-value";
 import { InventoryPurchasePriceEditor, useInventoryPurchasePrices } from "./InventoryPurchasePrice";
 
 type MaterialInventoryItem = {
@@ -85,6 +86,12 @@ export function WarehousePanel({
   const query = search.trim().toLocaleLowerCase("hu-HU");
   const visibleProducts = products.filter((product) => product.name.toLocaleLowerCase("hu-HU").includes(query));
   const visibleMaterials = materialInventory.filter((item) => item.name.toLocaleLowerCase("hu-HU").includes(query));
+  const productGroups = groupWarehouseItems(visibleProducts, (product) => stockOf(product.id));
+  const materialGroups = groupWarehouseItems(visibleMaterials, (item) => item.stock);
+  const stockValue = summarizeWarehouseValue([
+    ...products.map((product) => ({ itemType: "climate" as const, itemKey: product.id, stock: stockOf(product.id), reserved: reservedForProduct(product.id) })),
+    ...materialInventory.map((item) => ({ itemType: "material" as const, itemKey: item.name, stock: item.stock, reserved: materialReserved(item.name) })),
+  ], purchasePrices.prices);
 
   async function addMaterialItem() {
     const name = newMaterialName.trim();
@@ -117,6 +124,7 @@ export function WarehousePanel({
   return (
     <Shell>
       <Back onClick={onBack} />
+      <WarehouseValueSummary value={stockValue} loading={purchasePrices.loading} error={Boolean(purchasePrices.error)} />
       <ClimateProductManager
         products={products}
         showClimateProductManager={showClimateProductManager}
@@ -148,17 +156,18 @@ export function WarehousePanel({
           <button type="button" onClick={purchasePrices.retry} className="mt-2 rounded-xl bg-white/10 px-3 py-2 font-bold">Árak betöltésének újrapróbálása</button>
         </div> : null}
       </div>
-      <Layout>
-        <Main>
+      <div className="space-y-6">
           <Card title="Klíma készlet">
             <div className="space-y-3">
-              {visibleProducts.map((product) => {
+              {productGroups.flatMap((group) => group.items.length ? [
+                <h3 key={`heading-${group.key}`} className="border-b border-white/10 pb-2 pt-3 text-lg font-black text-slate-200">{group.title}</h3>,
+                ...group.items.map((product) => {
                 const stock = stockOf(product.id);
                 const reserved = reservedForProduct(product.id);
                 const free = stock - reserved;
 
                 return (
-                  <div key={product.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                  <div key={`climate-${product.id}`} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <p className="text-lg font-black">{product.name}</p>
@@ -196,7 +205,7 @@ export function WarehousePanel({
                     </div>
                   </div>
                 );
-              })}
+              })] : [])}
             </div>
             {!visibleProducts.length ? <p className="mt-3 text-sm text-slate-400">{query ? "Nincs megfelelő klíma." : "Nincs aktív klímatípus."}</p> : null}
           </Card>
@@ -235,13 +244,15 @@ export function WarehousePanel({
             ) : null}
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {visibleMaterials.map((item) => {
+              {materialGroups.flatMap((group) => group.items.length ? [
+                <h3 key={`heading-${group.key}`} className="col-span-full border-b border-white/10 pb-2 pt-3 text-lg font-black text-slate-200">{group.title}</h3>,
+                ...group.items.map((item) => {
                 const reserved = materialReserved(item.name);
                 const free = item.stock - reserved;
                 const status = free <= 0 ? "hiány" : free <= item.lowAt ? "alacsony" : "rendben";
 
                 return (
-                  <div key={item.name} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                  <div key={`material-${item.name}`} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-black">{item.name}</p>
@@ -281,23 +292,33 @@ export function WarehousePanel({
                     </div>
                   </div>
                 );
-              })}
+              })] : [])}
             </div>
             {!visibleMaterials.length ? <p className="mt-3 text-sm text-slate-400">{query ? "Nincs megfelelő szerelési anyag." : "Nincs szerelési anyag a raktárban."}</p> : null}
           </Card>
-        </Main>
-
-        <Side>
-          <Gradient title="Raktár logika" value="Foglalás ≠ levonás" tone="blue" />
-          <Card title="Mit jelent?">
-            <InfoRow label="Raktáron" value="fizikailag nálad van" />
-            <InfoRow label="Lefoglalva" value="már időpontra van téve" />
-            <InfoRow label="Szabad" value="még eladható" />
-          </Card>
-        </Side>
-      </Layout>
+      </div>
     </Shell>
   );
+}
+
+function WarehouseValueSummary({ value, loading, error }: { value: ReturnType<typeof summarizeWarehouseValue>; loading: boolean; error: boolean }) {
+  const incomplete = value.missingStockPriceCount > 0;
+  const unavailable = loading || error || (incomplete && value.pricedStockItemCount === 0);
+  return <section data-internal-stock-value className="rounded-[2rem] border border-cyan-200/20 bg-cyan-200/5 p-5 print:hidden sm:p-6">
+    <h2 className="text-2xl font-black">Raktárkészlet értéke</h2>
+    <p className="mt-1 text-sm text-slate-300">Teljes raktár · klímák és anyagok · bruttó beszerzési érték</p>
+    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {[
+        ["Raktáron összesen", value.grossStockValue],
+        ["Ebből lefoglalva", value.reservedValue],
+        ["Szabad készlet", value.freeValue],
+      ].map(([label, amount]) => <div key={label} className="min-w-0 rounded-2xl bg-slate-900/80 p-4">
+        <p className="text-sm text-slate-300">{label}</p>
+        <p className="mt-2 break-words text-2xl font-black tabular-nums text-cyan-100">{unavailable ? "—" : ft(Number(amount))}</p>
+      </div>)}
+    </div>
+    {loading ? <p className="mt-3 text-sm text-slate-300">Értékek betöltése...</p> : error ? <p className="mt-3 text-sm text-amber-100">Az értékek az árak sikeres betöltése után jelennek meg.</p> : incomplete ? <p className="mt-3 text-sm text-amber-100">{value.missingStockPriceCount} raktáron lévő tételnél hiányzik a beszerzési ár. {value.pricedStockItemCount ? "A kijelzett értékek az ismert árú tételek részösszegei." : "Az összesítéshez add meg a beszerzési árakat."}</p> : null}
+  </section>;
 }
 
 type ClimateProductManagerProps = Pick<WarehousePanelProps,
@@ -504,13 +525,5 @@ function StockBadge({ label, value, tone = "default" }: { label: string; value: 
 function Shell({ children }: { children: ReactNode }) {
   return <main className="min-h-screen bg-[#08111F] p-4 text-white print:bg-white print:p-0 print:text-black md:p-8"><div className="mx-auto max-w-7xl space-y-8 print:max-w-none print:space-y-0">{children}</div></main>;
 }
-function Layout({ children }: { children: ReactNode }) { return <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">{children}</section>; }
-function Main({ children }: { children: ReactNode }) { return <div className="space-y-6 xl:col-span-2">{children}</div>; }
-function Side({ children }: { children: ReactNode }) { return <aside className="space-y-6">{children}</aside>; }
 function Card({ title, children }: { title: string; children: ReactNode }) { return <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl"><h2 className="mb-5 text-2xl font-black">{title}</h2>{children}</section>; }
 function Back({ onClick }: { onClick: () => void }) { return <div className="sticky top-3 z-50 w-fit print:hidden"><button onClick={onClick} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur">← Vissza</button></div>; }
-function InfoRow({ label, value }: { label: string; value: string }) { return <div className="mb-3 flex justify-between gap-4 rounded-2xl bg-slate-900/80 p-4"><span>{label}</span><b>{value}</b></div>; }
-function Gradient({ title, value, tone }: { title: string; value: string; tone?: string }) {
-  const bg = tone === "blue" ? "from-blue-400 to-cyan-300" : "from-cyan-300 to-emerald-300";
-  return <div className={`rounded-[2rem] bg-gradient-to-br ${bg} p-6 text-slate-950 shadow-2xl`}><p className="text-sm font-black uppercase opacity-70">{title}</p><p className="mt-2 text-3xl font-black">{value}</p></div>;
-}

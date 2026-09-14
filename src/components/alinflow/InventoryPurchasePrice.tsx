@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ft } from "@/lib/alinflow/format";
+import { grossPurchasePrice } from "@/lib/alinflow/warehouse-value";
 import {
-  inventoryPriceKey, listInventoryPurchasePrices, saveInventoryPurchasePrice,
+  inventoryPriceKey, listInventoryPurchasePrices, saveInventoryPurchasePrice, parsePurchasePrice,
   type InventoryPriceItem, type InventoryPurchasePrice, type PurchaseTaxBasis,
 } from "@/lib/alinflow/inventory-purchase-prices";
 
@@ -61,6 +62,12 @@ export function InventoryPurchasePriceEditor({ item, itemName, unit, price, disa
   const inFlight = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const grossPrice = grossPurchasePrice(price);
+  let previewGross: number | null = null;
+  if (editing) {
+    try { previewGross = grossPurchasePrice({ purchasePrice: parsePurchasePrice(value), taxBasis: basis }); }
+    catch { /* An incomplete input is validated when saving. */ }
+  }
 
   function edit() {
     setValue(price?.purchasePrice === null || price?.purchasePrice === undefined ? "" : String(price.purchasePrice));
@@ -87,8 +94,8 @@ export function InventoryPurchasePriceEditor({ item, itemName, unit, price, disa
   return <div className="mt-4 rounded-2xl border border-amber-200/15 bg-amber-200/5 p-3 print:hidden" data-internal-purchase-price>
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="text-sm">
-        <p className="text-slate-400">Beszerzési egységár · belső</p>
-        <p className="mt-1 font-black text-amber-100">{disabled ? "Nem elérhető" : price?.purchasePrice === null || price?.purchasePrice === undefined ? "Nincs megadva" : `${ft(price.purchasePrice)} / ${unit} · ${price.taxBasis === "net" ? "nettó" : "bruttó"}`}</p>
+        <p className="text-slate-400">Bruttó beszerzési egységár · belső</p>
+        <p className="mt-1 font-black text-amber-100">{disabled ? "Nem elérhető" : grossPrice === null ? "Nincs megadva" : `${ft(grossPrice)} / ${unit}`}</p>
       </div>
       {!editing ? <button type="button" disabled={disabled} aria-label={`Beszerzési ár megadása vagy módosítása: ${itemName}`} onClick={edit} className="rounded-xl bg-white/10 px-3 py-2 text-sm font-bold disabled:opacity-40">{price?.purchasePrice === null || price?.purchasePrice === undefined ? "Ár megadása" : "Ár módosítása"}</button> : null}
     </div>
@@ -103,6 +110,7 @@ export function InventoryPurchasePriceEditor({ item, itemName, unit, price, disa
           </select>
         </label>
       </div>
+      <p className="text-sm text-slate-300">Nettó ár megadásakor 27% áfával számolunk.{previewGross !== null ? <span className="mt-1 block font-bold text-amber-100">Bruttó egységár: {ft(previewGross)} / {unit}</span> : null}</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => void save()} disabled={busy || disabled} className="rounded-xl bg-emerald-300 px-4 py-2 font-black text-slate-950 disabled:opacity-40">{busy ? "Mentés..." : "Beszerzési ár mentése"}</button>
         <button type="button" disabled={busy} onClick={() => { setEditing(false); setMessage(""); }} className="rounded-xl bg-white/10 px-4 py-2 font-bold disabled:opacity-40">Mégse</button>
