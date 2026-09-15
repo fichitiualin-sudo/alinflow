@@ -109,3 +109,49 @@ test("a worker that finishes loading after cancellation is terminated", { timeou
   assert.equal(calls.terminated, 1);
   assert.equal(calls.image, null);
 });
+
+test("full label recognition reads model and manufacturer even when the serial barcode succeeds", async () => {
+  const { api, calls } = setup({ async recognize() { return { data: { text: "Manufacturer: Midea\nOutdoor model: TEST-35-O\nS/N: OCR999999" } }; } }, {}, undefined, async () => ["BARCODE123456"]);
+  const photo = new Blob(["synthetic"], { type: "image/jpeg" });
+  const progress = [];
+  const result = await api.recognizeDeviceLabel(photo, "outdoor", value => progress.push(value));
+  assert.equal(calls.created, 1, "A barcode must not short-circuit model/manufacturer OCR");
+  assert.equal(calls.terminated, 1);
+  assert.deepEqual(plain(result.candidates), ["BARCODE123456"], "Keep checksummed serial ahead of potentially misread OCR");
+  assert.deepEqual(plain(result.models), ["TEST-35-O"]);
+  assert.deepEqual(plain(result.manufacturers), ["Midea"]);
+  assert.equal(result.source, "barcode");
+  assert.equal(progress.at(-1), 100);
+  assert.ok(progress.every(value => value >= 0 && value <= 100));
+});
+
+test("full label recognition retains text serial fallback and rejects the opposite-side model", async () => {
+  const { api } = setup({ async recognize() { return { data: { text: "Midea\nOutdoor model: TEST-35-O\nIndoor model: TEST-35-I\nS/N: TEXT123456" } }; } });
+  const result = await api.recognizeDeviceLabel(new Blob(["synthetic"], { type: "image/jpeg" }), "indoor", () => {});
+  assert.deepEqual(plain(result.models), ["TEST-35-I"]);
+  assert.deepEqual(plain(result.candidates), ["TEXT123456"]);
+  assert.equal(result.source, "text");
+});
+
+test("text engine failure preserves a barcode as a clearly partial result without exposing engine internals", async () => {
+  const { api, calls } = setup({ async recognize() { throw Error("failed at secret signed image URL"); } }, {}, undefined, async () => ["BARCODE123456"]);
+  const result = await api.recognizeDeviceLabel(new Blob(["synthetic"], { type: "image/jpeg" }), "indoor", () => {});
+  assert.deepEqual(plain(result.candidates), ["BARCODE123456"]);
+  assert.deepEqual(plain(result.models), []);
+  assert.deepEqual(plain(result.manufacturers), []);
+  assert.match(result.warning, /szövegfelismerés nem sikerült/);
+  assert.doesNotMatch(result.warning, /secret|URL/);
+  assert.equal(calls.terminated, 1);
+  const failed = setup({ async recognize() { throw Error("no usable results"); } });
+  await assert.rejects(failed.api.recognizeDeviceLabel(new Blob(["synthetic"], { type: "image/jpeg" }), "indoor", () => {}), /no usable/);
+});
+
+test("aborted full recognition never returns a previously read barcode for the abandoned editor", { timeout: 2000 }, async () => {
+  let entered; const started = new Promise(resolve => { entered = resolve; });
+  const { api, calls } = setup({ recognize() { entered(); return new Promise(() => {}); } }, {}, undefined, async () => ["BARCODE123456"]);
+  const controller = new AbortController();
+  const task = api.recognizeDeviceLabel(new Blob(["synthetic"], { type: "image/jpeg" }), "outdoor", () => {}, controller.signal);
+  const rejected = assert.rejects(task, /megszakadt/);
+  await started; controller.abort(); await rejected;
+  assert.equal(calls.terminated, 1);
+});
