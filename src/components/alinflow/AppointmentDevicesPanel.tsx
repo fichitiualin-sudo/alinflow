@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { WorkPhotosPanel } from "./WorkPhotosPanel";
 import { deviceSlots, deviceSlotKey, listAppointmentDevices, saveAppointmentDevice, type AppointmentDevice, type DeviceSlot, type DeviceTechnicalData } from "@/lib/alinflow/appointment-devices";
 import { downloadWorkPhoto, workPhotoContext } from "@/lib/alinflow/work-photos";
-import { recognizeSerialNumber } from "@/lib/alinflow/serial-recognition";
+import { recognizeSerialNumber, serialRecognitionErrorMessage } from "@/lib/alinflow/serial-recognition";
 import type { Customer, WorkPhoto, WorkPhotoContext } from "@/lib/alinflow/types";
 
 const button = "rounded-xl px-4 py-3 text-sm font-black disabled:opacity-50 disabled:cursor-not-allowed";
@@ -17,13 +17,13 @@ function DeviceEditor({ slot, device, customer, context, retained, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [side, setSide] = useState<"indoor" | "outdoor" | null>(null);
-  const [ocr, setOcr] = useState<{ side: "indoor" | "outdoor"; candidates: string[]; text: string } | null>(null);
+  const [ocr, setOcr] = useState<{ side: "indoor" | "outdoor"; candidates: string[]; text: string; source?: "barcode" | "text" } | null>(null);
   const [recognizing, setRecognizing] = useState(false);
   const [progress, setProgress] = useState(0);
   const request = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => { setData(device?.data || {}); }, [device?.updatedAt]);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current?.abort(); }; }, []);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current?.abort(); request.current = null; }; }, []);
 
   async function save() {
     if (saving) return;
@@ -43,17 +43,28 @@ function DeviceEditor({ slot, device, customer, context, retained, onSaved }: {
   }
 
   async function recognize(photo: WorkPhoto) {
-    if (recognizing || !photo.deviceSide || photo.deviceId !== device?.id) return;
+    if (!mounted.current || request.current || !photo.deviceSide || photo.deviceId !== device?.id) return;
     const controller = new AbortController(); request.current = controller;
+    const targetSide = photo.deviceSide;
+    const isCurrent = () => mounted.current && request.current === controller && !controller.signal.aborted;
+    let downloaded = false;
     setRecognizing(true); setProgress(0); setOcr(null); setMessage("");
     try {
       const blob = await downloadWorkPhoto(photo);
-      if (!mounted.current || controller.signal.aborted) return;
-      const result = await recognizeSerialNumber(blob, (value) => { if (mounted.current) setProgress(value); }, controller.signal);
-      if (mounted.current && !controller.signal.aborted) setOcr({ side: photo.deviceSide, ...result });
-    } catch {
-      if (mounted.current) setMessage("A sorozatszámot nem sikerült felismerni. Próbálj közelebbi, éles fotót, vagy írd be kézzel.");
-    } finally { if (mounted.current) setRecognizing(false); request.current = null; }
+      if (!isCurrent()) return;
+      downloaded = true;
+      const result = await recognizeSerialNumber(blob, (value) => { if (isCurrent()) setProgress(value); }, controller.signal);
+      if (isCurrent()) setOcr({ side: targetSide, ...result });
+    } catch (error) {
+      if (isCurrent()) setMessage(downloaded
+        ? serialRecognitionErrorMessage(error)
+        : "Az adattábla-fotó nem tölthető be. Próbáld újra.");
+    } finally {
+      if (request.current === controller) {
+        request.current = null;
+        if (mounted.current) setRecognizing(false);
+      }
+    }
   }
 
   return <div className="rounded-2xl border border-cyan-200/20 bg-slate-950/40 p-4">
@@ -75,7 +86,11 @@ function DeviceEditor({ slot, device, customer, context, retained, onSaved }: {
     {message ? <p role="status" className="mt-3 text-sm text-amber-100">{message}</p> : null}
     {recognizing ? <p role="status" className="mt-3 text-sm text-cyan-100">Sorozatszám felismerése… {progress}%</p> : null}
     {ocr ? <div className="mt-3 rounded-xl bg-cyan-300/10 p-3">
-      <p className="text-sm font-bold text-cyan-100">{ocr.candidates.length ? "Ellenőrizd a javaslatot, majd válaszd ki a sorozatszámot:" : "Nem találtam egyértelmű S/N jelölést. A felismert szövegből kézzel is beírhatod."}</p>
+      <p className="text-sm font-bold text-cyan-100">{ocr.candidates.length
+        ? ocr.source === "barcode"
+          ? "Vonalkódból beolvasott azonosító. Ellenőrizd a képen, hogy az S/N-hez tartozik, majd válaszd ki:"
+          : "Ellenőrizd a javaslatot, majd válaszd ki a sorozatszámot:"
+        : "Nem találtam egyértelmű S/N jelölést. A felismert szövegből kézzel is beírhatod."}</p>
       <div className="mt-2 flex flex-wrap gap-2">{ocr.candidates.map((serial) => <button key={serial} type="button" disabled={saving} className={`${button} break-all bg-cyan-300 text-slate-950`} onClick={() => {
         setData((current) => ({ ...current, [ocr.side === "indoor" ? "indoorSerial" : "outdoorSerial"]: serial }));
         setMessage("A kiválasztott sorozatszámot a Készülékadatok mentése gombbal rögzítheted."); setOcr(null);

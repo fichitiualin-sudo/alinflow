@@ -683,10 +683,6 @@ export function WorkPagePanel({
               {workResourceEditLocked && !allowWorkResourceEdit ? <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={() => onSetAllowWorkResourceEdit(true)}>Módosítás engedélyezése</button> : null}
               {canEditWorkResources && isInstallation ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={onSaveWorkChanges}>Módosítás mentése az időpontra</button> : null}
             </div> : null}
-            {isInstallation ? <AppointmentDevicesPanel
-              key={`${workspaceId || ""}:${selected.id}:${selected.activeAppointmentId || ""}`}
-              customer={{ ...selected, quoteItems }} workspaceId={workspaceId || null}
-            /> : null}
           </Card> : null}
 
           <div className="mt-4">
@@ -701,7 +697,12 @@ export function WorkPagePanel({
             key={`${workspaceId || ""}:${selected.id}:${selected.activeAppointmentId || ""}`}
             customer={selected}
             workspaceId={workspaceId}
-          /> : null}
+          >
+            {isInstallation ? <AppointmentDevicesPanel
+              key={`${workspaceId || ""}:${selected.id}:${selected.activeAppointmentId || ""}`}
+              customer={{ ...selected, quoteItems }} workspaceId={workspaceId || null}
+            /> : null}
+          </WorkPhotosPanel> : null}
 
           {isInstallation ? (
             <div className="mt-4">

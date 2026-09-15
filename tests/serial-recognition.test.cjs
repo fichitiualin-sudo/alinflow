@@ -1,10 +1,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { harness } = require("./helpers.cjs");
-function setup(overrides = {}, globals = {}, start) {
-  const calls = { created: 0, terminated: 0, parameters: null, image: null };
+function setup(overrides = {}, globals = {}, start, barcode = async () => []) {
+  const calls = { created: 0, terminated: 0, parameters: null, image: null, barcode: 0 };
   const worker = { async setParameters(value) { calls.parameters = value; }, async recognize(blob) { calls.image = blob; return { data: { text: "S/N: ABC123456\nMODEL: TEST999" } }; }, async terminate() { calls.terminated++; }, ...overrides };
-  const api = harness({ setTimeout, clearTimeout, ...globals }, { "tesseract.js": { PSM: { SPARSE_TEXT: 11 }, async createWorker(language, mode, options) { calls.created++; calls.language = language; options.logger({ progress: 0.42 }); return start ? start(worker) : worker; } } }).load("src/lib/alinflow/serial-recognition.ts");
+  const api = harness({ setTimeout, clearTimeout, ...globals }, { "./serial-barcode": { recognizeSerialBarcode(...args) { calls.barcode++; return barcode(...args); } }, "tesseract.js": { PSM: { SPARSE_TEXT: 11 }, async createWorker(language, mode, options) { calls.created++; calls.language = language; options.logger({ progress: 0.42 }); return start ? start(worker) : worker; } } }).load("src/lib/alinflow/serial-recognition.ts");
   return { api, calls };
 }
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -22,8 +22,45 @@ test("OCR only receives a saved bounded image and returns candidates for user co
   assert.equal(calls.language, "eng");
   assert.equal(calls.parameters.tessedit_pageseg_mode, 11);
   assert.deepEqual(plain(result.candidates), ["ABC123456"]);
-  assert.deepEqual(progress, [42]);
+  assert.deepEqual(progress, [0, 42]);
+  assert.equal(result.source, "text");
   assert.equal(calls.terminated, 1);
+});
+
+test("sparse OCR labels allow blank lines, bare SN and repeated labels without guessing unrelated numbers", () => {
+  const { api } = setup();
+  assert.deepEqual(plain(api.serialCandidates("SN ABC123456\nS/N:\n\nNEXT987654\nS/N (Serial Number): WRAP123456\nS/N: FIRST1234 S/N: SECOND5678")), ["ABC123456", "NEXT987654", "WRAP123456", "FIRST1234", "SECOND5678"]);
+  assert.deepEqual(plain(api.serialCandidates("S/N:\n\nModel: WRONG123\nSNOW123456\nSN: 220-240V\nS/N: 50HZ\nWIFI: 999912345678")), []);
+  assert.deepEqual(plain(api.serialCandidates("Ｓ／Ｎ：ＡＢＣ１２３４５６")), ["ABC123456"]);
+});
+
+test("barcode candidates bypass OCR startup and remain explicitly identified for confirmation", async () => {
+  const photo = new Blob(["synthetic image"], { type: "image/jpeg" });
+  const progress = [];
+  const { api, calls } = setup({}, {}, undefined, async (blob) => { assert.equal(blob, photo); return ["BARCODE123456789"]; });
+  const result = await api.recognizeSerialNumber(photo, value => progress.push(value));
+  assert.deepEqual(plain(result), { candidates: ["BARCODE123456789"], text: "BARCODE123456789", source: "barcode" });
+  assert.equal(calls.created, 0);
+  assert.deepEqual(progress, [0, 100]);
+});
+
+test("barcode unavailability falls back to OCR, cancellation does not", async () => {
+  const photo = new Blob(["synthetic image"], { type: "image/jpeg" });
+  const fallback = setup({}, {}, undefined, async () => { throw Error("canvas unavailable"); });
+  assert.equal((await fallback.api.recognizeSerialNumber(photo, () => {})).source, "text");
+  assert.equal(fallback.calls.created, 1);
+  const controller = new AbortController();
+  const cancelled = setup({}, {}, undefined, async () => { controller.abort(); return ["LATE123456789"]; });
+  await assert.rejects(cancelled.api.recognizeSerialNumber(photo, () => {}, controller.signal), /megszakadt/);
+  assert.equal(cancelled.calls.created, 0);
+});
+
+test("only controlled OCR messages are exposed; network and engine internals stay hidden", async () => {
+  const { api } = setup();
+  assert.match(api.serialRecognitionErrorMessage(new Error("engine failed at private URL")), /felismerő/);
+  assert.doesNotMatch(api.serialRecognitionErrorMessage(new Error("engine failed at private URL")), /private URL/);
+  try { await api.recognizeSerialNumber(new Blob(["invalid"]), () => {}); }
+  catch (error) { assert.match(api.serialRecognitionErrorMessage(error), /mentett adattábla/); }
 });
 test("OCR rejects non-images, oversized images and pre-aborted work before worker creation", async () => {
   const { api, calls } = setup();

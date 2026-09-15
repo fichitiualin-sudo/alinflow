@@ -61,6 +61,10 @@ Felül a teljes klíma- és anyagkészlet bruttó beszerzési értéke, ebből a
 - egyedi kezdési idő is megengedett;
 - ütközést a mentés előtt jelezni kell.
 
+## Munkafotók és sorozatszámok
+
+A „Sorozatszámok és adattábla-fotók” rész telepítésnél kizárólag a Munkafotók lenyíló részében jelenik meg. Az időponthoz tartozó klímalistában nincs második belépési pont; a klímalista becsukásával a fotók és sorozatszámok továbbra is elérhetők a Munkafotók alatt. A készülékenkénti beltéri/kültéri fotókapcsolat, mentés és felismerés megmarad. A karbantartási és felmérési munkák általános munkafotói változatlanul az adott időponthoz tartoznak.
+
 ## Dokumentumok és karbantartási napló
 
 A karbantartási napló legyen minimális:

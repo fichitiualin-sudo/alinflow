@@ -11,6 +11,7 @@
   "dependencies": {
     "@pdf-lib/fontkit": "1.1.1",
     "@supabase/supabase-js": "2.105.4",
+    "@zxing/library": "0.23.0",
     "next": "16.3.4",
     "pdf-lib": "1.17.1",
     "react": "19.2.6",

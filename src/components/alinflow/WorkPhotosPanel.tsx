@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type ReactNode } from "react";
 import { Card } from "@/components/alinflow/LayoutPrimitives";
 import { appointmentTypeLabel } from "@/lib/alinflow/appointments";
 import { supabase } from "@/lib/supabase";
@@ -184,10 +184,11 @@ function workLabel(context: WorkPhotoContext) {
   return `${appointmentTypeLabel(context.appointmentType)} · ${context.workDate.replaceAll("-", ".")}${context.workTime ? ` · ${context.workTime}` : ""}`;
 }
 
-export function WorkPhotosPanel({ customer, workspaceId, device, onRecognizeSerial, recognizing = false }: {
+export function WorkPhotosPanel({ customer, workspaceId, device, onRecognizeSerial, recognizing = false, children }: {
   customer: Customer; workspaceId?: string | null;
   device?: { id: string; side: "indoor" | "outdoor" };
   onRecognizeSerial?: (photo: WorkPhoto) => void; recognizing?: boolean;
+  children?: ReactNode;
 }) {
   const context = useMemo(() => {
     const base = workPhotoContext(customer, workspaceId);
@@ -328,6 +329,7 @@ export function WorkPhotosPanel({ customer, workspaceId, device, onRecognizeSeri
 
   return (
     <Card title={device ? `${device.side === "indoor" ? "Beltéri" : "Kültéri"} adattábla-fotók` : "Munkafotók"}>
+      {children}
       {context ? (
         <p className="mt-3 rounded-2xl bg-slate-950/60 p-3 text-sm font-bold text-cyan-100">Új képek ehhez a munkához: {workLabel(context)}</p>
       ) : (
