@@ -396,7 +396,7 @@ export function WorkPhotosPanel({ customer, workspaceId, device, onRecognizeSeri
                   </span>
                 </button>
                 <div className="border-t border-white/10 p-3">
-                  {onRecognizeSerial ? <button type="button" disabled={loading || busy || deleting || recognizing} onClick={() => onRecognizeSerial(photo)} className={`${buttonClass} mb-2 w-full bg-cyan-300 text-slate-950`}>S/N felismerése</button> : null}
+                  {onRecognizeSerial ? <button type="button" disabled={loading || busy || deleting || recognizing} onClick={() => onRecognizeSerial(photo)} className={`${buttonClass} mb-2 w-full bg-cyan-300 text-slate-950`}>Adattábla beolvasása</button> : null}
                   {photoToDelete?.id === photo.id || deletingPhotoId === photo.id ? (
                     <div>
                       <p className="text-sm font-bold text-slate-100">Végleg törlöd ezt a képet?</p>

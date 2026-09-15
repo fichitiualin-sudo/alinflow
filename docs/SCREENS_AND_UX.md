@@ -63,7 +63,7 @@ Felül a teljes klíma- és anyagkészlet bruttó beszerzési értéke, ebből a
 
 ## Munkafotók és sorozatszámok
 
-A „Sorozatszámok és adattábla-fotók” rész telepítésnél kizárólag a Munkafotók lenyíló részében jelenik meg. Az időponthoz tartozó klímalistában nincs második belépési pont; a klímalista becsukásával a fotók és sorozatszámok továbbra is elérhetők a Munkafotók alatt. A készülékenkénti beltéri/kültéri fotókapcsolat, mentés és felismerés megmarad. A karbantartási és felmérési munkák általános munkafotói változatlanul az adott időponthoz tartoznak.
+A „Készülékadatok és adattábla-fotók” rész telepítésnél kizárólag a Munkafotók lenyíló részében jelenik meg, további belső lenyitás nélkül. Az időponthoz tartozó klímalistában nincs második belépési pont; a klímalista becsukásával a fotók és készülékadatok továbbra is elérhetők a Munkafotók alatt. Készülékenként közös Gyártó mező, külön Beltéri/Kültéri csoportban pontos típus, S/N és adattábla-fotók szerepelnek. A fotó „Adattábla beolvasása” gombja mindhárom adatot együtt javasolja: az egyedi találat csak az üres szerkesztett mezőt tölti ki, eltérő vagy több javaslat külön választható. Ellenőrzés után egyetlen mentés rögzíti a készülék adatait. A felismerés helyben történik, a nem olvasható adat kézzel pótolható. A karbantartási és felmérési munkák általános munkafotói változatlanul az adott időponthoz tartoznak.
 
 ## Dokumentumok és karbantartási napló
 

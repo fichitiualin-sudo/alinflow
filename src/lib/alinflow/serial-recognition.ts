@@ -1,3 +1,5 @@
+import { deviceLabelCandidates } from "./device-label";
+
 class SerialRecognitionError extends Error {}
 
 export function serialRecognitionErrorMessage(error: unknown): string {
@@ -22,24 +24,27 @@ export function serialCandidates(text: string): string[] {
   return [...result];
 }
 
-export async function recognizeSerialNumber(blob: Blob, onProgress: (progress: number) => void, signal?: AbortSignal) {
-  if (!blob.type.startsWith("image/") || !blob.size || blob.size > 500_000) throw new SerialRecognitionError("A sorozatszámhoz egy mentett adattábla-fotót válassz.");
+function validatePhoto(blob: Blob, signal?: AbortSignal) {
+  if (!blob.type.startsWith("image/") || !blob.size || blob.size > 500_000) throw new SerialRecognitionError("A beolvasáshoz egy mentett adattábla-fotót válassz.");
   if (signal?.aborted) throw new SerialRecognitionError("A felismerés megszakadt.");
-  onProgress(0);
-  // Read the checksummed barcode before OCR can mistake narrow printed characters.
-  // Both decoders work locally; the image is never sent to a recognition service.
+}
+
+async function readBarcode(blob: Blob, signal?: AbortSignal): Promise<string[]> {
   try {
     const { recognizeSerialBarcode } = await import("./serial-barcode");
     const candidates = await recognizeSerialBarcode(blob, signal);
     if (signal?.aborted) throw new SerialRecognitionError("A felismerés megszakadt.");
-    if (candidates.length) { onProgress(100); return { candidates, text: candidates.join("\n"), source: "barcode" as const }; }
+    return candidates;
   } catch {
     if (signal?.aborted) throw new SerialRecognitionError("A felismerés megszakadt.");
     // A browser without image-processing support can still try the OCR fallback.
+    return [];
   }
-  const { createWorker, PSM } = await import("tesseract.js");
+}
+
+async function readText(blob: Blob, onProgress: (progress: number) => void, signal?: AbortSignal, enhance = false): Promise<string> {
   if (signal?.aborted) throw new SerialRecognitionError("A felismerés megszakadt.");
-  let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
+  let worker: import("tesseract.js").Worker | undefined;
   let finished = false;
   let rejectCancellation!: (error: Error) => void;
   const cancellation = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
@@ -47,9 +52,13 @@ export async function recognizeSerialNumber(blob: Blob, onProgress: (progress: n
   signal?.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(() => rejectCancellation(new SerialRecognitionError("A felismerés túl sokáig tartott. Ellenőrizd az internetkapcsolatot, majd próbáld újra.")), 90_000);
   try {
+    const { createWorker, PSM } = await Promise.race([import("tesseract.js"), cancellation]);
+    const image = enhance ? await Promise.race([
+      import("./device-label-image").then(({ prepareDeviceLabelImage }) => prepareDeviceLabelImage(blob, signal)), cancellation,
+    ]) : blob;
     // Recognition stays in a browser worker; only the OCR runtime/model files are downloaded.
     const starting = createWorker("eng", 1, { logger: (message) => {
-      if (!finished) onProgress(Math.round((message.progress || 0) * 100));
+      if (!finished && (!enhance || message.status === "recognizing text")) onProgress(Math.round((message.progress || 0) * 100));
     } });
     // An initialization completing after navigation/timeout must not leave a live worker behind.
     void starting.then((created) => {
@@ -59,12 +68,53 @@ export async function recognizeSerialNumber(blob: Blob, onProgress: (progress: n
     worker = await Promise.race([starting, cancellation]);
     await Promise.race([worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT }), cancellation]);
     // Tesseract terminate() does not settle pending jobs; race cancellation explicitly.
-    const { data } = await Promise.race([worker.recognize(blob), cancellation]);
-    return { candidates: serialCandidates(data.text), text: data.text.slice(0, 5000), source: "text" as const };
+    const { data } = await Promise.race([worker.recognize(image), cancellation]);
+    return data.text.slice(0, 5000);
   } finally {
     finished = true;
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);
     await worker?.terminate().catch(() => {});
   }
+}
+
+export async function recognizeSerialNumber(blob: Blob, onProgress: (progress: number) => void, signal?: AbortSignal) {
+  validatePhoto(blob, signal);
+  onProgress(0);
+  const candidates = await readBarcode(blob, signal);
+  if (candidates.length) { onProgress(100); return { candidates, text: candidates.join("\n"), source: "barcode" as const }; }
+  const text = await readText(blob, onProgress, signal);
+  return { candidates: serialCandidates(text), text, source: "text" as const };
+}
+
+export interface DeviceLabelRecognition {
+  candidates: string[];
+  manufacturers: string[];
+  models: string[];
+  text: string;
+  source: "barcode" | "text";
+  warning?: string;
+}
+
+/** Read all three label fields locally; keep a valid barcode even if text OCR fails. */
+export async function recognizeDeviceLabel(blob: Blob, side: "indoor" | "outdoor", onProgress: (progress: number) => void, signal?: AbortSignal): Promise<DeviceLabelRecognition> {
+  validatePhoto(blob, signal);
+  onProgress(0);
+  const candidates = await readBarcode(blob, signal);
+  if (signal?.aborted) throw new SerialRecognitionError("A felismerés megszakadt.");
+  onProgress(15);
+  let text: string;
+  try {
+    text = await readText(blob, (value) => onProgress(15 + Math.round(value * 0.8)), signal, true);
+  } catch (error) {
+    if (signal?.aborted || !candidates.length) throw error;
+    onProgress(100);
+    return { candidates, manufacturers: [], models: [], text: "", source: "barcode",
+      warning: "A vonalkódot beolvastam, de a szövegfelismerés nem sikerült. A gyártót és a típust írd be kézzel, vagy próbáld újra." };
+  }
+  if (signal?.aborted) throw new SerialRecognitionError("A felismerés megszakadt.");
+  const labels = deviceLabelCandidates(text, side);
+  onProgress(100);
+  return { ...labels, candidates: candidates.length ? candidates : serialCandidates(text), text,
+    source: candidates.length ? "barcode" : "text" };
 }

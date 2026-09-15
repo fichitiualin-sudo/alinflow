@@ -114,7 +114,8 @@ npm run build
 - [ ] A sorozatszám- és adattábla-rész kizárólag a Munkafotók alatt nyitható meg, a klímalista nyitottságától függetlenül.
 - [ ] A korábban feltöltött beltéri/kültéri képek ugyanahhoz a készülékhez és munkához töltődnek vissza.
 - [ ] A Code 128 vonalkódból olvasott azonosító ellenőrizhető javaslat; találat nélkül helyi szövegfelismerés következik.
-- [ ] A kiválasztás csak a megfelelő beltéri/kültéri mezőt módosítja, a mentés külön művelet.
+- [ ] Az adattábla beolvasása együtt javasolja a gyártót, az adott oldal pontos típusát és S/N-jét. Egyedi találat üres mezőbe kerül; meglévő érték és másik oldal adatai változatlanok, eltérő/több találat külön választható.
+- [ ] Ellenőrzés után egyetlen készülékadat-mentés és visszatöltés megőrzi az összes mezőt. Az el nem olvasható típus vagy gyártó kézzel pótolható; szövegfelismerési hiba mellett a sikeres vonalkód megmarad.
 - [ ] Dupla kattintás nem indít párhuzamos felismerést; munkaváltás és megszakítás után nem érkezik késői mezőmódosítás.
 - [ ] A képletöltési, felismerőmotor- és időtúllépési hiba érthetően elkülönül az üres felismerési eredménytől.
 

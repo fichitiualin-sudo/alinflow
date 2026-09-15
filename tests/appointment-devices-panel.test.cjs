@@ -22,6 +22,7 @@ function hooks() {
         }];
       },
       useRef(initial) { const index = cursor++; if (!(index in slots)) slots[index] = { current: initial }; return slots[index]; },
+      useMemo: (callback) => callback(),
       useEffect(effect, dependencies) {
         const index = cursor++;
         const previous = slots[index];
@@ -63,7 +64,7 @@ function setup(overrides = {}) {
   const slot = { productKey: "manual:szintetikus klíma", productName: "Szintetikus klíma", unitNumber: 1 };
   const props = { slot, context: scope, customer: { id: scope.customerId }, retained: false,
     device: { ...scope, ...slot, id: "device-a", updatedAt: "2026-09-15T10:00:00Z",
-      data: { indoorSerial: "ORIGINAL-IN001", outdoorSerial: "ORIGINAL-OUT002", manufacturer: "TESZT", scop: "4.6" } },
+      data: { indoorSerial: "ORIGINAL-IN001", outdoorSerial: "ORIGINAL-OUT002", manufacturer: "TESZT", scop: "4.6", ...overrides.data } },
     onSaved: (device) => { calls.saved.push(device); props.device = device; },
   };
   const { DeviceEditor } = harness({ AbortController }, jsx).functions(["DeviceEditor"], {
@@ -71,9 +72,10 @@ function setup(overrides = {}) {
     button: "test-button",
     WorkPhotosPanel: "test-device-photos",
     async downloadWorkPhoto(photo) { calls.downloads.push(photo); return overrides.download ? overrides.download(photo) : new Blob(["synthetic"], { type: "image/jpeg" }); },
-    async recognizeSerialNumber(blob, progress, signal) {
-      calls.recognition.push({ blob, progress, signal });
-      return overrides.recognize ? overrides.recognize(blob, progress, signal) : { candidates: ["NEW-SERIAL003"], text: "S/N: NEW-SERIAL003" };
+    async recognizeDeviceLabel(blob, side, progress, signal) {
+      calls.recognition.push({ blob, side, progress, signal });
+      const result = overrides.recognize ? await overrides.recognize(blob, progress, signal) : { candidates: ["NEW-SERIAL003"], text: "S/N: NEW-SERIAL003" };
+      return { manufacturers: [], models: [], source: "text", ...result };
     },
     serialRecognitionErrorMessage(error) { calls.errors.push(error); return overrides.safeMessage || "A felismerő nem indult el vagy megszakadt. Ellenőrizd az internetkapcsolatot, majd próbáld újra."; },
     async saveAppointmentDevice(context, targetSlot, data, existing) {
@@ -140,10 +142,10 @@ test("rapid duplicate recognition clicks start one download and one OCR request"
   assert.equal(run.calls.recognition.length, 2, "The lock is released when recognition finishes");
 });
 
-test("barcode results require checking the identifier against the S/N on the photo and explicit selection", async () => {
+test("barcode conflicts require choosing a replacement and always show the photo comparison notice", async () => {
   const run = setup({ recognize: async () => ({ candidates: ["BARCODE006"], text: "BARCODE006", source: "barcode" }) });
   run.open(); run.recognize(); await tick(); run.render();
-  assert.match(text(run.tree), /Vonalkódból beolvasott azonosító\. Ellenőrizd a képen, hogy az S\/N-hez tartozik/);
+  assert.match(text(run.tree), /A vonalkódból beolvasott azonosítót hasonlítsd össze a fotón látható S\/N-nel/);
   assert.equal(run.field("Beltéri sorozatszám").props.value, "ORIGINAL-IN001");
   assert.equal(run.calls.saves.length, 0);
   run.button("BARCODE006").props.onClick(); run.render();
@@ -214,7 +216,119 @@ test("empty results preserve manual serials, and unrelated photos never start re
   assert.equal(run.calls.downloads.length, 0);
   run.field("Beltéri sorozatszám").props.onChange({ target: { value: "MANUAL005" } });
   run.render(); run.recognize(); await tick(); run.render();
-  assert.match(text(run.tree), /Nem találtam egyértelmű S\/N jelölést/);
+  assert.match(text(run.tree), /Nem találtam egyértelmű készülékadatot/);
   assert.equal(run.field("Beltéri sorozatszám").props.value, "MANUAL005");
   assert.equal(run.calls.saves.length, 0);
+});
+
+test("one candidate per field fills only empty fields of the photographed unit and one save persists all values", async () => {
+  for (const side of ["indoor", "outdoor"]) {
+    const opposite = side === "indoor" ? "outdoor" : "indoor";
+    const run = setup({ data: { manufacturer: "", [`${side}Serial`]: "", [`${side}Model`]: "  ", [`${opposite}Model`]: "KEEP-MODEL" },
+      recognize: async () => ({ manufacturers: ["TESZT GYÁRTÓ"], models: ["SYNTH-MODEL35"], candidates: ["UNIQUE007"], text: "Synthetic label", source: "barcode" }) });
+    const savedBefore = plain(run.props.device.data);
+    run.open(side); run.recognize({ deviceSide: side }); await tick(); run.render();
+    assert.equal(run.calls.recognition[0].side, side);
+    assert.equal(run.field("Gyártó").props.value, "TESZT GYÁRTÓ");
+    assert.equal(run.field(side === "indoor" ? "Beltéri pontos típusa" : "Kültéri pontos típusa").props.value, "SYNTH-MODEL35");
+    assert.equal(run.field(side === "indoor" ? "Beltéri sorozatszám" : "Kültéri sorozatszám").props.value, "UNIQUE007");
+    assert.equal(run.field(opposite === "indoor" ? "Beltéri pontos típusa" : "Kültéri pontos típusa").props.value, "KEEP-MODEL");
+    assert.equal(nodes(run.tree, (node) => node.type === "button" && text(node) === "UNIQUE007").length, 0, "No redundant serial selection after an unambiguous empty-field fill");
+    assert.match(text(run.tree), /Ellenőrizd az adatokat, majd mentsd a készüléket/);
+    assert.match(text(run.tree), /fotón látható S\/N-nel/);
+    assert.deepEqual(run.props.device.data, savedBefore);
+    assert.equal(run.calls.saves.length, 0);
+    run.button("Készülékadatok mentése").props.onClick(); await tick(); run.render();
+    assert.equal(run.calls.saves.length, 1);
+    assert.deepEqual(run.calls.saves[0].data, { ...savedBefore, manufacturer: "TESZT GYÁRTÓ", [`${side}Model`]: "SYNTH-MODEL35", [`${side}Serial`]: "UNIQUE007" });
+    assert.doesNotMatch(text(run.tree), /Ellenőrizd az adatokat, majd mentsd/);
+  }
+});
+
+test("multiple or conflicting suggestions stay beside their own field until chosen", async () => {
+  const run = setup({ data: { indoorModel: "", outdoorModel: "OUTDOOR-KEEP" }, recognize: async () => ({
+    manufacturers: ["OTHER BRAND"], models: ["INDOOR-MODEL1", "INDOOR-MODEL2"], candidates: ["SERIAL-A008", "SERIAL-B009"], text: "Synthetic multiple candidates",
+  }) });
+  run.open(); run.recognize(); await tick(); run.render();
+  assert.equal(run.field("Gyártó").props.value, "TESZT");
+  assert.equal(run.field("Beltéri pontos típusa").props.value, "");
+  assert.equal(run.field("Beltéri sorozatszám").props.value, "ORIGINAL-IN001");
+  assert.equal(run.button("OTHER BRAND").props["aria-label"], "Gyártó: OTHER BRAND használata");
+  assert.equal(run.button("INDOOR-MODEL2").props["aria-label"], "Beltéri pontos típusa: INDOOR-MODEL2 használata");
+  run.button("OTHER BRAND").props.onClick(); run.render();
+  run.button("INDOOR-MODEL2").props.onClick(); run.render();
+  run.button("SERIAL-B009").props.onClick(); run.render();
+  assert.equal(run.field("Gyártó").props.value, "OTHER BRAND");
+  assert.equal(run.field("Beltéri pontos típusa").props.value, "INDOOR-MODEL2");
+  assert.equal(run.field("Beltéri sorozatszám").props.value, "SERIAL-B009");
+  assert.equal(run.field("Kültéri pontos típusa").props.value, "OUTDOOR-KEEP");
+  assert.equal(run.calls.saves.length, 0);
+});
+
+test("recognition locks editing, save and gallery switching, and preserves data arriving while it runs", async () => {
+  const pending = deferred();
+  const run = setup({ data: { manufacturer: "", indoorModel: "", indoorSerial: "" }, recognize: () => pending.promise });
+  run.open();
+  const oldInput = run.field("Gyártó");
+  const oldSave = run.button("Készülékadatok mentése");
+  const oldSide = run.button("Kültéri adattábla-fotók");
+  run.recognize();
+  oldInput.props.onChange({ target: { value: "RACING EDIT" } }); oldSave.props.onClick(); oldSide.props.onClick();
+  await tick(); run.render();
+  assert.equal(run.field("Gyártó").props.disabled, true);
+  assert.equal(run.button("Készülékadatok mentése").props.disabled, true);
+  assert.equal(run.button("Kültéri adattábla-fotók").props.disabled, true);
+  assert.equal(nodes(run.tree, (node) => node.type === "test-device-photos")[0].props.device.side, "indoor");
+  assert.equal(run.calls.saves.length, 0);
+  assert.equal(run.field("Gyártó").props.value, "");
+  run.props.device = { ...run.props.device, updatedAt: "2026-09-15T12:00:00Z", data: { ...run.props.device.data, manufacturer: "UPDATED BRAND", indoorSerial: "UPDATED-SERIAL010" } };
+  run.render();
+  pending.resolve({ manufacturers: ["OCR BRAND"], models: ["MODEL-NEW"], candidates: ["OCR-SERIAL011"], text: "Synthetic label" });
+  await tick(); run.render();
+  assert.equal(run.field("Gyártó").props.value, "UPDATED BRAND");
+  assert.equal(run.field("Beltéri sorozatszám").props.value, "UPDATED-SERIAL010");
+  assert.equal(run.field("Beltéri pontos típusa").props.value, "MODEL-NEW");
+  assert.equal(run.field("Gyártó").props.disabled, false);
+  assert.equal(run.calls.saves.length, 0);
+});
+
+test("partial label results keep a safe warning and still allow verifying and saving recovered fields", async () => {
+  const run = setup({ data: { indoorSerial: "", manufacturer: "" }, recognize: async () => ({ candidates: ["BARCODE012"], text: "Synthetic barcode", source: "barcode", warning: "A szöveg felismerése megszakadt." }) });
+  run.open(); run.recognize(); await tick(); run.render();
+  assert.equal(run.field("Beltéri sorozatszám").props.value, "BARCODE012");
+  assert.match(text(run.tree), /Nem olvasható: gyártó, beltéri típus\. Készíts közelebbi, szemből fotózott adattábla-képet, vagy töltsd ki kézzel\./);
+  const notices = nodes(run.tree, (node) => node.type === "p" && text(node).includes("Nem olvasható:"));
+  assert.equal(notices.length, 1);
+  assert.match(text(notices[0]), /A szöveg felismerése megszakadt\./, "Partial OCR failure and missing-field guidance share one notice");
+  assert.doesNotMatch(text(notices[0]), /kültéri|beltéri sorozatszám/);
+  assert.equal(run.button("Készülékadatok mentése").props.disabled, false);
+  run.field("Gyártó").props.onChange({ target: { value: "MANUAL BRAND" } }); run.render();
+  run.field("Beltéri pontos típusa").props.onChange({ target: { value: "MANUAL-MODEL35" } }); run.render();
+  assert.doesNotMatch(text(run.tree), /Nem olvasható:/);
+});
+
+test("the device section loads immediately on mount without a second toggle and retains previously saved devices", async () => {
+  const runtime = hooks();
+  const scope = { workspaceId: "workspace-a", customerId: "customer-a", appointmentId: "appointment-a" };
+  const currentSlot = { productKey: "product:current", productName: "Jelenlegi klíma", unitNumber: 1 };
+  const retained = { ...scope, id: "device-retained", productKey: "product:previous", productName: "Korábbi klíma", unitNumber: 1, data: { indoorSerial: "KEEP013" } };
+  const loaded = deferred();
+  let reads = 0;
+  const { AppointmentDevicesPanel } = harness({}, jsx).functions(["AppointmentDevicesPanel"], {
+    ...runtime.react, button: "test-button", DeviceEditor: "test-device-editor",
+    workPhotoContext: () => scope, deviceSlots: () => [currentSlot], deviceSlotKey: (slot) => `${slot.productKey}:${slot.unitNumber}`,
+    listAppointmentDevices(context) { assert.strictEqual(context, scope); reads++; return loaded.promise; },
+  }, "src/components/alinflow/AppointmentDevicesPanel.tsx");
+  const props = { workspaceId: scope.workspaceId, customer: { id: scope.customerId, activeAppointmentId: scope.appointmentId, quoteItems: [] } };
+  let tree = runtime.render(() => AppointmentDevicesPanel(props));
+  assert.equal(reads, 1);
+  assert.match(text(tree), /Készülékadatok és adattábla-fotók/);
+  assert.equal(nodes(tree, (node) => node.type === "button" && node.props["aria-expanded"] !== undefined).length, 0, "No nested open button remains");
+  loaded.resolve([retained]); await tick(); tree = runtime.render(() => AppointmentDevicesPanel(props));
+  const editors = nodes(tree, (node) => node.type === "test-device-editor");
+  assert.equal(editors.length, 2);
+  const retainedEditor = editors.find((node) => node.props.retained);
+  assert.equal(retainedEditor.props.device.id, "device-retained");
+  assert.equal(retainedEditor.props.device.data.indoorSerial, "KEEP013");
+  assert.equal(reads, 1);
 });
