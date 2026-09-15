@@ -109,6 +109,15 @@ npm run build
 - [ ] Google értékelő gomb a közvetlen review linkre visz.
 - [ ] Facebook értékelő link működik.
 
+## Munkafotók és sorozatszámok
+
+- [ ] A sorozatszám- és adattábla-rész kizárólag a Munkafotók alatt nyitható meg, a klímalista nyitottságától függetlenül.
+- [ ] A korábban feltöltött beltéri/kültéri képek ugyanahhoz a készülékhez és munkához töltődnek vissza.
+- [ ] A Code 128 vonalkódból olvasott azonosító ellenőrizhető javaslat; találat nélkül helyi szövegfelismerés következik.
+- [ ] A kiválasztás csak a megfelelő beltéri/kültéri mezőt módosítja, a mentés külön művelet.
+- [ ] Dupla kattintás nem indít párhuzamos felismerést; munkaváltás és megszakítás után nem érkezik késői mezőmódosítás.
+- [ ] A képletöltési, felismerőmotor- és időtúllépési hiba érthetően elkülönül az üres felismerési eredménytől.
+
 ## Listák és reszponzivitás
 
 - [ ] A lapozott listákon legfeljebb 10 rekord jelenik meg oldalanként; a Raktárban minden készlettétel egy folyamatos listában látszik.
