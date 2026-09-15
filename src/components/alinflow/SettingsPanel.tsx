@@ -170,6 +170,19 @@ export function SettingsPanel({
               </section>
 
               <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4">
+                <h3 className="text-xl font-black">Google Naptár</h3>
+                <TextField
+                  label="Importálandó Google naptár azonosítója"
+                  value={draft.calendarSettings.googleCalendarId}
+                  onChange={(value) => updateSection("calendarSettings", "googleCalendarId", value)}
+                  placeholder="például: sajatceg@gmail.com"
+                />
+                <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
+                  A naptárat megtekintési jogosultsággal meg kell osztani az AlinFlow Google szolgáltatásfiókjával. A titkos kulcs nem kerül az adatbázisba.
+                </div>
+              </section>
+
+              <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4">
                 <h3 className="text-xl font-black">Számlázás</h3>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <label className="block">
