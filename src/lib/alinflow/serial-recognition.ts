@@ -42,23 +42,28 @@ async function readBarcode(blob: Blob, signal?: AbortSignal): Promise<string[]> 
   }
 }
 
-async function readText(blob: Blob, onProgress: (progress: number) => void, signal?: AbortSignal, enhance = false): Promise<string> {
+async function readText(blob: Blob, onProgress: (progress: number) => void, signal?: AbortSignal, enhance = false, side?: "indoor" | "outdoor"): Promise<string> {
   if (signal?.aborted) throw new SerialRecognitionError("A felismerés megszakadt.");
   let worker: import("tesseract.js").Worker | undefined;
+  const processing = new AbortController();
   let finished = false;
+  let reportFullImageProgress = true;
   let rejectCancellation!: (error: Error) => void;
   const cancellation = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
-  const abort = () => { rejectCancellation(new SerialRecognitionError("A felismerés megszakadt.")); };
+  const abort = () => { rejectCancellation(new SerialRecognitionError("A felismerés megszakadt.")); processing.abort(); };
   signal?.addEventListener("abort", abort, { once: true });
-  const timeout = setTimeout(() => rejectCancellation(new SerialRecognitionError("A felismerés túl sokáig tartott. Ellenőrizd az internetkapcsolatot, majd próbáld újra.")), 90_000);
+  const timeout = setTimeout(() => {
+    rejectCancellation(new SerialRecognitionError("A felismerés túl sokáig tartott. Ellenőrizd az internetkapcsolatot, majd próbáld újra."));
+    processing.abort();
+  }, 90_000);
   try {
     const { createWorker, PSM } = await Promise.race([import("tesseract.js"), cancellation]);
     const image = enhance ? await Promise.race([
-      import("./device-label-image").then(({ prepareDeviceLabelImage }) => prepareDeviceLabelImage(blob, signal)), cancellation,
+      import("./device-label-image").then(({ prepareDeviceLabelImage }) => prepareDeviceLabelImage(blob, processing.signal)), cancellation,
     ]) : blob;
     // Recognition stays in a browser worker; only the OCR runtime/model files are downloaded.
     const starting = createWorker("eng", 1, { logger: (message) => {
-      if (!finished && (!enhance || message.status === "recognizing text")) onProgress(Math.round((message.progress || 0) * 100));
+      if (!finished && reportFullImageProgress && (!enhance || message.status === "recognizing text")) onProgress(Math.round((message.progress || 0) * (side ? 70 : 100)));
     } });
     // An initialization completing after navigation/timeout must not leave a live worker behind.
     void starting.then((created) => {
@@ -69,9 +74,59 @@ async function readText(blob: Blob, onProgress: (progress: number) => void, sign
     await Promise.race([worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT }), cancellation]);
     // Tesseract terminate() does not settle pending jobs; race cancellation explicitly.
     const { data } = await Promise.race([worker.recognize(image), cancellation]);
-    return data.text.slice(0, 5000);
+    const text = data.text.slice(0, 5000);
+    if (!side || deviceLabelCandidates(text, side).models.length) return text;
+
+    // A table grid and perspective can hide the model from page-layout OCR.
+    // Read actual adjacent image cells, requiring a matching unit/model caption.
+    reportFullImageProgress = false;
+    try {
+      const regions = await Promise.race([
+        import("./device-label-regions").then(({ prepareDeviceLabelRegions }) => prepareDeviceLabelRegions(blob, processing.signal)), cancellation,
+      ]);
+      await Promise.race([worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE }), cancellation]);
+      for (const [index, region] of regions.slice(0, 10).entries()) {
+        if (signal?.aborted) throw new SerialRecognitionError("A felismerés megszakadt.");
+        onProgress(70 + Math.round(index / Math.max(1, regions.length) * 25));
+        const codeResult = await Promise.race([worker.recognize(region.image), cancellation]);
+        // In an isolated code cell, spaces between OCR glyphs are layout noise.
+        const code = codeResult.data.text.replace(/\s+/g, "").toUpperCase();
+        if (!region.alternativeImages?.length && deviceLabelCandidates(`MODEL: ${code}`, side).models.length !== 1) continue;
+        const labelResult = await Promise.race([worker.recognize(region.labelImage), cancellation]);
+        const caption = labelResult.data.text.trim();
+        const votes = new Map<string, number>();
+        const addReading = (reading: string) => {
+          const value = reading.replace(/\s+/g, "").toUpperCase();
+          const models = deviceLabelCandidates(`${caption}\n${value}`, side).models;
+          if (models.length === 1) votes.set(models[0], (votes.get(models[0]) || 0) + 1);
+        };
+        addReading(code);
+        // Thin dashes can join adjacent glyphs in small photos. Independent gap
+        // variants must agree; never substitute guessed I/1, O/0 or model codes.
+        // Preserve a clearly readable original cell; aggressive separation is
+        // only useful when the unmodified glyphs have low OCR confidence.
+        const alternatives = votes.size && codeResult.data.confidence >= 70 ? [] : region.alternativeImages?.slice(0, 2) || [];
+        for (const alternative of alternatives) {
+          const result = await Promise.race([worker.recognize(alternative), cancellation]);
+          addReading(result.data.text);
+        }
+        if (!votes.size) continue;
+        const maximum = Math.max(...votes.values());
+        const selected = [...votes].filter(([, count]) => count === maximum).map(([value]) => value);
+        // Tied readings remain separate choices instead of silently filling one.
+        const rows = selected.map((value) => `${caption}\n${value}`).join("\n");
+        // Reset any opposite-side heading from the full photo before the
+        // independently verified cell; retain every already read label/serial.
+        return `${text}\n${side.toUpperCase()}\n${rows.slice(0, 1000)}`;
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Failed/unsupported region processing keeps the already read text and S/N.
+    }
+    return text;
   } finally {
     finished = true;
+    processing.abort();
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);
     await worker?.terminate().catch(() => {});
@@ -105,7 +160,7 @@ export async function recognizeDeviceLabel(blob: Blob, side: "indoor" | "outdoor
   onProgress(15);
   let text: string;
   try {
-    text = await readText(blob, (value) => onProgress(15 + Math.round(value * 0.8)), signal, true);
+    text = await readText(blob, (value) => onProgress(15 + Math.round(value * 0.8)), signal, true, side);
   } catch (error) {
     if (signal?.aborted || !candidates.length) throw error;
     onProgress(100);
