@@ -1,10 +1,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { harness } = require("./helpers.cjs");
-function setup(overrides = {}, globals = {}, start, barcode = async () => []) {
+function setup(overrides = {}, globals = {}, start, barcode = async () => [], regions = async () => []) {
   const calls = { created: 0, terminated: 0, parameters: null, image: null, barcode: 0 };
   const worker = { async setParameters(value) { calls.parameters = value; }, async recognize(blob) { calls.image = blob; return { data: { text: "S/N: ABC123456\nMODEL: TEST999" } }; }, async terminate() { calls.terminated++; }, ...overrides };
-  const api = harness({ setTimeout, clearTimeout, ...globals }, { "./serial-barcode": { recognizeSerialBarcode(...args) { calls.barcode++; return barcode(...args); } }, "tesseract.js": { PSM: { SPARSE_TEXT: 11 }, async createWorker(language, mode, options) { calls.created++; calls.language = language; options.logger({ progress: 0.42 }); return start ? start(worker) : worker; } } }).load("src/lib/alinflow/serial-recognition.ts");
+  const api = harness({ setTimeout, clearTimeout, AbortController, ...globals }, { "./device-label-regions": { prepareDeviceLabelRegions: regions }, "./serial-barcode": { recognizeSerialBarcode(...args) { calls.barcode++; return barcode(...args); } }, "tesseract.js": { PSM: { SPARSE_TEXT: 11, SINGLE_LINE: 7 }, async createWorker(language, mode, options) { calls.created++; calls.language = language; options.logger({ progress: 0.42 }); return start ? start(worker) : worker; } } }).load("src/lib/alinflow/serial-recognition.ts");
   return { api, calls };
 }
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -153,5 +153,123 @@ test("aborted full recognition never returns a previously read barcode for the a
   const task = api.recognizeDeviceLabel(new Blob(["synthetic"], { type: "image/jpeg" }), "outdoor", () => {}, controller.signal);
   const rejected = assert.rejects(task, /megszakadt/);
   await started; controller.abort(); await rejected;
+  assert.equal(calls.terminated, 1);
+});
+
+test("missing model is read from an actual paired image cell and its matching caption", async () => {
+  const photo = new Blob(["full photo"], { type: "image/jpeg" });
+  const code = new Blob(["model cell"]), label = new Blob(["caption cell"]);
+  const seen = [];
+  const { api, calls } = setup({ async recognize(image) {
+    seen.push(image);
+    return { data: { text: image === code ? "TEST - 35A / I\n" : image === label ? "Beltéri egység\n" : "Manufacturer: Midea\nS/N: TEXT12345" } };
+  } }, {}, undefined, async () => ["BARCODE12345"], async image => {
+    assert.strictEqual(image, photo, "Detect regions in the actual original photo");
+    return [{ image: code, labelImage: label }];
+  });
+  const result = await api.recognizeDeviceLabel(photo, "indoor", () => {});
+  assert.deepEqual(plain(result.models), ["TEST-35A/I"]);
+  assert.deepEqual(plain(result.candidates), ["BARCODE12345"]);
+  assert.deepEqual(plain(result.manufacturers), ["Midea"]);
+  assert.deepEqual(seen, [photo, code, label]);
+  assert.equal(calls.created, 1, "Reuse the existing OCR worker");
+  assert.equal(calls.terminated, 1);
+});
+
+test("region codes require a model caption for the correct side and reject electrical cells", async () => {
+  const texts = ["220-240V", "TEST-35/O", "Kültéri egység típusa", "OTHER1234", "Compressor model", "TEST-35/I", "Indoor model"];
+  const cells = texts.map(text => new Blob([text]));
+  const pairs = [
+    { image: cells[0], labelImage: cells[2] }, { image: cells[1], labelImage: cells[2] },
+    { image: cells[3], labelImage: cells[4] }, { image: cells[5], labelImage: cells[6] },
+  ];
+  const { api } = setup({ async recognize(image) { return { data: { text: cells.includes(image) ? texts[cells.indexOf(image)] : "Midea" } }; } }, {}, undefined, async () => [], async () => pairs);
+  const result = await api.recognizeDeviceLabel(new Blob(["photo"], { type: "image/jpeg" }), "indoor", () => {});
+  assert.deepEqual(plain(result.models), ["TEST-35/I"]);
+  assert.doesNotMatch(result.text, /OTHER1234|TEST-35\/O|220-240V/);
+});
+
+test("region failure retains original OCR; a model already read needs no additional image passes", async () => {
+  const failed = setup({ async recognize() { return { data: { text: "Midea\nS/N: TEXT12345" } }; } }, {}, undefined, async () => [], async () => { throw Error("canvas unsupported"); });
+  const photo = new Blob(["photo"], { type: "image/jpeg" });
+  const result = await failed.api.recognizeDeviceLabel(photo, "indoor", () => {});
+  assert.deepEqual(plain(result.candidates), ["TEXT12345"]);
+  assert.deepEqual(plain(result.manufacturers), ["Midea"]);
+  assert.equal(failed.calls.terminated, 1);
+  let regionsCalled = 0;
+  const complete = setup({}, {}, undefined, async () => [], async () => { regionsCalled++; return []; });
+  assert.deepEqual(plain((await complete.api.recognizeDeviceLabel(photo, "indoor", () => {})).models), ["TEST999"]);
+  assert.equal(regionsCalled, 0);
+});
+
+test("cancellation during cell detection stops fallback and never releases a model to the abandoned editor", { timeout: 2000 }, async () => {
+  let entered; const detecting = new Promise(resolve => { entered = resolve; });
+  const { api, calls } = setup({ async recognize() { return { data: { text: "Midea" } }; } }, {}, undefined, async () => ["BARCODE12345"], async () => { entered(); return new Promise(() => {}); });
+  const controller = new AbortController();
+  const task = api.recognizeDeviceLabel(new Blob(["photo"], { type: "image/jpeg" }), "outdoor", () => {}, controller.signal);
+  const rejected = assert.rejects(task, /megszakadt/);
+  await detecting; controller.abort(); await rejected;
+  assert.equal(calls.terminated, 1);
+});
+
+test("independent separated-pixel readings agree without guessed character substitutions", async () => {
+  const photo = new Blob(["photo"], { type: "image/jpeg" });
+  const base = new Blob(["base"]), caption = new Blob(["caption"]);
+  const variants = [new Blob(["gap two"]), new Blob(["gap four"])];
+  const { api } = setup({ async recognize(image) { return { data: { text:
+    image === base ? "TEST-35A-A" : image === caption ? "Indoor model" : variants.includes(image) ? "TEST-35A-i" : "Midea",
+  } }; } }, {}, undefined, async () => [], async () => [{ image: base, labelImage: caption, alternativeImages: variants }]);
+  const result = await api.recognizeDeviceLabel(photo, "indoor", () => {});
+  assert.deepEqual(plain(result.models), ["TEST-35A-I"]);
+  assert.doesNotMatch(result.text, /35A-A/);
+});
+
+test("disagreeing image readings remain explicit alternatives, with I and 1 kept distinct", async () => {
+  const photo = new Blob(["photo"], { type: "image/jpeg" });
+  const base = new Blob(["base"]), caption = new Blob(["caption"]), alternative = new Blob(["alternative"]);
+  const { api } = setup({ async recognize(image) { return { data: { text:
+    image === base ? "TEST-351-I" : image === caption ? "Indoor model" : image === alternative ? "TEST-35I-I" : "Midea",
+  } }; } }, {}, undefined, async () => [], async () => [{ image: base, labelImage: caption, alternativeImages: [alternative] }]);
+  const result = await api.recognizeDeviceLabel(photo, "indoor", () => {});
+  assert.deepEqual(plain(result.models), ["TEST-351-I", "TEST-35I-I"]);
+});
+
+test("verified region is independent of full-photo side headings and preserves late original fields", async () => {
+  const photo = new Blob(["photo"], { type: "image/jpeg" });
+  const base = new Blob(["base"]), caption = new Blob(["caption"]);
+  const original = "Unrelated text\n".repeat(300) + "Manufacturer: Midea\nS/N: TEXT123456\nOUTDOOR UNIT\nPower 3500W";
+  const { api } = setup({ async recognize(image) { return { data: { text:
+    image === base ? "TEST-35A-I" : image === caption ? "MODEL" : original,
+  } }; } }, {}, undefined, async () => [], async () => [{ image: base, labelImage: caption }]);
+  const result = await api.recognizeDeviceLabel(photo, "indoor", () => {});
+  assert.deepEqual(plain(result.models), ["TEST-35A-I"]);
+  assert.deepEqual(plain(result.manufacturers), ["Midea"]);
+  assert.deepEqual(plain(result.candidates), ["TEXT123456"]);
+});
+
+test("clear original code skips aggressive variants and ignores a trailing table delimiter", async () => {
+  const base = new Blob(["base"]), caption = new Blob(["caption"]), alternative = new Blob(["alternative"]);
+  const { api } = setup({ async recognize(image) {
+    assert.notEqual(image, alternative, "Do not distort a clearly readable model");
+    return { data: { text: image === base ? "TEST-35A-O |" : image === caption ? "Outdoor model" : "Midea", confidence: 85 } };
+  } }, {}, undefined, async () => [], async () => [{ image: base, labelImage: caption, alternativeImages: [alternative] }]);
+  const result = await api.recognizeDeviceLabel(new Blob(["photo"], { type: "image/jpeg" }), "outdoor", () => {});
+  assert.deepEqual(plain(result.models), ["TEST-35A-O"]);
+});
+
+test("region timeout aborts image processing while preserving the original text and barcode", { timeout: 2000 }, async () => {
+  let expire, processingSignal, entered;
+  const detecting = new Promise(resolve => { entered = resolve; });
+  const { api, calls } = setup({ async recognize() { return { data: { text: "Midea" } }; } }, {
+    setTimeout(callback) { expire = callback; return 1; }, clearTimeout() {},
+  }, undefined, async () => ["BARCODE123456"], async (_photo, signal) => {
+    processingSignal = signal; entered(); return new Promise(() => {});
+  });
+  const pending = api.recognizeDeviceLabel(new Blob(["photo"], { type: "image/jpeg" }), "indoor", () => {});
+  await detecting; expire();
+  const result = await pending;
+  assert.equal(processingSignal.aborted, true);
+  assert.deepEqual(plain(result.manufacturers), ["Midea"]);
+  assert.deepEqual(plain(result.candidates), ["BARCODE123456"]);
   assert.equal(calls.terminated, 1);
 });
