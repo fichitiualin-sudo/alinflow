@@ -18,6 +18,9 @@ type CalendarProps = {
   selectedDate?: string;
   onSelect?: (date: string) => void;
   onCreate?: (date: string) => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+  refreshMessage?: string;
 };
 
 
@@ -73,6 +76,9 @@ export function Calendar({
   selectedDate,
   onSelect,
   onCreate,
+  onRefresh,
+  refreshing,
+  refreshMessage,
 }: CalendarProps) {
   const start = weekStart(date);
   const weekdayNames = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"];
@@ -99,10 +105,25 @@ export function Calendar({
   return (
     <Card title={selectable ? "Válassz napot a naptárból" : mode === "week" ? "Heti naptár" : "Havi naptár"}>
       <div className="mb-5 flex flex-col gap-4">
-        <div className="flex justify-end gap-2">
-          <button onClick={() => onMode("week")} className={mode === "week" ? "tab-active" : "tab"}>Heti</button>
-          <button onClick={() => onMode("month")} className={mode === "month" ? "tab-active" : "tab"}>Havi</button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {!selectable && onRefresh ? (
+            <button
+              type="button"
+              disabled={refreshing}
+              onClick={onRefresh}
+              className="rounded-2xl border border-emerald-300/30 bg-emerald-400/15 px-4 py-3 text-sm font-black text-emerald-100 transition hover:bg-emerald-400/25 disabled:cursor-wait disabled:opacity-60"
+            >
+              {refreshing ? "Naptár frissítése..." : "Naptár frissítése"}
+            </button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <button onClick={() => onMode("week")} className={mode === "week" ? "tab-active" : "tab"}>Heti</button>
+            <button onClick={() => onMode("month")} className={mode === "month" ? "tab-active" : "tab"}>Havi</button>
+          </div>
         </div>
+        {!selectable && refreshMessage ? (
+          <p className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-bold text-cyan-100">{refreshMessage}</p>
+        ) : null}
         <div className="grid grid-cols-[46px_minmax(0,1fr)_46px] items-center gap-2 sm:grid-cols-[52px_minmax(0,1fr)_52px] sm:gap-3">
           <button onClick={() => onStep(-1)} className="arrow">‹</button>
           <div className="min-w-0 rounded-2xl bg-cyan-300 px-3 py-3 text-center text-base font-black text-slate-950 sm:px-5 sm:text-lg md:text-xl">

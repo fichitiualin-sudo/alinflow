@@ -67,6 +67,12 @@ npm run build
 - [ ] Ütközés felismerhető.
 - [ ] Klímák és anyagok a szereléshez kapcsolódnak.
 - [ ] Google Naptár leírásban az ár a klíma sor végén van.
+- [ ] A `Naptár frissítése` csak jövőbeli Google-eseményeket importál.
+- [ ] Ugyanazon Google-esemény ismételt frissítése nem hoz létre duplikált időpontot.
+- [ ] AlinFlow-ból korábban Google Naptárba tett esemény visszaolvasása a meglévő időponthoz kapcsolódik.
+- [ ] Meglévő ügyfél email vagy telefonszám alapján kapcsolódik, nem duplikálódik.
+- [ ] Bizonytalan vagy személyes naptáresemény kimarad az importból.
+- [ ] Az importált szerelés, felmérés és karbantartás a helyes munkaterületen és naptárban jelenik meg.
 - [ ] Készlet csak egyszer és megfelelő pillanatban változik.
 
 ## Munkalap és lezárás
