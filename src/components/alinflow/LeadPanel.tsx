@@ -174,6 +174,7 @@ export function LeadPanel({
               </a>
             ) : null}
           </Card>
+          {selected.need ? <Card title="Érdeklődés"><p className="break-words font-bold text-cyan-200">{selected.need}</p></Card> : null}
           <Card title="Telefonos jegyzet">
             <textarea
               className="input min-h-32"

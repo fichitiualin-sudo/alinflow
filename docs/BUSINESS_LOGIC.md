@@ -44,6 +44,14 @@ Fontos mezők:
 
 CSV importnál az eredeti érdeklődési dátumot kell használni, ha a fájlban felismerhető. A listában mindig a legfrissebb érdeklődő legyen elöl.
 
+### Automatikus Facebook Lead Ads import
+
+Az aktivált kapcsolat az engedélyezett oldal és űrlap jelentkezéseit fogadja. A település az űrlap válasza, az érdeklődési klíma a pontos hirdetésazonosítóhoz rendelt név. Új, használható kontakt esetén `Visszahívandó` ügyfél jön létre az eredeti jelentkezési idővel; a klíma az igény (`need`) mezőbe kerül. Ebből nem készül automatikus ajánlat, készletfoglalás, időpont vagy ügyfélnek küldött üzenet.
+
+Ugyanaz a Meta-leadazonosító csak egyszer importálható. Új leadazonosító, de egyetlen meglévő ügyfélhez illő telefon/email esetén külön „Ismételt érdeklődés” naplósor keletkezik; az ügyfél korábbi adatai és státusza megmaradnak. Hiányzó név, használható elérhetőség vagy többértelmű kontakt-egyezés esetén „Ellenőrizendő” beérkezés marad automatikus ügyféllétrehozás/összevonás nélkül.
+
+Ismeretlen hirdetés klímáját nem találgatjuk: az érdeklődés így is megmarad, hiányjelzéssel. A „Feldolgozva” kizárólag a beérkezés kezelését jelöli; nem ügyfélstátusz és nem lezárás. A korábbi, Meta által még elérhető jelentkezések kézzel újra beolvashatók, biztonságos duplikációvédelemmel. A napló megőrzött pillanatkép; konfigurációcsere nem írja visszamenőleg át. A működéshez szükséges éles Meta-aktiválást külön ellenőrizni kell: [`FACEBOOK_LEAD_IMPORT.md`](FACEBOOK_LEAD_IMPORT.md).
+
 ### Hívás
 
 A hívás gomb megnyomásakor a hívás ideje naplózható. A telefonszám mellett egyetlen hívásgomb legyen; duplikált hívásgomb nem megengedett.

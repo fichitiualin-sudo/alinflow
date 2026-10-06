@@ -18,11 +18,22 @@
 4. Ügyfélkereső
 5. Új érdeklődők
 6. Raktár gyorsnézet
-7. Meta/CSV import
+7. Facebook-érdeklődők
+8. Meta/CSV import
 
 ## Dashboard – asztali elrendezés
 
 A Raktár gyorsnézet a jobb oldali oszlop tetejére igazodjon. Ne csússzon az Új érdeklődők aljához. A fő tartalom használja ki a széles képernyőt, de ne nyúljon olvashatatlanul szélesre.
+
+## Facebook-érdeklődők
+
+A Facebook-panel a Dashboard fő blokkjai után jelenik meg, asztalon a CSV-import mellett, mobilon előtte. A kapcsolat hiányát vagy a beolvasás elérhetőségét jelzi. A „Beolvasás elérhető” csak a szerverbeállítás meglétét jelenti, nem igazolt automatikus Meta-kézbesítést.
+
+Alapértelmezett szűrő „Feldolgozandó”, mellette „Összes”; 10 sor/oldal, legutóbbi beérkezés elöl. Soronként látható a név, település, klíma, elérhetőség, eredeti jelentkezési idő és az „Új érdeklődés”, „Ismételt érdeklődés” vagy „Ellenőrizendő” címke. Hiányzó adatoknál „Település nincs megadva”, illetve „Klíma nincs azonosítva” jelenik meg. Az ellenőrizendő sor rövid okot is mutat.
+
+Az „Ügyfél megnyitása” csak kapcsolt ügyfélnél látható. A „Feldolgozva” gomb a naplósort jelöli meg, ügyfélstátuszt nem módosít. „Frissítés” gomb, látható lapon percenkénti frissítés és visszatéréskori ellenőrzés szolgálja az új beérkezések megjelenését. A „Korábbi jelentkezések beolvasása” megállítható, majd a megnyitott panelben folytatható; az összesítő külön mutatja az új ügyfeleket, ismételt érdeklődéseket, ellenőrizendő és már beolvasott tételeket.
+
+Az új ügyfelek listájában és az ügyfél adatlapján az `Érdeklődés` rész mutatja a mentett igényt/klímát. Ez nem ajánlati tétel és nem készletfoglalás. Ismételt érdeklődés új klímája a külön Facebook-naplósorban látszik, a korábbi ügyfél-igényt nem írja át.
 
 ## Ügyféladatok
 
