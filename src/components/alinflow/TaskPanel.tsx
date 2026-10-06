@@ -34,6 +34,7 @@ type TaskPanelProps = {
   onOpenTask: (filter: TaskFilter) => void;
   onOpenCustomer: (customer: Customer, view: View) => void;
   onOpenWarehouse: () => void;
+  onOpenCallbackMap: () => void;
 };
 
 
@@ -102,6 +103,7 @@ export function TaskPanel({
   onOpenTask,
   onOpenCustomer,
   onOpenWarehouse,
+  onOpenCallbackMap,
 }: TaskPanelProps) {
   const [page, setPage] = useState(1);
 
@@ -158,8 +160,11 @@ export function TaskPanel({
             </Card>
           ) : (
             <Card title={TASK_TITLE_MAP[taskFilter]}>
-              <div className="mb-4 text-sm font-bold text-slate-400">
-                {activeList.length} tétel · max. {TASK_PAGE_SIZE} tétel oldalanként
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm font-bold text-slate-400">
+                <span>{activeList.length} tétel · max. {TASK_PAGE_SIZE} tétel oldalanként</span>
+                {taskFilter === "callback" ? (
+                  <button type="button" onClick={onOpenCallbackMap} className="rounded-2xl bg-cyan-300 px-4 py-3 font-black text-slate-950">Térképen</button>
+                ) : null}
               </div>
               <div className="space-y-3">
                 {activeList.length === 0 ? <div className="rounded-2xl bg-white/10 p-4 font-black text-slate-300">Nincs ilyen teendő.</div> : null}

@@ -1,0 +1,50 @@
+.callback-map-canvas {
+  z-index: 0;
+  background: #dce7ec;
+  color: #0f172a;
+}
+
+.callback-map-canvas .leaflet-control-attribution {
+  max-width: calc(100% - 10px);
+  white-space: normal;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.callback-map-canvas .leaflet-control-zoom a {
+  width: 40px;
+  height: 40px;
+  line-height: 40px;
+}
+
+.callback-map-marker {
+  background: transparent;
+  border: 0;
+}
+
+.callback-map-marker-button {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  background: #0f766e;
+  color: #ffffff;
+  font: 900 15px/1 system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 45%);
+}
+
+.callback-map-marker-button[aria-pressed="true"] {
+  background: #fbbf24;
+  color: #0f172a;
+}
+
+.callback-map-marker-button:hover,
+.callback-map-marker-button:focus-visible {
+  outline: 3px solid #0f172a;
+  outline-offset: 2px;
+}
