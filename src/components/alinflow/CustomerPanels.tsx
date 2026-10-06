@@ -3,7 +3,7 @@
 import type { ReactNode, RefObject } from "react";
 import type { Customer, LeadImportCandidate } from "@/lib/alinflow/types";
 import { STATUS_OPTIONS } from "@/lib/alinflow/constants";
-import { climateSummary } from "@/lib/alinflow/products";
+import { cleanQuoteItems, climateSummary } from "@/lib/alinflow/products";
 import { formatPostalCity } from "@/lib/alinflow/postal-codes";
 
 function PanelCard({ title, children }: { title: string; children: ReactNode }) {
@@ -95,7 +95,8 @@ export function CustomerSearchPanel({
                   <div>
                     <p className="font-black text-white">{customer.name || "Névtelen ügyfél"}</p>
                     <p className="mt-1 text-xs text-slate-400">{formatPostalCity(customer.postalCode, customer.city)} · {customer.phone || customer.email || "nincs elérhetőség"}</p>
-                    <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p>
+                    {!customer.need || cleanQuoteItems(customer.quoteItems).some((item) => Number(item.quantity) > 0) ? <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p> : null}
+                    {customer.need ? <p className="mt-1 break-words text-sm font-bold text-cyan-200">Érdeklődés: {customer.need}</p> : null}
                     {customerCreatedLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerCreatedLabel(customer)}</p> : null}
                   </div>
                   <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black text-slate-200">{customerStatusLabel(customer)}</span>
@@ -131,7 +132,7 @@ export function LeadImportPanel({
   const previewRows = rows.slice(0, PANEL_PAGE_SIZE);
 
   return (
-    <PanelCard title="Meta lead import">
+    <PanelCard title="CSV-import">
       <input
         ref={inputRef}
         type="file"

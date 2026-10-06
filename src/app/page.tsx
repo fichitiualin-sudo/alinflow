@@ -113,6 +113,7 @@ import { MaintenanceMapPanel } from "@/components/alinflow/MaintenanceMapPanel";
 import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
 import { AllWorkReportsDocument, AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
 import { CustomerSearchPanel, LeadImportPanel } from "@/components/alinflow/CustomerPanels";
+import { FacebookLeadsPanel } from "@/components/alinflow/FacebookLeadsPanel";
 import { DocumentActionButtons, DocumentLibraryActionButtons, documentStatusClass } from "@/components/alinflow/DocumentCards";
 import { WorkReportPanel } from "@/components/alinflow/WorkReportPanel";
 import { LeadPanel } from "@/components/alinflow/LeadPanel";
@@ -494,6 +495,8 @@ export default function Home() {
   const maintenanceReturnRef = useRef<Customer | null>(null);
   const loadedUserIdRef = useRef<string | null>(null);
   const loadCustomersPromiseRef = useRef<Promise<void> | null>(null);
+  const loadCustomersWorkspaceIdRef = useRef<string | null | undefined>(undefined);
+  const lastCustomerLoadRef = useRef<{ workspaceId: string | null; customers: Customer[] } | null>(null);
   const initialDataReadyRef = useRef(false);
   const activeWorkspaceIdRef = useRef<string | null>(null);
   const detailDataLoadedRef = useRef<Record<string, boolean>>({});
@@ -1061,11 +1064,11 @@ export default function Home() {
     };
   }
 
-  function openCustomer(c:Customer, v:View) {
+  function openCustomer(c:Customer, v:View, alreadyScoped = false) {
     const target = currentReturnTarget();
     if (target) setReturnTarget(target);
 
-    const scopedCustomer = workScopedCustomer(c);
+    const scopedCustomer = alreadyScoped ? c : workScopedCustomer(c);
     const draft = draftForCustomer(scopedCustomer);
     const activeDraft = draft?.customer.activeAppointmentId === scopedCustomer.activeAppointmentId ? draft : null;
     const customerToOpen = activeDraft?.customer || scopedCustomer;
@@ -1342,9 +1345,11 @@ export default function Home() {
   }
 
   async function loadProductsFromDb() {
+    const loadingWorkspaceId = currentWorkspaceId();
     const fallback = sortProducts(PRODUCTS as any);
     try {
       const { data, error } = await readWorkspaceRows("climate_products", (query) => query.eq("active", true).order("name"));
+      if (currentWorkspaceId() !== loadingWorkspaceId) return [];
 
       if (error) throw error;
 
@@ -1354,6 +1359,7 @@ export default function Home() {
       setInventory((prev) => ensureInventoryForProducts(prev, loaded));
       return loaded;
     } catch (error: any) {
+      if (currentWorkspaceId() !== loadingWorkspaceId) return [];
       console.warn("climate_products betöltési hiba", error?.message || error);
       if (currentWorkspaceId() && !isMissingWorkspaceSchemaError(error)) {
         setActiveProducts([]);
@@ -1424,20 +1430,25 @@ export default function Home() {
   }
 
   async function loadInventoryFromDb(productList: ClimateProduct[]) {
+    const loadingWorkspaceId = currentWorkspaceId();
     try {
       const { data, error } = await readWorkspaceRows("inventory_stock", undefined, "product_id");
+      if (currentWorkspaceId() !== loadingWorkspaceId) return;
       if (error) throw error;
       setInventory(climateInventoryFromRows(data, productList, !currentWorkspaceId()));
     } catch (error: any) {
+      if (currentWorkspaceId() !== loadingWorkspaceId) return;
       console.warn("inventory_stock betöltési hiba", error?.message || error);
       setInventory((prev) => currentWorkspaceId() ? ensureInventoryForProducts([], productList) : ensureInventoryForProducts(prev, productList));
     }
 
     try {
       const { data, error } = await readWorkspaceRows("material_inventory", undefined, "name");
+      if (currentWorkspaceId() !== loadingWorkspaceId) return;
       if (error) throw error;
       setMaterialInventory(materialInventoryFromRows(data, !currentWorkspaceId()));
     } catch (error: any) {
+      if (currentWorkspaceId() !== loadingWorkspaceId) return;
       console.warn("material_inventory betöltési hiba", error?.message || error);
       if (currentWorkspaceId()) setMaterialInventory([]);
     }
@@ -2494,7 +2505,9 @@ export default function Home() {
   }
 
   async function loadSellerCompaniesFromDb() {
+    const loadingWorkspaceId = currentWorkspaceId();
     const result = await workspaceQuery(supabase.from("seller_companies").select("*").eq("active", true).order("is_default", { ascending: false }).order("name", { ascending: true }));
+    if (currentWorkspaceId() !== loadingWorkspaceId) return [];
     if (result.error) {
       if (!isMissingSellerTableError(result.error)) console.warn("Eladó cégek betöltési hiba", result.error.message);
       setSellerCompanies([DEFAULT_SELLER_COMPANY]);
@@ -2508,15 +2521,21 @@ export default function Home() {
     return sellers;
   }
 
-  async function loadCustomersFromDb(options: { background?: boolean } = {}) {
-    if (loadCustomersPromiseRef.current) return loadCustomersPromiseRef.current;
-
+  async function loadCustomersFromDb(options: { background?: boolean; preserveEditing?: boolean } = {}): Promise<void> {
+    const loadingWorkspaceId = currentWorkspaceId();
+    if (loadCustomersPromiseRef.current) {
+      if (loadCustomersWorkspaceIdRef.current === loadingWorkspaceId) return loadCustomersPromiseRef.current;
+      await loadCustomersPromiseRef.current.catch(() => {});
+      if (currentWorkspaceId() === loadingWorkspaceId) await loadCustomersFromDb(options);
+      return;
+    }
+    loadCustomersWorkspaceIdRef.current = loadingWorkspaceId;
     const loadPromise = (async () => {
       setDataLoading(true);
       if (!options.background) setMessage("");
 
-      const loadedProductsPromise = loadProductsFromDb();
-      const loadedSellersPromise = loadSellerCompaniesFromDb();
+      const loadedProductsPromise = options.preserveEditing ? Promise.resolve(products) : loadProductsFromDb();
+      const loadedSellersPromise = options.preserveEditing ? Promise.resolve([]) : loadSellerCompaniesFromDb();
       const dataPromise = Promise.all([
         readWorkspaceRows("customers", (query) => query.order("created_at", { ascending: false })),
         readWorkspaceRows("quotes", (query) => query.order("created_at", { ascending: false })),
@@ -2528,7 +2547,7 @@ export default function Home() {
 
       const loadedProducts = await loadedProductsPromise;
       await loadedSellersPromise;
-      void loadInventoryFromDb(loadedProducts);
+      if (!options.preserveEditing && currentWorkspaceId() === loadingWorkspaceId) void loadInventoryFromDb(loadedProducts);
 
       const [
         customerResult,
@@ -2539,10 +2558,12 @@ export default function Home() {
         maintenanceLinkResult,
       ] = await dataPromise;
 
+      if (currentWorkspaceId() !== loadingWorkspaceId) return;
       const { data: customerRows } = customerResult;
       const customerError = [customerResult, quoteResult, itemResult, appointmentResult, jobResult, maintenanceLinkResult].find((result) => result.error)?.error;
 
       if (customerError) {
+        if (options.preserveEditing) return;
         setMessage(`Nem sikerült betölteni az ügyfeleket: ${customerError.message}`);
         initialDataReadyRef.current = true;
         setInitialDataReady(true);
@@ -2736,6 +2757,12 @@ export default function Home() {
       nextWorkHistory[row.id] = (appointmentHistoryMap.get(row.id) || []).map((appointment) => customerFromAppointment(row, appointment));
     });
 
+    if (currentWorkspaceId() !== loadingWorkspaceId) return;
+    lastCustomerLoadRef.current = { workspaceId: loadingWorkspaceId, customers: loadedCustomers };
+    setCustomers(loadedCustomers);
+    setWorkHistoryByCustomer(nextWorkHistory);
+    if (options.preserveEditing) return;
+
     const returnContext = readReturnContext();
     const customerDraft = readCustomerDraft();
     setDraftNotice(customerDraft);
@@ -2759,8 +2786,6 @@ export default function Home() {
     const nextSelected = selectedFromReturn || selectedFromDraft || selectedFromCurrentState || unsavedSelected || loadedCustomers[0] || EMPTY_CUSTOMER;
     const nextQuoteItems = selectedFromDraft ? (customerDraft?.quoteItems || nextSelected.quoteItems) : nextSelected.quoteItems;
 
-    setCustomers(loadedCustomers);
-    setWorkHistoryByCustomer(nextWorkHistory);
     setSelected(nextSelected);
     setQuoteItems(nextQuoteItems);
     setWorkChecklist(effectiveChecklistFor(nextSelected));
@@ -2789,6 +2814,7 @@ export default function Home() {
     })().finally(() => {
       setDataLoading(false);
       loadCustomersPromiseRef.current = null;
+      loadCustomersWorkspaceIdRef.current = undefined;
     });
 
     loadCustomersPromiseRef.current = loadPromise;
@@ -5804,6 +5830,30 @@ export default function Home() {
     );
   }
 
+  async function refreshFacebookCustomers() {
+    if (currentViewRef.current !== "dashboard") return;
+    const workspaceId = currentWorkspaceId();
+    const previousLoad = lastCustomerLoadRef.current;
+    await loadCustomersFromDb({ background: true, preserveEditing: true });
+    if (currentWorkspaceId() === workspaceId && currentViewRef.current === "dashboard" && lastCustomerLoadRef.current === previousLoad) {
+      throw new Error("Az ügyféllista frissítése nem sikerült.");
+    }
+  }
+
+  async function openFacebookCustomer(customerId: string) {
+    const workspaceId = currentWorkspaceId();
+    const previousLoad = lastCustomerLoadRef.current;
+    await loadCustomersFromDb({ background: true, preserveEditing: true });
+    if (currentWorkspaceId() !== workspaceId || currentViewRef.current !== "dashboard") return;
+    const latest = lastCustomerLoadRef.current;
+    if (!latest || latest === previousLoad || latest.workspaceId !== workspaceId) {
+      throw new Error("Az ügyfél friss adatai nem tölthetők be. Próbáld újra.");
+    }
+    const customer = latest.customers.find((item) => item.id === customerId);
+    if (!customer) throw new Error("A kapcsolódó ügyfél már nem érhető el.");
+    openCustomer(customer, "lead", true);
+  }
+
   function renderWarehouseQuickView() {
     const warehouseRows = products
       .map((product: any) => {
@@ -5879,7 +5929,8 @@ export default function Home() {
                 <button type="button" onClick={()=>openCustomer(c,"lead")} className="min-w-0 flex-1 text-left">
                   <p className="text-lg font-black">{c.name}</p>
                   <p className="text-sm text-slate-400">{c.city || "nincs település"} · {c.email || c.phone || "nincs elérhetőség"}</p>
-                  <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p>
+                  {!c.need || cleanQuoteItems(c.quoteItems).some((item) => Number(item.quantity) > 0) ? <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(c.quoteItems)}</p> : null}
+                  {c.need ? <p className="mt-1 break-words text-sm font-bold text-cyan-200">Érdeklődés: {c.need}</p> : null}
                   {customerInquiryLabel(c) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerInquiryLabel(c)}</p> : null}
                 </button>
                 <div className="flex flex-wrap items-center gap-2 md:justify-end">
@@ -6284,7 +6335,6 @@ export default function Home() {
         {renderDraftNoticePanel()}
         {renderDashboardLeadsPanel()}
         {renderWarehouseQuickView()}
-        {renderLeadImportPanel()}
       </section>
 
       <section className="hidden gap-6 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] xl:items-start 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
@@ -6297,8 +6347,19 @@ export default function Home() {
           {renderCustomerSearchPanel()}
           {renderDraftNoticePanel()}
           {renderWarehouseQuickView()}
-          {renderLeadImportPanel()}
         </aside>
+      </section>
+      <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
+        {activeWorkspace?.id && user?.id ? (
+          <FacebookLeadsPanel
+            key={`${activeWorkspace.id}:${user.id}`}
+            workspaceId={activeWorkspace.id}
+            userId={user.id}
+            onCustomersChanged={refreshFacebookCustomers}
+            onOpenCustomer={openFacebookCustomer}
+          />
+        ) : null}
+        {renderLeadImportPanel()}
       </section>
     </Shell>
   );

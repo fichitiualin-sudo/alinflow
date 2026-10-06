@@ -81,6 +81,16 @@ A `WorkReport` több rekordot enged ugyanahhoz az ügyfélhez. A szerelési és 
 
 ## Supabase fő táblák
 
+### Facebook-jelentkezések (2026-10-06)
+
+A `facebook_lead_imports` minden átvett jelentkezés önálló pillanatképét tárolja. Egyedi kulcsa `(workspace_id, page_id, lead_id)`; a `customer_id` meglévő vagy új ügyfélre mutat, ügyféltörléskor `null` lesz, a Meta-azonosító megmarad. A név, telefon, email, település, irányítószám, érdeklődési klíma, eredeti `submitted_at`, űrlap-/hirdetés-/kampányazonosítók külön mezők. A `received_at` a tényleges import ideje.
+
+A `status` `created`, `matched` vagy `review`; utóbbinál `review_reason` jelzi a hiányzó nevet, hiányzó használható kontaktot vagy többértelmű ügyfélegyezést. Az `acknowledged_at/by` csak a beérkezés feldolgozottnak jelölését tárolja. A meglévő `Customer` mezőket ismételt érdeklődés nem írja felül; az új ügyfél `source='Facebook'`, `status='Visszahívandó'`, `need=climate_name` értékekkel jön létre, eredeti jelentkezési dátummal.
+
+Az `import_facebook_lead` szerveroldali RPC egy tranzakcióban keresi az ügyfélegyezést, szükség szerint létrehozza az ügyfelet és a naplósort; párhuzamos importnál munkaterületi zárolás véd. Aktív tag olvashatja a saját munkaterülete naplóját és hívhatja az `acknowledge_facebook_lead` RPC-t. Közvetlen kliensoldali írás/törlés nincs. A `service_role` csak az import-RPC-t és a már beolvasott leadazonosítókhoz szükséges három oszlop olvasását kapja.
+
+A Meta-titkok és a Page→workspace, form- és ad→klíma beállítások szerveres környezeti változók; nem részei a kliensállapotnak vagy a cégbeállítás JSON-jának. Migráció: [`sql/FACEBOOK_LEAD_IMPORT.sql`](sql/FACEBOOK_LEAD_IMPORT.sql). Aktiválás és korlátok: [`FACEBOOK_LEAD_IMPORT.md`](FACEBOOK_LEAD_IMPORT.md).
+
 ### Belső beszerzési árak (2026-09-14)
 
 Az `inventory_purchase_prices` önálló belső tábla: `(workspace_id, item_type, item_key)` elsődleges kulcs, `purchase_price` opcionális HUF egységár, `tax_basis` kötelező `net`/`gross`, szerveroldali `created_at` és `updated_at`. Klímánál a termékazonosító, anyagnál a pontos anyagnév kapcsolja a saját munkaterület létező készlettételéhez. Aktív tagság szükséges; anonim hozzáférés és közvetlen törlés nincs. Kiürített ár `null`, nem nulla. Párhuzamos szerkesztés ellen az előző szerververzióra szűrő mentés véd.
