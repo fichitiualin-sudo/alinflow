@@ -35,6 +35,10 @@ Az „Ügyfél megnyitása” csak kapcsolt ügyfélnél látható. A „Feldolg
 
 Az új ügyfelek listájában és az ügyfél adatlapján az `Érdeklődés` rész mutatja a mentett igényt/klímát. Ez nem ajánlati tétel és nem készletfoglalás. Ismételt érdeklődés új klímája a külön Facebook-naplósorban látszik, a korábbi ügyfél-igényt nem írja át.
 
+## Visszahívandók térképe
+
+A Visszahívandó listában a „Térképen” gomb, illetve a főoldal Térkép nézetének „Visszahívandók” füle nyitja meg. Az időpont nélküli, Visszahívandó státuszú ügyfeleket mutatja; a jelölő településszintű, nem pontos lakcím. Az azonos településhez tartozó érdeklődők közös, darabszámos jelölőt kapnak. Név, település és érdeklődési klíma alapján kereshető; a kapcsolódó ügyféllista tízesével lapozható, az ügyfél közvetlenül megnyitható. A hiányzó vagy nem azonosítható településű ügyfelek külön is listázhatók. A Telepített klímák fül a korábbi karbantartási térképet mutatja.
+
 ## Ügyféladatok
 
 - a nagy felső ügyfél-fejléc/modal ne jelenjen meg;

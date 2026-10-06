@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { readAllRows } from "@/lib/alinflow/pagination";
@@ -180,6 +181,11 @@ import {
 } from "@/lib/alinflow/workspace-settings";
 
 const DASHBOARD_WAREHOUSE_LIMIT = 10;
+
+const CallbackMapPanel = dynamic(
+  () => import("@/components/alinflow/CallbackMapPanel").then((module) => module.CallbackMapPanel),
+  { ssr: false, loading: () => <div className="rounded-3xl bg-white/5 p-6 text-slate-300" role="status">Térkép betöltése…</div> },
+);
 
 type PageDocumentRow = {
   action: string;
@@ -418,6 +424,7 @@ export default function Home() {
   const [message,setMessageState] = useState("");
   const [workFocusTarget,setWorkFocusTarget] = useState<"close-actions" | null>(null);
   const [maintenanceMapGeocodingBusy,setMaintenanceMapGeocodingBusy] = useState(false);
+  const [mapMode,setMapMode] = useState<"callbacks" | "maintenance">("maintenance");
   const [user,setUser] = useState<User | null>(null);
   const [authLoading,setAuthLoading] = useState(true);
   const [dataLoading,setDataLoading] = useState(false);
@@ -4314,6 +4321,10 @@ export default function Home() {
         onOpenTask={openTask}
         onOpenCustomer={openCustomer}
         onOpenWarehouse={() => navigateToView("warehouse")}
+        onOpenCallbackMap={() => {
+          setMapMode("callbacks");
+          navigateToView("maintenanceMap");
+        }}
       />
     );
   }
@@ -4322,7 +4333,19 @@ export default function Home() {
     return (
       <Shell>
         {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
-        <MaintenanceMapPanel
+        <div className="mb-6 grid grid-cols-2 gap-2 rounded-3xl border border-white/10 bg-white/5 p-2" aria-label="Térkép nézete">
+          {([['callbacks', 'Visszahívandók'], ['maintenance', 'Telepített klímák']] as const).map(([mode, label]) => (
+            <button key={mode} type="button" aria-pressed={mapMode === mode} onClick={() => setMapMode(mode)} className={`rounded-2xl px-3 py-3 text-sm font-black transition ${mapMode === mode ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/10"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {mapMode === "callbacks" ? (
+          <>
+            <Back onClick={() => goBack()} />
+            <CallbackMapPanel customers={customers} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} />
+          </>
+        ) : <MaintenanceMapPanel
           points={maintenanceMapPoints}
           googleMapsApiKey={googleMapsApiKey}
           geocodingBusy={maintenanceMapGeocodingBusy}
@@ -4330,7 +4353,7 @@ export default function Home() {
           onOpenCustomer={(customer) => openCustomer(customer, "work")}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
           onToggleMaintenanceOptOut={toggleMaintenanceOptOut}
-        />
+        />}
       </Shell>
     );
   }
