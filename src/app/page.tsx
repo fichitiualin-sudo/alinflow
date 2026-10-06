@@ -961,6 +961,7 @@ export default function Home() {
 
 
   async function requestDataLoadForUser(currentUser: User, force = false) {
+    if (!initialDataReadyRef.current) setDataLoading(true);
     try {
       const workspace = await ensureWorkspaceForUser(currentUser);
       await loadWorkspaceSettingsFromDb(workspace);
@@ -5831,7 +5832,7 @@ export default function Home() {
   }
 
   async function refreshFacebookCustomers() {
-    if (currentViewRef.current !== "dashboard") return;
+    if (!initialDataReadyRef.current || currentViewRef.current !== "dashboard") return;
     const workspaceId = currentWorkspaceId();
     const previousLoad = lastCustomerLoadRef.current;
     await loadCustomersFromDb({ background: true, preserveEditing: true });
@@ -6350,7 +6351,7 @@ export default function Home() {
         </aside>
       </section>
       <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
-        {activeWorkspace?.id && user?.id ? (
+        {initialDataReady && activeWorkspace?.id && user?.id ? (
           <FacebookLeadsPanel
             key={`${activeWorkspace.id}:${user.id}`}
             workspaceId={activeWorkspace.id}

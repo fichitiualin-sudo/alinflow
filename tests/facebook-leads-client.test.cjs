@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { harness } = require("./helpers.cjs");
+const vm = require("node:vm");
+const ts = require("typescript");
+const { harness, source } = require("./helpers.cjs");
 
 const { runFacebookLeadSync } = harness({ DOMException }).load("src/lib/alinflow/facebook-leads-client.ts");
 const page = (overrides = {}) => ({ imported: 1, matched: 0, review: 0, duplicates: 0,
@@ -211,10 +213,105 @@ test("a late Facebook customer load cannot open an old workspace's record", asyn
 
 test("a failed customer refresh is reported so the next Facebook poll can retry it", async () => {
   const { refreshFacebookCustomers } = harness().functions(["refreshFacebookCustomers"], {
+    initialDataReadyRef: { current: true },
     currentWorkspaceId: () => "workspace-one",
     currentViewRef: { current: "dashboard" },
     lastCustomerLoadRef: { current: { workspaceId: "workspace-one", customers: [] } },
     loadCustomersFromDb: async () => {},
   });
   await assert.rejects(refreshFacebookCustomers(), /frissítése nem sikerült/);
+});
+
+test("initial loading covers the workspace lookup before dashboard callbacks can run", async () => {
+  let releaseWorkspace;
+  const workspace = new Promise(resolve => { releaseWorkspace = resolve; });
+  const loading = [];
+  const calls = [];
+  const { requestDataLoadForUser } = harness().functions(["requestDataLoadForUser"], {
+    initialDataReadyRef: { current: false },
+    loadedUserIdRef: { current: null },
+    setDataLoading: value => loading.push(value),
+    ensureWorkspaceForUser: () => { calls.push("workspace"); return workspace; },
+    loadWorkspaceSettingsFromDb: async () => { calls.push("settings"); },
+    loadCustomersFromDb: async options => { calls.push(options.background ? "background" : "initial"); },
+  });
+  const request = requestDataLoadForUser({ id: "synthetic-user" });
+  try {
+    assert.deepEqual(calls, ["workspace"]);
+    assert.deepEqual(loading, [true], "the dashboard must remain covered while workspace resolution is pending");
+  } finally {
+    releaseWorkspace({ id: "workspace-one" });
+    await request;
+  }
+  assert.deepEqual(calls, ["workspace", "settings", "initial"]);
+});
+
+test("an early Facebook callback cannot claim the shared customer loader before initialization", async () => {
+  const reads = [];
+  const latest = { current: null };
+  const { refreshFacebookCustomers } = harness().functions(["refreshFacebookCustomers"], {
+    initialDataReadyRef: { current: false },
+    currentWorkspaceId: () => "workspace-one",
+    currentViewRef: { current: "dashboard" },
+    lastCustomerLoadRef: latest,
+    loadCustomersFromDb: async options => {
+      reads.push(options);
+      latest.current = { workspaceId: "workspace-one", customers: [] };
+    },
+  });
+  await refreshFacebookCustomers();
+  assert.deepEqual(reads, [], "a partial refresh must not replace the initial customer/draft load");
+});
+
+test("after initialization a Facebook callback refreshes customers without changing the open form", async () => {
+  const { loadCustomersFromDb, state, lastLoadRef } = customerLoader();
+  const { refreshFacebookCustomers } = harness().functions(["refreshFacebookCustomers"], {
+    initialDataReadyRef: { current: true },
+    currentWorkspaceId: () => "workspace-one",
+    currentViewRef: { current: "dashboard" },
+    lastCustomerLoadRef: lastLoadRef,
+    loadCustomersFromDb,
+  });
+  await refreshFacebookCustomers();
+  assert.equal(state.customers[0].need, "Teszt klíma");
+  assert.equal(state.customers[0].city, "Budapest");
+  assert.equal(lastLoadRef.current.workspaceId, "workspace-one");
+});
+
+test("the Facebook panel mounts only after the initial workspace data is ready", () => {
+  const ast = ts.createSourceFile("page.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let panel;
+  (function visit(node) {
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast) === "FacebookLeadsPanel") panel = node;
+    ts.forEachChild(node, visit);
+  })(ast);
+  assert.ok(panel, "the dashboard must retain its Facebook panel");
+  let branch = panel.parent;
+  while (branch && !ts.isConditionalExpression(branch)) branch = branch.parent;
+  assert.ok(branch, "the Facebook panel must have a conditional mount");
+  const code = ts.transpileModule(
+    `globalThis.renderPanel = (initialDataReady, activeWorkspace, user) => (${branch.getText(ast)});`,
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } },
+  ).outputText;
+  const component = () => null;
+  const context = {
+    exports: {},
+    FacebookLeadsPanel: component,
+    refreshFacebookCustomers: () => {},
+    openFacebookCustomer: () => {},
+    require: name => {
+      assert.equal(name, "react/jsx-runtime");
+      return require("react/jsx-runtime");
+    },
+  };
+  vm.runInNewContext(code, context);
+  const workspace = { id: "workspace-one" };
+  const user = { id: "synthetic-user" };
+  assert.equal(context.renderPanel(false, workspace, user), null);
+  assert.equal(context.renderPanel(true, null, user), null);
+  assert.equal(context.renderPanel(true, workspace, null), null);
+  const mounted = context.renderPanel(true, workspace, user);
+  assert.equal(mounted.type, component);
+  assert.equal(mounted.props.workspaceId, workspace.id);
+  assert.equal(mounted.props.userId, user.id);
 });
