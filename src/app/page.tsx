@@ -110,7 +110,6 @@ import {
   sortCustomersBySchedule,
 } from "@/lib/alinflow/schedule";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
-import { MaintenanceMapPanel } from "@/components/alinflow/MaintenanceMapPanel";
 import { WarehousePanel } from "@/components/alinflow/WarehousePanel";
 import { AllWorkReportsDocument, AppointmentConfirmationDocument, PurchaseDeclarationDocument, QuoteDocument, WorkReportDocument } from "@/components/alinflow/DocumentPreviewDocuments";
 import { CustomerSearchPanel, LeadImportPanel } from "@/components/alinflow/CustomerPanels";
@@ -153,7 +152,7 @@ import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
-import { buildMaintenanceMapPoints, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
+import { buildMaintenanceMapPoints, hasMaintenanceMapCoordinates, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
 import { normalizePostalCodeInput, uniqueSettlementByCity, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
@@ -184,6 +183,10 @@ const DASHBOARD_WAREHOUSE_LIMIT = 10;
 
 const CallbackMapPanel = dynamic(
   () => import("@/components/alinflow/CallbackMapPanel").then((module) => module.CallbackMapPanel),
+  { ssr: false, loading: () => <div className="rounded-3xl bg-white/5 p-6 text-slate-300" role="status">Térkép betöltése…</div> },
+);
+const MaintenanceMapPanel = dynamic(
+  () => import("@/components/alinflow/MaintenanceMapPanel").then((module) => module.MaintenanceMapPanel),
   { ssr: false, loading: () => <div className="rounded-3xl bg-white/5 p-6 text-slate-300" role="status">Térkép betöltése…</div> },
 );
 
@@ -1153,7 +1156,7 @@ export default function Home() {
 
   async function geocodeMissingMaintenanceMapPoints() {
     const targets = maintenanceMapPoints
-      .filter((point) => (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) && point.address)
+      .filter((point) => !hasMaintenanceMapCoordinates(point) && point.address)
       .slice(0, 30);
 
     if (!targets.length) {
@@ -4340,16 +4343,13 @@ export default function Home() {
             </button>
           ))}
         </div>
+        <Back onClick={() => goBack()} />
         {mapMode === "callbacks" ? (
-          <>
-            <Back onClick={() => goBack()} />
-            <CallbackMapPanel customers={customers} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} />
-          </>
+          <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} />
         ) : <MaintenanceMapPanel
           points={maintenanceMapPoints}
           googleMapsApiKey={googleMapsApiKey}
           geocodingBusy={maintenanceMapGeocodingBusy}
-          onBack={() => goBack()}
           onOpenCustomer={(customer) => openCustomer(customer, "work")}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
           onToggleMaintenanceOptOut={toggleMaintenanceOptOut}

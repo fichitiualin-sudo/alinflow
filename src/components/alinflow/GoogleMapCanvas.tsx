@@ -1,0 +1,193 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { loadGoogleMaps, subscribeGoogleMapsAuthFailure } from "@/lib/alinflow/google-maps-loader";
+import "./GoogleMapCanvas.css";
+
+export type MapCanvasMarker = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  label: string;
+  title: string;
+  color?: string;
+};
+
+type GoogleMapCanvasProps = {
+  apiKey: string;
+  markers: MapCanvasMarker[];
+  selectedMarkerId?: string;
+  onSelectMarker?: (id: string) => void;
+  createPopupContent?: (id: string) => HTMLElement;
+  maxFitZoom?: number;
+  attribution?: ReactNode;
+  ariaLabel?: string;
+};
+
+type MapRuntime = { maps: any; map: any; info: any };
+
+function markerIcon(maps: any, color: string, selected: boolean) {
+  return { path: maps.SymbolPath.CIRCLE, scale: 20, fillColor: color, fillOpacity: 1,
+    strokeColor: selected ? "#0f172a" : "#ffffff", strokeWeight: selected ? 5 : 3 };
+}
+
+export function GoogleMapCanvas({ apiKey, markers, selectedMarkerId, onSelectMarker, createPopupContent,
+  maxFitZoom = 15, attribution, ariaLabel = "Ügyfelek térképe" }: GoogleMapCanvasProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fullscreenRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const markerInstances = useRef<Array<{ source: MapCanvasMarker; marker: any }>>([]);
+  const callbacks = useRef({ onSelectMarker, createPopupContent });
+  callbacks.current = { onSelectMarker, createPopupContent };
+  const [runtime, setRuntime] = useState<MapRuntime | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [error, setError] = useState("");
+  const [fullscreen, setFullscreen] = useState(false);
+  const validMarkers = useMemo(() => markers.filter((marker) => Number.isFinite(marker.latitude)
+    && Number.isFinite(marker.longitude) && Math.abs(marker.latitude) <= 90 && Math.abs(marker.longitude) <= 180), [markers]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let disposed = false;
+    let failed = false;
+    let current: MapRuntime | null = null;
+    let observer: ResizeObserver | undefined;
+    let frame = 0;
+    setRuntime(null);
+    setError("");
+    const showFailure = () => {
+      if (disposed) return;
+      failed = true;
+      current?.info.close();
+      setRuntime(null);
+      setError("A térkép most nem tölthető be. Az ügyféllista továbbra is használható.");
+    };
+    const unsubscribe = subscribeGoogleMapsAuthFailure(showFailure);
+    void loadGoogleMaps(apiKey).then((maps) => {
+      if (disposed || failed) return;
+      const map = new maps.Map(container, {
+        center: { lat: 47.2, lng: 19.5 }, zoom: 7, minZoom: 5, maxZoom: 19,
+        mapTypeId: "roadmap", mapTypeControl: false, streetViewControl: false,
+        fullscreenControl: false, zoomControl: false, cameraControl: false, rotateControl: false,
+        clickableIcons: false, gestureHandling: "cooperative",
+      });
+      current = { maps, map, info: new maps.InfoWindow() };
+      if (typeof ResizeObserver !== "undefined") {
+        observer = new ResizeObserver(() => {
+          cancelAnimationFrame(frame);
+          frame = requestAnimationFrame(() => {
+            if (disposed) return;
+            const center = map.getCenter();
+            maps.event.trigger(map, "resize");
+            if (center) map.setCenter(center);
+          });
+        });
+        observer.observe(container);
+      }
+      if (!failed) setRuntime(current);
+    }).catch(showFailure);
+    return () => {
+      disposed = true;
+      unsubscribe();
+      observer?.disconnect();
+      cancelAnimationFrame(frame);
+      current?.info.close();
+      if (current) current.maps.event.clearInstanceListeners(current.map);
+      container.replaceChildren();
+    };
+  }, [apiKey, attempt]);
+
+  useEffect(() => {
+    if (!runtime) return;
+    const { maps, map, info } = runtime;
+    const instances = validMarkers.map((source) => {
+      const marker = new maps.Marker({
+        position: { lat: source.latitude, lng: source.longitude }, map, title: source.title,
+        icon: markerIcon(maps, source.color || "#0f766e", false),
+        label: { text: source.label, color: "#ffffff", fontSize: "14px", fontWeight: "900" },
+        optimized: false,
+      });
+      marker.addListener("click", () => {
+        callbacks.current.onSelectMarker?.(source.id);
+        const content = callbacks.current.createPopupContent?.(source.id);
+        if (content) {
+          info.setContent(content);
+          info.open({ anchor: marker, map });
+        }
+      });
+      return { source, marker };
+    });
+    markerInstances.current = instances;
+    if (validMarkers.length) {
+      const bounds = new maps.LatLngBounds();
+      validMarkers.forEach((source) => bounds.extend({ lat: source.latitude, lng: source.longitude }));
+      map.fitBounds(bounds, 40);
+      const listener = maps.event.addListenerOnce(map, "idle", () => {
+        if (map.getZoom() > maxFitZoom) map.setZoom(maxFitZoom);
+      });
+      return () => {
+        maps.event.removeListener(listener);
+        info.close();
+        instances.forEach(({ marker }) => { maps.event.clearInstanceListeners(marker); marker.setMap(null); });
+        markerInstances.current = [];
+      };
+    }
+    map.setCenter({ lat: 47.2, lng: 19.5 });
+    map.setZoom(7);
+    return () => { info.close(); markerInstances.current = []; };
+  }, [runtime, validMarkers, maxFitZoom]);
+
+  useEffect(() => {
+    if (!runtime) return;
+    if (!selectedMarkerId) runtime.info.close();
+    for (const { source, marker } of markerInstances.current) {
+      marker.setIcon(markerIcon(runtime.maps, source.color || "#0f766e", source.id === selectedMarkerId));
+      marker.setZIndex(source.id === selectedMarkerId ? 1000 : undefined);
+    }
+  }, [runtime, selectedMarkerId, validMarkers]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = "hidden";
+    closeRef.current?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setFullscreen(false); }
+      if (event.key !== "Tab") return;
+      const focusable = [...(fullscreenRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], [tabindex="0"]') || [])]
+        .filter((element) => element.getClientRects().length);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", keydown);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [fullscreen]);
+
+  return <div className="min-w-0 space-y-3">
+    <div ref={fullscreenRef} className={fullscreen ? "fixed inset-0 z-[100] bg-slate-950 p-3" : "relative"}
+      role={fullscreen ? "dialog" : undefined} aria-modal={fullscreen || undefined} aria-label={fullscreen ? "Teljes képernyős térkép" : undefined}>
+      <div className={`alinflow-map relative overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 ${fullscreen ? "h-full" : "h-[360px] min-h-[320px] sm:h-[460px] xl:h-[560px]"}`}>
+        <div ref={containerRef} className="h-full w-full" aria-label={ariaLabel} />
+        {!runtime && !error ? <p className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/60 p-5 text-center font-bold text-slate-200" role="status">Térkép betöltése…</p> : null}
+        {runtime ? <div className="absolute left-3 top-3 z-10 flex flex-col gap-1">
+          <button type="button" className="alinflow-map-control text-2xl" aria-label="Nagyítás" onClick={() => runtime.map.setZoom(Math.min(19, runtime.map.getZoom() + 1))}>+</button>
+          <button type="button" className="alinflow-map-control text-2xl" aria-label="Kicsinyítés" onClick={() => runtime.map.setZoom(Math.max(5, runtime.map.getZoom() - 1))}>−</button>
+        </div> : null}
+        <button ref={closeRef} type="button" className="alinflow-map-control absolute right-3 top-3 z-10 px-3 text-sm" aria-pressed={fullscreen} onClick={() => setFullscreen((value) => !value)}>{fullscreen ? "Bezárás" : "Teljes képernyő"}</button>
+        {error ? <div className="absolute inset-x-3 bottom-10 z-10 rounded-2xl bg-slate-900 p-4 text-sm text-white shadow-xl" role="status">
+          <p>{error}</p>
+          <button type="button" className="mt-3 rounded-xl bg-cyan-300 px-4 py-3 font-black text-slate-950" onClick={() => setAttempt((value) => value + 1)}>Újrapróbálás</button>
+        </div> : null}
+      </div>
+    </div>
+    {attribution ? <div className="text-xs text-slate-400">{attribution}</div> : null}
+  </div>;
+}

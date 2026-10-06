@@ -37,7 +37,11 @@ Az új ügyfelek listájában és az ügyfél adatlapján az `Érdeklődés` ré
 
 ## Visszahívandók térképe
 
-A Visszahívandó listában a „Térképen” gomb, illetve a főoldal Térkép nézetének „Visszahívandók” füle nyitja meg. Az időpont nélküli, Visszahívandó státuszú ügyfeleket mutatja; a jelölő településszintű, nem pontos lakcím. Az azonos településhez tartozó érdeklődők közös, darabszámos jelölőt kapnak. Név, település és érdeklődési klíma alapján kereshető; a kapcsolódó ügyféllista tízesével lapozható, az ügyfél közvetlenül megnyitható. A hiányzó vagy nem azonosítható településű ügyfelek külön is listázhatók. A Telepített klímák fül a korábbi karbantartási térképet mutatja.
+A Visszahívandó listában a „Térképen” gomb, illetve a főoldal Térkép nézetének „Visszahívandók” füle nyitja meg. Az időpont nélküli, Visszahívandó státuszú ügyfeleket mutatja; a jelölő településszintű, nem pontos lakcím. Az azonos településhez tartozó érdeklődők közös, darabszámos jelölőt kapnak. Név, település és érdeklődési klíma alapján kereshető; a kapcsolódó ügyféllista tízesével lapozható, az ügyfél közvetlenül megnyitható. A hiányzó vagy nem azonosítható településű ügyfelek külön is listázhatók.
+
+Mindkét térképfül közös Google Maps megjelenítőt használ, azonos nagyító- és teljes képernyő gombokkal, térképmérettel és térkép/lista elrendezéssel. Mobilon a lista a térkép alatt, széles asztali nézetben mellette jelenik meg. Térképhibánál újrapróbálás érhető el, az ügyféllista továbbra is működik.
+
+A „Telepített klímák” fül a mentett szerelési koordinátákat és karbantartási állapotokat mutatja. Az azonos koordinátájú telepítések számozott jelölőt kapnak, a legsürgősebb állapot színével. A jelölő szűri a tízesével lapozható listát; az egyes időpontok a felugró ablakból is külön megnyithatók. Az „Összes helyszín” gomb megszünteti a helyszín szerinti szűrést. Az állapotszűrők, cím/név/klíma keresés, hiányzó koordináták keresése és az időpontonkénti „Nem kéri a karbantartást” beállítás megmarad.
 
 ## Ügyféladatok
 

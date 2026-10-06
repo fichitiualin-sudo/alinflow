@@ -26,7 +26,55 @@ export type MaintenanceMapPoint = {
   geocodeError?: string;
 };
 
+export type MaintenanceMapPointGroup = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  status: MaintenanceMapStatus;
+  points: MaintenanceMapPoint[];
+};
+
 export const MAINTENANCE_DUE_SOON_DAYS = 60;
+
+export function hasMaintenanceMapCoordinates(
+  point: MaintenanceMapPoint,
+): point is MaintenanceMapPoint & { latitude: number; longitude: number } {
+  return typeof point.latitude === "number"
+    && Number.isFinite(point.latitude)
+    && point.latitude >= -90
+    && point.latitude <= 90
+    && typeof point.longitude === "number"
+    && Number.isFinite(point.longitude)
+    && point.longitude >= -180
+    && point.longitude <= 180;
+}
+
+export function groupMaintenanceMapPoints(points: readonly MaintenanceMapPoint[]): MaintenanceMapPointGroup[] {
+  const groups = new Map<string, MaintenanceMapPointGroup>();
+  const statusPriority: Record<MaintenanceMapStatus, number> = {
+    overdue: 0, dueSoon: 1, unknown: 2, ok: 3, optOut: 4,
+  };
+
+  for (const point of points) {
+    if (!hasMaintenanceMapCoordinates(point)) continue;
+    const id = `coordinates:${point.latitude},${point.longitude}`;
+    const group = groups.get(id);
+    if (group) {
+      group.points.push(point);
+      if (statusPriority[point.status] < statusPriority[group.status]) group.status = point.status;
+    } else {
+      groups.set(id, {
+        id,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        status: point.status,
+        points: [point],
+      });
+    }
+  }
+
+  return Array.from(groups.values());
+}
 
 function parseIsoDate(value?: string) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);

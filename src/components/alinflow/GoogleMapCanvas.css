@@ -1,0 +1,15 @@
+.alinflow-map { color: #0f172a; }
+.alinflow-map-control {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 900;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 20%);
+}
+.alinflow-map-control:focus-visible { outline: 3px solid #0891b2; outline-offset: 2px; }
+.alinflow-map .gm-style-iw { color: #0f172a; }
+.alinflow-map-popup { max-width: 280px; max-height: 280px; overflow: auto; color: #0f172a; font: 14px/1.5 system-ui, sans-serif; }
+.alinflow-map-popup button { min-height: 44px; }
