@@ -35,6 +35,7 @@ export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer }
   const markers = useMemo(() => data.groups.map((group) => ({
     id: group.id, latitude: group.latitude, longitude: group.longitude,
     label: String(group.customers.length), title: `${group.city}: ${group.customers.length} visszahívandó ügyfél`,
+    segments: [{ key: "callback", label: "Visszahívandó", color: "#0f766e", count: group.customers.length }],
   })), [data.groups]);
 
   const selectTown = useCallback((id: string) => {
@@ -72,9 +73,9 @@ export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer }
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-3">
           <GoogleMapCanvas apiKey={googleMapsApiKey} markers={markers} selectedMarkerId={activeTown}
-            onSelectMarker={selectTown} maxFitZoom={11} ariaLabel="Visszahívandók településtérképe"
+            onSelectMarker={selectTown} maxFitZoom={11} itemLabel="visszahívandó ügyfél" ariaLabel="Visszahívandók településtérképe"
             attribution={<>Település-koordináták: <a href="https://www.geonames.org/" target="_blank" rel="noreferrer" className="underline">GeoNames</a></>} />
-          <p className="text-xs leading-relaxed text-slate-400">A számok a visszahívandó ügyfeleket jelzik. A jelölők településszintű, közelítő helyet mutatnak.</p>
+          <p className="text-xs leading-relaxed text-slate-400">A számok a visszahívandó ügyfelek számát mutatják. A közeli jelölők összevonódnak; koppints rájuk a részletekhez és a nagyításhoz. A helyek településszintűek, közelítőek.</p>
           {data.total > 0 && !data.groups.length ? <p className="rounded-2xl bg-white/5 p-3 text-sm text-slate-300">A találatok települése nem jelölhető a térképen. Az ügyfelek a listából megnyithatók.</p> : null}
         </div>
 

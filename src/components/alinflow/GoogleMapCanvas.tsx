@@ -1,17 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { loadGoogleMaps, subscribeGoogleMapsAuthFailure } from "@/lib/alinflow/google-maps-loader";
+import { createMapMarkerLayer } from "@/lib/alinflow/map-marker-layer";
+import type { MapCanvasMarker } from "@/lib/alinflow/map-marker-style";
 import "./GoogleMapCanvas.css";
 
-export type MapCanvasMarker = {
-  id: string;
-  latitude: number;
-  longitude: number;
-  label: string;
-  title: string;
-  color?: string;
-};
+export type { MapCanvasMarker } from "@/lib/alinflow/map-marker-style";
 
 type GoogleMapCanvasProps = {
   apiKey: string;
@@ -22,29 +17,22 @@ type GoogleMapCanvasProps = {
   maxFitZoom?: number;
   attribution?: ReactNode;
   ariaLabel?: string;
+  itemLabel?: string;
 };
 
-type MapRuntime = { maps: any; map: any; info: any };
-
-function markerIcon(maps: any, color: string, selected: boolean) {
-  return { path: maps.SymbolPath.CIRCLE, scale: 20, fillColor: color, fillOpacity: 1,
-    strokeColor: selected ? "#0f172a" : "#ffffff", strokeWeight: selected ? 5 : 3 };
-}
+type MapRuntime = { maps: any; map: any; info: any; layer: ReturnType<typeof createMapMarkerLayer> };
 
 export function GoogleMapCanvas({ apiKey, markers, selectedMarkerId, onSelectMarker, createPopupContent,
-  maxFitZoom = 15, attribution, ariaLabel = "Ügyfelek térképe" }: GoogleMapCanvasProps) {
+  maxFitZoom = 15, attribution, ariaLabel = "Ügyfelek térképe", itemLabel }: GoogleMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const markerInstances = useRef<Array<{ source: MapCanvasMarker; marker: any }>>([]);
-  const callbacks = useRef({ onSelectMarker, createPopupContent });
-  callbacks.current = { onSelectMarker, createPopupContent };
+  const callbacks = useRef({ onSelectMarker, createPopupContent, itemLabel });
+  callbacks.current = { onSelectMarker, createPopupContent, itemLabel };
   const [runtime, setRuntime] = useState<MapRuntime | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
-  const validMarkers = useMemo(() => markers.filter((marker) => Number.isFinite(marker.latitude)
-    && Number.isFinite(marker.longitude) && Math.abs(marker.latitude) <= 90 && Math.abs(marker.longitude) <= 180), [markers]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -59,7 +47,7 @@ export function GoogleMapCanvas({ apiKey, markers, selectedMarkerId, onSelectMar
     const showFailure = () => {
       if (disposed) return;
       failed = true;
-      current?.info.close();
+      current?.layer.dispose();
       setRuntime(null);
       setError("A térkép most nem tölthető be. Az ügyféllista továbbra is használható.");
     };
@@ -72,7 +60,8 @@ export function GoogleMapCanvas({ apiKey, markers, selectedMarkerId, onSelectMar
         fullscreenControl: false, zoomControl: false, cameraControl: false, rotateControl: false,
         clickableIcons: false, gestureHandling: "cooperative",
       });
-      current = { maps, map, info: new maps.InfoWindow() };
+      const info = new maps.InfoWindow({ maxWidth: 320 });
+      current = { maps, map, info, layer: createMapMarkerLayer({ maps, map, info, getCallbacks: () => callbacks.current }) };
       if (typeof ResizeObserver !== "undefined") {
         observer = new ResizeObserver(() => {
           cancelAnimationFrame(frame);
@@ -92,60 +81,15 @@ export function GoogleMapCanvas({ apiKey, markers, selectedMarkerId, onSelectMar
       unsubscribe();
       observer?.disconnect();
       cancelAnimationFrame(frame);
-      current?.info.close();
+      current?.layer.dispose();
       if (current) current.maps.event.clearInstanceListeners(current.map);
       container.replaceChildren();
     };
   }, [apiKey, attempt]);
 
   useEffect(() => {
-    if (!runtime) return;
-    const { maps, map, info } = runtime;
-    const instances = validMarkers.map((source) => {
-      const marker = new maps.Marker({
-        position: { lat: source.latitude, lng: source.longitude }, map, title: source.title,
-        icon: markerIcon(maps, source.color || "#0f766e", false),
-        label: { text: source.label, color: "#ffffff", fontSize: "14px", fontWeight: "900" },
-        optimized: false,
-      });
-      marker.addListener("click", () => {
-        callbacks.current.onSelectMarker?.(source.id);
-        const content = callbacks.current.createPopupContent?.(source.id);
-        if (content) {
-          info.setContent(content);
-          info.open({ anchor: marker, map });
-        }
-      });
-      return { source, marker };
-    });
-    markerInstances.current = instances;
-    if (validMarkers.length) {
-      const bounds = new maps.LatLngBounds();
-      validMarkers.forEach((source) => bounds.extend({ lat: source.latitude, lng: source.longitude }));
-      map.fitBounds(bounds, 40);
-      const listener = maps.event.addListenerOnce(map, "idle", () => {
-        if (map.getZoom() > maxFitZoom) map.setZoom(maxFitZoom);
-      });
-      return () => {
-        maps.event.removeListener(listener);
-        info.close();
-        instances.forEach(({ marker }) => { maps.event.clearInstanceListeners(marker); marker.setMap(null); });
-        markerInstances.current = [];
-      };
-    }
-    map.setCenter({ lat: 47.2, lng: 19.5 });
-    map.setZoom(7);
-    return () => { info.close(); markerInstances.current = []; };
-  }, [runtime, validMarkers, maxFitZoom]);
-
-  useEffect(() => {
-    if (!runtime) return;
-    if (!selectedMarkerId) runtime.info.close();
-    for (const { source, marker } of markerInstances.current) {
-      marker.setIcon(markerIcon(runtime.maps, source.color || "#0f766e", source.id === selectedMarkerId));
-      marker.setZIndex(source.id === selectedMarkerId ? 1000 : undefined);
-    }
-  }, [runtime, selectedMarkerId, validMarkers]);
+    runtime?.layer.update(markers, selectedMarkerId, maxFitZoom);
+  }, [runtime, markers, selectedMarkerId, maxFitZoom]);
 
   useEffect(() => {
     if (!fullscreen) return;

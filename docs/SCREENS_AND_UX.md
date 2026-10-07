@@ -41,7 +41,11 @@ A Visszahívandó listában a „Térképen” gomb, illetve a főoldal Térkép
 
 Mindkét térképfül közös Google Maps megjelenítőt használ, azonos nagyító- és teljes képernyő gombokkal, térképmérettel és térkép/lista elrendezéssel. Mobilon a lista a térkép alatt, széles asztali nézetben mellette jelenik meg. Térképhibánál újrapróbálás érhető el, az ügyféllista továbbra is működik.
 
-A „Telepített klímák” fül a mentett szerelési koordinátákat és karbantartási állapotokat mutatja. Az azonos koordinátájú telepítések számozott jelölőt kapnak, a legsürgősebb állapot színével. A jelölő szűri a tízesével lapozható listát; az egyes időpontok a felugró ablakból is külön megnyithatók. Az „Összes helyszín” gomb megszünteti a helyszín szerinti szűrést. Az állapotszűrők, cím/név/klíma keresés, hiányzó koordináták keresése és az időpontonkénti „Nem kéri a karbantartást” beállítás megmarad.
+Kis, számozott körök jelölik a helyeket; a közeli helyszínek a nagyítástól függően összevonódnak. A középső szám az ügyfelek/telepítések összesített száma. A színes gyűrű az összes karbantartási állapot megoszlását mutatja; a nagyon kis arányú állapot is látható szeletet kap. Koppintásra megjelenik minden állapot pontos darabszáma és a „Mutasd közelebbről” gomb. A közös jelölő helyszínei tízesével lapozható gombokkal külön is kiválaszthatók, a maximális nagyításnál is. Visszahívandóknál egyszínű türkiz gyűrű és ügyféldarabszám jelenik meg.
+
+A „Telepített klímák” fül a mentett szerelési koordinátákat és karbantartási állapotokat mutatja. Az azonos koordinátájú telepítések közös jelölője is megőrzi az összes állapot színét és darabszámát. A helyszín kiválasztása szűri a tízesével lapozható listát; az egyes időpontok a felugró ablakból is külön megnyithatók. Az „Összes helyszín” gomb megszünteti a helyszín szerinti szűrést. Az állapotszűrők egyben színmagyarázatot adnak; a cím/név/klíma keresés, hiányzó koordináták keresése és az időpontonkénti „Nem kéri a karbantartást” beállítás megmarad.
+
+A megjelenítő a látható terület és kis ráhagyás jelölőit rajzolja ki, gyorsítótárazott PNG-ként, optimalizált Google-rendereléssel. A csoportok mozgatás után, a térkép megállásakor frissülnek. A változatlan helyszínek jelölői megmaradnak; kijelölés vagy változatlan adatok visszaadása nem állítja vissza a nézetet. A térkép mellett/alatt levő ügyféllista billentyűzettel is használható.
 
 ## Ügyféladatok
 
