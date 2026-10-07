@@ -149,7 +149,7 @@ export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: bo
     }
     pinPath();
     context.lineWidth = selected ? 2 : 1;
-    context.strokeStyle = selected ? "#0f172a" : "#334155";
+    context.strokeStyle = "#000000";
     context.stroke();
     url = canvas.toDataURL("image/png");
     if (iconUrls.size >= ICON_CACHE_LIMIT) iconUrls.delete(iconUrls.keys().next().value!);

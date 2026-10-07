@@ -105,7 +105,7 @@ test("compact pin uses retina PNG, white center, exact count and coordinate-tip 
   assert.equal(f.drawings[0].text[0].args[0], "12");
   assert.equal(f.drawings[0].text[0].color, "#0f172a");
   assert.deepEqual(f.drawings[0].fills, ["#ef4444", "#ef4444", "#22c55e", "#ffffff"]);
-  assert.deepEqual(f.drawings[0].strokes, ["#ffffff", "#334155"]);
+  assert.deepEqual(f.drawings[0].strokes, ["#ffffff", "#000000"]);
   assert.deepEqual(f.drawings[0].paths[0], ["move", 12, 31]);
   const denseAddress = f.markerPinIcon(f.maps, f.summarizeMapMarkers([source("dense", [segment("ok", 150)])]), false);
   assert.deepEqual(plain(denseAddress.scaledSize), { width: 30, height: 38 });
@@ -139,7 +139,7 @@ test("cached pin rendering is reused while selection and status composition inva
   assert.equal(f.drawings.length, 1);
   const selected = f.markerPinIcon(f.maps, a, true);
   assert.notEqual(selected.url, icon.url);
-  assert.deepEqual(f.drawings[1].strokes, ["#ffffff", "#0f172a"]);
+  assert.deepEqual(f.drawings[1].strokes, ["#ffffff", "#000000"]);
   assert.deepEqual(plain(selected.size), plain(icon.size), "selection does not enlarge the pin");
   assert.notEqual(f.markerPinIcon(f.maps, b, false).url, icon.url);
   assert.equal(f.drawings.length, 3);
