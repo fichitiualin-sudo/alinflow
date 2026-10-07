@@ -1,5 +1,7 @@
 # Gyorsabb és áttekinthetőbb térképek
 
+> Történeti terv: a felhasználó a csoportosított köröket elutasította. A jelenlegi működést a [MAP_PIN_PLAN.md](MAP_PIN_PLAN.md) írja le: különálló kis gombostűk, csoportosítás nélkül, a rajzolási gyorsítás megtartásával.
+
 ## Cél
 Mindkét térképen folyamatos mozgatás és olvasható, nagyításhoz igazodó jelölők. A közeli helyszínek közös darabszámot kapnak; minden ügyfél továbbra is elérhető.
 
