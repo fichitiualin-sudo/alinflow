@@ -26,7 +26,7 @@ Típusellenőrzés, build, térképtesztek; 600 külön jelölővel asztali/mobi
 
 ## Elvégzett munka és eredmény
 - A karbantartási és visszahívási térkép közös rétege minden külön helyszínt önálló gombostűként rajzol. Nincs közelség szerinti összevonás.
-- A gombostű 20×28 px, több bejegyzésnél 24×32 px, háromjegyű darabszámtól 30×38 px. A gyorsítótár legfeljebb 128 PNG-t tart meg.
+- A gombostű kinézetét utólag az eredeti `6a1ae37` változatból állítottuk vissza: ugyanaz a 40×48-as SVG-alak, sötét kontúr és nagy fehér közép, most gyorsítótárazott PNG-ként. Asztalon 34×40 px, mobilon 18×22 px; több tételnél a szám olvashatósága miatt mobilon 24×28 px. A gyorsítótár legfeljebb 128 PNG-t tart meg.
 - Mozgatás és nagyítás nem hoz létre új jelölőpéldányokat; kijelölés csak az érintett ikonokat frissíti. Koordinátaváltozás a meglévő jelölőt mozgatja.
 - `npx tsc --noEmit` és `npm run build`: sikeres.
 - Célzott térképtesztek: 50/50 sikeres. Teljes tesztcsomag: 506 sikeres, 2 kihagyott, 0 hibás.
@@ -46,3 +46,17 @@ Típusellenőrzés, build, térképtesztek; 600 külön jelölővel asztali/mobi
 
 ## Visszaállítás
 Kód-visszaállítás, adatbázis-módosítás nélkül.
+
+## Az eredeti gombostű kinézetének visszaállítása
+A felhasználó a módosítások előtti gombostűt kérte vissza. A referencia a `6a1ae37` commit `MaintenanceMapPanel.tsx` fájljának `markerIcon` függvénye, amely az egységesítés előtti `5825a5c` változatban is ugyanaz. Az alak, sötét kontúr, fehér közép és az egyes helyszínek asztali/mobil mérete ebből származik. A többszínű fej, a darabszám és a gyorsítótárazott, stabil jelölőréteg megmarad.
+
+Ellenőrzés: 51 térképteszt, `npx tsc --noEmit` és `npm run build` sikeres. Böngészőben az eredeti SVG és az új PNG három színben, mindkét méretben egymás mellett összehasonlítva. A 600 helyszín mobil- és asztali méret közötti váltása megtartja a 600 példányt és az eredeti térképkivágást; csak az ikonok frissülnek. Változatlan adatok újrarajzolása nem frissíti az ikonokat.
+
+Az ezzel a visszaállítással módosított fájlok:
+- `src/lib/alinflow/map-marker-style.ts`
+- `src/lib/alinflow/map-marker-layer.ts`
+- `src/components/alinflow/GoogleMapCanvas.tsx`
+- `tests/map-marker-style.test.cjs`
+- `tests/map-marker-layer.test.cjs`
+- `docs/SCREENS_AND_UX.md`
+- `docs/MAP_PIN_PLAN.md`

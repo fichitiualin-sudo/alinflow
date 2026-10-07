@@ -41,7 +41,7 @@ A Visszahívandó listában a „Térképen” gomb, illetve a főoldal Térkép
 
 Mindkét térképfül közös Google Maps megjelenítőt használ, azonos nagyító- és teljes képernyő gombokkal, térképmérettel és térkép/lista elrendezéssel. Mobilon a lista a térkép alatt, széles asztali nézetben mellette jelenik meg. Térképhibánál újrapróbálás érhető el, az ügyféllista továbbra is működik.
 
-A gombostűk vékony, fekete kontúrt és fehér külső szegélyt kapnak, hogy a térkép világos és sötét részein is elkülönüljenek. A kijelölt helyszín kontúrja vastagabb, mérete változatlan.
+A gombostűk a térképek egységesítése előtti eredeti alakot használják (`6a1ae37`, `MaintenanceMapPanel.tsx`): nyújtott csepp, sötét kontúr és nagy fehér közép, külső fehér szegély nélkül. Asztalon 34×40 px, legfeljebb 640 px széles mobilnézetben 18×22 px méretűek; több bejegyzésnél mobilon 24×28 px marad a darabszám olvashatósága érdekében. A kijelölt helyszín kontúrja befelé vastagodik, mérete változatlan. A mobilméretre váltás csak az ikonokat cseréli, a térképkivágást és a jelölőpéldányokat megtartja.
 
 Minden külön helyszínt kicsi gombostű jelöl, közeli pontok összevonása nélkül, minden nagyításnál. Egy telepítés/ügyfél esetén színes fej és fehér pont látszik; egy helyhez tartozó több tételnél pontos darabszám jelenik meg. A gombostű színes feje az összes ottani karbantartási állapotot megtartja; a nagyon kis arányú állapot is látható szeletet kap. Koppintásra megjelenik minden állapot pontos darabszáma és a helyszín részletei. Visszahívandóknál településenként külön türkiz gombostű és több ügyfélnél darabszám jelenik meg. Sűrű területen a nagyítás segít a helyszínek elkülönítésében; a rendszer nem rejti el vagy vonja össze a szomszédos pontokat.
 

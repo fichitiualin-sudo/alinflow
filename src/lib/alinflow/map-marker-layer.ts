@@ -12,11 +12,12 @@ export function createMapMarkerLayer({ maps, map, info, getCallbacks }: {
 }) {
   const entries = new Map<string, Entry>();
   let selectedId = "";
+  let compact = false;
   let disposed = false;
   let fitListener: any;
   let lastMaxFitZoom: number | undefined;
 
-  const icon = (source: MapCanvasMarker) => markerPinIcon(maps, summarizeMapMarkers([source]), source.id === selectedId);
+  const icon = (source: MapCanvasMarker) => markerPinIcon(maps, summarizeMapMarkers([source]), source.id === selectedId, compact);
 
   function fit(sources: MapCanvasMarker[], zoomLimit: number) {
     if (fitListener) maps.event.removeListener(fitListener);
@@ -74,8 +75,10 @@ export function createMapMarkerLayer({ maps, map, info, getCallbacks }: {
     info.open({ map });
   }
 
-  function update(markers: MapCanvasMarker[], nextSelectedId = "", maxFitZoom = 15) {
+  function update(markers: MapCanvasMarker[], nextSelectedId = "", maxFitZoom = 15, nextCompact = false) {
     if (disposed) return;
+    const sizeChanged = compact !== nextCompact;
+    compact = nextCompact;
     const previousSelectedId = selectedId;
     selectedId = nextSelectedId;
     const valid = new Map(markers.filter((source) => Number.isFinite(source.latitude)
@@ -117,7 +120,7 @@ export function createMapMarkerLayer({ maps, map, info, getCallbacks }: {
         if (entry.signature !== signature) { contentChanged = true; changedIds.add(id); }
         entry.source = source;
         entry.signature = signature;
-        if (changedIds.has(id)) {
+        if (sizeChanged || changedIds.has(id)) {
           entry.marker.setIcon(icon(source));
           entry.marker.setTitle(source.title);
           entry.marker.setZIndex(id === selectedId ? 1001 : 1);

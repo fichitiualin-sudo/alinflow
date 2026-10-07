@@ -61,7 +61,7 @@ function fixture({ zoom = 10, synchronousFit = false } = {}) {
     const item = document.createElement("p"); item.textContent = `Részletek ${id}`; return item;
   } };
   const { createMapMarkerLayer } = harness({ document }, {
-    "./map-marker-style": { summarizeMapMarkers, markerPinIcon: (_maps, summary, selected) => ({ summary: plain(summary), selected }) },
+    "./map-marker-style": { summarizeMapMarkers, markerPinIcon: (_maps, summary, selected, compact = false) => ({ summary: plain(summary), selected, compact }) },
   }).load("src/lib/alinflow/map-marker-layer.ts");
   const layer = createMapMarkerLayer({ maps, map, info, getCallbacks: () => callbacks });
   return { layer, markerInstances, maps, map, info, selected, callbacks, emit, listeners, removedListeners, clearedListeners };
@@ -99,6 +99,33 @@ test("selection only updates previous and next marker while preserving all other
   assert.equal(f.markerInstances[21].zIndex, 1001);
   assert.equal(f.markerInstances.length, 600); assert.equal(f.map.fitCalls.length, 1);
   assert.ok(f.markerInstances.every(marker => !marker.mapUpdates.length));
+});
+
+test("responsive pin sizing restyles the same 600 markers once per breakpoint without refitting", () => {
+  const f = fixture(), sources = Array.from({ length: 600 }, (_, index) => source(index));
+  f.layer.update(sources, "20", 15, false);
+  f.emit(f.map, "idle");
+  const original = [...f.markerInstances];
+  const listeners = original.map(marker => marker.events.get("click"));
+  assert.ok(original.every(marker => marker.icon.compact === false && !marker.iconUpdates.length));
+  f.layer.update(structuredClone(sources), "20", 15, true);
+  assert.ok(original.every(marker => marker.icon.compact === true && marker.iconUpdates.length === 1));
+  assert.equal(original[20].icon.selected, true);
+  f.layer.update(structuredClone(sources), "20", 15, true);
+  assert.ok(original.every(marker => marker.iconUpdates.length === 1), "unchanged compact mode must not redraw pins");
+  f.layer.update(sources, "21", 15, true);
+  assert.equal(original[20].icon.selected, false);
+  assert.equal(original[21].icon.selected, true);
+  assert.ok(original.every((marker, index) => marker.iconUpdates.length === (index === 20 || index === 21 ? 2 : 1)));
+  f.layer.update(sources, "21", 15, true);
+  assert.ok(original.every((marker, index) => marker.iconUpdates.length === (index === 20 || index === 21 ? 2 : 1)));
+  f.layer.update(sources, "21", 15, false);
+  assert.ok(original.every((marker, index) => marker.icon.compact === false
+    && marker.iconUpdates.length === (index === 20 || index === 21 ? 3 : 2)));
+  assert.equal(f.markerInstances.length, 600);
+  assert.ok(original.every((marker, index) => marker === f.markerInstances[index] && marker.map === f.map
+    && !marker.mapUpdates.length && !marker.positionUpdates.length && marker.events.get("click") === listeners[index]));
+  assert.equal(f.map.fitCalls.length, 1);
 });
 
 test("metadata and all weighted statuses update only the affected pin without changing geometry", () => {
