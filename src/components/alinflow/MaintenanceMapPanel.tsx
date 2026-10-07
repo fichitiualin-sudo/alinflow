@@ -188,7 +188,7 @@ export function MaintenanceMapPanel({
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-3">
           <GoogleMapCanvas apiKey={googleMapsApiKey} markers={markers} selectedMarkerId={selectedGroup?.id} onSelectMarker={selectGroup} createPopupContent={createPopupContent} maxFitZoom={16} itemLabel="telepítés" ariaLabel="Telepített klímák helyszínei; a számozott jelölőkkel megnyithatók az ottani telepítések" />
-          <p className="text-xs leading-relaxed text-slate-400">A számok a telepítések számát mutatják, a színes gyűrű minden karbantartási állapotot jelez. A közeli helyek összevonódnak; koppints a pontos színes bontáshoz és a nagyításhoz.</p>
+          <p className="text-xs leading-relaxed text-slate-400">Minden helyszínt külön gombostű jelöl, a szín a karbantartási állapotot mutatja. Azonos helyen több telepítésnél darabszám és minden állapotszín látszik. Koppints a részletekhez.</p>
           {filteredPoints.length > 0 && !locatedCount ? <p className="rounded-2xl bg-white/5 p-3 text-sm text-slate-300">A találatokhoz még nincs térképen jelölhető koordináta. Az ügyfelek a listából megnyithatók.</p> : null}
         </div>
 

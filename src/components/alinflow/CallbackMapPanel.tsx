@@ -75,7 +75,7 @@ export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer }
           <GoogleMapCanvas apiKey={googleMapsApiKey} markers={markers} selectedMarkerId={activeTown}
             onSelectMarker={selectTown} maxFitZoom={11} itemLabel="visszahívandó ügyfél" ariaLabel="Visszahívandók településtérképe"
             attribution={<>Település-koordináták: <a href="https://www.geonames.org/" target="_blank" rel="noreferrer" className="underline">GeoNames</a></>} />
-          <p className="text-xs leading-relaxed text-slate-400">A számok a visszahívandó ügyfelek számát mutatják. A közeli jelölők összevonódnak; koppints rájuk a részletekhez és a nagyításhoz. A helyek településszintűek, közelítőek.</p>
+          <p className="text-xs leading-relaxed text-slate-400">Minden települést külön gombostű jelöl. A szám az ottani visszahívandó ügyfelek darabszáma, egy ügyfélnél pont látszik. Koppints a részletekhez. A helyek településszintűek, közelítőek.</p>
           {data.total > 0 && !data.groups.length ? <p className="rounded-2xl bg-white/5 p-3 text-sm text-slate-300">A találatok települése nem jelölhető a térképen. Az ügyfelek a listából megnyithatók.</p> : null}
         </div>
 

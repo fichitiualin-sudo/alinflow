@@ -12,13 +12,16 @@ function canvasFixture() {
   const document = {
     createElement(tag) {
       assert.equal(tag, "canvas");
-      const drawing = { arcs: [], text: [], strokes: [] };
+      const drawing = { arcs: [], text: [], strokes: [], fills: [], paths: [] };
       drawings.push(drawing);
       const context = {
         scale(...args) { drawing.scale = args; },
         beginPath() {},
+        moveTo(...args) { drawing.paths.push(["move", ...args]); },
+        bezierCurveTo(...args) { drawing.paths.push(["curve", ...args]); },
+        closePath() {},
         arc(...args) { drawing.arcs.push(args); },
-        fill() {},
+        fill() { drawing.fills.push(this.fillStyle); },
         stroke() { drawing.strokes.push(this.strokeStyle); },
         measureText(value) { return { width: value.length * parseFloat(this.font.split(" ")[1]) * 0.55 }; },
         fillText(...args) { drawing.text.push({ args, color: this.fillStyle, font: this.font }); },
@@ -88,61 +91,68 @@ test("explicit status counts are authoritative and zero/invalid segments are omi
   assert.deepEqual(plain(summary.segments.map(item => item.key)), ["ok"]);
 });
 
-test("donut icon uses retina PNG with centered dark exact count and small Google dimensions", () => {
+test("compact pin uses retina PNG, white center, exact count and coordinate-tip anchor", () => {
   const f = canvasFixture();
   const summary = f.summarizeMapMarkers([source("a", [segment("overdue", 7), segment("ok", 5, "#22c55e")])]);
-  const icon = f.markerDotIcon(f.maps, summary, false);
+  const icon = f.markerPinIcon(f.maps, summary, false);
   assert.equal(icon.url, "data:image/png;base64,mock-1");
-  assert.deepEqual(plain(icon.size), { width: 28, height: 28 });
-  assert.deepEqual(plain(icon.scaledSize), { width: 28, height: 28 });
-  assert.deepEqual(plain(icon.anchor), { x: 14, y: 14 });
-  assert.equal(f.drawings[0].canvas.width, 56);
-  assert.equal(f.drawings[0].canvas.height, 56);
+  assert.deepEqual(plain(icon.size), { width: 24, height: 32 });
+  assert.deepEqual(plain(icon.scaledSize), { width: 24, height: 32 });
+  assert.deepEqual(plain(icon.anchor), { x: 12, y: 32 });
+  assert.equal(f.drawings[0].canvas.width, 48);
+  assert.equal(f.drawings[0].canvas.height, 64);
   assert.deepEqual(f.drawings[0].scale, [2, 2]);
   assert.equal(f.drawings[0].text[0].args[0], "12");
   assert.equal(f.drawings[0].text[0].color, "#0f172a");
-  assert.deepEqual(f.drawings[0].strokes, ["#ef4444", "#22c55e"]);
-  const denseAddress = f.markerDotIcon(f.maps, f.summarizeMapMarkers([source("dense", [segment("ok", 150)])]), false);
-  assert.deepEqual(plain(denseAddress.scaledSize), { width: 36, height: 36 });
-  assert.deepEqual(plain(denseAddress.size), { width: 36, height: 36 });
+  assert.deepEqual(f.drawings[0].fills, ["#ef4444", "#ef4444", "#22c55e", "#ffffff"]);
+  assert.deepEqual(f.drawings[0].strokes, ["#ffffff"]);
+  assert.deepEqual(f.drawings[0].paths[0], ["move", 12, 31]);
+  const denseAddress = f.markerPinIcon(f.maps, f.summarizeMapMarkers([source("dense", [segment("ok", 150)])]), false);
+  assert.deepEqual(plain(denseAddress.scaledSize), { width: 30, height: 38 });
+  assert.deepEqual(plain(denseAddress.size), { width: 30, height: 38 });
+  assert.deepEqual(plain(denseAddress.anchor), { x: 15, y: 38 });
+  assert.equal(f.drawings[1].text[0].args[0], "150");
+  assert.match(f.drawings[1].text[0].font, /11px/);
+  const single = f.markerPinIcon(f.maps, f.summarizeMapMarkers([source("single", [segment("ok", 1)])]), false);
+  assert.deepEqual(plain(single.size), { width: 20, height: 28 });
+  assert.deepEqual(plain(single.anchor), { x: 10, y: 28 });
+  assert.equal(f.drawings[2].text.length, 0, "one installation uses a white center dot without visual number noise");
 });
 
-test("rare status remains visibly present in the ring without altering exact summary counts", () => {
+test("rare status remains visibly present in the pin head without altering exact summary counts", () => {
   const f = canvasFixture();
   const summary = f.summarizeMapMarkers([source("a", [segment("overdue", 1), segment("ok", 999, "#22c55e")])]);
-  f.markerDotIcon(f.maps, summary, false, true);
-  const arcs = f.drawings[0].arcs.slice(1);
+  f.markerPinIcon(f.maps, summary, false);
+  const arcs = f.drawings[0].arcs.slice(1, 3);
   assert.ok(arcs[0][4] - arcs[0][3] >= Math.PI / 18 - 1e-10);
   assert.ok(Math.abs(arcs.reduce((sum, arc) => sum + arc[4] - arc[3], 0) - 2 * Math.PI) < 1e-10);
   assert.equal(summary.count, 1000);
   assert.deepEqual(plain(summary.segments.map(item => item.count)), [1, 999]);
 });
 
-test("cached rendering is reused, while selection, cluster size and composition invalidate it", () => {
+test("cached pin rendering is reused while selection and status composition invalidate it", () => {
   const f = canvasFixture();
   const a = f.summarizeMapMarkers([source("a", [segment("overdue", 2), segment("ok", 3, "#22c55e")])]);
   const b = f.summarizeMapMarkers([source("a", [segment("overdue", 3), segment("ok", 2, "#22c55e")])]);
-  const icon = f.markerDotIcon(f.maps, a, false);
-  assert.equal(f.markerDotIcon(f.maps, structuredClone(a), false).url, icon.url);
+  const icon = f.markerPinIcon(f.maps, a, false);
+  assert.equal(f.markerPinIcon(f.maps, structuredClone(a), false).url, icon.url);
   assert.equal(f.drawings.length, 1);
-  assert.notEqual(f.markerDotIcon(f.maps, a, true).url, icon.url);
-  assert.equal(f.drawings[1].strokes[0], "#0f172a");
-  const cluster = f.markerDotIcon(f.maps, a, false, true);
-  assert.notEqual(cluster.url, icon.url);
-  assert.deepEqual(plain(cluster.size), { width: 36, height: 36 });
-  assert.deepEqual(plain(cluster.scaledSize), { width: 36, height: 36 });
-  assert.notEqual(f.markerDotIcon(f.maps, b, false).url, icon.url);
-  assert.equal(f.drawings.length, 4);
+  const selected = f.markerPinIcon(f.maps, a, true);
+  assert.notEqual(selected.url, icon.url);
+  assert.deepEqual(f.drawings[1].strokes, ["#ffffff", "#0f172a"]);
+  assert.deepEqual(plain(selected.size), plain(icon.size), "selection does not enlarge the pin");
+  assert.notEqual(f.markerPinIcon(f.maps, b, false).url, icon.url);
+  assert.equal(f.drawings.length, 3);
 });
 
 test("PNG cache evicts least recently used entries after 128 distinct styles", () => {
   const f = canvasFixture();
   const summaries = Array.from({ length: 129 }, (_, i) => f.summarizeMapMarkers([source("a", [segment("overdue", i + 1)])]));
-  summaries.slice(0, 128).forEach(summary => f.markerDotIcon(f.maps, summary, false));
-  const first = f.markerDotIcon(f.maps, summaries[0], false).url;
-  f.markerDotIcon(f.maps, summaries[128], false);
-  assert.equal(f.markerDotIcon(f.maps, summaries[0], false).url, first);
+  summaries.slice(0, 128).forEach(summary => f.markerPinIcon(f.maps, summary, false));
+  const first = f.markerPinIcon(f.maps, summaries[0], false).url;
+  f.markerPinIcon(f.maps, summaries[128], false);
+  assert.equal(f.markerPinIcon(f.maps, summaries[0], false).url, first);
   assert.equal(f.drawings.length, 129);
-  f.markerDotIcon(f.maps, summaries[1], false);
+  f.markerPinIcon(f.maps, summaries[1], false);
   assert.equal(f.drawings.length, 130);
 });

@@ -84,10 +84,9 @@ function segmentAngles(segments: readonly MapMarkerSegment[]) {
   return angles;
 }
 
-export function markerDotIcon(maps: any, summary: MapMarkerSummary, selected: boolean, cluster = false) {
-  // Dense single addresses need the same readable number area as a cluster.
-  const size = summary.count >= 1000 ? 40 : cluster || summary.count >= 100 ? 36 : 28;
-  const key = JSON.stringify([size, selected, summary.count,
+export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: boolean) {
+  const [width, height] = summary.count >= 100 ? [30, 38] : summary.count > 1 ? [24, 32] : [20, 28];
+  const key = JSON.stringify([width, height, selected, summary.count,
     summary.segments.map((segment) => [segment.key, safeColor(segment.color), segment.count])]);
   let url = iconUrls.get(key);
   if (url) {
@@ -95,54 +94,72 @@ export function markerDotIcon(maps: any, summary: MapMarkerSummary, selected: bo
     iconUrls.set(key, url);
   } else {
     const canvas = document.createElement("canvas");
-    canvas.width = size * 2;
-    canvas.height = size * 2;
+    canvas.width = width * 2;
+    canvas.height = height * 2;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("A térképes jelölő nem rajzolható ki.");
     context.scale(2, 2);
-    const center = size / 2;
-    const ringWidth = size >= 36 ? 6 : 5;
-    const radius = center - 2 - ringWidth / 2;
+    const center = width / 2;
+    const headRadius = center - 2.5;
+    const segments = summary.segments.length ? summary.segments : [{ key: "empty", label: "", color: "#94a3b8", count: 1 }];
+    const pinPath = () => {
+      context.beginPath();
+      context.moveTo(center, height - 1);
+      context.bezierCurveTo(center - 3, height - 7, 1.5, center + 6, 1.5, center);
+      context.arc(center, center, center - 1.5, Math.PI, 0);
+      context.bezierCurveTo(width - 1.5, center + 6, center + 3, height - 7, center, height - 1);
+      context.closePath();
+    };
+    pinPath();
+    context.fillStyle = safeColor(segments[0].color);
+    context.fill();
+    context.lineWidth = 2;
+    context.strokeStyle = "#ffffff";
+    context.stroke();
+    const angles = segmentAngles(segments);
+    let start = -Math.PI / 2;
+    segments.forEach((segment, index) => {
+      context.beginPath();
+      context.moveTo(center, center);
+      context.arc(center, center, headRadius, start, start + angles[index]);
+      context.closePath();
+      context.fillStyle = safeColor(segment.color);
+      context.fill();
+      start += angles[index];
+    });
+    const innerRadius = summary.count > 1 ? center - 4.5 : 2.5;
     context.beginPath();
-    context.arc(center, center, center - 1, 0, 2 * Math.PI);
+    context.arc(center, center, innerRadius, 0, 2 * Math.PI);
     context.fillStyle = "#ffffff";
     context.fill();
+    if (summary.count > 1) {
+      const label = String(summary.count);
+      let fontSize = 11;
+      const textWidth = innerRadius * 2 - 1;
+      context.font = `900 ${fontSize}px Arial, sans-serif`;
+      while (fontSize > 6 && context.measureText(label).width > textWidth) {
+        fontSize--;
+        context.font = `900 ${fontSize}px Arial, sans-serif`;
+      }
+      context.fillStyle = "#0f172a";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(label, center, center + 0.5, textWidth);
+    }
     if (selected) {
-      context.lineWidth = 2;
+      pinPath();
+      context.lineWidth = 1.25;
       context.strokeStyle = "#0f172a";
       context.stroke();
     }
-    const segments = summary.segments.length ? summary.segments : [{ key: "empty", label: "", color: "#94a3b8", count: 1 }];
-    const angles = segmentAngles(segments);
-    let start = -Math.PI / 2;
-    context.lineWidth = ringWidth;
-    segments.forEach((segment, index) => {
-      context.beginPath();
-      context.arc(center, center, radius, start, start + angles[index]);
-      context.strokeStyle = safeColor(segment.color);
-      context.stroke();
-      start += angles[index];
-    });
-    const label = String(summary.count);
-    let fontSize = size >= 36 ? 13 : 11;
-    const textWidth = (radius - ringWidth / 2) * 2 - 1;
-    context.font = `900 ${fontSize}px Arial, sans-serif`;
-    while (fontSize > 6 && context.measureText(label).width > textWidth) {
-      fontSize--;
-      context.font = `900 ${fontSize}px Arial, sans-serif`;
-    }
-    context.fillStyle = "#0f172a";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText(label, center, center + 0.5, textWidth);
     url = canvas.toDataURL("image/png");
     if (iconUrls.size >= ICON_CACHE_LIMIT) iconUrls.delete(iconUrls.keys().next().value!);
     iconUrls.set(key, url);
   }
   return {
     url,
-    size: new maps.Size(size, size),
-    scaledSize: new maps.Size(size, size),
-    anchor: new maps.Point(size / 2, size / 2),
+    size: new maps.Size(width, height),
+    scaledSize: new maps.Size(width, height),
+    anchor: new maps.Point(width / 2, height),
   };
 }
