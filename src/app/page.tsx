@@ -153,6 +153,7 @@ import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLab
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { buildMaintenanceMapPoints, hasMaintenanceMapCoordinates, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
+import { createCalendarEmailDelivery, runCalendarEmailDelivery, type CalendarEmailDelivery } from "@/lib/alinflow/calendar-email-delivery";
 import { normalizePostalCodeInput, uniqueSettlementByCity, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
   DEFAULT_SELLER_COMPANY,
@@ -415,7 +416,11 @@ export default function Home() {
   const [scheduleTime,setScheduleTime] = useState("08:00");
   const [scheduleAppointmentType,setScheduleAppointmentType] = useState<AppointmentType>("installation");
   const [quickAppointment,setQuickAppointment] = useState<QuickAppointmentDraft | null>(null);
-  const [quickAppointmentEmailPrompt,setQuickAppointmentEmailPrompt] = useState<Customer | null>(null);
+  const [quickAppointmentEmailPrompt,setQuickAppointmentEmailPrompt] = useState<CalendarEmailDelivery | null>(null);
+  const quickAppointmentDeliveryRef = useRef<CalendarEmailDelivery | null>(null);
+  const quickAppointmentSavingRef = useRef(false);
+  const [quickAppointmentSaving,setQuickAppointmentSaving] = useState(false);
+  const [quickAppointmentSaveWarning,setQuickAppointmentSaveWarning] = useState("");
   const [materials,setMaterials] = useState<NonNullable<Customer["materialUsage"]>["materials"]>(DEFAULT_MATERIALS);
   const [materialOverrides,setMaterialOverrides] = useState<Record<string,string>>({});
   useEffect(() => {
@@ -3055,6 +3060,8 @@ export default function Home() {
   }
 
   function openQuickAppointment(date: string) {
+    if (quickAppointmentSavingRef.current || quickAppointmentDeliveryRef.current?.busy) return;
+    setQuickAppointmentSaveWarning("");
     setQuickAppointment({
       date,
       time: "08:00",
@@ -3180,6 +3187,7 @@ export default function Home() {
   }
 
   async function saveQuickAppointment() {
+    if (quickAppointmentSavingRef.current) return;
     if (!quickAppointment?.appointmentType) {
       setMessage("Válaszd ki, mit szeretnél rögzíteni.");
       return;
@@ -3272,6 +3280,10 @@ export default function Home() {
       updatedAt: now,
     };
 
+    const workspaceId = currentWorkspaceId();
+    quickAppointmentSavingRef.current = true;
+    setQuickAppointmentSaving(true);
+    let appointmentSaved = false;
     try {
       const persisted = await persistCustomerToDb(customerToSave);
       const savedCustomer: Customer = {
@@ -3279,23 +3291,35 @@ export default function Home() {
         activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId,
         activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
       };
-      if (appointmentType !== "maintenance") {
-        await logDocument(savedCustomer, appointmentBookedDocumentType(appointmentType), `${appointmentTypeLabel(appointmentType)} időpont rögzítése`, "Rögzítve", now);
-      } else {
-        await saveMaintenanceAppointmentLinks(savedCustomer, quickAppointment.maintenanceInstallationIds);
-      }
+      if (!savedCustomer.activeAppointmentId) throw new Error("A mentés nem adott vissza időpont-azonosítót.");
+      appointmentSaved = true;
+      // Once the appointment exists, later failures must never reopen creation.
+      setQuickAppointment(null);
       promoteCustomerWork(savedCustomer);
       setSelected(savedCustomer);
       setQuoteItems(savedCustomer.quoteItems);
       setScheduleDate(savedCustomer.date || quickAppointment.date);
       setScheduleTime(firstAppointmentTime(savedCustomer.time));
       setScheduleAppointmentType(appointmentType);
-      setQuickAppointment(null);
-      setQuickAppointmentEmailPrompt(savedCustomer);
-      setMessage(`${appointmentTypeLabel(appointmentType)} időpont rögzítve a naptárból ✅`);
+      try {
+        if (appointmentType !== "maintenance") {
+          await logDocument(savedCustomer, appointmentBookedDocumentType(appointmentType), `${appointmentTypeLabel(appointmentType)} időpont rögzítése`, "Rögzítve", now);
+        } else {
+          await saveMaintenanceAppointmentLinks(savedCustomer, quickAppointment.maintenanceInstallationIds);
+        }
+      } catch (error: any) {
+        setQuickAppointmentSaveWarning(`Az időpont mentve, de a ${appointmentType === "maintenance" ? "kapcsolódó telepítések mentése" : "rögzítés naplózása"} nem sikerült: ${error.message}`);
+      }
+      const delivery = createCalendarEmailDelivery(savedCustomer, quotePayload(savedCustomer, savedCustomer.quoteItems, now), workspaceId || "");
+      quickAppointmentDeliveryRef.current = delivery;
+      setQuickAppointmentEmailPrompt(delivery);
       if (savedCustomer.id) void loadCustomerDetailData([savedCustomer.id]);
+      await sendQuickAppointmentEmail(delivery);
     } catch (error: any) {
-      setMessage(`Mentési hiba: ${error.message}`);
+      setMessage(`${appointmentSaved ? "Az időpont mentve, de az emailküldés nem indult el" : "Mentési hiba"}: ${error.message}`);
+    } finally {
+      quickAppointmentSavingRef.current = false;
+      setQuickAppointmentSaving(false);
     }
   }
 
@@ -4427,9 +4451,10 @@ export default function Home() {
   }
 
 
-  async function authenticatedFetch(url: string, init: RequestInit) {
+  async function authenticatedFetch(url: string, init: RequestInit, expectedWorkspaceId?: string) {
     const { data, error } = await supabase.auth.getSession();
     const workspaceId = currentWorkspaceId();
+    if (expectedWorkspaceId && workspaceId !== expectedWorkspaceId) throw new Error("A munkaterület megváltozott. A küldés leállt.");
     if (error || !data.session?.access_token || !workspaceId) throw new Error("A művelethez jelentkezz be és válassz munkaterületet.");
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${data.session.access_token}`);
@@ -4560,9 +4585,6 @@ export default function Home() {
 
       const appointmentEmailSentAt = new Date().toISOString();
       if (appointmentType !== "maintenance") {
-        if (appointmentType === "installation" && appointmentQuoteItems.some(isQuoteItemFilled)) {
-          await logDocument(customer, "quote_email", "Ajánlat email", "Elküldve", appointmentEmailSentAt);
-        }
         await logDocument(customer, appointmentEmailDocumentType(appointmentType), brandedAppointmentDocumentTitle(appointmentType), "Elküldve", appointmentEmailSentAt);
       }
       setMessage("Időpont tájékoztató email elküldve ✅");
@@ -4575,15 +4597,46 @@ export default function Home() {
     }
   }
 
-  async function sendQuickAppointmentEmail() {
-    if (!quickAppointmentEmailPrompt) return;
-    const sent = await sendAppointmentEmailFor(quickAppointmentEmailPrompt);
-    if (sent) setQuickAppointmentEmailPrompt(null);
+  async function sendQuickAppointmentEmail(delivery = quickAppointmentDeliveryRef.current) {
+    if (!delivery || delivery.busy) return;
+    const ensureWorkspace = () => {
+      if (currentWorkspaceId() !== delivery.workspaceId) throw new Error("A munkaterület megváltozott. A küldés leállt.");
+    };
+    const updateProgress = () => {
+      if (quickAppointmentDeliveryRef.current === delivery && currentWorkspaceId() === delivery.workspaceId) {
+        setQuickAppointmentEmailPrompt({ ...delivery, steps: delivery.steps.map((step) => ({ ...step })) });
+      }
+    };
+    await runCalendarEmailDelivery(delivery, {
+      onChange: updateProgress,
+      send: async (kind) => {
+        ensureWorkspace();
+        const response = await authenticatedFetch(kind === "quote" ? "/api/send-quote" : "/api/send-appointment", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(delivery.payload),
+        }, delivery.workspaceId);
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result?.ok) throw new Error(result?.error || "Az emailküldés nem sikerült.");
+      },
+      record: async (kind, sentAt) => {
+        ensureWorkspace();
+        if (kind === "quote") await logDocument(delivery.customer, "quote_email", "Ajánlat email", "Elküldve", sentAt);
+        else if (normalizeAppointmentType(delivery.customer.appointmentType) !== "maintenance") {
+          await logDocument(delivery.customer, appointmentEmailDocumentType(delivery.customer.appointmentType), brandedAppointmentDocumentTitle(delivery.customer.appointmentType), "Elküldve", sentAt);
+        }
+      },
+    });
+    if (currentWorkspaceId() !== delivery.workspaceId) return;
+    const allSent = delivery.steps.every((step) => step.sentAt);
+    const allLogged = delivery.steps.every((step) => step.logged);
+    setMessage(allSent && allLogged
+      ? `Időpont mentve, ${delivery.steps.length === 2 ? "az ajánlat és az időpont-visszaigazolás is" : "az időpont-visszaigazolás"} elküldve ✅`
+      : "Az időpont mentve. Az emailküldés eredményét lent ellenőrizheted.");
   }
 
   function skipQuickAppointmentEmail() {
+    if (quickAppointmentDeliveryRef.current?.busy) return;
+    quickAppointmentDeliveryRef.current = null;
     setQuickAppointmentEmailPrompt(null);
-    setMessage("Időpont mentve email küldése nélkül ✅");
   }
 
 
@@ -4950,24 +5003,16 @@ export default function Home() {
     return doc.sentAt || doc.updatedAt || doc.createdAt || undefined;
   }
 
-  function appointmentEmailCarriesQuote(customer: Customer) {
-    return isInstallationAppointment(customer.appointmentType) && (customer.quoteItems || []).some(isQuoteItemFilled);
-  }
-
   function quoteSentAtFor(customer: Customer) {
     const quoteDoc = docFor(customer, "quote_email");
-    const appointmentQuoteDoc = appointmentEmailCarriesQuote(customer) ? docFor(customer, appointmentEmailDocumentType("installation")) : undefined;
     return sentDocumentTimestamp(quoteDoc)
-      || sentDocumentTimestamp(appointmentQuoteDoc)
       || (normalizeStatus(customer.status) === "Ajánlat elküldve" ? customer.quoteSentAt : undefined);
   }
 
   function customerHasSentQuote(customer: Customer) {
     const quoteDoc = docFor(customer, "quote_email");
-    const appointmentQuoteDoc = appointmentEmailCarriesQuote(customer) ? docFor(customer, appointmentEmailDocumentType("installation")) : undefined;
     return normalizeStatus(customer.status) === "Ajánlat elküldve"
-      || Boolean(sentDocumentTimestamp(quoteDoc))
-      || Boolean(sentDocumentTimestamp(appointmentQuoteDoc));
+      || Boolean(sentDocumentTimestamp(quoteDoc));
   }
 
   function customerHasSentQuoteAwaitingAppointment(customer: Customer) {
@@ -5631,16 +5676,18 @@ export default function Home() {
   function renderQuickAppointmentEmailPrompt() {
     if (!quickAppointmentEmailPrompt) return null;
 
-    const customer = quickAppointmentEmailPrompt;
+    const delivery = quickAppointmentEmailPrompt;
+    const customer = delivery.customer;
     const items = cleanQuoteItems(customer.quoteItems || []);
     const canSend = Boolean(customer.email?.trim());
     const type = normalizeAppointmentType(customer.appointmentType);
+    const complete = delivery.steps.every((step) => step.sentAt && step.logged);
 
     return (
-      <div className="fixed inset-0 z-[85] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur">
+      <div role="dialog" aria-modal="true" aria-label="Időpont emailküldésének eredménye" className="fixed inset-0 z-[85] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur">
         <div className="mx-auto my-8 max-w-2xl rounded-[2rem] border border-white/10 bg-slate-900 p-5 shadow-2xl md:p-6">
           <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-200">Időpont mentve</p>
-          <h2 className="mt-2 text-2xl font-black">Tájékoztató e-mail küldése?</h2>
+          <h2 className="mt-2 text-2xl font-black">{delivery.busy ? "Emailek küldése…" : complete ? "Emailek elküldve" : "Emailküldés eredménye"}</h2>
           <p className="mt-2 text-sm font-bold text-slate-400">
             {customer.name || "Névtelen ügyfél"} · {appointmentTypeLabel(type)} · {appointmentSummaryLabel(customer)}
           </p>
@@ -5651,21 +5698,31 @@ export default function Home() {
           </div>
           {!canSend ? (
             <div className="mt-4 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-black text-amber-100">
-              Ehhez az ügyfélhez nincs email cím. Add meg az ügyfél adatlapján, vagy mentsd email küldése nélkül.
+              Az időpont mentve, de email-cím nélkül nem tudunk levelet küldeni. Az email-cím az ügyfél adatlapján pótolható.
             </div>
           ) : null}
+          <div className="mt-4 space-y-3" aria-live="polite">
+            {delivery.steps.map((step) => <div key={step.kind} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <p className="font-black">{step.kind === "quote" ? "Árajánlat email" : "Időpont-visszaigazoló email"}</p>
+              <p className={`mt-1 text-sm font-bold ${step.sentAt ? "text-emerald-200" : step.error ? "text-amber-100" : "text-slate-300"}`}>
+                {step.sentAt ? (step.logged ? "Elküldve ✅" : "Elküldve · naplózás függőben") : step.error ? "Nem sikerült elküldeni" : "Küldés folyamatban…"}
+              </p>
+              {step.error ? <p className="mt-2 break-words text-sm text-amber-100">{step.error}</p> : null}
+            </div>)}
+          </div>
+          {quickAppointmentSaveWarning ? <p className="mt-4 rounded-2xl bg-amber-400/20 p-4 text-sm font-bold text-amber-100">{quickAppointmentSaveWarning}</p> : null}
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <button type="button" onClick={skipQuickAppointmentEmail} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-slate-100">
-              Mentés e-mail küldése nélkül
+            <button type="button" onClick={skipQuickAppointmentEmail} disabled={delivery.busy} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-slate-100 disabled:opacity-50">
+              {complete ? "Rendben" : "Bezárás"}
             </button>
-            <button
+            {!complete && canSend ? <button
               type="button"
               onClick={() => void sendQuickAppointmentEmail()}
-              disabled={!canSend || appointmentEmailBusy}
+              disabled={delivery.busy}
               className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {appointmentEmailBusy ? "Email küldése..." : "Tájékoztató e-mail küldése"}
-            </button>
+              {delivery.busy ? "Küldés folyamatban…" : "Újrapróbálás"}
+            </button> : null}
           </div>
         </div>
       </div>
@@ -5702,6 +5759,7 @@ export default function Home() {
     return (
       <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur">
         <div className="mx-auto my-6 max-w-3xl rounded-[2rem] border border-white/10 bg-slate-900 p-5 shadow-2xl md:p-6">
+          <fieldset disabled={quickAppointmentSaving} className="min-w-0">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-200">Naptár gyors rögzítés</p>
@@ -5830,12 +5888,16 @@ export default function Home() {
                 </div>
               ) : null}
 
+              <p className="text-sm font-bold text-slate-300">{isInstallation
+                ? "Mentéskor két emailt küldünk: az árajánlatot és az időpont-visszaigazolást."
+                : "Mentéskor elküldjük az időpont-visszaigazolást."}</p>
               <div className="flex flex-col gap-3 md:flex-row md:justify-end">
                 <button type="button" onClick={() => setQuickAppointment(null)} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-slate-100">Mégse</button>
-                <button type="button" onClick={() => void saveQuickAppointment()} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Időpont mentése</button>
+                <button type="button" onClick={() => void saveQuickAppointment()} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:opacity-50">{quickAppointmentSaving ? "Mentés és emailküldés…" : "Időpont mentése"}</button>
               </div>
             </div>
           ) : null}
+          </fieldset>
         </div>
       </div>
     );

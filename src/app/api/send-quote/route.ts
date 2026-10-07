@@ -1,4 +1,5 @@
-import { authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
+import { authorizeCustomerRequest, apiErrorResponse, ApiError } from "@/lib/alinflow/server-auth";
+import { calendarEmailDeliveryForRequest, CALENDAR_EMAIL_CONFLICT_MESSAGE } from "@/lib/alinflow/calendar-email-idempotency";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import {
   defaultWorkspaceSettings,
@@ -239,7 +240,8 @@ function quoteEmailHtml(customer: QuoteCustomer, items: QuoteItem[], totalAmount
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    await authorizeCustomerRequest(request, body);
+    const authorization = await authorizeCustomerRequest(request, body);
+    const calendarDelivery = calendarEmailDeliveryForRequest(body, authorization, "quote");
     const apiKey = process.env.RESEND_API_KEY;
     const configuredFrom = process.env.EMAIL_FROM;
     const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
@@ -250,7 +252,7 @@ export async function POST(request: Request) {
     const items: QuoteItem[] = Array.isArray(body.items) ? body.items : [];
     const totalAmount = Number(body.totalAmount || 0);
     const pricingMode: QuotePricingMode = body.pricingMode === "alternatives" ? "alternatives" : "bundle";
-    const quoteIssuedAt = safeText(body.quoteIssuedAt) || new Date().toISOString();
+    const quoteIssuedAt = safeText(body.quoteIssuedAt) || calendarDelivery?.createdAt || new Date().toISOString();
     const workspaceSettings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
     const brandName = settingsBrandName(workspaceSettings);
     const from = configuredFrom || `${brandName} <info@alinflow.hu>`;
@@ -264,6 +266,7 @@ export async function POST(request: Request) {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        ...(calendarDelivery ? { "Idempotency-Key": calendarDelivery.idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from,
@@ -271,13 +274,14 @@ export async function POST(request: Request) {
         reply_to: replyTo,
         subject: pricingMode === "alternatives" ? `Klíma ajánlat – választható lehetőségek – ${brandName}` : `Klíma ajánlat – ${brandName}`,
         headers: {
-          "X-Entity-Ref-ID": uniqueEmailRef("alinflow-quote"),
+          "X-Entity-Ref-ID": calendarDelivery?.idempotencyKey || uniqueEmailRef("alinflow-quote"),
         },
         html: quoteEmailHtml(customer, items, totalAmount, pricingMode, quoteIssuedAt, workspaceSettings),
       }),
     });
 
     const result = await resendResponse.json().catch(() => ({}));
+    if (calendarDelivery && resendResponse.status === 409) throw new ApiError(CALENDAR_EMAIL_CONFLICT_MESSAGE, 409);
     if (!resendResponse.ok) return Response.json({ error: result?.message || "A Resend nem tudta elküldeni az emailt." }, { status: resendResponse.status });
 
     return Response.json({ ok: true, id: result?.id });

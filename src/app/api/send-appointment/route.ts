@@ -1,4 +1,5 @@
-import { authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
+import { authorizeCustomerRequest, apiErrorResponse, ApiError } from "@/lib/alinflow/server-auth";
+import { calendarEmailDeliveryForRequest, CALENDAR_EMAIL_CONFLICT_MESSAGE } from "@/lib/alinflow/calendar-email-idempotency";
 import {
   appointmentEmailIntro,
   appointmentTimeRangeLabel,
@@ -210,7 +211,8 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[], workspaceS
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    await authorizeCustomerRequest(request, body);
+    const authorization = await authorizeCustomerRequest(request, body);
+    const calendarDelivery = calendarEmailDeliveryForRequest(body, authorization, "appointment");
     const apiKey = process.env.RESEND_API_KEY;
     const configuredFrom = process.env.EMAIL_FROM;
     const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
@@ -232,6 +234,7 @@ export async function POST(request: Request) {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        ...(calendarDelivery ? { "Idempotency-Key": calendarDelivery.idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from,
@@ -239,13 +242,14 @@ export async function POST(request: Request) {
         reply_to: replyTo,
         subject: `${appointmentTypeLabel(customer.appointmentType)} időpont visszaigazolás – ${brandName}`,
         headers: {
-          "X-Entity-Ref-ID": uniqueEmailRef("alinflow-appointment"),
+          "X-Entity-Ref-ID": calendarDelivery?.idempotencyKey || uniqueEmailRef("alinflow-appointment"),
         },
         html: appointmentEmailHtml(customer, items, workspaceSettings),
       }),
     });
 
     const result = await resendResponse.json().catch(() => ({}));
+    if (calendarDelivery && resendResponse.status === 409) throw new ApiError(CALENDAR_EMAIL_CONFLICT_MESSAGE, 409);
     if (!resendResponse.ok) return Response.json({ error: result?.message || "A Resend nem tudta elküldeni az emailt." }, { status: resendResponse.status });
 
     return Response.json({ ok: true, id: result?.id });

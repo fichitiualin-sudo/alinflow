@@ -39,6 +39,14 @@ Típus szerint:
 
 A típus, dátum, kezdési idő és helyszín legyen egyértelmű. A karbantartási értesítő nem szükséges hosszú távú dokumentumként; a munkalap a megőrzendő irat.
 
+### Naptárból indított gyors rögzítés
+
+Szerelés sikeres mentése után automatikusan két külön email indul: az adott időponthoz rögzített klímák árajánlata, majd az időpont-visszaigazolás. Felmérésnél és karbantartásnál csak a megfelelő időpontlevél megy ki. Email-cím hiányában az időpont megmarad, a felület jelzi az elmaradt küldést.
+
+A mentés előtt látszik, milyen levelek indulnak; utána mindegyiknek külön eredménye van. Részleges hiba esetén az újrapróbálás csak a hiányzó levelet küldi. Már elfogadott levél naplózási hibája csak a dokumentumnapló írását próbálja újra. A művelet rögzített ügyfél/időpont/tartalom pillanatképet használ; az ügyfél „Időpont foglalva” státuszát nem lépteti vissza. Az időpontlevél önmagában nem jelölheti elküldöttnek az árajánlatot.
+
+Az adott nyitott küldési folyamat stabil Resend-idempotenciakulcsot használ levéltípusonként. A [24 órás szolgáltatói megőrzés](https://resend.com/docs/dashboard/emails/idempotency-keys) mellett 23 óráig próbálható újra; bizonytalan eredmény vagy megváltozott tartalom után nem indul eltérő tartalmú automatikus újraküldés ugyanazzal a kulccsal. A folyamat állapota az aktuális oldalon él: oldalfrissítés nem indít új emailt, a sikeresen mentett dokumentumnapló visszatöltődik. A korábbi leveleket a változtatás nem küldi újra.
+
 ## Munkalap email
 
 - szerelési vagy karbantartási munkalap;
