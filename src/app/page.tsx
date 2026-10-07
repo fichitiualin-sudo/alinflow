@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -759,9 +759,10 @@ export default function Home() {
   const normalizedScheduleTime = normalizeAppointmentTimeInput(scheduleTime) || "08:00";
   const scheduleStoredTime = normalizedScheduleTime;
   const shownTime = appointmentTimeRangeLabel({ appointmentType: normalizedScheduleAppointmentType, time: scheduleStoredTime, quoteItems }, normalizedScheduleTime);
-  const sortedCustomers = sortCustomersByCreatedAtDesc(customers);
-  const allWorkCustomers = workCustomersForScheduling(sortedCustomers, workHistoryByCustomer);
-  const maintenanceMapPoints = buildMaintenanceMapPoints(allWorkCustomers);
+  const sortedCustomers = useMemo(() => sortCustomersByCreatedAtDesc(customers), [customers]);
+  const allWorkCustomers = useMemo(() => workCustomersForScheduling(sortedCustomers, workHistoryByCustomer), [sortedCustomers, workHistoryByCustomer]);
+  const mapStatusDay = todayIso();
+  const maintenanceMapPoints = useMemo(() => buildMaintenanceMapPoints(allWorkCustomers), [allWorkCustomers, mapStatusDay]);
   const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);

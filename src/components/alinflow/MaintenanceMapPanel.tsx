@@ -14,6 +14,7 @@ import {
   type MaintenanceMapStatus,
 } from "@/lib/alinflow/maintenance-map";
 import { GoogleMapCanvas, type MapCanvasMarker } from "./GoogleMapCanvas";
+import type { MapMarkerSegment } from "@/lib/alinflow/map-marker-style";
 
 type MaintenanceMapPanelProps = {
   points: MaintenanceMapPoint[];
@@ -91,6 +92,11 @@ export function MaintenanceMapPanel({
     label: String(group.points.length),
     title: `${group.points.length} telepítés · ${group.points[0].address || group.points[0].city || "Közös helyszín"}`,
     color: maintenanceMapStatusColor(group.status),
+    segments: FILTERS.filter((filter) => filter.value !== "all").flatMap((filter): MapMarkerSegment[] => {
+      const status = filter.value as MaintenanceMapStatus;
+      const count = group.points.filter((point) => point.status === status).length;
+      return count ? [{ key: status, label: maintenanceMapStatusLabel(status), color: maintenanceMapStatusColor(status), count }] : [];
+    }),
   })), [groups]);
   const current = useRef({ points, groups, onOpenCustomer });
   current.current = { points, groups, onOpenCustomer };
@@ -167,7 +173,7 @@ export function MaintenanceMapPanel({
             aria-pressed={statusFilter === filter.value}
             onClick={() => { setStatusFilter(filter.value); selectGroup(""); }}
             className={`rounded-2xl px-4 py-3 text-sm font-black transition ${statusFilter === filter.value ? "bg-cyan-300 text-slate-950" : "border border-white/10 bg-slate-900/80 text-cyan-100 hover:bg-white/10"}`}
-          >{filter.label} ({counts[filter.value]})</button>)}
+          >{filter.value !== "all" ? <span aria-hidden="true" className="mr-2 inline-block h-3 w-3 rounded-full border border-white/60 align-middle" style={{ backgroundColor: maintenanceMapStatusColor(filter.value) }} /> : null}{filter.label} ({counts[filter.value]})</button>)}
         </div>
         <button type="button" onClick={onGeocodeMissing} disabled={geocodingBusy || missingCoordinateCount === 0} className="rounded-2xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
           {geocodingBusy ? "Koordináták keresése..." : `Hiányzó koordináták (${missingCoordinateCount})`}
@@ -181,8 +187,8 @@ export function MaintenanceMapPanel({
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-3">
-          <GoogleMapCanvas apiKey={googleMapsApiKey} markers={markers} selectedMarkerId={selectedGroup?.id} onSelectMarker={selectGroup} createPopupContent={createPopupContent} maxFitZoom={16} ariaLabel="Telepített klímák helyszínei; a számozott jelölőkkel megnyithatók az ottani telepítések" />
-          <p className="text-xs leading-relaxed text-slate-400">A számok az azonos helyre rögzített telepítéseket jelzik. A jelölő színe a helyszín legsürgősebb karbantartási állapotát mutatja.</p>
+          <GoogleMapCanvas apiKey={googleMapsApiKey} markers={markers} selectedMarkerId={selectedGroup?.id} onSelectMarker={selectGroup} createPopupContent={createPopupContent} maxFitZoom={16} itemLabel="telepítés" ariaLabel="Telepített klímák helyszínei; a számozott jelölőkkel megnyithatók az ottani telepítések" />
+          <p className="text-xs leading-relaxed text-slate-400">A számok a telepítések számát mutatják, a színes gyűrű minden karbantartási állapotot jelez. A közeli helyek összevonódnak; koppints a pontos színes bontáshoz és a nagyításhoz.</p>
           {filteredPoints.length > 0 && !locatedCount ? <p className="rounded-2xl bg-white/5 p-3 text-sm text-slate-300">A találatokhoz még nincs térképen jelölhető koordináta. Az ügyfelek a listából megnyithatók.</p> : null}
         </div>
 
