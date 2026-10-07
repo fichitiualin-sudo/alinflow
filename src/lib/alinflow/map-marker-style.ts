@@ -84,8 +84,8 @@ function segmentAngles(segments: readonly MapMarkerSegment[]) {
   return angles;
 }
 
-export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: boolean) {
-  const [width, height] = summary.count >= 100 ? [30, 38] : summary.count > 1 ? [24, 32] : [20, 28];
+export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: boolean, compact = false) {
+  const [width, height] = compact ? (summary.count > 1 ? [24, 28] : [18, 22]) : [34, 40];
   const key = JSON.stringify([width, height, selected, summary.count,
     summary.segments.map((segment) => [segment.key, safeColor(segment.color), segment.count])]);
   let url = iconUrls.get(key);
@@ -99,43 +99,47 @@ export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: bo
     const context = canvas.getContext("2d");
     if (!context) throw new Error("A térképes jelölő nem rajzolható ki.");
     context.scale(2, 2);
-    const center = width / 2;
-    const headRadius = center - 2.5;
+    // Preserve the original 40×48 SVG's shape and aspect ratio (6a1ae37).
+    const scale = Math.min(width / 40, height / 48);
+    context.translate((width - 40 * scale) / 2, (height - 48 * scale) / 2);
+    context.scale(scale, scale);
     const segments = summary.segments.length ? summary.segments : [{ key: "empty", label: "", color: "#94a3b8", count: 1 }];
     const pinPath = () => {
       context.beginPath();
-      context.moveTo(center, height - 1);
-      context.bezierCurveTo(center - 3, height - 7, 1.5, center + 6, 1.5, center);
-      context.arc(center, center, center - 1.5, Math.PI, 0);
-      context.bezierCurveTo(width - 1.5, center + 6, center + 3, height - 7, center, height - 1);
+      context.moveTo(20, 46);
+      context.bezierCurveTo(20, 46, 36, 28.6, 36, 17.8);
+      context.bezierCurveTo(36, 8.5, 28.8, 1, 20, 1);
+      context.bezierCurveTo(11.2, 1, 4, 8.5, 4, 17.8);
+      context.bezierCurveTo(4, 28.6, 20, 46, 20, 46);
       context.closePath();
     };
     pinPath();
     context.fillStyle = safeColor(segments[0].color);
     context.fill();
-    context.lineJoin = "round";
-    context.lineWidth = 2;
-    context.strokeStyle = "#ffffff";
-    context.stroke();
-    const angles = segmentAngles(segments);
-    let start = -Math.PI / 2;
-    segments.forEach((segment, index) => {
-      context.beginPath();
-      context.moveTo(center, center);
-      context.arc(center, center, headRadius, start, start + angles[index]);
-      context.closePath();
-      context.fillStyle = safeColor(segment.color);
-      context.fill();
-      start += angles[index];
-    });
-    const innerRadius = summary.count > 1 ? center - 4.5 : 2.5;
+    if (segments.length > 1) {
+      context.save();
+      context.clip();
+      const angles = segmentAngles(segments);
+      let start = -Math.PI / 2;
+      segments.forEach((segment, index) => {
+        context.beginPath();
+        context.moveTo(20, 18);
+        context.arc(20, 18, 17, start, start + angles[index]);
+        context.closePath();
+        context.fillStyle = safeColor(segment.color);
+        context.fill();
+        start += angles[index];
+      });
+      context.restore();
+    }
+    const innerRadius = summary.count > 1 ? 10 : 7;
     context.beginPath();
-    context.arc(center, center, innerRadius, 0, 2 * Math.PI);
+    context.arc(20, 18, innerRadius, 0, 2 * Math.PI);
     context.fillStyle = "#ffffff";
     context.fill();
     if (summary.count > 1) {
       const label = String(summary.count);
-      let fontSize = 11;
+      let fontSize = 16;
       const textWidth = innerRadius * 2 - 1;
       context.font = `900 ${fontSize}px Arial, sans-serif`;
       while (fontSize > 6 && context.measureText(label).width > textWidth) {
@@ -145,12 +149,21 @@ export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: bo
       context.fillStyle = "#0f172a";
       context.textAlign = "center";
       context.textBaseline = "middle";
-      context.fillText(label, center, center + 0.5, textWidth);
+      context.fillText(label, 20, 18.5, textWidth);
     }
     pinPath();
-    context.lineWidth = selected ? 2 : 1;
-    context.strokeStyle = "#000000";
+    context.lineJoin = "round";
+    context.lineWidth = 2;
+    context.strokeStyle = "#0f172a";
     context.stroke();
+    if (selected) {
+      // Thicken inward so selection never clips or enlarges the original pin.
+      context.save();
+      context.clip();
+      context.lineWidth = 4;
+      context.stroke();
+      context.restore();
+    }
     url = canvas.toDataURL("image/png");
     if (iconUrls.size >= ICON_CACHE_LIMIT) iconUrls.delete(iconUrls.keys().next().value!);
     iconUrls.set(key, url);

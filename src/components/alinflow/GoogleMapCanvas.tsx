@@ -33,6 +33,15 @@ export function GoogleMapCanvas({ apiKey, markers, selectedMarkerId, onSelectMar
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+  const [compactMarkers, setCompactMarkers] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 640px)");
+    const updateSize = () => setCompactMarkers(media.matches);
+    updateSize();
+    media.addEventListener("change", updateSize);
+    return () => media.removeEventListener("change", updateSize);
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -88,8 +97,8 @@ export function GoogleMapCanvas({ apiKey, markers, selectedMarkerId, onSelectMar
   }, [apiKey, attempt]);
 
   useEffect(() => {
-    runtime?.layer.update(markers, selectedMarkerId, maxFitZoom);
-  }, [runtime, markers, selectedMarkerId, maxFitZoom]);
+    runtime?.layer.update(markers, selectedMarkerId, maxFitZoom, compactMarkers);
+  }, [runtime, markers, selectedMarkerId, maxFitZoom, compactMarkers]);
 
   useEffect(() => {
     if (!fullscreen) return;
