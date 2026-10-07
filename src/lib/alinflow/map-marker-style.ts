@@ -113,6 +113,7 @@ export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: bo
     pinPath();
     context.fillStyle = safeColor(segments[0].color);
     context.fill();
+    context.lineJoin = "round";
     context.lineWidth = 2;
     context.strokeStyle = "#ffffff";
     context.stroke();
@@ -146,12 +147,10 @@ export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: bo
       context.textBaseline = "middle";
       context.fillText(label, center, center + 0.5, textWidth);
     }
-    if (selected) {
-      pinPath();
-      context.lineWidth = 1.25;
-      context.strokeStyle = "#0f172a";
-      context.stroke();
-    }
+    pinPath();
+    context.lineWidth = selected ? 2 : 1;
+    context.strokeStyle = selected ? "#0f172a" : "#334155";
+    context.stroke();
     url = canvas.toDataURL("image/png");
     if (iconUrls.size >= ICON_CACHE_LIMIT) iconUrls.delete(iconUrls.keys().next().value!);
     iconUrls.set(key, url);

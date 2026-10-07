@@ -41,6 +41,8 @@ A Visszahívandó listában a „Térképen” gomb, illetve a főoldal Térkép
 
 Mindkét térképfül közös Google Maps megjelenítőt használ, azonos nagyító- és teljes képernyő gombokkal, térképmérettel és térkép/lista elrendezéssel. Mobilon a lista a térkép alatt, széles asztali nézetben mellette jelenik meg. Térképhibánál újrapróbálás érhető el, az ügyféllista továbbra is működik.
 
+A gombostűk vékony, sötét kontúrt és fehér külső szegélyt kapnak, hogy a térkép világos és sötét részein is elkülönüljenek. A kijelölt helyszín kontúrja vastagabb, mérete változatlan.
+
 Minden külön helyszínt kicsi gombostű jelöl, közeli pontok összevonása nélkül, minden nagyításnál. Egy telepítés/ügyfél esetén színes fej és fehér pont látszik; egy helyhez tartozó több tételnél pontos darabszám jelenik meg. A gombostű színes feje az összes ottani karbantartási állapotot megtartja; a nagyon kis arányú állapot is látható szeletet kap. Koppintásra megjelenik minden állapot pontos darabszáma és a helyszín részletei. Visszahívandóknál településenként külön türkiz gombostű és több ügyfélnél darabszám jelenik meg. Sűrű területen a nagyítás segít a helyszínek elkülönítésében; a rendszer nem rejti el vagy vonja össze a szomszédos pontokat.
 
 A „Telepített klímák” fül a mentett szerelési koordinátákat és karbantartási állapotokat mutatja. Az azonos koordinátájú telepítések közös jelölője is megőrzi az összes állapot színét és darabszámát. A helyszín kiválasztása szűri a tízesével lapozható listát; az egyes időpontok a felugró ablakból is külön megnyithatók. Az „Összes helyszín” gomb megszünteti a helyszín szerinti szűrést. Az állapotszűrők egyben színmagyarázatot adnak; a cím/név/klíma keresés, hiányzó koordináták keresése és az időpontonkénti „Nem kéri a karbantartást” beállítás megmarad.
