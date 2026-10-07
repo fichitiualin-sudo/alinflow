@@ -26,7 +26,7 @@ Típusellenőrzés, build, térképtesztek; 600 külön jelölővel asztali/mobi
 
 ## Elvégzett munka és eredmény
 - A karbantartási és visszahívási térkép közös rétege minden külön helyszínt önálló gombostűként rajzol. Nincs közelség szerinti összevonás.
-- A gombostű kinézetét utólag az eredeti `6a1ae37` változatból állítottuk vissza: ugyanaz a 40×48-as SVG-alak, sötét kontúr és nagy fehér közép, most gyorsítótárazott PNG-ként. Asztalon 34×40 px, mobilon 18×22 px; több tételnél a szám olvashatósága miatt mobilon 24×28 px. A gyorsítótár legfeljebb 128 PNG-t tart meg.
+- A gombostű kinézetét utólag az eredeti `6a1ae37` változatból állítottuk vissza: ugyanaz a 40×48-as SVG-alak, sötét kontúr és nagy fehér közép, most gyorsítótárazott PNG-ként. A visszaállításkori alapméret asztalon 34×40 px, mobilon 18×22 px, több tételnél mobilon 24×28 px volt. Az újabb kérés szerinti megjelenítési méret ezek szélességének és magasságának 75%-a: rendre 25,5×30 px, 13,5×16,5 px és 18×21 px. A gyorsítótár legfeljebb 128 PNG-t tart meg.
 - Mozgatás és nagyítás nem hoz létre új jelölőpéldányokat; kijelölés csak az érintett ikonokat frissíti. Koordinátaváltozás a meglévő jelölőt mozgatja.
 - `npx tsc --noEmit` és `npm run build`: sikeres.
 - Célzott térképtesztek: 50/50 sikeres. Teljes tesztcsomag: 506 sikeres, 2 kihagyott, 0 hibás.
@@ -60,3 +60,10 @@ Az ezzel a visszaállítással módosított fájlok:
 - `tests/map-marker-layer.test.cjs`
 - `docs/SCREENS_AND_UX.md`
 - `docs/MAP_PIN_PLAN.md`
+
+## A gombostűk megjelenítése 75%-os méretben
+A felhasználó a visszaállított gombostűk szélességét és magasságát egyaránt 75%-ra kérte. A jelenlegi asztali méret 25,5×30 px; legfeljebb 640 px széles mobilnézetben 13,5×16,5 px, több bejegyzésnél 18×21 px. A horgonypont ugyanilyen arányban változik, így a csúcs továbbra is a helyszín koordinátájára mutat. Az alak, színek, darabszám és a gyorsítótárazott jelölőréteg megmarad.
+
+Ellenőrzés: 10 jelölőstílus-teszt, `npx tsc --noEmit` és `npm run build` sikeres.
+
+Módosított fájlok: `src/lib/alinflow/map-marker-style.ts`, `tests/map-marker-style.test.cjs`, `docs/SCREENS_AND_UX.md`, `docs/MAP_PIN_PLAN.md`.

@@ -95,14 +95,14 @@ test("explicit status counts are authoritative and zero/invalid segments are omi
   assert.deepEqual(plain(summary.segments.map(item => item.key)), ["ok"]);
 });
 
-test("original pin uses retina PNG, original shape and responsive sizes while retaining counts", () => {
+test("original pin retains its retina PNG and shape at 75 percent of every responsive size", () => {
   const f = canvasFixture();
   const summary = f.summarizeMapMarkers([source("a", [segment("overdue", 7), segment("ok", 5, "#22c55e")])]);
   const icon = f.markerPinIcon(f.maps, summary, false);
   assert.equal(icon.url, "data:image/png;base64,mock-1");
-  assert.deepEqual(plain(icon.size), { width: 34, height: 40 });
-  assert.deepEqual(plain(icon.scaledSize), { width: 34, height: 40 });
-  assert.deepEqual(plain(icon.anchor), { x: 17, y: 40 });
+  assert.deepEqual(plain(icon.size), { width: 25.5, height: 30 });
+  assert.deepEqual(plain(icon.scaledSize), { width: 25.5, height: 30 });
+  assert.deepEqual(plain(icon.anchor), { x: 12.75, y: 30 });
   assert.equal(f.drawings[0].canvas.width, 68);
   assert.equal(f.drawings[0].canvas.height, 80);
   assert.deepEqual(f.drawings[0].scales, [[2, 2], [40 / 48, 40 / 48]]);
@@ -116,22 +116,22 @@ test("original pin uses retina PNG, original shape and responsive sizes while re
     ["curve", 4, 28.6, 20, 46, 20, 46],
   ]);
   const denseAddress = f.markerPinIcon(f.maps, f.summarizeMapMarkers([source("dense", [segment("ok", 150)])]), false);
-  assert.deepEqual(plain(denseAddress.scaledSize), { width: 34, height: 40 });
-  assert.deepEqual(plain(denseAddress.size), { width: 34, height: 40 });
-  assert.deepEqual(plain(denseAddress.anchor), { x: 17, y: 40 });
+  assert.deepEqual(plain(denseAddress.scaledSize), { width: 25.5, height: 30 });
+  assert.deepEqual(plain(denseAddress.size), { width: 25.5, height: 30 });
+  assert.deepEqual(plain(denseAddress.anchor), { x: 12.75, y: 30 });
   assert.equal(f.drawings[1].text[0].args[0], "150");
   assert.match(f.drawings[1].text[0].font, /11px/);
   const single = f.markerPinIcon(f.maps, f.summarizeMapMarkers([source("single", [segment("ok", 1)])]), false);
-  assert.deepEqual(plain(single.size), { width: 34, height: 40 });
-  assert.deepEqual(plain(single.anchor), { x: 17, y: 40 });
+  assert.deepEqual(plain(single.size), { width: 25.5, height: 30 });
+  assert.deepEqual(plain(single.anchor), { x: 12.75, y: 30 });
   assert.equal(f.drawings[2].text.length, 0, "one installation keeps the original unnumbered white center");
   assert.deepEqual(f.drawings[2].arcs[0], [20, 18, 7, 0, 2 * Math.PI]);
   const mobile = f.markerPinIcon(f.maps, f.summarizeMapMarkers([source("single", [segment("ok", 1)])]), false, true);
-  assert.deepEqual(plain(mobile.size), { width: 18, height: 22 });
-  assert.deepEqual(plain(mobile.anchor), { x: 9, y: 22 });
+  assert.deepEqual(plain(mobile.size), { width: 13.5, height: 16.5 });
+  assert.deepEqual(plain(mobile.anchor), { x: 6.75, y: 16.5 });
   const mobileGroup = f.markerPinIcon(f.maps, summary, false, true);
-  assert.deepEqual(plain(mobileGroup.size), { width: 24, height: 28 });
-  assert.deepEqual(plain(mobileGroup.anchor), { x: 12, y: 28 });
+  assert.deepEqual(plain(mobileGroup.size), { width: 18, height: 21 });
+  assert.deepEqual(plain(mobileGroup.anchor), { x: 9, y: 21 });
   assert.equal(f.drawings[4].text[0].args[0], "12");
 });
 

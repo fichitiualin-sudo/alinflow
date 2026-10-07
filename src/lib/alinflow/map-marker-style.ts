@@ -20,6 +20,7 @@ export type MapMarkerSummary = { count: number; segments: MapMarkerSegment[] };
 const SEGMENT_ORDER = ["overdue", "dueSoon", "ok", "optOut", "unknown", "callback"];
 const DEFAULT_COLOR = "#0f766e";
 const ICON_CACHE_LIMIT = 128;
+const PIN_DISPLAY_SCALE = 0.75;
 const iconUrls = new Map<string, string>();
 
 function positiveCount(value: unknown): value is number {
@@ -170,8 +171,8 @@ export function markerPinIcon(maps: any, summary: MapMarkerSummary, selected: bo
   }
   return {
     url,
-    size: new maps.Size(width, height),
-    scaledSize: new maps.Size(width, height),
-    anchor: new maps.Point(width / 2, height),
+    size: new maps.Size(width * PIN_DISPLAY_SCALE, height * PIN_DISPLAY_SCALE),
+    scaledSize: new maps.Size(width * PIN_DISPLAY_SCALE, height * PIN_DISPLAY_SCALE),
+    anchor: new maps.Point(width * PIN_DISPLAY_SCALE / 2, height * PIN_DISPLAY_SCALE),
   };
 }
