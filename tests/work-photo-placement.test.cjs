@@ -40,6 +40,7 @@ function workPage(appointmentType = "installation") {
     "@/components/alinflow/WorkPhotosPanel": { WorkPhotosPanel: "test-work-photos" },
     "@/components/alinflow/AppointmentDevicesPanel": { AppointmentDevicesPanel: "test-appointment-devices" },
     "@/components/alinflow/HTariffPanel": { HTariffPanel: "test-h-tariff" },
+    "@/components/alinflow/WorkSectionIcon": { WorkSectionIcon: "test-section-icon" },
     "@/components/alinflow/DocumentCards": { DocumentActionButtons: "test-document-actions" },
   });
   const { WorkPagePanel } = module.load("src/components/alinflow/WorkPagePanel.tsx");
@@ -72,7 +73,9 @@ function workPage(appointmentType = "installation") {
 test("installation serial photos have one entry point inside Munkafotók, independent of the climate list", () => {
   const run = workPage();
   assert.equal(run.photos().length, 0);
-  assert.equal(run.devices().length, 0, "The initially open climate list must not contain serial photos");
+  assert.equal(run.devices().length, 0, "The initially closed climate list must not contain serial photos");
+  run.toggle("Időponthoz tartozó klímák");
+  assert.equal(run.devices().length, 0, "Opening the climate list must not mount serial photos");
   run.toggle("Munkafotók");
   assert.equal(run.photos().length, 1);
   assert.equal(run.devices().length, 1);
