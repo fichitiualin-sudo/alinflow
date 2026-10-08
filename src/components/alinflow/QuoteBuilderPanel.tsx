@@ -78,7 +78,8 @@ export function QuoteBuilderPanel({
 
   return (
     <Shell>
-      <Back onClick={onBack} />
+      <Back onClick={onBack} disabled={quoteEmailBusy} />
+      <fieldset disabled={quoteEmailBusy} aria-busy={quoteEmailBusy} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
       <Layout>
         <Main>
           <Card title="Ajánlatban szereplő tételek">
@@ -118,7 +119,7 @@ export function QuoteBuilderPanel({
           </Card>
         </Main>
         <Side>
-          <Gradient title="Ajánlat státusz" value="Küldésre kész" />
+          <Gradient title="Ajánlat státusz" value={quoteEmailBusy ? "Küldés folyamatban" : "Szerkesztés"} />
           <Card title="Árajánlat értelmezése">
             <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
               <input
@@ -146,6 +147,7 @@ export function QuoteBuilderPanel({
           </Card>
         </Side>
       </Layout>
+      </fieldset>
     </Shell>
   );
 }

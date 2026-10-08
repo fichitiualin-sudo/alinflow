@@ -9,6 +9,7 @@ import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields
 type LeadPanelProps = {
   selected: Customer;
   customers: Customer[];
+  saving?: boolean;
   onBack: () => void;
   onSaveCustomerOnly: () => void;
   onSaveCustomerAndQuote: () => void;
@@ -138,6 +139,7 @@ function StatusControl({ value, timelineItems, onChange }: { value: string; time
 export function LeadPanel({
   selected,
   customers,
+  saving = false,
   onBack,
   onSaveCustomerOnly,
   onSaveCustomerAndQuote,
@@ -153,7 +155,8 @@ export function LeadPanel({
 
   return (
     <Shell>
-      <Back onClick={onBack} />
+      <Back onClick={onBack} disabled={saving} />
+      <fieldset disabled={saving} aria-busy={saving} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
       <Layout>
         <Main>
           <Card title="Ügyféladatok szerkesztése">
@@ -187,17 +190,18 @@ export function LeadPanel({
         <Side>
           <Card title="Következő lépések">
             <div className="grid grid-cols-1 gap-3">
-              <StepButton color="amber" onClick={onSaveCustomerOnly}>Mentés</StepButton>
-              <StepButton color="cyan" onClick={onScheduleSurvey}>Felmérési időpont</StepButton>
-              <StepButton color="blue" onClick={onSaveCustomerAndQuote}>Ajánlat / Időpont</StepButton>
+              <StepButton color="amber" disabled={saving} onClick={onSaveCustomerOnly}>{saving ? "Mentés..." : "Mentés"}</StepButton>
+              <StepButton color="cyan" disabled={saving} onClick={onScheduleSurvey}>Felmérési időpont</StepButton>
+              <StepButton color="blue" disabled={saving} onClick={onSaveCustomerAndQuote}>Ajánlat / Időpont</StepButton>
               {isExistingCustomer ? (
-                <StepButton color="red" onClick={() => onDeleteCustomer(selected)}>Ügyfél törlése</StepButton>
+                <StepButton color="red" disabled={saving} onClick={() => onDeleteCustomer(selected)}>Ügyfél törlése</StepButton>
               ) : null}
             </div>
           </Card>
           <StatusControl value={selected.status || "Visszahívandó"} timelineItems={timelineItems} onChange={onUpdateCustomerStatus} />
         </Side>
       </Layout>
+      </fieldset>
     </Shell>
   );
 }

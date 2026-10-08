@@ -59,7 +59,7 @@ export function QuotePreviewPanel({
   return (
     <Shell>
       <div className="no-print">
-        <Back onClick={onBack} />
+        <Back onClick={onBack} disabled={quoteEmailBusy} />
       </div>
       <Layout>
         <Main>
@@ -154,6 +154,7 @@ export function QuotePreviewPanel({
         </Main>
         <Side>
           <div className="no-print">
+            <fieldset disabled={quoteEmailBusy} aria-busy={quoteEmailBusy} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
             <Card title="Ajánlat műveletek">
               <div className="space-y-3">
                 <Btn color="blue" onClick={onPrint}>Nyomtatás / mentés PDF-be</Btn>
@@ -174,6 +175,7 @@ export function QuotePreviewPanel({
                 <Btn color="cyan" onClick={onSchedule}>Időpont keresése</Btn>
               </div>
             </Card>
+            </fieldset>
           </div>
         </Side>
       </Layout>

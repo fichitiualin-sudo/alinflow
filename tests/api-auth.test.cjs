@@ -88,7 +88,7 @@ test("R02: explicitly bound workspace reaches the invoice provider", async () =>
 });
 test("A01: client helper attaches workspace and bearer token to every protected request", async () => {
   let sent;
-  const h = harness({ fetch: async (url, init) => { sent = { url, init }; return Response.json({}); } });
+  const h = harness({ AbortSignal, fetch: async (url, init) => { sent = { url, init }; return Response.json({}); } });
   const f = h.functions(["authenticatedFetch"], { currentWorkspaceId: () => workspaceId,
     supabase: { auth: { getSession: async () => ({ data: { session: { access_token: "fake-token" } } }) } } });
   await f.authenticatedFetch("/api/send-quote", { method: "POST", body: JSON.stringify({ customer: { id: customerId } }) });

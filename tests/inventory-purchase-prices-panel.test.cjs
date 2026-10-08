@@ -273,24 +273,34 @@ test("purchase price editor: gross preview follows decimal input and basis witho
 function createWarehouse(priceState = {}, changes = {}) {
   const runtime = hookRuntime(), stockCalls = [];
   function Editor() {}
+  function StockAdjustment() {}
+  const stockEditors = new Map();
   const { WarehousePanel, WarehouseValueSummary } = harness({}, jsx).functions(["WarehousePanel", "WarehouseValueSummary"], {
-    ...runtime.hooks, ...warehouseValue, inventoryPriceKey, InventoryPurchasePriceEditor: Editor,
+    ...runtime.hooks, ...warehouseValue, inventoryPriceKey, InventoryPurchasePriceEditor: Editor, StockAdjustment,
     ft: (value) => `${value} Ft`,
     useInventoryPurchasePrices: () => ({ prices: new Map(), loading: false, error: "", retry: noop, save: noop, ...priceState }),
     Shell: "main", Back: "back", ClimateProductManager: "manager",
     Card: "card", StockBadge: "badge", Field: "label", statusPillClass: String,
-    document: { getElementById: () => ({ value: "3" }) },
   }, warehouseFile);
   const products = Array.from({ length: 24 }, (_, index) => ({ id: `ac-${index}`, name: `Teszt klíma ${index}`, price: 200000, installPrice: 60000 }));
   const materials = Array.from({ length: 23 }, (_, index) => ({ name: `Szerelési anyag ${index}`, stock: 8, unit: "m", lowAt: 1 }));
   const props = { workspaceId: "workspace-a", products, materialInventory: materials, stockOf: () => 10, reservedForProduct: () => 2,
     materialReserved: () => 3, addStock: (...args) => stockCalls.push(["climate", ...args]), addMaterialStock: (...args) => stockCalls.push(["material", ...args]), ...changes };
   let tree;
-  function expandSummary(node) {
-    if (Array.isArray(node)) return node.map(expandSummary);
+  function expandSummary(node, path = "root") {
+    if (Array.isArray(node)) return node.map((child, index) => expandSummary(child, `${path}/${child?.key || index}`));
     if (!node || typeof node !== "object") return node;
     if (node.type === WarehouseValueSummary) return expandSummary(WarehouseValueSummary(node.props));
-    return { ...node, props: { ...node.props, children: expandSummary(node.props?.children) } };
+    if (node.type === StockAdjustment) {
+      if (!stockEditors.has(path)) {
+        const childRuntime = hookRuntime();
+        const { StockAdjustment: Component } = harness({}, jsx).functions(["StockAdjustment"], childRuntime.hooks, warehouseFile);
+        stockEditors.set(path, { runtime: childRuntime, Component });
+      }
+      const child = stockEditors.get(path);
+      return expandSummary(child.runtime.render(() => child.Component(node.props)), path);
+    }
+    return { ...node, props: { ...node.props, children: expandSummary(node.props?.children, `${path}/children`) } };
   }
   const run = { stockCalls, render() { tree = expandSummary(runtime.render(() => WarehousePanel(props))); },
     nodes: (predicate) => nodes(tree, predicate), editors: () => nodes(tree, (node) => node.type === Editor),
@@ -306,8 +316,13 @@ test("warehouse: all rows above ten remain on one page, with exact stock handler
   assert.doesNotMatch(run.text(), /Következő|Előző|oldalanként/);
   const stockButtons = run.nodes((node) => node.type === "button" && node.props.children === "Készlet módosítása");
   assert.equal(stockButtons.length, 47);
-  const productRow = run.nodes((node) => node.key === "climate-ac-23")[0];
-  const materialRow = run.nodes((node) => node.key === "material-Szerelési anyag 22")[0];
+  let productRow = run.nodes((node) => node.key === "climate-ac-23")[0];
+  let materialRow = run.nodes((node) => node.key === "material-Szerelési anyag 22")[0];
+  nodes(productRow, (node) => node.type === "input" && node.props.type === "number")[0].props.onChange({ target: { value: "3" } });
+  nodes(materialRow, (node) => node.type === "input" && node.props.type === "number")[0].props.onChange({ target: { value: "3" } });
+  run.render();
+  productRow = run.nodes((node) => node.key === "climate-ac-23")[0];
+  materialRow = run.nodes((node) => node.key === "material-Szerelési anyag 22")[0];
   nodes(productRow, (node) => node.type === "button" && node.props.children === "Készlet módosítása")[0].props.onClick();
   nodes(materialRow, (node) => node.type === "button" && node.props.children === "Készlet módosítása")[0].props.onClick();
   assert.deepEqual(run.stockCalls, [["climate", "ac-23", 3], ["material", "Szerelési anyag 22", 3]]);

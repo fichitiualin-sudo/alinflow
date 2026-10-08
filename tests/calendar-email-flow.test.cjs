@@ -37,13 +37,16 @@ function fixture(options = {}) {
   };
   const state = {
     workspaceId, persist: [], requests: [], logs: [], warnings: [], messages: [],
-    selected: [], promoted: [], dialogs: [], saving: [], prompts: [], links: [],
+    selected: [], promoted: [], dialogs: [], saving: [], prompts: [], links: [], tones: [], appointmentBusy: [], pending: [],
   };
   const savingRef = { current: false };
   const deliveryRef = { current: null };
+  const pendingActionsRef = { current: new Set() };
+  const appointmentReceiptsRef = { current: new Map() };
   const context = {
     ...products, ...appointments, ...documents, ...delivery,
     quickAppointment: draft, quickAppointmentSavingRef: savingRef, quickAppointmentDeliveryRef: deliveryRef,
+    pendingActionsRef, appointmentReceiptsRef,
     selected: unrelated, quoteItems: unrelated.quoteItems, quoteIssuedAt: "", workspaceSettings: settings,
     allWorkCustomers: [], EMPTY_QUOTE_ITEMS: [], currentWorkspaceId: () => state.workspaceId,
     quickAppointmentSelectedCustomer: () => existing,
@@ -68,17 +71,20 @@ function fixture(options = {}) {
     setQuickAppointmentSaving: value => state.saving.push(value),
     setQuickAppointmentSaveWarning: value => state.warnings.push(value),
     setQuickAppointmentEmailPrompt: value => state.prompts.push(value),
-    setMessage: value => state.messages.push(value),
+    setMessage: (value, tone) => { state.messages.push(value); state.tones.push(tone); },
+    setPendingActions: value => state.pending.push(value),
     setSelected: value => state.selected.push(value),
     promoteCustomerWork: value => state.promoted.push(value),
     setQuoteItems: noop, setScheduleDate: noop, setScheduleTime: noop, setScheduleAppointmentType: noop,
-    loadCustomerDetailData: async () => {}, setAppointmentEmailBusy: noop,
+    loadCustomerDetailData: async () => {}, setAppointmentEmailBusy: value => state.appointmentBusy.push(value),
   };
   const f = h.functions([
     "saveQuickAppointment", "quickAppointmentQuoteItems", "sendQuickAppointmentEmail",
     "skipQuickAppointmentEmail", "quotePayload", "brandedAppointmentDocumentTitle", "sendAppointmentEmailFor",
+    "beginAction", "endAction",
   ], context);
-  return { ...f, h, products, appointments, documents, delivery, state, draft, unrelated, settings, savingRef, deliveryRef };
+  return { ...f, h, products, appointments, documents, delivery, state, draft, unrelated, settings, savingRef, deliveryRef,
+    pendingActionsRef, appointmentReceiptsRef };
 }
 
 function existingCustomer(overrides = {}) {
@@ -284,6 +290,152 @@ for (const type of ["installation", "survey", "maintenance"]) {
     assert.deepEqual(f.state.requests.map(r => r.url), ["/api/send-appointment"]);
     assert.deepEqual(f.state.logs.map(([, documentType]) => documentType), type === "maintenance" ? []
       : [f.documents.appointmentEmailDocumentType(type)]);
+  });
+}
+
+for (const type of ["installation", "survey"]) {
+  test(`accepted manual ${type} email retries only its failed log with the original timestamp`, async () => {
+    let rejectLog = true;
+    const f = fixture({ log: async () => { if (rejectLog) throw Error("Synthetic appointment log detail"); } });
+    const customer = existingCustomer({ appointmentType: type, date: "2026-12-11", time: "14:30" });
+    const snapshot = plain(customer);
+    assert.equal(await f.sendAppointmentEmailFor(customer, "Az időpont mentve. "), false);
+    assert.equal(f.state.requests.length, 1);
+    assert.equal(f.state.requests[0].expectedWorkspaceId, workspaceId);
+    assert.equal(f.state.requests[0].body.customer.email, customer.email);
+    assert.equal(f.state.requests[0].body.customer.date, "2026-12-11");
+    assert.equal(f.state.requests[0].body.customer.time, "14:30");
+    assert.equal(f.state.requests[0].body.customer.appointmentType, type);
+    assert.equal(f.state.logs.length, 1);
+    const sentAt = f.state.logs[0][4];
+    assert.ok(sentAt);
+    assert.match(f.state.messages.at(-1), /Az időpont mentve.*email elküldve.*Synthetic appointment log detail/);
+    assert.equal(f.state.tones.at(-1), "warning");
+    assert.equal(f.appointmentReceiptsRef.current.size, 1);
+    assert.equal(f.pendingActionsRef.current.size, 0);
+
+    rejectLog = false;
+    f.unrelated.email = "another-selected@example.invalid";
+    assert.equal(await f.sendAppointmentEmailFor(customer), true);
+    assert.equal(f.state.requests.length, 1, "known accepted email must not be resent after logging fails");
+    assert.equal(f.state.logs.length, 2);
+    assert.equal(f.state.logs[1][1], f.documents.appointmentEmailDocumentType(type));
+    assert.equal(f.state.logs[1][4], sentAt, "retry records original acceptance time");
+    assert.deepEqual(plain(f.state.logs[1][0]), snapshot);
+    assert.deepEqual(customer, snapshot, "manual sending must not alter booked customer details");
+    assert.equal(f.state.persist.length, 0);
+    assert.equal(f.appointmentReceiptsRef.current.size, 0);
+    assert.equal(f.pendingActionsRef.current.size, 0);
+    assert.deepEqual(f.state.appointmentBusy, [true, false, true, false]);
+  });
+}
+
+test("manual appointment send failure preserves provider details and the already-saved notice", async () => {
+  const f = fixture({ send: async () => Response.json({ error: "Synthetic provider rejection detail" }, { status: 502 }) });
+  assert.equal(await f.sendAppointmentEmailFor(existingCustomer(), "Az időpont mentve. "), false);
+  assert.match(f.state.messages.at(-1), /Az időpont mentve.*Synthetic provider rejection detail/);
+  assert.equal(f.state.tones.at(-1), "warning");
+  assert.equal(f.state.logs.length, 0);
+  assert.equal(f.appointmentReceiptsRef.current.size, 0);
+  assert.equal(f.pendingActionsRef.current.size, 0);
+  assert.deepEqual(f.state.appointmentBusy, [true, false]);
+});
+
+test("manual appointment logging retry preserves the accepted customer snapshot after later edits", async () => {
+  let rejectLog = true;
+  const f = fixture({ log: async () => { if (rejectLog) throw Error("Synthetic log failure"); } });
+  const customer = existingCustomer();
+  const original = plain(customer);
+  assert.equal(await f.sendAppointmentEmailFor(customer), false);
+  customer.name = "Changed after sending";
+  customer.address = "Edited address after sending";
+  customer.quoteItems[0].customName = "Edited climate after sending";
+  rejectLog = false;
+  assert.equal(await f.sendAppointmentEmailFor(customer), true);
+  assert.equal(f.state.requests.length, 1);
+  assert.deepEqual(plain(f.state.logs.at(-1)[0]), original, "a sent-document log describes the accepted email snapshot");
+  assert.equal(customer.address, "Edited address after sending", "receipt logging must not undo newer customer edits");
+  assert.equal(f.appointmentReceiptsRef.current.size, 0);
+});
+
+for (const [field, value] of [["date", "2026-12-12"], ["email", "updated-recipient@example.invalid"]]) {
+  test(`manual appointment with changed ${field} cannot reuse the previous email acceptance`, async () => {
+    let rejectLog = true;
+    const f = fixture({ log: async () => { if (rejectLog) throw Error("Synthetic log failure"); } });
+    const original = existingCustomer();
+    assert.equal(await f.sendAppointmentEmailFor(original), false);
+    const firstSentAt = f.state.logs[0][4];
+    rejectLog = false;
+    const changed = { ...original, [field]: value };
+    assert.equal(await f.sendAppointmentEmailFor(changed), true);
+    assert.equal(f.state.requests.length, 2, "the old receipt cannot confirm a different date or recipient");
+    assert.equal(f.state.requests[1].body.customer[field], value);
+    assert.equal(f.state.logs[1][0][field], value);
+    assert.equal(f.appointmentReceiptsRef.current.size, 1, "the earlier failed log remains separately recoverable");
+
+    assert.equal(await f.sendAppointmentEmailFor(original), true);
+    assert.equal(f.state.requests.length, 2, "the original accepted message is still protected from resending");
+    assert.deepEqual(plain(f.state.logs.at(-1)[0]), original);
+    assert.equal(f.state.logs.at(-1)[4], firstSentAt);
+    assert.equal(f.appointmentReceiptsRef.current.size, 0);
+  });
+}
+
+test("manual appointment response without explicit acceptance cannot create a receipt or sent log", async () => {
+  const f = fixture({ send: async () => Response.json({ id: "unconfirmed" }) });
+  assert.equal(await f.sendAppointmentEmailFor(existingCustomer()), false);
+  assert.equal(f.state.logs.length, 0);
+  assert.equal(f.appointmentReceiptsRef.current.size, 0);
+  assert.equal(f.pendingActionsRef.current.size, 0);
+  assert.equal(f.state.tones.at(-1), "error");
+});
+
+test("manual appointment double click sends and logs only once while provider response is pending", async () => {
+  const gate = deferred();
+  const f = fixture({ send: async () => { await gate.promise; return Response.json({ ok: true }); } });
+  const customer = existingCustomer();
+  const first = f.sendAppointmentEmailFor(customer);
+  assert.equal(await f.sendAppointmentEmailFor(customer), false);
+  assert.equal(f.state.requests.length, 1);
+  assert.equal(f.state.logs.length, 0);
+  gate.resolve();
+  assert.equal(await first, true);
+  assert.equal(f.state.requests.length, 1);
+  assert.equal(f.state.logs.length, 1);
+  assert.equal(f.pendingActionsRef.current.size, 0);
+  assert.deepEqual(f.state.appointmentBusy, [true, false]);
+});
+
+for (const rejected of [false, true]) {
+  test(`late manual appointment ${rejected ? "rejection" : "acceptance"} stays out of the new workspace`, async () => {
+    const f = fixture({ send: async () => {
+      f.state.workspaceId = "different-workspace";
+      f.appointmentReceiptsRef.current.clear();
+      return rejected
+        ? Response.json({ error: "Previous workspace provider detail" }, { status: 502 })
+        : Response.json({ ok: true });
+    } });
+    assert.equal(await f.sendAppointmentEmailFor(existingCustomer()), false);
+    assert.equal(f.appointmentReceiptsRef.current.size, 0);
+    assert.equal(f.state.logs.length, 0);
+    assert.equal(f.state.messages.length, 1, "a previous workspace result cannot add success or error feedback");
+    assert.equal(f.pendingActionsRef.current.size, 0);
+  });
+}
+
+for (const rejected of [false, true]) {
+  test(`manual appointment log ${rejected ? "failure" : "completion"} cannot publish feedback after workspace change`, async () => {
+    const f = fixture({ log: async () => {
+      f.state.workspaceId = "different-workspace";
+      f.appointmentReceiptsRef.current.clear();
+      if (rejected) throw Error("Previous workspace log detail");
+    } });
+    assert.equal(await f.sendAppointmentEmailFor(existingCustomer()), false);
+    assert.equal(f.state.requests.length, 1);
+    assert.equal(f.state.logs.length, 1);
+    assert.equal(f.appointmentReceiptsRef.current.size, 0);
+    assert.equal(f.state.messages.length, 1);
+    assert.equal(f.pendingActionsRef.current.size, 0);
   });
 }
 
