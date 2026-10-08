@@ -319,6 +319,31 @@ function differentEnough(a?: string, b?: string) {
   return Math.abs(first - second) > 60_000;
 }
 
+function quoteReceiptScopeFromRows(quotes: any[], appointments: any[], quoteId?: string, appointmentId?: string): Customer["quoteReceiptScope"] {
+  if (!quoteId || !quotes.length) return undefined;
+  const quote = quotes.find((row) => row.id === quoteId);
+  const notBefore = Date.parse(quote?.created_at || "");
+  if (!quote || !Number.isFinite(notBefore)) return undefined;
+  // Older versions could leave an earlier, unlinked draft when sending the first
+  // quote. Accept it only when every other quote predates this one and no other
+  // appointment could own the customer-level receipt.
+  if (quotes.some((row) => row.id !== quoteId && (row.appointment_id
+    || row.customer_id !== quote.customer_id || !Number.isFinite(Date.parse(row.created_at || ""))
+    || Date.parse(row.created_at) >= notBefore))) return undefined;
+  if (!appointmentId) {
+    return !appointments.length && !quote.appointment_id ? { quoteId, notBefore: quote.created_at } : undefined;
+  }
+  if (appointments.length !== 1) return undefined;
+  const appointment = appointments[0];
+  if (normalizeAppointmentType(appointment.appointment_type) !== "installation"
+    || appointment.id !== appointmentId || appointment.quote_id !== quoteId
+    || quote.customer_id !== appointment.customer_id
+    || (quote.appointment_id && quote.appointment_id !== appointmentId)) return undefined;
+  const notAfter = Date.parse(appointment.created_at || "");
+  if (!Number.isFinite(notAfter) || notBefore > notAfter) return undefined;
+  return { quoteId, appointmentId, notBefore: quote.created_at, notAfter: appointment.created_at };
+}
+
 function appointmentSummary(customer: Customer) {
   if (!customer.date) return "";
   return `${customer.date.replaceAll("-", ".")} · ${customer.time || "idő nélkül"}`;
@@ -1743,7 +1768,7 @@ function HomeContent() {
   function customerWithDetailDocuments(customer: Customer, docs: DocumentRecord[]) {
     const type = normalizeAppointmentType(customer.appointmentType);
     const scopedDocs = documentsForCustomerScope(customer, docs);
-    const quoteSentAt = documentTimestamp(scopedDocs, "quote_email") || customer.quoteSentAt;
+    const quoteSentAt = sentDocumentTimestamp(quoteDocumentFor(customer, docs)) || customer.quoteSentAt;
     const appointmentEmailAt = documentTimestamp(scopedDocs, appointmentEmailDocumentType(type));
     const appointmentBookedAt = documentTimestamp(scopedDocs, appointmentBookedDocumentType(type));
     const lastCalledAt = documentTimestamp(scopedDocs, "phone_call") || customer.lastCalledAt;
@@ -2665,12 +2690,14 @@ function HomeContent() {
       }
 
     const quotesByCustomer = new Map<string, any>();
+    const quoteHistoryByCustomer = new Map<string, any[]>();
     const quotesById = new Map<string, any>();
     const quotesByAppointment = new Map<string, any>();
     (quoteRows || []).forEach((quote: any) => {
       if (quote.id) quotesById.set(quote.id, quote);
       if (quote.appointment_id) quotesByAppointment.set(quote.appointment_id, quote);
       if (!quotesByCustomer.has(quote.customer_id)) quotesByCustomer.set(quote.customer_id, quote);
+      quoteHistoryByCustomer.set(quote.customer_id, [...(quoteHistoryByCustomer.get(quote.customer_id) || []), quote]);
     });
 
     const itemsByQuote = new Map<string, any[]>();
@@ -2764,7 +2791,7 @@ function HomeContent() {
       const quote = quoteForAppointment(row, appointment);
       const existingDocs = documentsByCustomer[row.id] || [];
       const loadedAppointmentType = normalizeAppointmentType(appointment?.appointment_type);
-      const quoteSentAt = quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
+      const quoteSentAt = quote?.sent_at || undefined;
       const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
       const maintenanceInstallations = loadedAppointmentType === "maintenance" ? maintenanceInstallationsForAppointment(appointment) : [];
       const maintenanceQuoteItems = cleanQuoteItems(maintenanceInstallations.flatMap((installation) => installation.quoteItems));
@@ -2801,6 +2828,7 @@ function HomeContent() {
         appointmentType: loadedAppointmentType,
         activeAppointmentId: appointment?.id || undefined,
         activeQuoteId: quote?.id || undefined,
+        quoteReceiptScope: quoteReceiptScopeFromRows(quoteHistoryByCustomer.get(row.id) || [], appointmentHistoryMap.get(row.id) || [], quote?.id, appointment?.id),
         quoteItems: effectiveQuoteItems.length ? effectiveQuoteItems : EMPTY_QUOTE_ITEMS,
         productId: effectiveQuoteItems[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
@@ -3810,6 +3838,11 @@ function HomeContent() {
       setMessage("Szerelési időponthoz válassz legalább egy klímát.", "warning");
       return;
     }
+    const sourceQuoteReceipt = normalizedScheduleAppointmentType === "installation" && !typeChanged
+      && selected.activeQuoteId && selected.quoteReceiptScope?.quoteId === selected.activeQuoteId
+      ? quoteDocumentFor(selected) : undefined;
+    const sourceQuoteSentAt = sourceQuoteReceipt && !sourceQuoteReceipt.appointmentId
+      ? sentDocumentTimestamp(sourceQuoteReceipt) : undefined;
     const updated:Customer = {
       ...selected,
       date:scheduleDate,
@@ -3843,9 +3876,17 @@ function HomeContent() {
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
         activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
+      const carryQuoteReceipt = Boolean(sourceQuoteSentAt && selected.activeQuoteId === savedUpdated.activeQuoteId && savedUpdated.activeAppointmentId);
+      if (carryQuoteReceipt && selected.quoteReceiptScope) {
+        savedUpdated.quoteReceiptScope = { ...selected.quoteReceiptScope, appointmentId: savedUpdated.activeAppointmentId };
+      }
       appointmentSaved = true;
       promoteCustomerWork(savedUpdated);
       setSelected(savedUpdated);
+      if (carryQuoteReceipt) {
+        // Retain the lead receipt and its original send time in the new work scope.
+        await logDocument(savedUpdated, "quote_email", "Ajánlat email", "Elküldve", sourceQuoteSentAt);
+      }
       if (normalizeAppointmentType(savedUpdated.appointmentType) !== "maintenance") {
         await logDocument(savedUpdated, appointmentBookedDocumentType(savedUpdated.appointmentType), `${appointmentTypeLabel(savedUpdated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
       } else {
@@ -4721,6 +4762,9 @@ function HomeContent() {
       if (currentWorkspaceId() !== workspaceId) return;
       const applyReceipt = (customer: Customer): Customer => customer.id !== updated.id ? customer : {
         ...customer, quoteSentAt: receipt!.sentAt,
+        quoteReceiptScope: customer.activeQuoteId === savedCustomer.activeQuoteId && customer.activeAppointmentId === savedCustomer.activeAppointmentId && savedCustomer.activeQuoteId
+          ? { quoteId: savedCustomer.activeQuoteId, appointmentId: savedCustomer.activeAppointmentId, notBefore: receipt!.sentAt, notAfter: receipt!.sentAt }
+          : customer.quoteReceiptScope,
         status: !customer.date && ["Visszahívandó", "Ajánlat elküldve"].includes(normalizeStatus(customer.status)) ? "Ajánlat elküldve" : customer.status,
       };
       setSelected(applyReceipt);
@@ -5220,14 +5264,31 @@ function HomeContent() {
     return doc.sentAt || doc.updatedAt || doc.createdAt || undefined;
   }
 
+  function quoteDocumentFor(customer: Customer, documents: DocumentRecord[] = documentsByCustomer[customer.id] || []) {
+    const quoteDocuments = documents.filter((doc) => doc.type === "quote_email");
+    const scoped = quoteDocuments.find((doc) => doc.appointmentId === customer.activeAppointmentId);
+    if (customer.activeAppointmentId && scoped) return scoped;
+    const scope = customer.quoteReceiptScope;
+    if (!scope) return customer.activeAppointmentId ? undefined : scoped;
+    if (scope.quoteId !== customer.activeQuoteId || scope.appointmentId !== customer.activeAppointmentId) return undefined;
+    const notBefore = Date.parse(scope.notBefore);
+    const notAfter = scope.notAfter ? Date.parse(scope.notAfter) : Infinity;
+    if (!Number.isFinite(notBefore) || Number.isNaN(notAfter) || notBefore > notAfter) return undefined;
+    return quoteDocuments.find((doc) => {
+      if (doc.appointmentId || !doc.sentAt) return false;
+      const sentAt = Date.parse(doc.sentAt);
+      return Number.isFinite(sentAt) && sentAt >= notBefore && sentAt <= notAfter;
+    });
+  }
+
   function quoteSentAtFor(customer: Customer) {
-    const quoteDoc = docFor(customer, "quote_email");
+    const quoteDoc = quoteDocumentFor(customer);
     return sentDocumentTimestamp(quoteDoc)
       || (normalizeStatus(customer.status) === "Ajánlat elküldve" ? customer.quoteSentAt : undefined);
   }
 
   function customerHasSentQuote(customer: Customer) {
-    const quoteDoc = docFor(customer, "quote_email");
+    const quoteDoc = quoteDocumentFor(customer);
     return normalizeStatus(customer.status) === "Ajánlat elküldve"
       || Boolean(sentDocumentTimestamp(quoteDoc));
   }
@@ -5342,7 +5403,7 @@ function HomeContent() {
 
   function documentRowsFor(customer: Customer): PageDocumentRow[] {
     const currentAppointmentType = normalizeAppointmentType(customer.appointmentType);
-    const quoteDoc = docFor(customer, "quote_email");
+    const quoteDoc = quoteDocumentFor(customer);
     const quoteSentAt = quoteSentAtFor(customer);
     const quoteBaseStatus = quoteDoc?.status || (customerHasSentQuote(customer) ? "Elküldve" : "Nincs elküldve");
     const quoteDisplayStatus = quoteBaseStatus.includes("Elküld") && quoteSentAt ? `${quoteBaseStatus} · ${formatQuoteSentAt(quoteSentAt)}` : quoteBaseStatus;
@@ -6452,6 +6513,7 @@ function HomeContent() {
       installerAmount={installer}
       materialAmount={materialPrice}
       quoteEmailBusy={quoteEmailBusy}
+      quoteSentAt={quoteSentAtFor(selected)}
       canEditWorkResources={canEditWorkResources}
       quotePricingMode={selected.quotePricingMode || "bundle"}
       onBack={()=>goBack()}
@@ -6477,6 +6539,7 @@ function HomeContent() {
         totalAmount={t}
         quoteEmailBusy={quoteEmailBusy}
         quoteIssuedAt={quoteIssuedAt}
+        quoteSentAt={quoteSentAtFor(selected)}
         workspaceSettings={workspaceSettings}
         onBack={() => goBack("quote")}
         onPrint={() => window.print()}

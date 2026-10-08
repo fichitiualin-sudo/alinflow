@@ -162,3 +162,37 @@ Az előnézet, nyomtatás, keresés, lapozás, térképválasztás, menüváltá
 - Raktári ismételt kattintás, sikertelen mentés utáni adatmegőrzés, elutasított új anyag és újrapróbálás: 6 új regressziós eset a `tests/warehouse-operations.test.cjs` fájlban.
 - A raktári műveleti, árérték- és adatvédelmi tesztek együtt: 28 sikeres eset.
 - A másodlagos panelmódosítások után a TypeScript-ellenőrzés sikeres; az összesített build és a teljes tesztfuttatás a központi változtatások lezárása után szükséges.
+
+## Kiegészítés: új ügyfél ajánlata és az első időpont
+
+### Feltárt ok és javítás
+
+Az új ügyfélnek még időpont nélkül küldött ajánlat naplóbejegyzése ügyfélszintű. Az első telepítési időpont létrehozása után az időpontra szűkített dokumentumlista ezt elrejtette, miközben a levél küldése és naplózása sikeres volt. A korábbi mentési útvonal külön, korábbi ajánlatpiszkozatot is hátrahagyhatott.
+
+1. Az ajánlatszerkesztő és előnézet küldési gombja mellett az utolsó igazolt emailküldés dátuma tartósan látszik. Küldési bizonyíték nélkül nem jelenik meg elküldött állapot.
+2. Új időpont mentésekor az ismert, azonos ajánlathoz tartozó küldési bejegyzés az eredeti dátummal az időpont dokumentumai közé is bekerül. Az eredeti ügyfélszintű bejegyzés megmarad; újabb ajánlatlevél nem indul.
+3. A régebbi első telepítések visszatöltése kizárólag egyértelmű kapcsolat esetén jeleníti meg az eredeti ügyfélszintű küldést: pontos ajánlat/időpont-egyezés, egyetlen telepítési időpont, legfrissebb ajánlat, a küldés az ajánlat és az időpont létrehozása közötti időablakban. Korábbi, más időponthoz nem kapcsolt piszkozat megengedett; másik munka vagy bizonytalan időrend kizárja a társítást.
+4. Az ajánlat létrehozási és módosítási dátuma nem helyettesíti az emailküldési dátumot. A többi dokumentumtípus időpontszűrése változatlan.
+
+### Adatkezelés és fájlkör
+
+A `Customer.quoteReceiptScope` kizárólag a felület által használt, visszatöltéskor újraszámított kapcsolati bizonyíték. Nincs új adatbázismező vagy migráció. A meglévő történeti eset megjelenítési javítása nem írja át az adatbázist.
+
+- `src/app/page.tsx`
+- `src/lib/alinflow/types.ts`
+- `src/components/alinflow/QuoteBuilderPanel.tsx`
+- `src/components/alinflow/QuotePreviewPanel.tsx`
+- `src/components/alinflow/QuoteEmailStatus.tsx`
+- `tests/new-customer-quote-flow.test.cjs`
+- `tests/quote-email-status.test.cjs`
+- `tests/calendar-email-flow.test.cjs`
+- `tests/facebook-leads-client.test.cjs`
+- `docs/ACTION_FEEDBACK_PLAN.md`
+
+### Ellenőrzés
+
+- A tényleges mentési, küldési és dokumentum-visszatöltési függvények szintetikus adatú regressziója: új ügyfél → ajánlat → küldés → friss visszatöltés → időpont → friss visszatöltés; eredeti dátum és mindkét dokumentumbejegyzés megmarad, egyszeri emailküldés.
+- Külön siker, szolgáltatói hiba, küldés utáni naplózási hiba, csak naplózást újrapróbáló útvonal és történeti kettős piszkozat. Téves munkatársítás elleni negatív esetek is szerepelnek.
+- A dátumjelző tényleges komponensének ellenőrzése 390×844 mobil- és asztali nézetben: olvasható, vízszintesen nem lóg ki. Hibás vagy hiányzó dátum nem jelenik meg küldési bizonyítékként.
+- TypeScript és production build sikeres. A build a fent leírt nem titkos helyi Supabase tesztértékeket használta; élő adatbáziskapcsolatot nem igazol.
+- Teljes tesztcsomag: 614 esetből 610 sikeres, 0 hibás, 4 kihagyott. A négy adatbázis-integrációs csoporthoz szükséges helyi környezet továbbra sincs megadva. Éles ügyfélnek tesztlevél nem ment ki, valós ügyféladatot az ellenőrzés nem módosított.

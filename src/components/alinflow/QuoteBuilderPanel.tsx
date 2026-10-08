@@ -4,6 +4,7 @@ import type { ClimateProduct, Customer, QuoteItem, QuotePricingMode } from "@/li
 import { ft } from "@/lib/alinflow/format";
 import { hasCustomProductPrice, isCustomQuoteItem, isQuoteAlternatives, itemPriceLine, itemTotal, itemUnitPrice, prod, sortProducts } from "@/lib/alinflow/products";
 import { Back, Btn, Card, Gradient, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { QuoteEmailStatus } from "@/components/alinflow/QuoteEmailStatus";
 
 type QuoteBuilderPanelProps = {
   selected: Customer;
@@ -13,6 +14,7 @@ type QuoteBuilderPanelProps = {
   installerAmount: number;
   materialAmount: number;
   quoteEmailBusy: boolean;
+  quoteSentAt?: string;
   canEditWorkResources: boolean;
   quotePricingMode: QuotePricingMode;
   onBack: () => void;
@@ -60,6 +62,7 @@ export function QuoteBuilderPanel({
   products,
   totalAmount,
   quoteEmailBusy,
+  quoteSentAt,
   canEditWorkResources,
   quotePricingMode,
   onBack,
@@ -119,7 +122,7 @@ export function QuoteBuilderPanel({
           </Card>
         </Main>
         <Side>
-          <Gradient title="Ajánlat státusz" value={quoteEmailBusy ? "Küldés folyamatban" : "Szerkesztés"} />
+          <Gradient title="Ajánlat státusz" value={quoteEmailBusy ? "Küldés folyamatban" : quoteSentAt ? "Korábban elküldve" : "Még nincs elküldve"} />
           <Card title="Árajánlat értelmezése">
             <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
               <input
@@ -139,6 +142,7 @@ export function QuoteBuilderPanel({
           <Card title="Gyors műveletek">
             <div className="space-y-3 [&>button]:w-full">
               <Btn color="cyan" onClick={onPreview}>Ajánlat előnézet</Btn>
+              <QuoteEmailStatus sentAt={quoteSentAt} />
               <button onClick={onSendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-gradient-to-br from-emerald-400 to-green-500 px-5 py-4 text-center font-black text-slate-950 shadow-xl disabled:cursor-wait disabled:opacity-60">
                 {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
               </button>

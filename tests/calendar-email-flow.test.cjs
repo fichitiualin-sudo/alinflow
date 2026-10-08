@@ -443,16 +443,13 @@ test("quote sent markers require a real quote log or quote status, not an appoin
   const h = harness();
   const documents = h.load("src/lib/alinflow/documents.ts");
   let quoteDoc;
-  const appointmentDoc = { status: "Elküldve", sentAt: "2026-10-01T10:00:00.000Z" };
-  const lookups = [];
   const f = h.functions(["quoteSentAtFor", "customerHasSentQuote", "sentDocumentTimestamp"], {
     statusMeansSent: documents.statusMeansSent, normalizeStatus: value => value,
-    docFor: (_customer, type) => { lookups.push(type); return type === "quote_email" ? quoteDoc : appointmentDoc; },
+    quoteDocumentFor: () => quoteDoc,
   });
   const customer = existingCustomer({ status: "Időpont foglalva", quoteSentAt: "2020-01-01T10:00:00.000Z" });
   assert.equal(f.quoteSentAtFor(customer), undefined);
   assert.equal(f.customerHasSentQuote(customer), false);
-  assert.ok(lookups.every(type => type === "quote_email"));
   quoteDoc = { status: "Elküldve", sentAt: "2026-10-07T10:00:00.000Z" };
   assert.equal(f.quoteSentAtFor(customer), quoteDoc.sentAt);
   assert.equal(f.customerHasSentQuote(customer), true);

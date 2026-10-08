@@ -101,7 +101,7 @@ function customerLoader(overrides = {}) {
   const scopeRef = { current: undefined };
   const lastLoadRef = { current: null };
   const mustNotTouchEditing = () => { throw new Error("Unsaved editing state was changed"); };
-  const { loadCustomersFromDb } = harness().functions(["loadCustomersFromDb"], {
+  const { loadCustomersFromDb } = harness().functions(["loadCustomersFromDb", "quoteReceiptScopeFromRows"], {
     loadCustomersPromiseRef: loadRef,
     loadCustomersWorkspaceIdRef: scopeRef,
     lastCustomerLoadRef: lastLoadRef,

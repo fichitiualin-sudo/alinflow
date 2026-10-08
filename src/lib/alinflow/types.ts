@@ -123,6 +123,12 @@ export type Customer = {
   updatedAt?: string;
   lastCalledAt?: string;
   quoteSentAt?: string;
+  quoteReceiptScope?: {
+    quoteId: string;
+    appointmentId?: string;
+    notBefore: string;
+    notAfter?: string;
+  };
   appointmentBookedAt?: string;
   appointmentUpdatedAt?: string;
   timeline?: CustomerTimelineState;

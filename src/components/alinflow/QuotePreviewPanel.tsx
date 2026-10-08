@@ -4,12 +4,14 @@ import { displayAddress, ft } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemPriceLine, itemProductMedia, itemQuantity, itemTotal } from "@/lib/alinflow/products";
 import { settingsContactLine, settingsContentLines, settingsCustomerDocumentFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { QuoteEmailStatus } from "@/components/alinflow/QuoteEmailStatus";
 
 type QuotePreviewPanelProps = {
   selected: Customer;
   quoteItems: QuoteItem[];
   totalAmount: number;
   quoteEmailBusy: boolean;
+  quoteSentAt?: string;
   quoteIssuedAt: string;
   workspaceSettings: WorkspaceSettings;
   onBack: () => void;
@@ -37,6 +39,7 @@ export function QuotePreviewPanel({
   quoteItems,
   totalAmount,
   quoteEmailBusy,
+  quoteSentAt,
   quoteIssuedAt,
   workspaceSettings,
   onBack,
@@ -169,6 +172,7 @@ export function QuotePreviewPanel({
                     <span className="block text-base font-black text-slate-100">Ne adja össze a tételeket</span>
                   </span>
                 </label>
+                <QuoteEmailStatus sentAt={quoteSentAt} />
                 <button onClick={onSendQuote} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
                   {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
                 </button>
