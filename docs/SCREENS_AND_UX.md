@@ -10,6 +10,8 @@
 - gombok ne érjenek össze;
 - hosszú magyarázó szövegek helyett rövid címke és egyértelmű művelet.
 
+A műveleti értesítések világos, pasztell hátteret, sötét szöveget és állapot szerinti színes keretet kapnak sötét és világos témában is. Minden értesítés öt másodperc után automatikusan eltűnik, és kézzel is bezárható. Új értesítéskor az öt másodperc újraindul, azonos szöveg ismétlésekor is; korábbi időzítő nem tüntethet el újabb üzenetet.
+
 ## Dashboard – mobil sorrend
 
 1. AlinFlow fejléc és `+ ügyfél` műveletek
