@@ -46,11 +46,11 @@ A kapcsolat szüneteltetésével leállítható a szinkronizálás; az AlinFlow-
 
 ## Állapot
 
-A kód éles kiadásban van, az idempotens migráció lefutott, a percenkénti háttérfeldolgozó aktív. A Google Cloud projekt/API/OAuth-kliens és a Vercel Production titkos változói elkészültek. A cron sikeresen futott; a Vaultból hitelesített éles HTTP-próba 200 választ és üres feldolgozást adott. A jóváhagyott nyilvános adatkezelési tájékoztató élesben elérhető; a Google alkalmazás In production állapotú. A munkaterületi OAuth-összekapcsolás a Google figyelmeztetésénél felhasználói folytatásra vár. Beállított kapcsolat nélkül az új funkció inaktív, a kézi naptárgomb megmarad.
+A kód éles kiadásban van, az idempotens migráció lefutott, a percenkénti háttérfeldolgozó aktív. A Google Cloud projekt/API/OAuth-kliens és a Vercel Production titkos változói elkészültek. A cron sikeresen futott; a Vaultból hitelesített éles HTTP-próba 200 választ és üres feldolgozást adott. A jóváhagyott nyilvános adatkezelési tájékoztató élesben elérhető; a Google alkalmazás In production állapotú. A KLIMAlin munkaterületi OAuth-kapcsolat sikeres, állapotfrissítés után is aktív. Az éles ellenőrzés egy kapcsolt munkaterületet, nulla szinkronizálási sort és 17 sikeres cronfutást igazolt, visszamenőleges időpontimport nélkül.
 
-Ellenőrzések: a teljes tesztfutás 699 tesztből 697 sikeres és két korábban is kihagyott helyi SQL-teszt; hiba nincs. Az aktiválási javítások után a 71 naptárteszt külön is sikeres, az SQL-tesztek PGlite-on futottak. `npx tsc --noEmit` és `npm run build` sikeres (a helyi buildhez nem éles Supabase publikus helyőrző változókkal). A valódi beállítókomponens 390×844 és 1440×900 előnézete rendben. Nincs gyökérszintű `app/` vagy ütköző oldalútvonal.
+Ellenőrzések: a teljes tesztfutás 699 tesztből 697 sikeres és két korábban is kihagyott helyi SQL-teszt; hiba nincs. Az aktiválási és engedély-visszajelzési javítások után a 73 naptárteszt külön is sikeres, az SQL-tesztek PGlite-on futottak. `npx tsc --noEmit` és `npm run build` sikeres (a helyi buildhez nem éles Supabase publikus helyőrző változókkal). A valódi beállítókomponens és az éles adatkezelési oldal 390×844 és 1440×900 nézete rendben. Nincs gyökérszintű `app/` vagy ütköző oldalútvonal.
 
-Az éles Google-esemény létrehozása/módosítása/lemondása csak az összekapcsolás után ellenőrizhető. Telepítési lépések és környezeti változók: `docs/GOOGLE_CALENDAR_SETUP.md`.
+Az éles Google-esemény létrehozása/módosítása/lemondása új valódi időpont nélkül még nincs ellenőrizve. Telepítési lépések és környezeti változók: `docs/GOOGLE_CALENDAR_SETUP.md`.
 
 ## Módosított fájlok
 
