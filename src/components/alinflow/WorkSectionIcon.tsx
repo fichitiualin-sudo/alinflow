@@ -9,6 +9,12 @@ const icons = {
   billing: <><path d="M5 3h14v18l-3-2-4 2-4-2-3 2zM8 8h8M8 12h4M15 12h1" /></>,
   history: <><path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6M12 7v5l3 2" /></>,
   survey: <><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="m8 13 3 3 5-6" /></>,
+  signature: <><path d="M4 21h16M5 17l1-4L16 3a2.1 2.1 0 0 1 3 3L9 16zM14 5l3 3" /></>,
+  registry: <><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 11h.01M12 11h3M9 16h.01M12 16h3" /></>,
+  complete: <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></>,
+  cancel: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18m-12 3 6 6m0-6-6 6" /></>,
+  cash: <><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="3" /><path d="M6 12h.01M18 12h.01" /></>,
+  transfer: <path d="M3 7h18m-4-4 4 4-4 4M21 17H3m4-4-4 4 4 4" />,
 } satisfies Record<string, ReactNode>;
 
 export type WorkSectionIconName = keyof typeof icons;

@@ -815,6 +815,7 @@ export function WorkPagePanel({
                   color="cyan"
                   onClick={onOpenWorkReport}
                   label={isMaintenance ? "Karbantartási munkalap és aláírás" : "Munkalap és egyszerű aláírás"}
+                  icon="signature"
                   doneAt={actionDates.workReport}
                 />
               )}
@@ -823,10 +824,12 @@ export function WorkPagePanel({
                 onClick={() => onToggleChecklist("nkvh")}
                 label="NKVH"
                 doneAt={currentWorkChecklist.nkvh ? checklistDates.nkvh : undefined}
-                icon={currentWorkChecklist.nkvh ? "✓" : "○"}
+                icon="registry"
+                indicator={currentWorkChecklist.nkvh ? "✓" : "○"}
+                pressed={Boolean(currentWorkChecklist.nkvh)}
               /> : null}
               {isSurvey ? (
-                <ActionButton color="green" onClick={onMarkInstallationDone} label="Felmérés kész – árajánlat készítése" doneAt={actionDates.surveyDone} />
+                <ActionButton color="green" icon="survey" onClick={onMarkInstallationDone} label="Felmérés kész – árajánlat készítése" doneAt={actionDates.surveyDone} />
               ) : isMaintenance ? (
                 <>
                   <MaintenanceBillingPanel
@@ -845,7 +848,7 @@ export function WorkPagePanel({
                     quoteItems={quoteItems}
                     customerEmail={selected.email}
                   />
-                  {selected.status !== "Lezárva" ? <ActionButton color="green" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null}
+                  {selected.status !== "Lezárva" ? <ActionButton color="green" icon="complete" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null}
                 </>
               ) : (
                 <BillingPreparationPanel
@@ -877,8 +880,8 @@ export function WorkPagePanel({
                   customerEmail={selected.email}
                 />
               )}
-              {isInstallation ? <ActionButton color="green" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
-              {selected.status !== "Lezárva" ? <ActionButton color="red" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} icon="×" /> : null}
+              {isInstallation ? <ActionButton color="green" icon="complete" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
+              {selected.status !== "Lezárva" ? <ActionButton color="red" icon="cancel" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} indicator="×" /> : null}
               </div>
             </Card>
           </div>
@@ -1180,15 +1183,17 @@ function InvoicePrepCard({
         <button
           type="button"
           onClick={() => onPaymentMethodChange("cash")}
-          className={`rounded-xl px-4 py-3 font-black ${paymentMethod === "cash" ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-100"}`}
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-black ${paymentMethod === "cash" ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-100"}`}
         >
+          <WorkSectionIcon name="cash" className="h-5 w-5 shrink-0" />
           KP
         </button>
         <button
           type="button"
           onClick={() => onPaymentMethodChange("transfer")}
-          className={`rounded-xl px-4 py-3 font-black ${paymentMethod === "transfer" ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-100"}`}
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-black ${paymentMethod === "transfer" ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-slate-100"}`}
         >
+          <WorkSectionIcon name="transfer" className="h-5 w-5 shrink-0" />
           Utalás
         </button>
       </div>
@@ -1233,9 +1238,10 @@ function InvoicePrepCard({
         type="button"
         onClick={onCreateInvoice}
         disabled={done || invoiceBusy || parsedAmount <= 0}
-        className="mt-3 w-full rounded-2xl bg-blue-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-3 flex w-full items-center justify-center gap-3 rounded-2xl bg-blue-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {done ? "Számla elkészült" : invoiceBusy ? "Számla készítése..." : "Számla létrehozása Számlázz.hu-ban"}
+        <WorkSectionIcon name="billing" className="h-6 w-6 shrink-0" />
+        <span>{done ? "Számla elkészült" : invoiceBusy ? "Számla készítése..." : "Számla létrehozása Számlázz.hu-ban"}</span>
       </button>
     </div>
   );
@@ -1298,13 +1304,17 @@ function ActionButton({
   label,
   doneAt,
   color = "cyan",
-  icon = "→",
+  icon,
+  indicator = "→",
+  pressed,
   onClick,
 }: {
   label: string;
   doneAt?: string;
   color?: "cyan" | "green" | "blue" | "amber" | "red";
-  icon?: string;
+  icon: WorkSectionIconName;
+  indicator?: string;
+  pressed?: boolean;
   onClick?: () => void;
 }) {
   const colorClass = {
@@ -1319,13 +1329,19 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:cursor-wait disabled:opacity-60`}
+      aria-pressed={pressed}
+      className={`group flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:cursor-wait disabled:opacity-60`}
     >
-      <span className="min-w-0">
-        <span className="block leading-tight">{label}</span>
-        {doneAt ? <span className="mt-1 block text-xs font-black opacity-75">{formatDoneAt(doneAt)}</span> : null}
+      <span className="flex min-w-0 items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-black/5">
+          <WorkSectionIcon name={icon} />
+        </span>
+        <span className="min-w-0">
+          <span className="block leading-tight">{label}</span>
+          {doneAt ? <span className="mt-1 block text-xs font-black opacity-75">{formatDoneAt(doneAt)}</span> : null}
+        </span>
       </span>
-      <span className="shrink-0 rounded-full bg-black/10 px-3 py-1 text-sm transition group-hover:translate-x-1">{icon}</span>
+      <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 text-sm transition group-hover:translate-x-1">{indicator}</span>
     </button>
   );
 }
