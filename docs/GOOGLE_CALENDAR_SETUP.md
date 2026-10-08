@@ -2,7 +2,9 @@
 
 ## Aktiválási állapot
 
-2026-10-08-án a funkció kódja, SQL-migrációja és helyi tesztjei elkészültek. A Google OAuth-kapcsolat engedélyezése, az éles adatbázis-migráció és a háttérfeladat aktiválása még nem történt meg. A helyi teszt nem igazolja a Google-fiók vagy az éles környezet működő kapcsolatát. Aktiválás után ezt a bekezdést a ténylegesen ellenőrzött állapotra kell frissíteni.
+2026-10-08-án a funkció kódja éles kiadásba került. A Google Cloud projekt, a Calendar API, az OAuth-kliens és a kizárólag Production környezetben tárolt öt Vercel-változó beállítva; az új kiadás Ready. Az éles Supabase-migráció lefutott, a három új tábla RLS- és böngészős olvasási tiltása ellenőrizve. A percenkénti cron aktív és sikeresen futott. A Vaultból hitelesített éles HTTP-próba 200 választ és nulla feldolgozott tételt adott; a kapcsolati tábla és a sor ekkor üres volt.
+
+A nyilvános naptár-adatkezelési tájékoztató szövegét az üzemeltető jóváhagyta. Közzététele, a Google alkalmazás Production állapotba kapcsolása és a munkaterületi OAuth-összekapcsolás még hátravan. Az éles Google-esemény létrehozása/módosítása/lemondása még nincs igazolva; a sikeres üres háttérhívás önmagában nem naptárkapcsolat.
 
 ## Működés
 
@@ -65,10 +67,30 @@ A megnyitott alkalmazás időpontmentés után, előtérbe kerüléskor és lát
 
 Az opcionális [GOOGLE_CALENDAR_CRON.sql](sql/GOOGLE_CALENDAR_CRON.sql) Supabase `pg_cron` + `pg_net` feladatot állít be. Előbb a kész API-kiadásnak és a Vercelben beállított `GOOGLE_CALENDAR_CRON_SECRET` értéknek kell elérhetőnek lennie. Ezután:
 
-1. Engedélyezd a `pg_cron`, `pg_net` bővítményeket és a Vault használatát.
+1. Engedélyezd a `pg_cron`, `pg_net` bővítményeket és a Vault használatát. A már telepített bővítményeket megtartó parancsok:
+
+   ```sql
+   create schema if not exists extensions;
+   create extension if not exists pg_net with schema extensions;
+   create extension if not exists pg_cron;
+   ```
+
+   A `pg_cron` maga készíti el a `cron` sémát; a fenti telepítési sorrendet a [Supabase példája](https://supabase.com/docs/guides/ai/automatic-embeddings) is használja. Nincs szükség bővítmény törlésére vagy újralétrehozására.
 2. A Supabase Vault felületén add hozzá az `alinflow_app_url` nevű értéket: ugyanaz a kanonikus HTTPS-eredet, mint a Vercelben, záró perjel nélkül.
 3. Az `alinflow_google_calendar_cron_secret` nevű Vault-titok pontosan egyezzen a Vercel `GOOGLE_CALENDAR_CRON_SECRET` értékével.
-4. `postgres` szerepkörrel alkalmazd a cron SQL-sablont. Ez aktiválja az `alinflow-google-calendar-sync` nevű, percenkénti feladatot. Az ismételt futtatás ezt az azonos feladatot állítja be; másik feladatot nem töröl.
+4. Ellenőrizd, hogy a `net` és `vault` séma nincs kitéve a Data API-n. A sablon elsőként az `authenticator` szerep katalógusban mentett `pgrst.db_schemas` értékét olvassa; az adott adatbázisra érvényes beállítás elsőbbséget kap. Az SQL Editor saját `current_setting('pgrst.db_schemas',true)` értéke nem igazolja a PostgREST konfigurációját. Ismert, veszélyes vagy nem értelmezhető beállításnál a sablon megáll.
+5. Ha nincs katalógusban mentett sémaérték, ellenőrizd a **Project Settings → Data API → Exposed schemas** listát. A hiányzó SQL-beállítás önmagában nem bizonyítja a védelmet. Csak a tényleges felületi ellenőrzés után illeszd a futtatási példány `begin;` sora után ezt az egyszeri, tranzakcióra érvényes megerősítést:
+
+   ```sql
+   set local alinflow.calendar_net_schema_not_exposed='confirmed';
+   ```
+
+   Ez nem állít át platformkonfigurációt. A repóban tárolt sablon nem adja meg automatikusan a megerősítést, és a jelzés nem írhat felül egy katalógusból ismert veszélyes sémalistát. A [Supabase leírja](https://supabase.com/docs/guides/troubleshooting/pgrst106-the-schema-must-be-one-of-the-following-error-when-querying-an-exposed-schema), hogy a szerepszintű felülbírálás és a Dashboard beállítása eltérhet.
+6. `postgres` szerepkörrel alkalmazd a cron SQL-sablont. Ez aktiválja az `alinflow-google-calendar-sync` nevű, percenkénti feladatot. Az ismételt futtatás ezt az azonos feladatot állítja be; másik feladatot nem töröl.
+
+A Supabase `pg_net` tábláinak megosztott jogait a platform kezeli. A `PUBLIC` táblaengedély önmagában nem jelent böngészős hozzáférést: az alkalmazásszerepek `NOLOGIN` állapota és a `net` séma Data API-ból való kizárása adja az elkülönítést. A sablon ezeket és az `anon`/`authenticated` Vault-olvasási jogának hiányát ellenőrzi; a közös `net` jogosultságokat nem módosítja. A [platform dokumentációja](https://supabase.com/docs/guides/troubleshooting/revoking-access-to-pg_net-objects-has-no-effect-0bbc16) szerint ezek visszavonása hatástalan lehet, illetve a működő pg_net hívásokat is megszakíthatja.
+
+A Vault a titkot tároláskor titkosítja, de elküldés előtt a Bearer-érték rövid ideig a `net.http_request_queue` fejlécében is szerepel. Ezért minden, közvetlen adatbázis-bejelentkezésre jogosult szerepet megbízhatónak kell tekinteni; az új login szerepeket és a Data API sémakitettségének változását ismét át kell nézni. A cron önálló titka csak a szinkronizálás elindítására szolgál. [Supabase: a pg_net kérésekben tárolt fejlécek](https://supabase.com/docs/guides/troubleshooting/database-roles-can-read-request-headers-queued-by-pg_net-ad6357)
 
 A kizárólag postgres által futtatható `dispatch_google_calendar_sync()` csak akkor indít HTTP-kérést, ha van esedékes, szabadon feldolgozható sor aktív munkaterülethez és `connected` kapcsolathoz. A kérés `POST /api/google-calendar/cron`, külön Bearer-titokkal; sem Google-token, sem Supabase service-role kulcs nincs a cron parancsában. Üres sor miatt nincs percenkénti Vercel-hívás.
 

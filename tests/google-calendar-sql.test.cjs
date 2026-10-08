@@ -342,7 +342,53 @@ test('Google Calendar SQL outbox, OAuth consumption and access control', {
       assert.equal(other[0].workspace_id, foreignWorkspace);
     });
 
-    await check('optional cron dispatcher only wakes pending active work and keeps credentials server-only', async () => {
+    await check('cron preflight accepts Supabase net grants only with verified API isolation', async () => {
+      const cron = fs.readFileSync(path.join(repo, 'docs/sql/GOOGLE_CALENDAR_CRON.sql'), 'utf8');
+      const block = cron.match(/do \$api_access\$[\s\S]*?\$api_access\$;/)?.[0];
+      assert.ok(block);
+      await db.exec(`create role authenticator login;
+        create schema vault; create schema net;
+        create table vault.decrypted_secrets(decrypted_secret text);
+        create table net.http_request_queue(headers jsonb);
+        grant usage on schema net to public;
+        grant all on net.http_request_queue to public;`);
+      const preflight = () => db.exec(block);
+      const rejectPreflight = async pattern => {
+        await db.exec('savepoint rejected_preflight');
+        await assert.rejects(preflight, pattern);
+        await db.exec('rollback to savepoint rejected_preflight');
+      };
+      await rejectPreflight(/schemas are unknown/);
+      // A setting in this SQL Editor session does not prove PostgREST's setting.
+      await db.exec("set local pgrst.db_schemas='public'");
+      await rejectPreflight(/schemas are unknown/);
+      await db.exec("set local alinflow.calendar_net_schema_not_exposed='confirmed'");
+      await preflight();
+      await db.exec("set local alinflow.calendar_net_schema_not_exposed=''; alter role authenticator set pgrst.db_schemas='public, graphql_public'");
+      await preflight();
+      for (const schemas of ['public,net', 'public,vault', 'public,"net"']) {
+        await db.query("select set_config('alinflow.calendar_net_schema_not_exposed','confirmed',true)");
+        await db.exec(`alter role authenticator set pgrst.db_schemas='${schemas}'`);
+        await rejectPreflight(/unsafe or unrecognized/);
+      }
+      await db.exec("alter role authenticator set pgrst.db_schemas='public'; set local alinflow.calendar_net_schema_not_exposed=''");
+      await db.exec(`do $$begin execute format('alter role authenticator in database %I set pgrst.db_schemas=%L',current_database(),'public,net'); end$$`);
+      await rejectPreflight(/unsafe or unrecognized/);
+      await db.exec("alter role authenticator set pgrst.db_schemas='public,net'");
+      await db.exec(`do $$begin execute format('alter role authenticator in database %I set pgrst.db_schemas=%L',current_database(),'public'); end$$`);
+      await preflight();
+      await db.exec('alter role authenticated login');
+      await rejectPreflight(/application role can log in/);
+      await db.exec('alter role authenticated nologin; grant select on vault.decrypted_secrets to authenticated');
+      await rejectPreflight(/Vault secrets/);
+      await db.exec('revoke select on vault.decrypted_secrets from authenticated');
+      await preflight();
+      // The preflight must never rewrite Supabase-owned object privileges.
+      assert.equal(await scalar("select has_column_privilege('authenticated','net.http_request_queue','headers','SELECT')"), true);
+      assert.equal(await scalar("select has_table_privilege('anon','net.http_request_queue','DELETE')"), true);
+    });
+
+    await check('optional cron dispatcher only wakes pending work and cannot be invoked by API roles', async () => {
       // Execute the production SQL function against fake Vault/pg_net boundaries;
       // this does not emulate extension installation or make an HTTP request.
       const cron = fs.readFileSync(path.join(repo, 'docs/sql/GOOGLE_CALENDAR_CRON.sql'), 'utf8');

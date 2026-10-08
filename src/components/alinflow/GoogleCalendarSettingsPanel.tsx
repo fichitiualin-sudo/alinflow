@@ -74,6 +74,7 @@ export function GoogleCalendarSettingsPanel({ workspaceId, userId, status, loadi
                 <input type="email" required value={email} disabled={busy} autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(event) => setEmail(event.target.value)} className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 font-bold text-slate-50 outline-none focus:border-cyan-300" />
               </label>
               <button type="submit" disabled={busy} className={`${buttonClass} bg-cyan-300 text-slate-950`}>{busy ? "Google megnyitása…" : status.status === "not_connected" ? "Google Naptár összekapcsolása" : "Google Naptár újraengedélyezése"}</button>
+              <a href="/adatvedelem/google-naptar" target="_blank" rel="noopener noreferrer" aria-label="Google Naptár adatkezelési tájékoztató (új lapon)" className="flex min-h-11 items-center rounded-lg py-2 text-sm font-bold text-cyan-200 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Google Naptár adatkezelési tájékoztató</a>
             </form>
           ) : <p className="text-sm text-slate-400">A kapcsolatot a munkaterület tulajdonosa vagy adminisztrátora kezelheti.</p>}
         </>

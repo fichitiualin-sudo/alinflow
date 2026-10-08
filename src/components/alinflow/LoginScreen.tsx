@@ -16,6 +16,9 @@ export function LoginScreen({ email, password, message, loading, onEmail, onPass
             {message ? <div className="rounded-2xl border border-red-300/30 bg-red-400/10 p-4 text-sm font-bold text-red-100">{message}</div> : null}
             <button onClick={onSubmit} disabled={loading} className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 shadow-xl transition hover:scale-[1.01] disabled:cursor-wait disabled:opacity-60">{loading ? "Beléptetés..." : "Belépés"}</button>
           </div>
+          <footer className="mt-4 text-center">
+            <a href="/adatvedelem/google-naptar" target="_blank" rel="noopener noreferrer" aria-label="Google Naptár adatkezelési tájékoztató (új lapon)" className="inline-flex min-h-11 items-center rounded-lg py-2 text-sm font-bold text-cyan-200 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Google Naptár adatkezelési tájékoztató</a>
+          </footer>
         </div>
       </div>
     </main>
