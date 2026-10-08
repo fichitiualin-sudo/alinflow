@@ -3,6 +3,7 @@ import { markerPinIcon, summarizeMapMarkers, type MapCanvasMarker } from "./map-
 type Callbacks = {
   onSelectMarker?: (id: string) => void;
   createPopupContent?: (id: string) => HTMLElement;
+  compactPopup?: boolean;
   itemLabel?: string;
 };
 type Entry = { source: MapCanvasMarker; marker: any; signature: string };
@@ -44,11 +45,12 @@ export function createMapMarkerLayer({ maps, map, info, getCallbacks }: {
     getCallbacks().onSelectMarker?.(id);
     const summary = summarizeMapMarkers([entry.source]);
     const content = document.createElement("div");
-    content.className = "alinflow-map-popup";
+    const compactPopup = getCallbacks().compactPopup;
+    content.className = `alinflow-map-popup${compactPopup ? " alinflow-map-popup-compact" : ""}`;
     const heading = document.createElement("p");
     heading.className = "alinflow-map-popup-heading";
     heading.textContent = `${summary.count} ${getCallbacks().itemLabel || "bejegyzés"}`;
-    content.appendChild(heading);
+    if (!compactPopup) content.appendChild(heading);
     const breakdown = document.createElement("ul");
     breakdown.className = "alinflow-map-breakdown";
     for (const segment of summary.segments) {
@@ -62,7 +64,7 @@ export function createMapMarkerLayer({ maps, map, info, getCallbacks }: {
       row.append(dot, label);
       breakdown.appendChild(row);
     }
-    content.appendChild(breakdown);
+    if (!compactPopup) content.appendChild(breakdown);
     const details = getCallbacks().createPopupContent?.(id);
     if (details) content.appendChild(details);
     else {

@@ -32,3 +32,11 @@
 .alinflow-map-popup-pagination { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 10px; font-size: 12px; }
 .alinflow-map-popup-pagination button { background: #e2e8f0; }
 .alinflow-map-popup-pagination button:disabled { opacity: .4; cursor: default; }
+.alinflow-map-popup-compact { width: 260px; max-width: 100%; max-height: none; overflow: visible; }
+.alinflow-map-popup-compact .alinflow-map-popup-heading { margin-bottom: 6px; }
+.alinflow-map-popup-compact .alinflow-map-popup-customer { padding: 6px 0 0; }
+.alinflow-map-popup-compact .alinflow-map-popup-actions { gap: 6px; margin-top: 8px; }
+.alinflow-map-popup-compact .alinflow-map-popup-action { box-sizing: border-box; padding: 8px 6px; }
+.alinflow-map-popup-actions-with-delete .alinflow-map-popup-open { grid-column: auto; }
+.alinflow-map-popup-delete { background: #fee2e2; color: #991b1b; }
+.alinflow-map-popup-delete:disabled { opacity: .5; cursor: wait; }

@@ -3725,14 +3725,16 @@ function HomeContent() {
   }
 
 
-  async function deleteCustomer(customer: Customer) {
-    if (!customer?.id) return;
+  async function deleteCustomer(customer: Customer, options: { stayOnMap?: boolean } = {}): Promise<boolean> {
+    if (!customer?.id) return false;
     const workspaceId = currentWorkspaceId();
-    const confirmed = window.confirm(`Biztosan törlöd ezt az ügyfelet / érdeklődőt?\n\n${customer.name || "Névtelen ügyfél"}\n\nEz a művelet véglegesen eltávolítja az ügyfelet és a hozzá tartozó időpontot / ajánlatot.`);
-    if (!confirmed) return;
+    const actionKey = `customer-delete:${workspaceId || "none"}:${customer.id}`;
+    if (!beginAction(actionKey)) return false;
 
     try {
-      setMessage("");
+      const confirmed = window.confirm(`Biztosan törlöd ezt az ügyfelet / érdeklődőt?\n\n${customer.name || "Névtelen ügyfél"}\n\nEz a művelet véglegesen eltávolítja az ügyfelet és a hozzá tartozó időpontot / ajánlatot.`);
+      if (!confirmed) return false;
+      setMessage("Ügyfél törlése folyamatban...", "pending");
 
       if (!workspaceId) throw new Error("Az ügyfél törléséhez válassz munkaterületet.");
       // Check photo retention and delete the customer graph in one transaction.
@@ -3742,7 +3744,7 @@ function HomeContent() {
         p_workspace_id: workspaceId,
       });
       if (customerDeleteError) throw customerDeleteError;
-      if (currentWorkspaceId() !== workspaceId) return;
+      if (currentWorkspaceId() !== workspaceId) return false;
 
       setCustomers((prev) => prev.filter((item) => item.id !== customer.id));
       setDocumentsByCustomer((prev) => {
@@ -3764,14 +3766,18 @@ function HomeContent() {
       if (selectedCustomerIdRef.current === customer.id) {
         setSelected(EMPTY_CUSTOMER);
         setQuoteItems(EMPTY_QUOTE_ITEMS);
-        returnToLastMenu();
+        if (!options.stayOnMap) returnToLastMenu();
       }
 
       clearCustomerDraft(customer.id);
       setMessage("Ügyfél törölve ✅");
     } catch (error: any) {
       if (currentWorkspaceId() === workspaceId) setMessage(`Törlési hiba: ${error.message}`);
+      return false;
+    } finally {
+      endAction(actionKey);
     }
+    return true;
   }
   function step(d:number) {
     const n = new Date(calDate);
@@ -4551,7 +4557,7 @@ function HomeContent() {
         </div>
         <Back onClick={() => goBack()} />
         {mapMode === "callbacks" ? (
-          <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} />
+          <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} onDeleteCustomer={(customer) => deleteCustomer(customer, { stayOnMap: true })} />
         ) : <MaintenanceMapPanel
           points={maintenanceMapPoints}
           googleMapsApiKey={googleMapsApiKey}
