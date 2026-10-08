@@ -92,7 +92,7 @@ A „Készülékadatok és adattábla-fotók” rész telepítésnél kizáróla
 
 ## Dokumentumok és karbantartási napló
 
-A munkaoldal lenyíló gombjai rövid, állandó címet és visszafogott ikont mutatnak, „megjelenítése” / „elrejtése” toldalék nélkül. A nyitott állapotot a plusz/mínusz jel és az akadálymentes állapotjelzés mutatja. A „Klímák karbantartási állapota” és a „Karbantartott klímák” alapból csukva van, másik munka megnyitásakor is. Telepítésnél a klímalista továbbra is nyitva indul. A szakaszok közötti térköz egységes, mobilon a Felhasznált anyagok és Dokumentumok között is.
+A munkaoldal lenyíló gombjai rövid, állandó címet és egységes vonalas SVG-piktogramot mutatnak, „megjelenítése” / „elrejtése” toldalék nélkül. Az ikonok nem emojik: egységes mérettel és vonalvastagsággal jelennek meg minden eszközön. A nyitott állapotot a plusz/mínusz jel és az akadálymentes állapotjelzés mutatja. A „Klímák karbantartási állapota”, a „Karbantartott klímák” és az „Időponthoz tartozó klímák” alapból csukva van, másik munka megnyitásakor is. A felmérési időpont részletei továbbra is nyitva indulnak. A szakaszok közötti térköz egységes, mobilon a Felhasznált anyagok és Dokumentumok között is.
 
 A karbantartási napló legyen minimális:
 

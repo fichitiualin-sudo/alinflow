@@ -7,6 +7,7 @@ import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields
 import { WorkPhotosPanel } from "@/components/alinflow/WorkPhotosPanel";
 import { AppointmentDevicesPanel } from "@/components/alinflow/AppointmentDevicesPanel";
 import { HTariffPanel } from "@/components/alinflow/HTariffPanel";
+import { WorkSectionIcon, type WorkSectionIconName } from "@/components/alinflow/WorkSectionIcon";
 import { DocumentActionButtons, documentStatusClass, type SendPdfDocuments } from "@/components/alinflow/DocumentCards";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
@@ -57,7 +58,7 @@ function WorkSectionToggleButton({
   color = "cyan",
 }: {
   label: string;
-  icon: string;
+  icon: WorkSectionIconName;
   open: boolean;
   onClick: () => void;
   color?: "cyan" | "orange";
@@ -74,7 +75,9 @@ function WorkSectionToggleButton({
       className={`group flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black text-slate-950 shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]`}
     >
       <span className="flex min-w-0 items-center gap-3">
-        <span aria-hidden="true" className="w-5 shrink-0 text-lg leading-none opacity-80">{icon}</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-black/5">
+          <WorkSectionIcon name={icon} />
+        </span>
         <span className="min-w-0 leading-tight">{label}</span>
       </span>
       <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 text-lg font-black text-slate-950 transition group-hover:translate-x-1">
@@ -356,7 +359,7 @@ export function WorkPagePanel({
   const [showDocuments, setShowDocuments] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
-  const [showWorkItems, setShowWorkItems] = useState(!isMaintenance);
+  const [showWorkItems, setShowWorkItems] = useState(isSurvey);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const defaultCombinedAmount = total(quoteItems);
@@ -404,8 +407,8 @@ export function WorkPagePanel({
 
   useEffect(() => {
     setShowMaintenance(false);
-    setShowWorkItems(!isMaintenance);
-  }, [workspaceId, selected.id, selected.activeAppointmentId, isMaintenance]);
+    setShowWorkItems(isSurvey);
+  }, [workspaceId, selected.id, selected.activeAppointmentId, isSurvey]);
 
   useEffect(() => {
     setLaborInvoiceAmount(String(defaultLaborAmount));
@@ -462,7 +465,7 @@ export function WorkPagePanel({
       <>
         <WorkSectionToggleButton
           label="Klímák karbantartási állapota"
-          icon="🛠️"
+          icon="maintenance"
           open={showMaintenance}
           onClick={() => setShowMaintenance((open) => !open)}
         />
@@ -532,7 +535,7 @@ export function WorkPagePanel({
                 aria-expanded={showWorkHistory}
                 className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
               >
-                <span aria-hidden="true" className="mr-2 text-lg opacity-80">🗂️</span>
+                <WorkSectionIcon name="history" className="mr-2 inline-block h-6 w-6 align-middle" />
                 Más klímaszerelések
                 <span aria-hidden="true" className="ml-3">{showWorkHistory ? "−" : "+"}</span>
               </button>
@@ -569,7 +572,7 @@ export function WorkPagePanel({
           <div>
             <WorkSectionToggleButton
               label={workItemsTitle}
-              icon={isSurvey ? "📋" : "❄️"}
+              icon={isSurvey ? "survey" : "climate"}
               open={showWorkItems}
               onClick={() => setShowWorkItems((open) => !open)}
             />
@@ -695,7 +698,7 @@ export function WorkPagePanel({
           <div>
             <WorkSectionToggleButton
               label="Munkafotók"
-              icon="📷"
+              icon="photos"
               open={showPhotos}
               onClick={() => setShowPhotos((open) => !open)}
             />
@@ -716,7 +719,7 @@ export function WorkPagePanel({
             <div>
               <WorkSectionToggleButton
                 label="Felhasznált anyagok"
-                icon="🧰"
+                icon="materials"
                 open={showMaterials}
                 onClick={() => setShowMaterials((open) => !open)}
               />
@@ -769,7 +772,7 @@ export function WorkPagePanel({
 
           <WorkSectionToggleButton
             label="Dokumentumok"
-            icon="📄"
+            icon="documents"
             open={showDocuments}
             onClick={() => setShowDocuments((open) => !open)}
           />
@@ -969,7 +972,7 @@ function BillingPreparationPanel({
     <div className="space-y-3">
       <WorkSectionToggleButton
         label="Számlázás"
-        icon="🧾"
+        icon="billing"
         open={isOpen}
         onClick={() => setIsOpen((value) => !value)}
         color="orange"
@@ -1082,7 +1085,7 @@ function MaintenanceBillingPanel({
     <div className="space-y-3">
       <WorkSectionToggleButton
         label="Számlázás"
-        icon="🧾"
+        icon="billing"
         open={isOpen}
         onClick={() => setIsOpen((value) => !value)}
         color="orange"
