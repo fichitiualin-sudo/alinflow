@@ -4,7 +4,9 @@
 
 2026-10-08-án a funkció kódja éles kiadásba került. A Google Cloud projekt, a Calendar API, az OAuth-kliens és a kizárólag Production környezetben tárolt öt Vercel-változó beállítva; az új kiadás Ready. Az éles Supabase-migráció lefutott, a három új tábla RLS- és böngészős olvasási tiltása ellenőrizve. A percenkénti cron aktív és sikeresen futott. A Vaultból hitelesített éles HTTP-próba 200 választ és nulla feldolgozott tételt adott; a kapcsolati tábla és a sor ekkor üres volt.
 
-A nyilvános naptár-adatkezelési tájékoztatót az üzemeltető jóváhagyta, a `/adatvedelem/google-naptar` útvonal élesben elérhető, mobilon és asztali nézetben ellenőrizve. A Google alkalmazás In production állapotú; a tájékoztató a Branding beállításban mentve. A munkaterületi OAuth-összekapcsolás a Google nem ellenőrzött alkalmazásról szóló figyelmeztetésénél felhasználói folytatásra vár. Az éles Google-esemény létrehozása/módosítása/lemondása még nincs igazolva; a sikeres üres háttérhívás önmagában nem naptárkapcsolat.
+A nyilvános naptár-adatkezelési tájékoztatót az üzemeltető jóváhagyta, a `/adatvedelem/google-naptar` útvonal élesben elérhető, mobilon és asztali nézetben ellenőrizve. A Google alkalmazás In production állapotú; a tájékoztató a Branding beállításban mentve. A KLIMAlin munkaterületi OAuth-összekapcsolás sikeres, állapotfrissítés után is „Automatikus naptármentés bekapcsolva” látszik. Az adatbázisban egy aktív kapcsolat, nulla szinkronizálási sor és 17 sikeres cronfutás volt az ellenőrzéskor; a korábbi időpontok nem kerültek át. Az első próbán kimaradt Google-naptárengedély pótlásával a kapcsolat létrejött; a hiányzó engedélyre azóta külön, teendőt is mutató üzenet készült.
+
+Az éles Google-esemény létrehozása/módosítása/lemondása új valódi időpont nélkül még nincs ellenőrizve. Az eseményműveleteket, újrapróbálást és jogosultságokat a 73 sikeres naptárteszt fedi; az éles ellenőrzés a kapcsolatra, hozzáférésre és háttérhívásra terjedt ki.
 
 ## Működés
 
