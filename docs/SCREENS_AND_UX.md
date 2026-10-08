@@ -94,6 +94,8 @@ A „Készülékadatok és adattábla-fotók” rész telepítésnél kizáróla
 
 A munkaoldal lenyíló gombjai rövid, állandó címet és egységes vonalas SVG-piktogramot mutatnak, „megjelenítése” / „elrejtése” toldalék nélkül. Az ikonok nem emojik: egységes mérettel és vonalvastagsággal jelennek meg minden eszközön. A nyitott állapotot a plusz/mínusz jel és az akadálymentes állapotjelzés mutatja. A „Klímák karbantartási állapota”, a „Karbantartott klímák” és az „Időponthoz tartozó klímák” alapból csukva van, másik munka megnyitásakor is. A felmérési időpont részletei továbbra is nyitva indulnak. A szakaszok közötti térköz egységes, mobilon a Felhasznált anyagok és Dokumentumok között is.
 
+A lezárási műveletek és a számlázási gombok ugyanezt az ikoncsaládot használják: aláírás, nyilvántartás, lezárás, időpontlemondás, számla és fizetési mód. Az ikonok mellett a művelet teljes felirata megmarad. Az NKVH külön kész/nincs kész jelzése és a teljesítés dátumai továbbra is láthatók.
+
 A karbantartási napló legyen minimális:
 
 - dátum;
