@@ -127,6 +127,7 @@ import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
 import { QuotePreviewPanel } from "@/components/alinflow/QuotePreviewPanel";
 import { SchedulePanel } from "@/components/alinflow/SchedulePanel";
 import { SettingsPanel } from "@/components/alinflow/SettingsPanel";
+import { notifyGoogleCalendarAppointmentsChanged, useGoogleCalendarSync } from "@/components/alinflow/GoogleCalendarSync";
 import { ActionFeedbackProvider, useActionFeedback } from "@/components/alinflow/ActionFeedback";
 import {
   clearCustomerDraft,
@@ -488,6 +489,13 @@ function HomeContent() {
   const [documentExportBusy,setDocumentExportBusy] = useState(false);
   const [signedDocumentArchiveBusy,setSignedDocumentArchiveBusy] = useState(false);
   const [initialDataReady,setInitialDataReady] = useState(false);
+  const googleCalendar = useGoogleCalendarSync({
+    workspaceId: activeWorkspace?.id,
+    userId: user?.id,
+    enabled: initialDataReady && !authLoading,
+    onReturn: () => setView("settings"),
+  });
+  const managedCalendarAppointmentIds = useMemo(() => new Set(googleCalendar.status?.managedAppointmentIds || []), [googleCalendar.status?.managedAppointmentIds]);
   const [loginEmail,setLoginEmail] = useState("");
   const [loginPassword,setLoginPassword] = useState("");
   const [loginBusy,setLoginBusy] = useState(false);
@@ -2935,6 +2943,7 @@ function HomeContent() {
   };
 
   async function saveAppointmentWithJobMirror(customer: Customer, quoteId?: string): Promise<PersistCustomerResult> {
+    const workspaceId = currentWorkspaceId();
     const { data, error } = await supabase.rpc("save_appointment_with_resources", {
       p_appointment_id: customer.activeAppointmentId || null,
       p_customer_id: customer.id,
@@ -2947,13 +2956,14 @@ function HomeContent() {
       p_address: customer.address || null,
       p_notes: customer.notes || customer.need || null,
       p_created_by: user?.id || null,
-      p_workspace_id: currentWorkspaceId(),
+      p_workspace_id: workspaceId,
       p_material_usage: customer.materialUsage || null,
     });
 
     if (error) throw error;
 
     const row = Array.isArray(data) ? data[0] : data;
+    notifyGoogleCalendarAppointmentsChanged(workspaceId, customer.activeAppointmentId ? undefined : row?.appointment_id);
     return {
       appointmentId: row?.appointment_id || undefined,
       jobId: row?.job_id || undefined,
@@ -2961,6 +2971,7 @@ function HomeContent() {
   }
 
   async function cancelAppointmentWithJobMirror(customer: Customer, cancelledAt: string): Promise<PersistCustomerResult> {
+    const workspaceId = currentWorkspaceId();
     if (!customer.id || !customer.activeAppointmentId) {
       throw new Error("Hianyzik a lemondando idopont azonositoja, ezert biztonsagbol nem modositottam rekordot.");
     }
@@ -2970,7 +2981,7 @@ function HomeContent() {
       p_customer_id: customer.id,
       p_cancelled_at: cancelledAt,
       p_status: "Lemondva",
-      p_workspace_id: currentWorkspaceId(),
+      p_workspace_id: workspaceId,
     });
 
     if (error) throw error;
@@ -2979,6 +2990,7 @@ function HomeContent() {
     if (row?.appointment_id !== customer.activeAppointmentId) {
       throw new Error("A lemondás nem igazolta a kért időpont módosítását. Frissítsd az adatokat és ellenőrizd az időpontot.");
     }
+    notifyGoogleCalendarAppointmentsChanged(workspaceId);
     return {
       appointmentId: row.appointment_id,
       jobId: row?.job_id || undefined,
@@ -4628,6 +4640,8 @@ function HomeContent() {
     return (
       <SettingsPanel
         activeWorkspace={activeWorkspace}
+        userId={user.id}
+        googleCalendar={googleCalendar}
         settings={workspaceSettings}
         schemaAvailable={workspaceSettingsSchemaAvailable}
         saving={workspaceSettingsBusy}
@@ -6738,7 +6752,7 @@ function HomeContent() {
       <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuoteAwaitingAppointment).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
 
       <section className="space-y-6 xl:hidden">
-        <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment}/>
+        <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment} googleCalendar={googleCalendar.status} googleCalendarError={googleCalendar.error} managedCalendarAppointmentIds={managedCalendarAppointmentIds}/>
         {renderCustomerSearchPanel()}
         {renderDraftNoticePanel()}
         {renderDashboardLeadsPanel()}
@@ -6747,7 +6761,7 @@ function HomeContent() {
 
       <section className="hidden gap-6 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] xl:items-start 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
         <div className="space-y-6">
-          <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment}/>
+          <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment} googleCalendar={googleCalendar.status} googleCalendarError={googleCalendar.error} managedCalendarAppointmentIds={managedCalendarAppointmentIds}/>
           {renderDashboardLeadsPanel()}
         </div>
 

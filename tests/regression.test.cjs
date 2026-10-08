@@ -250,6 +250,7 @@ test("A08: cancellation replaces the existing history entry immediately", async 
   const f = h.functions(["cancelAppointment", "cancelAppointmentWithJobMirror", "promoteCustomerWork", "updateWorkHistory",
     "shouldPromoteWorkToCustomerList", "workCustomersForScheduling"], {
     ...base, selected: customer, setSelected: noop, setMessage: noop, returnToLastMenu: noop,
+    notifyGoogleCalendarAppointmentsChanged: noop,
     supabase: db, sortCustomersBySchedule: identity, sortCustomersByCreatedAtDesc: identity,
     setWorkHistoryByCustomer: fn => history = fn(history), setCustomers: fn => customers = fn(customers) });
   await f.cancelAppointment();
