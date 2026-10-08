@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, MaintenanceInstallationSummary, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
-import { Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { WorkPhotosPanel } from "@/components/alinflow/WorkPhotosPanel";
 import { AppointmentDevicesPanel } from "@/components/alinflow/AppointmentDevicesPanel";
@@ -214,6 +214,7 @@ type WorkPagePanelProps = {
   scheduleTime: string;
   shownTime: string;
   message: string;
+  saving?: boolean;
   editCustomer: boolean;
   quoteItems: QuoteItem[];
   products: ClimateProduct[];
@@ -279,7 +280,7 @@ export function WorkPagePanel({
   scheduleDate,
   scheduleTime,
   shownTime,
-  message,
+  saving = false,
   editCustomer,
   quoteItems,
   products,
@@ -388,7 +389,6 @@ export function WorkPagePanel({
   const selectedMaintenanceInstallations = isMaintenance ? selected.maintenanceInstallations || [] : [];
   const hasMaintenanceClimateDetails = selectedMaintenanceInstallations.length > 0 || quoteItems.length > 0;
   const hasMaintenanceSection = installationWorksForMaintenance.length > 0 || maintenanceRows.length > 0 || canStartMaintenance;
-  const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("nem zárható");
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
     : isMaintenance
@@ -495,16 +495,8 @@ export function WorkPagePanel({
 
   return (
     <>
-      <div className="sticky top-3 z-50 w-fit print:hidden">
-        <button onClick={onBack} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur">
-          ← Vissza
-        </button>
-      </div>
-      {message ? (
-        <div className={`rounded-2xl border p-4 font-black ${messageIsError ? "border-red-300/40 bg-red-500/20 text-red-100" : "border-emerald-300/30 bg-emerald-400/20 text-emerald-100"}`}>
-          {message}
-        </div>
-      ) : null}
+      <Back onClick={onBack} disabled={saving || quoteEmailBusy || appointmentEmailBusy || thankYouEmailBusy || Boolean(pdfEmailBusy) || Boolean(invoiceBusy)} />
+      <fieldset disabled={saving || quoteEmailBusy || appointmentEmailBusy || thankYouEmailBusy || Boolean(pdfEmailBusy) || Boolean(invoiceBusy)} aria-busy={saving || quoteEmailBusy || appointmentEmailBusy || thankYouEmailBusy || Boolean(pdfEmailBusy) || Boolean(invoiceBusy)} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
       <Layout>
         <Main>
           <Card title="Ügyféladatok">
@@ -516,7 +508,7 @@ export function WorkPagePanel({
             />
             <div className="mt-4 flex flex-wrap gap-3">
               {selected.phone ? <a href={telHref(selected.phone)} onClick={() => onRecordCustomerPhoneCall(selected, "work")} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Hívás</a> : null}
-              {editCustomer ? <Btn color="green" onClick={onSaveCustomerData}>Ügyféladatok mentése</Btn> : <Btn color="blue" onClick={() => onSetEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}
+              {editCustomer ? <Btn color="green" disabled={saving} onClick={onSaveCustomerData}>{saving ? "Mentés..." : "Ügyféladatok mentése"}</Btn> : <Btn color="blue" onClick={() => onSetEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}
               {editCustomer ? <button onClick={() => onSetEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}
             </div>
           </Card>
@@ -681,7 +673,7 @@ export function WorkPagePanel({
             {isInstallation ? <div className="mt-4 flex flex-col gap-3 md:flex-row">
               <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddQuoteItem}>+ Klíma hozzáadása</button>
               {workResourceEditLocked && !allowWorkResourceEdit ? <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={() => onSetAllowWorkResourceEdit(true)}>Módosítás engedélyezése</button> : null}
-              {canEditWorkResources && isInstallation ? <button className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950" onClick={onSaveWorkChanges}>Módosítás mentése az időpontra</button> : null}
+              {canEditWorkResources && isInstallation ? <button disabled={saving} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60" onClick={onSaveWorkChanges}>{saving ? "Mentés..." : "Módosítás mentése az időpontra"}</button> : null}
             </div> : null}
           </Card> : null}
 
@@ -872,6 +864,7 @@ export function WorkPagePanel({
 
         </Side>
       </Layout>
+      </fieldset>
     </>
   );
 }
@@ -1303,7 +1296,7 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]`}
+      className={`group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:cursor-wait disabled:opacity-60`}
     >
       <span className="min-w-0">
         <span className="block leading-tight">{label}</span>

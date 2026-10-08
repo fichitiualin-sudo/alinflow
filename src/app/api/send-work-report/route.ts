@@ -1,4 +1,5 @@
 import { ApiError, authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
+import { sendEmailThroughProvider } from "@/lib/alinflow/email-provider";
 import { appointmentTypeLabel } from "@/lib/alinflow/appointments";
 import { loadSavedPdfBundle } from "@/lib/alinflow/document-pdf-data";
 import { createSavedPdfAttachments } from "@/lib/alinflow/document-pdf-render";
@@ -53,10 +54,9 @@ export async function POST(request: Request) {
         ${footer ? `<p>Üdvözlettel,<br>${footer}</p>` : ""}
       </body></html>`;
 
-    const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const result = await sendEmailThroughProvider({
+      apiKey,
+      payload: {
         from: process.env.EMAIL_FROM || `${brandName} <info@alinflow.hu>`,
         to: [to],
         reply_to: settings.companyProfile.email || process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com",
@@ -64,12 +64,10 @@ export async function POST(request: Request) {
         headers: { "X-Entity-Ref-ID": `alinflow-work-report-${crypto.randomUUID()}` },
         html,
         attachments,
-      }),
+      },
     });
-    const result = await resendResponse.json().catch(() => ({}));
-    if (!resendResponse.ok) return Response.json({ error: result?.message || "A Resend nem tudta elküldeni az emailt." }, { status: resendResponse.status });
     return Response.json({
-      ok: true, id: result?.id,
+      ok: true, id: result.id,
       workReportId: bundle.includeWorkReport ? bundle.report.id : null,
       purchaseDeclarationIds: bundle.declarations.map((declaration) => declaration.id),
     });

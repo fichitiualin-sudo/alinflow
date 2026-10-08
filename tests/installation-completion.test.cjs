@@ -85,6 +85,8 @@ function reportHarness({ type = "installation", fail, reportGate, declarationGat
     throw Error(`Unexpected database call: ${op.table}/${op.method}`);
   });
   const context = { ...base, selected, workReport, quoteItems: customer.quoteItems, workReportBusy: false, workReportLoadBlocked: false,
+    pendingActionsRef: { current: new Set() }, setPendingActions: noop,
+    workReportReceiptsRef: { current: new Map() }, currentWorkspaceId: () => "synthetic-workspace",
     scheduleDate: customer.date, shownTime: customer.time, scheduleTime: customer.time,
     workspaceSettings: {}, sellerCompanies: [{ id: "synthetic-seller", name: "Synthetic seller", taxNumber: "TEST", representative: "Test" }], selectedSellerId: "synthetic-seller", purchaseDeclarationItemKeys: ["0"],
     supabase: db, savedReportFor: () => undefined, fullCustomerAddress: (value) => value.address,
@@ -96,7 +98,7 @@ function reportHarness({ type = "installation", fail, reportGate, declarationGat
     compareWorkReportsDesc: () => 0, updateWorkHistory: noop, setWorkFocusTarget: noop, replaceView: noop,
     authenticatedFetch: async (url, options) => { events.push("email"); sent.push({ url, body: JSON.parse(options.body) }); return sendFailure ? Response.json({ error: "synthetic email failure" }, { status: 503 }) : Response.json({ ok: true }); },
   };
-  return { ...h.functions(["saveWorkReport", "workReportPayload"], context), events, sent, states, messages, busy };
+  return { ...h.functions(["beginAction", "endAction", "saveWorkReport", "workReportPayload"], context), events, sent, states, messages, busy };
 }
 
 test("PDF email waits for report and declaration commits, then uses the new saved IDs", async () => {

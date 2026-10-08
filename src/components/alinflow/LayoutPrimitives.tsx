@@ -78,17 +78,17 @@ export function Hero({ title, sub, action, onAction }: { title: string; sub: str
   );
 }
 
-export function Back({ onClick }: { onClick: () => void }) {
+export function Back({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
   return (
     <div className="sticky top-3 z-50 w-fit print:hidden">
-      <button onClick={onClick} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur">
+      <button type="button" onClick={onClick} disabled={disabled} aria-label={disabled ? "Vissza – művelet folyamatban" : "Vissza"} title={disabled ? "Várd meg a művelet befejezését." : undefined} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur disabled:cursor-wait disabled:opacity-50">
         ← Vissza
       </button>
     </div>
   );
 }
 
-export function StepButton({ children, color = "cyan", onClick, href }: { children: ReactNode; color?: "cyan" | "green" | "blue" | "amber" | "red"; onClick?: () => void; href?: string }) {
+export function StepButton({ children, color = "cyan", onClick, href, disabled = false }: { children: ReactNode; color?: "cyan" | "green" | "blue" | "amber" | "red"; onClick?: () => void; href?: string; disabled?: boolean }) {
   const colorClass = {
     cyan: "from-cyan-300 to-sky-400 text-slate-950 shadow-cyan-500/20",
     green: "from-emerald-400 to-green-500 text-slate-950 shadow-emerald-500/20",
@@ -97,16 +97,16 @@ export function StepButton({ children, color = "cyan", onClick, href }: { childr
     red: "from-red-500 to-rose-500 text-white shadow-red-500/20",
   }[color];
 
-  const className = `group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]`;
+  const className = `group flex w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition enabled:hover:-translate-y-0.5 enabled:hover:scale-[1.01] enabled:active:scale-[0.99] disabled:cursor-wait disabled:opacity-60`;
   const content = <><span>{children}</span><span className="rounded-full bg-black/10 px-3 py-1 text-sm transition group-hover:translate-x-1">→</span></>;
 
-  if (href) return <a href={href} onClick={onClick} className={className}>{content}</a>;
-  return <button onClick={onClick} className={className}>{content}</button>;
+  if (href) return <a href={disabled ? undefined : href} onClick={disabled ? undefined : onClick} aria-disabled={disabled || undefined} className={className}>{content}</a>;
+  return <button onClick={onClick} disabled={disabled} className={className}>{content}</button>;
 }
 
-export function Btn({ children, onClick, color = "cyan" }: { children: ReactNode; onClick?: () => void; color?: "cyan" | "green" | "blue" | "red" }) {
+export function Btn({ children, onClick, color = "cyan", disabled = false }: { children: ReactNode; onClick?: () => void; color?: "cyan" | "green" | "blue" | "red"; disabled?: boolean }) {
   const c = color === "green" ? "bg-emerald-400" : color === "blue" ? "bg-blue-400" : color === "red" ? "bg-red-400" : "bg-cyan-300";
-  return <button onClick={onClick} className={`${c} rounded-2xl px-5 py-4 font-black text-slate-950`}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} className={`${c} rounded-2xl px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60`}>{children}</button>;
 }
 
 export function InfoRow({ label, value }: { label: string; value: string }) {

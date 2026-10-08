@@ -137,8 +137,10 @@ export function LeadImportPanel({
         ref={inputRef}
         type="file"
         accept=".csv,text/csv"
+        disabled={busy}
         className="hidden"
         onChange={(event) => {
+          if (busy) return;
           const file = event.target.files?.[0];
           onFileSelected(file);
           event.currentTarget.value = "";
@@ -147,8 +149,9 @@ export function LeadImportPanel({
       <div className="space-y-3">
         <button
           type="button"
+          disabled={busy}
           onClick={() => inputRef.current?.click()}
-          className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
+          className="w-full rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-50"
         >
           CSV feltöltése
         </button>

@@ -127,6 +127,7 @@ import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
 import { QuotePreviewPanel } from "@/components/alinflow/QuotePreviewPanel";
 import { SchedulePanel } from "@/components/alinflow/SchedulePanel";
 import { SettingsPanel } from "@/components/alinflow/SettingsPanel";
+import { ActionFeedbackProvider, useActionFeedback } from "@/components/alinflow/ActionFeedback";
 import {
   clearCustomerDraft,
   draftForCustomer,
@@ -318,6 +319,31 @@ function differentEnough(a?: string, b?: string) {
   return Math.abs(first - second) > 60_000;
 }
 
+function quoteReceiptScopeFromRows(quotes: any[], appointments: any[], quoteId?: string, appointmentId?: string): Customer["quoteReceiptScope"] {
+  if (!quoteId || !quotes.length) return undefined;
+  const quote = quotes.find((row) => row.id === quoteId);
+  const notBefore = Date.parse(quote?.created_at || "");
+  if (!quote || !Number.isFinite(notBefore)) return undefined;
+  // Older versions could leave an earlier, unlinked draft when sending the first
+  // quote. Accept it only when every other quote predates this one and no other
+  // appointment could own the customer-level receipt.
+  if (quotes.some((row) => row.id !== quoteId && (row.appointment_id
+    || row.customer_id !== quote.customer_id || !Number.isFinite(Date.parse(row.created_at || ""))
+    || Date.parse(row.created_at) >= notBefore))) return undefined;
+  if (!appointmentId) {
+    return !appointments.length && !quote.appointment_id ? { quoteId, notBefore: quote.created_at } : undefined;
+  }
+  if (appointments.length !== 1) return undefined;
+  const appointment = appointments[0];
+  if (normalizeAppointmentType(appointment.appointment_type) !== "installation"
+    || appointment.id !== appointmentId || appointment.quote_id !== quoteId
+    || quote.customer_id !== appointment.customer_id
+    || (quote.appointment_id && quote.appointment_id !== appointmentId)) return undefined;
+  const notAfter = Date.parse(appointment.created_at || "");
+  if (!Number.isFinite(notAfter) || notBefore > notAfter) return undefined;
+  return { quoteId, appointmentId, notBefore: quote.created_at, notAfter: appointment.created_at };
+}
+
 function appointmentSummary(customer: Customer) {
   if (!customer.date) return "";
   return `${customer.date.replaceAll("-", ".")} · ${customer.time || "idő nélkül"}`;
@@ -397,6 +423,10 @@ function PaginationControls({
 }
 
 export default function Home() {
+  return <ActionFeedbackProvider><HomeContent /></ActionFeedbackProvider>;
+}
+
+function HomeContent() {
   const [view,setView] = useState<View>("dashboard");
   const [taskFilter,setTaskFilter] = useState<TaskFilter>("today");
   const [returnTarget,setReturnTarget] = useState<{ view: View; taskFilter?: TaskFilter } | null>(null);
@@ -429,7 +459,20 @@ export default function Home() {
   }, [selected.id, selected.activeAppointmentId]);
   const [inventory,setInventory] = useState<InventoryItem[]>(DEFAULT_INVENTORY);
   const [materialInventory,setMaterialInventory] = useState(MATERIAL_STOCK);
-  const [message,setMessageState] = useState("");
+  const { message, setMessage } = useActionFeedback();
+  const pendingActionsRef = useRef(new Set<string>());
+  const [pendingActions,setPendingActions] = useState<string[]>([]);
+  const customerSaveBusy = pendingActions.includes("customer-save");
+  const scheduleSaveBusy = pendingActions.includes("schedule-save");
+  const workActionBusy = pendingActions.some((key) => ["customer-save", "work-save", "work-close", "work-cancel", "invoice"].includes(key));
+  const quoteReceiptsRef = useRef(new Map<string, { customer: Customer; sentAt: string }>());
+  const appointmentReceiptsRef = useRef(new Map<string, { customer: Customer; sentAt: string }>());
+  const invoiceReceiptsRef = useRef(new Map<string, { invoiceNumber?: string; emailSent?: boolean }>());
+  const customerEditSnapshotRef = useRef<Customer | null>(null);
+  const workReportReceiptsRef = useRef(new Map<string, {
+    customer: Customer; sentAt: string; documents: "work_report" | "purchase_declaration" | "both";
+    workReportId?: string | null; purchaseDeclarationIds: string[]; checklist?: Partial<WorkChecklistState>;
+  }>());
   const [workFocusTarget,setWorkFocusTarget] = useState<"close-actions" | null>(null);
   const [maintenanceMapGeocodingBusy,setMaintenanceMapGeocodingBusy] = useState(false);
   const [mapMode,setMapMode] = useState<"callbacks" | "maintenance">("maintenance");
@@ -517,12 +560,28 @@ export default function Home() {
   const detailDataLoadedRef = useRef<Record<string, boolean>>({});
   const detailDataLoadingRef = useRef<Record<string, boolean>>({});
 
-  function setMessage(nextMessage: string) {
-    setMessageState(nextMessage);
-    if (!nextMessage || typeof window === "undefined") return;
-    window.requestAnimationFrame(() => {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
+  function beginAction(key: string) {
+    if (pendingActionsRef.current.has(key)) return false;
+    pendingActionsRef.current.add(key);
+    setPendingActions([...pendingActionsRef.current]);
+    return true;
+  }
+
+  function endAction(key: string) {
+    pendingActionsRef.current.delete(key);
+    setPendingActions([...pendingActionsRef.current]);
+  }
+
+  async function runGuardedAction(key: string, action: () => Promise<unknown>) {
+    if (!beginAction(key)) return;
+    setMessage("Mentés folyamatban...", "pending");
+    try {
+      await action();
+    } catch (error: any) {
+      setMessage(`A művelet nem sikerült: ${error?.message || error}`, "error");
+    } finally {
+      endAction(key);
+    }
   }
 
   useEffect(() => {
@@ -534,6 +593,13 @@ export default function Home() {
   }, [initialDataReady]);
 
   function setWorkspaceContext(workspace: Workspace | null, schemaAvailable: boolean) {
+    if (activeWorkspaceIdRef.current !== (workspace?.id || null)) {
+      setMessage("");
+      quoteReceiptsRef.current.clear();
+      appointmentReceiptsRef.current.clear();
+      invoiceReceiptsRef.current.clear();
+      workReportReceiptsRef.current.clear();
+    }
     activeWorkspaceIdRef.current = workspace?.id || null;
     setActiveWorkspace(workspace);
     setWorkspaceSchemaAvailable(schemaAvailable);
@@ -601,36 +667,32 @@ export default function Home() {
 
   async function saveWorkspaceSettings(nextSettings: WorkspaceSettings) {
     if (!activeWorkspace?.id) {
-      setWorkspaceSettingsMessage("Nincs aktív munkaterület, ezért nem menthető a beállítás.");
+      setMessage("Nincs aktív munkaterület, ezért nem menthető a beállítás.", "error");
       return;
     }
-
+    if (!beginAction("settings-save")) return;
+    const workspace = activeWorkspace;
     setWorkspaceSettingsBusy(true);
     setWorkspaceSettingsMessage("");
-
-    const payload = workspaceSettingsToRow(nextSettings, activeWorkspace.id, user?.id || null);
-    const { data, error } = await supabase
-      .from("workspace_settings")
-      .upsert(payload, { onConflict: "workspace_id" })
-      .select("*")
-      .single();
-
-    setWorkspaceSettingsBusy(false);
-
-    if (error) {
-      if (isMissingWorkspaceSettingsSchemaError(error)) {
-        setWorkspaceSettingsSchemaAvailable(false);
-        setWorkspaceSettingsMessage("A mentéshez előbb futtasd a workspace settings Supabase SQL-t.");
-        return;
+    setMessage("Beállítások mentése folyamatban...", "pending");
+    try {
+      const payload = workspaceSettingsToRow(nextSettings, workspace.id, user?.id || null);
+      const { data, error } = await supabase.from("workspace_settings")
+        .upsert(payload, { onConflict: "workspace_id" }).select("*").single();
+      if (error) throw error;
+      if (currentWorkspaceId() !== workspace.id) return;
+      setWorkspaceSettings(workspaceSettingsFromRow(data as any, defaultWorkspaceSettings(workspace)));
+      setWorkspaceSettingsSchemaAvailable(true);
+      setMessage("Beállítások mentve ✅", "success");
+    } catch (error: any) {
+      if (currentWorkspaceId() === workspace.id) {
+        if (isMissingWorkspaceSettingsSchemaError(error)) setWorkspaceSettingsSchemaAvailable(false);
+        setMessage(`Beállítás mentési hiba: ${error.message}`, "error");
       }
-      setWorkspaceSettingsMessage(`Beállítás mentési hiba: ${error.message}`);
-      return;
+    } finally {
+      setWorkspaceSettingsBusy(false);
+      endAction("settings-save");
     }
-
-    const loadedSettings = workspaceSettingsFromRow(data as any, defaultWorkspaceSettings(activeWorkspace));
-    setWorkspaceSettings(loadedSettings);
-    setWorkspaceSettingsSchemaAvailable(true);
-    setWorkspaceSettingsMessage("Beállítások mentve.");
   }
 
   async function ensureWorkspaceForUser(currentUser: User): Promise<Workspace | null> {
@@ -711,6 +773,8 @@ export default function Home() {
   }
 
   function replaceView(nextView: View) {
+    const destinationIndex = viewHistoryRef.current.lastIndexOf(nextView);
+    if (destinationIndex >= 0) viewHistoryRef.current = viewHistoryRef.current.slice(0, destinationIndex);
     currentViewRef.current = nextView;
     setView(nextView);
   }
@@ -735,7 +799,9 @@ export default function Home() {
     const history = viewHistoryRef.current;
     const previousView = history.pop();
     viewHistoryRef.current = history;
-    replaceView(previousView || fallbackView);
+    const destination = previousView || fallbackView;
+    currentViewRef.current = destination;
+    setView(destination);
   }
 
   useEffect(() => {
@@ -859,6 +925,7 @@ export default function Home() {
       return;
     }
 
+    if (!beginAction("csv-import")) return;
     setLeadImportBusy(true);
     setLeadImportMessage("Importálás folyamatban...");
 
@@ -915,6 +982,7 @@ export default function Home() {
       setLeadImportMessage(`Importálási hiba: ${error.message}`);
     } finally {
       setLeadImportBusy(false);
+      endAction("csv-import");
     }
   }
 
@@ -938,11 +1006,19 @@ export default function Home() {
   async function recordCustomerPhoneCall(customer: Customer, returnView: View = view) {
     rememberExternalCustomer(customer, returnView);
     if (!customer.id) return;
-
+    if (!beginAction(`phone:${customer.id}`)) return;
     const calledAt = new Date().toISOString();
-    updateCustomerActivityInState(customer.id, { lastCalledAt: calledAt, updatedAt: calledAt });
-    await workspaceQuery(supabase.from("customers").update({ updated_at: calledAt }).eq("id", customer.id));
-    await logDocument(customer, "phone_call", "Telefonhívás", "Felhívva", calledAt);
+    try {
+      const { error } = await workspaceQuery(supabase.from("customers").update({ updated_at: calledAt }).eq("id", customer.id));
+      if (error) throw error;
+      await logDocument(customer, "phone_call", "Telefonhívás", "Felhívva", calledAt);
+      updateCustomerActivityInState(customer.id, { lastCalledAt: calledAt, updatedAt: calledAt });
+      setMessage("Telefonhívás rögzítve ✅");
+    } catch (error: any) {
+      setMessage(`A hívás naplózása nem sikerült: ${error.message}`, "error");
+    } finally {
+      endAction(`phone:${customer.id}`);
+    }
   }
 
   useEffect(() => {
@@ -1170,6 +1246,7 @@ export default function Home() {
       return;
     }
 
+    if (!beginAction("map-geocoding")) return;
     try {
       setMaintenanceMapGeocodingBusy(true);
       setMessage("Hiányzó térképes koordináták keresése...");
@@ -1251,10 +1328,14 @@ export default function Home() {
       setMessage(`Térkép hiba: ${error.message}`);
     } finally {
       setMaintenanceMapGeocodingBusy(false);
+      endAction("map-geocoding");
     }
   }
 
   async function toggleAppointmentMaintenanceOptOut(appointmentId: string, checked: boolean) {
+    const actionKey = `maintenance-option:${appointmentId}`;
+    if (!beginAction(actionKey)) return;
+    setMessage("Karbantartási jelölés mentése...", "pending");
     const updatedAt = new Date().toISOString();
     const dbPayload = {
       maintenance_opt_out: checked,
@@ -1277,6 +1358,8 @@ export default function Home() {
       setMessage(checked ? "Mentve: az ügyfél nem kéri a karbantartást." : "Mentve: a klíma újra bekerült a karbantartási figyelésbe.");
     } catch (error: any) {
       setMessage(`Karbantartási jelölés hiba: ${error.message}`);
+    } finally {
+      endAction(actionKey);
     }
   }
 
@@ -1685,7 +1768,7 @@ export default function Home() {
   function customerWithDetailDocuments(customer: Customer, docs: DocumentRecord[]) {
     const type = normalizeAppointmentType(customer.appointmentType);
     const scopedDocs = documentsForCustomerScope(customer, docs);
-    const quoteSentAt = documentTimestamp(scopedDocs, "quote_email") || customer.quoteSentAt;
+    const quoteSentAt = sentDocumentTimestamp(quoteDocumentFor(customer, docs)) || customer.quoteSentAt;
     const appointmentEmailAt = documentTimestamp(scopedDocs, appointmentEmailDocumentType(type));
     const appointmentBookedAt = documentTimestamp(scopedDocs, appointmentBookedDocumentType(type));
     const lastCalledAt = documentTimestamp(scopedDocs, "phone_call") || customer.lastCalledAt;
@@ -2607,12 +2690,14 @@ export default function Home() {
       }
 
     const quotesByCustomer = new Map<string, any>();
+    const quoteHistoryByCustomer = new Map<string, any[]>();
     const quotesById = new Map<string, any>();
     const quotesByAppointment = new Map<string, any>();
     (quoteRows || []).forEach((quote: any) => {
       if (quote.id) quotesById.set(quote.id, quote);
       if (quote.appointment_id) quotesByAppointment.set(quote.appointment_id, quote);
       if (!quotesByCustomer.has(quote.customer_id)) quotesByCustomer.set(quote.customer_id, quote);
+      quoteHistoryByCustomer.set(quote.customer_id, [...(quoteHistoryByCustomer.get(quote.customer_id) || []), quote]);
     });
 
     const itemsByQuote = new Map<string, any[]>();
@@ -2706,7 +2791,7 @@ export default function Home() {
       const quote = quoteForAppointment(row, appointment);
       const existingDocs = documentsByCustomer[row.id] || [];
       const loadedAppointmentType = normalizeAppointmentType(appointment?.appointment_type);
-      const quoteSentAt = quote?.sent_at || quote?.updated_at || quote?.created_at || undefined;
+      const quoteSentAt = quote?.sent_at || undefined;
       const quoteItemsFromDb = quote ? (itemsByQuote.get(quote.id) || []).map(quoteItemFromRow) : [];
       const maintenanceInstallations = loadedAppointmentType === "maintenance" ? maintenanceInstallationsForAppointment(appointment) : [];
       const maintenanceQuoteItems = cleanQuoteItems(maintenanceInstallations.flatMap((installation) => installation.quoteItems));
@@ -2743,6 +2828,7 @@ export default function Home() {
         appointmentType: loadedAppointmentType,
         activeAppointmentId: appointment?.id || undefined,
         activeQuoteId: quote?.id || undefined,
+        quoteReceiptScope: quoteReceiptScopeFromRows(quoteHistoryByCustomer.get(row.id) || [], appointmentHistoryMap.get(row.id) || [], quote?.id, appointment?.id),
         quoteItems: effectiveQuoteItems.length ? effectiveQuoteItems : EMPTY_QUOTE_ITEMS,
         productId: effectiveQuoteItems[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
@@ -2875,7 +2961,7 @@ export default function Home() {
   }
 
   async function cancelAppointmentWithJobMirror(customer: Customer, cancelledAt: string): Promise<PersistCustomerResult> {
-    if (!customer.activeAppointmentId) {
+    if (!customer.id || !customer.activeAppointmentId) {
       throw new Error("Hianyzik a lemondando idopont azonositoja, ezert biztonsagbol nem modositottam rekordot.");
     }
 
@@ -2890,8 +2976,11 @@ export default function Home() {
     if (error) throw error;
 
     const row = Array.isArray(data) ? data[0] : data;
+    if (row?.appointment_id !== customer.activeAppointmentId) {
+      throw new Error("A lemondás nem igazolta a kért időpont módosítását. Frissítsd az adatokat és ellenőrizd az időpontot.");
+    }
     return {
-      appointmentId: row?.appointment_id || undefined,
+      appointmentId: row.appointment_id,
       jobId: row?.job_id || undefined,
     };
   }
@@ -3325,6 +3414,8 @@ export default function Home() {
   }
 
   async function saveCustomerData() {
+    if (!beginAction("customer-save")) return;
+    setMessage("Ügyféladatok mentése folyamatban...", "pending");
     const now = new Date().toISOString();
     const updated: Customer = { ...selected, updatedAt: now };
     try {
@@ -3337,11 +3428,14 @@ export default function Home() {
       setSelected(savedUpdated);
       promoteCustomerWork(savedUpdated);
       setEditCustomer(false);
+      customerEditSnapshotRef.current = null;
       clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Ügyféladatok mentve ✅");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
+    } finally {
+      endAction("customer-save");
     }
   }
 
@@ -3354,7 +3448,6 @@ export default function Home() {
   }
 
   function startInstallationScheduleFromQuote() {
-    updateCustomerStatus("Ajánlat elküldve");
     if (!isInstallationAppointment(selected.appointmentType)) {
       setSelected((prev) => ({ ...prev, appointmentType: "installation", date: undefined, time: undefined,
         activeAppointmentId: undefined, activeQuoteId: undefined, activeWorkReportId: undefined,
@@ -3411,6 +3504,7 @@ export default function Home() {
 
     try {
       await updateChecklistForCustomer(selected, { [key]: !base[key] });
+      setMessage("Ellenőrzőlista mentve ✅");
     } catch (error: any) {
       setMessage(error.message);
     }
@@ -3452,6 +3546,7 @@ export default function Home() {
 
   async function createInvoice(kind: BillingInvoiceKind, amountValue: string, paymentMethod: BillingPaymentMethod, sendEmail = false) {
     if (!selected.id) return;
+    if (pendingActionsRef.current.has("invoice")) return;
     const amount = Number(String(amountValue || "").replace(/\s/g, ""));
     if (!Number.isFinite(amount) || amount <= 0) {
       setMessage("Számla készítéséhez adj meg érvényes összeget.");
@@ -3465,13 +3560,17 @@ export default function Home() {
 
     const billingConfig = billingUiConfig(workspaceSettings);
     const label = billingKindLabel(kind, billingConfig);
-    const confirmed = window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel, fizetési mód: ${billingPaymentMethodLabel(paymentMethod)}${shouldSendEmail ? ", emailküldéssel" : ""}?`);
+    const workspaceId = currentWorkspaceId();
+    const receiptKey = `${workspaceId}:${selected.id}:${selected.activeAppointmentId}:${kind}`;
+    let receipt = invoiceReceiptsRef.current.get(receiptKey);
+    const confirmed = receipt || window.confirm(`${label} számla létrehozása ${ft(Math.round(amount))} összeggel, fizetési mód: ${billingPaymentMethodLabel(paymentMethod)}${shouldSendEmail ? ", emailküldéssel" : ""}?`);
     if (!confirmed) return;
-
+    if (!beginAction("invoice")) return;
     setInvoiceBusy(kind);
-    setMessage(`${label} számla készítése folyamatban...`);
+    setMessage(receipt ? "Az elkészült számla állapotának mentése..." : `${label} számla készítése folyamatban...`, "pending");
 
     try {
+      if (!receipt) {
       const response = await authenticatedFetch("/api/create-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3490,62 +3589,78 @@ export default function Home() {
           customer: selected,
           quoteItems: invoiceQuoteItems,
         }),
-      });
+      }, workspaceId || undefined);
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result?.ok) throw new Error(result?.error || "A Számlázz.hu számlakészítés sikertelen.");
-
+        if (currentWorkspaceId() !== workspaceId) return;
+        receipt = { invoiceNumber: result.invoiceNumber, emailSent: result.emailSent };
+        invoiceReceiptsRef.current.set(receiptKey, receipt);
+      }
+      if (currentWorkspaceId() !== workspaceId) return;
       if (kind === "combined") {
         await updateChecklistForCustomer(selected, { amovaInvoice: true, alinInvoice: true });
       } else {
         await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
       }
-      setMessage(`${label} számla elkészült ✅${result.invoiceNumber ? ` Számlaszám: ${result.invoiceNumber}` : ""}${result.emailSent ? " Emailben elküldve." : ""}`);
+      invoiceReceiptsRef.current.delete(receiptKey);
+      if (currentWorkspaceId() !== workspaceId) return;
+      setMessage(`${label} számla elkészült ✅${receipt.invoiceNumber ? ` Számlaszám: ${receipt.invoiceNumber}` : ""}${receipt.emailSent ? " Emailben elküldve." : ""}`);
     } catch (error: any) {
-      setMessage(`Számlázási hiba: ${error.message}`);
+      if (currentWorkspaceId() === workspaceId) setMessage(receipt ? `A számla elkészült${receipt.invoiceNumber ? ` (${receipt.invoiceNumber})` : ""}, de az ellenőrzőlista mentése nem sikerült: ${error.message} Újrapróbáláskor csak az állapotot mentjük.`
+        : `Számlázási hiba: ${error.message}`, receipt ? "warning" : "error");
     } finally {
       setInvoiceBusy(null);
+      endAction("invoice");
     }
   }
 
   async function saveCustomer(nextView: View = "quote") {
+    if (!beginAction("customer-save")) return;
     const now = new Date().toISOString();
-    const autoStatus =
-      nextView === "quote"
-        ? "Ajánlat elküldve"
-        : nextView === "schedule"
-        ? "Ajánlat elküldve"
-        : normalizeStatus(selected.status || "Visszahívandó");
 
     const customerToSave: Customer = {
       ...selected,
       source: selected.source || "Kézi rögzítés",
-      status: autoStatus,
+      status: normalizeStatus(selected.status || "Visszahívandó"),
       createdAt: selected.createdAt || now,
       updatedAt: now,
       quoteItems: quoteItems.length ? quoteItems : EMPTY_QUOTE_ITEMS,
     };
 
-    setSelected(customerToSave);
-    setCustomers((prev) => {
-      const exists = prev.some((customer) => customer.id === customerToSave.id);
-      if (exists) {
-        return sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === customerToSave.id ? customerToSave : customer));
-      }
-      return sortCustomersByCreatedAtDesc([customerToSave, ...prev]);
-    });
-
+    setMessage("Ügyfél mentése folyamatban...", "pending");
     try {
-      await persistCustomerToDb(customerToSave, { persistQuote: true });
+      const persisted = await persistCustomerToDb(customerToSave, { persistQuote: true });
+      const saved = { ...customerToSave, activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
+        activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId };
+      setSelected(saved);
+      setCustomers((prev) => sortCustomersByCreatedAtDesc([saved, ...prev.filter((customer) => customer.id !== saved.id)]));
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Ügyfél mentve ✅");
       navigateToView(nextView);
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
+    } finally {
+      endAction("customer-save");
     }
   }
 
+  function setCustomerEditMode(editing: boolean) {
+    if (editing) customerEditSnapshotRef.current = { ...selected };
+    else {
+      const previous = customerEditSnapshotRef.current;
+      if (previous?.id === selected.id && previous.activeAppointmentId === selected.activeAppointmentId) {
+        setSelected((current) => ({ ...current, name: previous.name, phone: previous.phone, email: previous.email,
+          postalCode: previous.postalCode, city: previous.city, address: previous.address,
+          need: previous.need, notes: previous.notes }));
+      }
+      customerEditSnapshotRef.current = null;
+    }
+    setEditCustomer(editing);
+  }
+
   async function saveCustomerAndScheduleSurvey() {
+    if (!beginAction("customer-save")) return;
     const now = new Date().toISOString();
     const customerToSave: Customer = {
       ...selected,
@@ -3558,33 +3673,29 @@ export default function Home() {
       productId: undefined,
     };
 
-    setSelected(customerToSave);
-    setQuoteItems(EMPTY_QUOTE_ITEMS);
-    setScheduleAppointmentType("survey");
-    setScheduleDate(todayIso());
-    setScheduleTime("08:00");
-    setSendAppointmentNotice(true);
-
-    setCustomers((prev) => {
-      const exists = prev.some((customer) => customer.id === customerToSave.id);
-      if (exists) {
-        return sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === customerToSave.id ? customerToSave : customer));
-      }
-      return sortCustomersByCreatedAtDesc([customerToSave, ...prev]);
-    });
-
+    setMessage("Ügyfél mentése folyamatban...", "pending");
     try {
       await persistCustomerToDb(customerToSave, { persistQuote: false });
+      setSelected(customerToSave);
+      setQuoteItems(EMPTY_QUOTE_ITEMS);
+      setScheduleAppointmentType("survey");
+      setScheduleDate(todayIso());
+      setScheduleTime("08:00");
+      setSendAppointmentNotice(true);
+      setCustomers((prev) => sortCustomersByCreatedAtDesc([customerToSave, ...prev.filter((customer) => customer.id !== customerToSave.id)]));
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Felmérési időpont választható ✅");
       navigateToView("schedule");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
+    } finally {
+      endAction("customer-save");
     }
   }
 
   async function saveCustomerOnly() {
+    if (!beginAction("customer-save")) return;
     const now = new Date().toISOString();
     const customerToSave: Customer = {
       ...selected,
@@ -3595,23 +3706,21 @@ export default function Home() {
       quoteItems: quoteItems.length ? quoteItems : EMPTY_QUOTE_ITEMS,
     };
 
-    setSelected(customerToSave);
-    setCustomers((prev) => {
-      const exists = prev.some((customer) => customer.id === customerToSave.id);
-      if (exists) {
-        return sortCustomersByCreatedAtDesc(prev.map((customer) => customer.id === customerToSave.id ? customerToSave : customer));
-      }
-      return sortCustomersByCreatedAtDesc([customerToSave, ...prev]);
-    });
-
+    setMessage("Ügyféladatok mentése folyamatban...", "pending");
     try {
-      await persistCustomerToDb(customerToSave, { persistQuote: false });
+      const persisted = await persistCustomerToDb(customerToSave, { persistQuote: false });
+      const saved = { ...customerToSave, activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
+        activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId };
+      setSelected(saved);
+      setCustomers((prev) => sortCustomersByCreatedAtDesc([saved, ...prev.filter((customer) => customer.id !== saved.id)]));
       setMessage("Ügyféladatok mentve ✅");
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
       returnToLastMenu();
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
+    } finally {
+      endAction("customer-save");
     }
   }
 
@@ -3690,6 +3799,7 @@ export default function Home() {
   }
   function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
+    if (pendingActionsRef.current.has("schedule-save")) return;
     const typeChanged = normalizeAppointmentType(selected.appointmentType) !== normalizedScheduleAppointmentType;
     const wasExistingSchedule = Boolean(selected.date) && !typeChanged;
     const slotToValidate = normalizeAppointmentTimeInput(scheduleTime);
@@ -3724,6 +3834,15 @@ export default function Home() {
       ? maintenanceQuoteItemsForInstallationIds(selected, maintenanceInstallationIds)
       : EMPTY_QUOTE_ITEMS;
     const scheduledQuoteItems = selectedMaintenanceQuoteItems.length ? selectedMaintenanceQuoteItems : cleanQuoteItems(quoteItems);
+    if (normalizedScheduleAppointmentType === "installation" && !scheduledQuoteItems.length) {
+      setMessage("Szerelési időponthoz válassz legalább egy klímát.", "warning");
+      return;
+    }
+    const sourceQuoteReceipt = normalizedScheduleAppointmentType === "installation" && !typeChanged
+      && selected.activeQuoteId && selected.quoteReceiptScope?.quoteId === selected.activeQuoteId
+      ? quoteDocumentFor(selected) : undefined;
+    const sourceQuoteSentAt = sourceQuoteReceipt && !sourceQuoteReceipt.appointmentId
+      ? sentDocumentTimestamp(sourceQuoteReceipt) : undefined;
     const updated:Customer = {
       ...selected,
       date:scheduleDate,
@@ -3747,6 +3866,9 @@ export default function Home() {
       appointmentUpdatedAt: appointmentBookedAt,
       updatedAt: appointmentBookedAt,
     };
+    if (!beginAction("schedule-save")) return;
+    setMessage("Időpont mentése folyamatban...", "pending");
+    let appointmentSaved = false;
     try {
       const persisted = await persistCustomerToDb(updated);
       const savedUpdated: Customer = {
@@ -3754,27 +3876,40 @@ export default function Home() {
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
         activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
+      const carryQuoteReceipt = Boolean(sourceQuoteSentAt && selected.activeQuoteId === savedUpdated.activeQuoteId && savedUpdated.activeAppointmentId);
+      if (carryQuoteReceipt && selected.quoteReceiptScope) {
+        savedUpdated.quoteReceiptScope = { ...selected.quoteReceiptScope, appointmentId: savedUpdated.activeAppointmentId };
+      }
+      appointmentSaved = true;
+      promoteCustomerWork(savedUpdated);
+      setSelected(savedUpdated);
+      if (carryQuoteReceipt) {
+        // Retain the lead receipt and its original send time in the new work scope.
+        await logDocument(savedUpdated, "quote_email", "Ajánlat email", "Elküldve", sourceQuoteSentAt);
+      }
       if (normalizeAppointmentType(savedUpdated.appointmentType) !== "maintenance") {
         await logDocument(savedUpdated, appointmentBookedDocumentType(savedUpdated.appointmentType), `${appointmentTypeLabel(savedUpdated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
       } else {
         await saveMaintenanceAppointmentLinks(savedUpdated, savedUpdated.maintenanceInstallationIds || []);
       }
-      promoteCustomerWork(savedUpdated);
-      setSelected(savedUpdated);
-
       maintenanceReturnRef.current = null;
+      let emailFailed = false;
       if (sendAppointmentNotice) {
-        const sent = await sendAppointmentEmailFor(savedUpdated);
-        setMessage(sent ? (wasExistingSchedule ? "Időpont módosítva és tájékoztató email elküldve ✅" : "Időpont mentve és tájékoztató email elküldve ✅") : "Időpont mentve, de az email küldése nem sikerült.");
+        const sent = await sendAppointmentEmailFor(savedUpdated, "Az időpont mentve. ");
+        emailFailed = !sent;
+        if (sent) setMessage(wasExistingSchedule ? "Időpont módosítva és tájékoztató email elküldve ✅" : "Időpont mentve és tájékoztató email elküldve ✅");
       } else {
         setMessage(wasExistingSchedule ? "Időpont módosítva ✅ Email nem ment ki." : "Időpont mentve a naptárba ✅ Email nem ment ki.");
       }
 
       clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
-      replaceView(wasExistingSchedule ? "work" : "dashboard");
+      replaceView(wasExistingSchedule || emailFailed ? "work" : "dashboard");
     } catch (error: any) {
-      setMessage(`Mentési hiba: ${error.message}`);
+      setMessage(appointmentSaved ? `Az időpont mentve, de a kapcsolódó adatok mentése nem sikerült: ${error.message} A mentés újrapróbálható, az időpontot nem kell újra létrehozni.`
+        : `Mentési hiba: ${error.message}`, appointmentSaved ? "warning" : "error");
+    } finally {
+      endAction("schedule-save");
     }
   }
 
@@ -3798,6 +3933,8 @@ export default function Home() {
       updatedAt: changedAt,
     };
 
+    if (!beginAction("work-save")) return;
+    setMessage("Klímák és anyagok mentése folyamatban...", "pending");
     try {
       stockMaterialQuantities(updatedQuoteItems, updated.materialUsage);
       const persisted = await persistCustomerToDb(updated);
@@ -3815,6 +3952,8 @@ export default function Home() {
       replaceView("work");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
+    } finally {
+      endAction("work-save");
     }
   }
 
@@ -4023,76 +4162,94 @@ export default function Home() {
   }
 
   async function cancelAppointment() {
+    const customer = selected;
+    const workspaceId = currentWorkspaceId();
     const changedAt = new Date().toISOString();
-    const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
+    const currentAppointmentType = normalizeAppointmentType(customer.appointmentType);
+
+    try {
+      await cancelAppointmentWithJobMirror(customer, changedAt);
+    } catch (error: any) {
+      if (currentWorkspaceId() === workspaceId) setMessage(`Időpont lemondási hiba: ${error.message}`);
+      return;
+    }
+    if (currentWorkspaceId() !== workspaceId) return;
 
     if (currentAppointmentType === "maintenance") {
-      try {
-        await logDocument(selected, maintenanceCancellationDocumentType(selected, changedAt), maintenanceCancellationTitle(selected), "Lemondva", changedAt);
-        await cancelAppointmentWithJobMirror(selected, changedAt);
-        const cancelledMaintenance: Customer = { ...selected, status: "Lemondva", isFresh: false, updatedAt: changedAt };
-        const fallbackInstallation = installationWorkAfterMaintenanceCancellation(selected);
-        const nextSelected: Customer = fallbackInstallation ? {
-          ...selected,
-          ...fallbackInstallation,
-          id: selected.id,
-          name: selected.name || fallbackInstallation.name,
-          phone: selected.phone || fallbackInstallation.phone,
-          email: selected.email || fallbackInstallation.email,
-          postalCode: selected.postalCode || fallbackInstallation.postalCode,
-          city: selected.city || fallbackInstallation.city,
-          address: fallbackInstallation.address || selected.address,
-        } : {
-          ...selected,
-          date: undefined,
-          time: undefined,
-          appointmentType: "installation",
-          activeAppointmentId: undefined,
-          activeQuoteId: undefined,
-          activeWorkReportId: undefined,
-          quoteItems: EMPTY_QUOTE_ITEMS,
-          status: "Visszahívandó",
-          isFresh: true,
-          updatedAt: changedAt,
-        };
-        updateWorkHistory(cancelledMaintenance);
-        setSelected(nextSelected);
-        setQuoteItems(nextSelected.quoteItems || EMPTY_QUOTE_ITEMS);
-        setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
-        setScheduleDate(nextSelected.date || todayIso());
-        setScheduleTime(firstAppointmentTime(nextSelected.time || "08:00"));
-        setAllowWorkResourceEdit(false);
-        if (fallbackInstallation) {
-          setCustomers(prev => prev.map(c => c.id === nextSelected.id ? nextSelected : c));
-        }
-        setMessage("Karbantartási időpont lemondva ✅ A klímaszerelés és a korábbi dokumentumok megmaradtak.");
-        replaceView("work");
-      } catch (error: any) {
-        setMessage(`Mentési hiba: ${error.message}`);
+      const cancelledMaintenance: Customer = { ...customer, status: "Lemondva", isFresh: false, updatedAt: changedAt };
+      const fallbackInstallation = installationWorkAfterMaintenanceCancellation(customer);
+      const nextSelected: Customer = fallbackInstallation ? {
+        ...customer,
+        ...fallbackInstallation,
+        id: customer.id,
+        name: customer.name || fallbackInstallation.name,
+        phone: customer.phone || fallbackInstallation.phone,
+        email: customer.email || fallbackInstallation.email,
+        postalCode: customer.postalCode || fallbackInstallation.postalCode,
+        city: customer.city || fallbackInstallation.city,
+        address: fallbackInstallation.address || customer.address,
+      } : {
+        ...customer,
+        date: undefined,
+        time: undefined,
+        appointmentType: "installation",
+        activeAppointmentId: undefined,
+        activeQuoteId: undefined,
+        activeWorkReportId: undefined,
+        quoteItems: EMPTY_QUOTE_ITEMS,
+        status: "Visszahívandó",
+        isFresh: true,
+        updatedAt: changedAt,
+      };
+      updateWorkHistory(cancelledMaintenance);
+      setSelected(nextSelected);
+      setQuoteItems(nextSelected.quoteItems || EMPTY_QUOTE_ITEMS);
+      setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
+      setScheduleDate(nextSelected.date || todayIso());
+      setScheduleTime(firstAppointmentTime(nextSelected.time || "08:00"));
+      setAllowWorkResourceEdit(false);
+      if (fallbackInstallation) {
+        setCustomers(prev => prev.map(c => c.id === nextSelected.id ? nextSelected : c));
       }
+
+      let logWarning = "";
+      try {
+        await logDocument(customer, maintenanceCancellationDocumentType(customer, changedAt), maintenanceCancellationTitle(customer), "Lemondva", changedAt);
+      } catch (error: any) {
+        logWarning = `A karbantartási időpont lemondva, de a lemondás naplózása nem sikerült: ${error.message}. A klímaszerelés és a korábbi dokumentumok megmaradtak.`;
+      }
+      if (currentWorkspaceId() !== workspaceId) return;
+      setMessage(logWarning || "Karbantartási időpont lemondva ✅ A klímaszerelés és a korábbi dokumentumok megmaradtak.", logWarning ? "warning" : "success");
+      replaceView("work");
       return;
     }
 
     const updated: Customer = {
-      ...selected,
+      ...customer,
       date: undefined,
       time: undefined,
-      appointmentType: selected.appointmentType,
       status: "Lemondva",
       isFresh: false,
       updatedAt: changedAt,
     };
 
+    setSelected(updated);
+    promoteCustomerWork(updated);
+    let statusWarning = "";
     try {
-      await persistCustomerToDb(updated);
-      const cancelledUpdated: Customer = updated;
-      setSelected(cancelledUpdated);
-      promoteCustomerWork(cancelledUpdated);
-      setMessage("Időpont törölve / lemondva ✅ A foglalás felszabadult.");
-      returnToLastMenu();
+      let query = supabase.from("customers")
+        .update({ status: "Lemondva", updated_at: changedAt })
+        .eq("id", customer.id);
+      if (workspaceId) query = query.eq("workspace_id", workspaceId);
+      const { data, error } = await query.select("id").maybeSingle();
+      if (error) throw error;
+      if (data?.id !== customer.id) throw new Error("Az ügyfél állapota nem frissült.");
     } catch (error: any) {
-      setMessage(`Mentési hiba: ${error.message}`);
+      statusWarning = `Az időpont lemondva, a foglalás felszabadult, de az ügyfél állapotának frissítése nem sikerült: ${error.message}. Frissítsd az adatokat.`;
     }
+    if (currentWorkspaceId() !== workspaceId) return;
+    setMessage(statusWarning || "Időpont törölve / lemondva ✅ A foglalás felszabadult.", statusWarning ? "warning" : "success");
+    returnToLastMenu();
   }
   async function restoreArchivedCustomer(customer: Customer) {
     const changedAt = new Date().toISOString();
@@ -4106,7 +4263,15 @@ export default function Home() {
     try {
       await persistCustomerToDb(restored);
       setCustomers((prev) => prev.map((item) => item.id === restored.id ? restored : item));
+      setReturnTarget(currentReturnTarget());
       setSelected(restored);
+      setQuoteItems(restored.quoteItems || EMPTY_QUOTE_ITEMS);
+      setScheduleDate(restored.date || todayIso());
+      setScheduleTime(firstAppointmentTime(restored.time));
+      setScheduleAppointmentType(normalizeAppointmentType(restored.appointmentType));
+      setWorkReport(emptyWorkReport(restored));
+      setWorkChecklist(effectiveChecklistFor(restored));
+      setAllowWorkResourceEdit(false);
       setMessage(`${restored.name || "Ügyfél"} visszaállítva ✅`);
       navigateToView(restored.date ? "work" : "lead");
     } catch (error: any) {
@@ -4194,12 +4359,19 @@ export default function Home() {
 
   async function addStock(productId: string, amount: number) {
     if (!Number.isFinite(amount) || amount === 0) return;
+    const expectedWorkspaceId = currentWorkspaceId();
+    const actionKey = `stock:${expectedWorkspaceId}:${productId}`;
+    if (!beginAction(actionKey)) return;
+    setMessage("Klímakészlet mentése...", "pending");
     try {
       const nextStock = await adjustClimateStock(productId, amount);
+      if (currentWorkspaceId() !== expectedWorkspaceId) return;
       setInventory((prev) => [...prev.filter((item) => item.productId !== productId), { productId, stock: nextStock }]);
       setMessage("Klíma készlet mentve ✅");
     } catch (error: any) {
-      setMessage(`Klíma készlet mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
+      if (currentWorkspaceId() === expectedWorkspaceId) setMessage(`Klíma készlet mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
+    } finally {
+      endAction(actionKey);
     }
   }
 
@@ -4239,27 +4411,35 @@ export default function Home() {
     if (!Number.isFinite(amount) || amount === 0) return;
     const current = materialInventory.find((item: any) => item.name === materialName);
     if (!current) return;
+    const expectedWorkspaceId = currentWorkspaceId();
+    const actionKey = `material-stock:${expectedWorkspaceId}:${materialName}`;
+    if (!beginAction(actionKey)) return;
+    setMessage("Anyagkészlet mentése...", "pending");
     try {
       const { data, error } = await supabase.rpc("adjust_material_stock", {
-        p_workspace_id: currentWorkspaceId(), p_name: materialName, p_delta: amount,
+        p_workspace_id: expectedWorkspaceId, p_name: materialName, p_delta: amount,
       });
       if (error) throw error;
+      if (currentWorkspaceId() !== expectedWorkspaceId) return;
       setMaterialInventory((prev: any[]) => prev.map((item: any) => item.name === materialName ? { ...item, stock: Number(data) } : item));
       setMessage("Anyagkészlet mentve ✅");
     } catch (error: any) {
-      setMessage(`Anyagkészlet mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
+      if (currentWorkspaceId() === expectedWorkspaceId) setMessage(`Anyagkészlet mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
+    } finally {
+      endAction(actionKey);
     }
   }
 
   async function addMaterialInventoryItem(item: { name: string; stock: number; unit: string; lowAt: number }) {
+    const expectedWorkspaceId = currentWorkspaceId();
     const name = item.name.trim();
     if (!name) {
       setMessage("Add meg az anyag nevét.");
-      return;
+      return false;
     }
     if (materialInventory.some((current: any) => current.name.toLocaleLowerCase("hu-HU") === name.toLocaleLowerCase("hu-HU"))) {
       setMessage("Ez az anyag már szerepel a raktárban.");
-      return;
+      return false;
     }
 
     const nextItem = {
@@ -4271,11 +4451,13 @@ export default function Home() {
 
     try {
       await persistMaterialStock(nextItem);
+      if (currentWorkspaceId() !== expectedWorkspaceId) return false;
       setMaterialInventory((prev: any[]) => [...prev, nextItem].sort((a, b) => a.name.localeCompare(b.name, "hu", { sensitivity: "base" })));
       setMessage("Anyag hozzáadva ✓");
+      return true;
     } catch (error: any) {
-      setMessage(`Anyag mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
-      throw error;
+      if (currentWorkspaceId() === expectedWorkspaceId) setMessage(`Anyag mentési hiba: ${error.message}. Futtasd az INVENTORY_STOCK_SQL.sql fájlt a Supabase-ben.`);
+      return false;
     }
   }
 
@@ -4360,7 +4542,6 @@ export default function Home() {
   if (view === "maintenanceMap") {
     return (
       <Shell>
-        {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
         <div className="mb-6 grid grid-cols-2 gap-2 rounded-3xl border border-white/10 bg-white/5 p-2" aria-label="Térkép nézete">
           {([['callbacks', 'Visszahívandók'], ['maintenance', 'Telepített klímák']] as const).map(([mode, label]) => (
             <button key={mode} type="button" aria-pressed={mapMode === mode} onClick={() => setMapMode(mode)} className={`rounded-2xl px-3 py-3 text-sm font-black transition ${mapMode === mode ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/10"}`}>
@@ -4396,7 +4577,7 @@ export default function Home() {
         onBack={() => goBack()}
         onPageChange={setArchivePage}
         onOpenCustomer={openCustomer}
-        onRestoreCustomer={restoreArchivedCustomer}
+        onRestoreCustomer={(customer) => runGuardedAction("restore", () => restoreArchivedCustomer(customer))}
         onScheduleMaintenance={startMaintenanceForCustomer}
       />
     );
@@ -4459,8 +4640,15 @@ export default function Home() {
     if (error || !data.session?.access_token || !workspaceId) throw new Error("A művelethez jelentkezz be és válassz munkaterületet.");
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${data.session.access_token}`);
-    return fetch(url, { ...init, headers,
-      body: JSON.stringify({ ...JSON.parse(String(init.body || "{}")), workspaceId }) });
+    try {
+      return await fetch(url, { ...init, headers, signal: init.signal || AbortSignal.timeout(45_000),
+        body: JSON.stringify({ ...JSON.parse(String(init.body || "{}")), workspaceId }) });
+    } catch (error: any) {
+      if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+        throw new Error("A szerver visszaigazolása nem érkezett meg időben. A művelet eredménye bizonytalan; újrapróbálás előtt ellenőrizd a küldési vagy számlázási naplót.");
+      }
+      throw error;
+    }
   }
 
   function quotePayload(customer: Customer = selected, items: QuoteItem[] = quoteItems, issuedAt = quoteIssuedAt || new Date().toISOString()) {
@@ -4510,91 +4698,139 @@ export default function Home() {
   }
 
   async function sendQuoteEmail() {
+    if (pendingActionsRef.current.has("quote-email")) return;
     if (!selected.email?.trim()) {
       setMessage("Az ajánlat elküldéséhez előbb add meg az ügyfél email címét.");
       return;
     }
-
+    const items = cleanQuoteItems(quoteItems);
+    if (!items.length) {
+      setMessage("Az ajánlat elküldéséhez adj hozzá legalább egy klímát vagy tételt.", "warning");
+      return;
+    }
+    if (!beginAction("quote-email")) return;
+    const workspaceId = currentWorkspaceId();
+    const receiptKey = `${workspaceId}:${selected.id}`;
+    let receipt = quoteReceiptsRef.current.get(receiptKey);
+    const recordingOnly = Boolean(receipt);
     setQuoteEmailBusy(true);
-    setMessage("Ajánlat email küldése folyamatban...");
+    setMessage(recordingOnly ? "A korábban elküldött ajánlat állapotának mentése..." : "Ajánlat mentése és email küldése folyamatban...", "pending");
 
     try {
-      const issuedAt = view === "quotePreview" && quoteIssuedAt ? quoteIssuedAt : new Date().toISOString();
-      setQuoteIssuedAt(issuedAt);
-      const draft = { ...selected, quoteItems };
-      const persisted = await persistCustomerToDb(draft);
-      const savedCustomer = { ...draft, activeQuoteId: persisted?.quoteId || draft.activeQuoteId,
-        activeAppointmentId: persisted?.appointmentId || draft.activeAppointmentId };
-      setSelected(savedCustomer);
-
-      const response = await authenticatedFetch("/api/send-quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(quotePayload(savedCustomer, quoteItems, issuedAt)),
-      });
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(result?.error || "Nem sikerült elküldeni az ajánlat emailt.");
+      if (!receipt) {
+        const issuedAt = view === "quotePreview" && quoteIssuedAt ? quoteIssuedAt : new Date().toISOString();
+        setQuoteIssuedAt(issuedAt);
+        const draft = { ...selected, quoteItems: items };
+        const persisted = await persistCustomerToDb(draft);
+        const savedCustomer = { ...draft, activeQuoteId: persisted?.quoteId || draft.activeQuoteId,
+          activeAppointmentId: persisted?.appointmentId || draft.activeAppointmentId };
+        if (currentWorkspaceId() !== workspaceId) throw new Error("A munkaterület megváltozott. A küldés leállt.");
+        if (selectedCustomerIdRef.current === savedCustomer.id) setSelected(savedCustomer);
+        promoteCustomerWork(savedCustomer);
+        const response = await authenticatedFetch("/api/send-quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(quotePayload(savedCustomer, items, issuedAt)),
+        }, workspaceId || undefined);
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result?.ok) throw new Error(result?.error || "Nem érkezett sikeres visszaigazolás az ajánlat küldéséről. Újraküldés előtt ellenőrizd a küldési naplót.");
+        if (currentWorkspaceId() !== workspaceId) return;
+        receipt = { customer: savedCustomer, sentAt: new Date().toISOString() };
+        // Keep confirmed delivery independently of the following database writes.
+        quoteReceiptsRef.current.set(receiptKey, receipt);
       }
-
-      const quoteSentAt = new Date().toISOString();
+      if (currentWorkspaceId() !== workspaceId) return;
+      const savedCustomer = receipt.customer;
       const updated: Customer = {
         ...savedCustomer,
-        status: "Ajánlat elküldve",
-        quoteItems,
-        quotePricingMode: selected.quotePricingMode || "bundle",
-        quoteSentAt,
-        updatedAt: quoteSentAt,
+        status: savedCustomer.date || !["Visszahívandó", "Ajánlat elküldve"].includes(normalizeStatus(savedCustomer.status))
+          ? savedCustomer.status : "Ajánlat elküldve",
+        quoteSentAt: receipt.sentAt,
+        updatedAt: receipt.sentAt,
       };
-
-      await persistCustomerToDb(updated);
-      await logDocument(updated, "quote_email", "Ajánlat email", "Elküldve", quoteSentAt);
-      setSelected(updated);
-      setCustomers((prev) => prev.map((customer) => customer.id === updated.id ? updated : customer));
-      clearCustomerDraft(updated.id);
+      await logDocument(updated, "quote_email", "Ajánlat email", "Elküldve", receipt.sentAt);
+      if (currentWorkspaceId() !== workspaceId) return;
+      // Only advance the lead status. A receipt retry must not overwrite newer
+      // customer edits, a booked appointment, or an already closed job.
+      if (!savedCustomer.date && updated.status === "Ajánlat elküldve") {
+        const statusResult = await workspaceQuery(supabase.from("customers")
+          .update({ status: "Ajánlat elküldve", updated_at: receipt.sentAt })
+          .eq("id", updated.id).in("status", ["Visszahívandó", "Ajánlat elküldve"]));
+        if (statusResult.error) throw statusResult.error;
+      }
+      quoteReceiptsRef.current.delete(receiptKey);
+      if (currentWorkspaceId() !== workspaceId) return;
+      const applyReceipt = (customer: Customer): Customer => customer.id !== updated.id ? customer : {
+        ...customer, quoteSentAt: receipt!.sentAt,
+        quoteReceiptScope: customer.activeQuoteId === savedCustomer.activeQuoteId && customer.activeAppointmentId === savedCustomer.activeAppointmentId && savedCustomer.activeQuoteId
+          ? { quoteId: savedCustomer.activeQuoteId, appointmentId: savedCustomer.activeAppointmentId, notBefore: receipt!.sentAt, notAfter: receipt!.sentAt }
+          : customer.quoteReceiptScope,
+        status: !customer.date && ["Visszahívandó", "Ajánlat elküldve"].includes(normalizeStatus(customer.status)) ? "Ajánlat elküldve" : customer.status,
+      };
+      setSelected(applyReceipt);
+      setCustomers((prev) => prev.map(applyReceipt));
+      if (!recordingOnly) clearCustomerDraft(updated.id);
       setDraftNotice(readCustomerDraft());
-      setMessage("Ajánlat elküldve emailben ✅");
+      setMessage(recordingOnly
+        ? "A korábban elküldött ajánlat állapota mentve ✅ Új email nem ment ki."
+        : `Ajánlat elküldve: ${updated.email} ✅ Az időpontot az Időpont gombbal rögzítheted.`, "success");
     } catch (error: any) {
-      setMessage(`Email küldési hiba: ${error.message}`);
+      if (currentWorkspaceId() === workspaceId) setMessage(receipt
+        ? `Az ajánlat emailt elküldtük, de az állapot mentése nem sikerült: ${error.message} A Küldés gomb most csak a mentést próbálja újra.`
+        : `Ajánlatküldési hiba: ${error.message}`, receipt ? "warning" : "error");
     } finally {
       setQuoteEmailBusy(false);
+      endAction("quote-email");
     }
   }
 
-  async function sendAppointmentEmailFor(customer: Customer) {
+  async function sendAppointmentEmailFor(customer: Customer, savedNotice = "") {
     if (!customer.email?.trim()) {
-      setMessage("Az időpont emailhez előbb add meg az ügyfél email címét.");
+      setMessage(`${savedNotice}Az időpont emailhez előbb add meg az ügyfél email címét.`, "warning");
       return false;
     }
 
+    if (!beginAction("appointment-email")) return false;
+    const workspaceId = currentWorkspaceId();
+    const receiptKey = `${workspaceId}:${customer.id}:${customer.activeAppointmentId}:${customer.date}:${customer.time}:${customer.email}:${customer.appointmentType}`;
+    let receipt = appointmentReceiptsRef.current.get(receiptKey);
     setAppointmentEmailBusy(true);
+    setMessage(receipt ? "Az elküldött időpontlevél naplózása..." : "Időpont email küldése folyamatban...", "pending");
 
     try {
       const appointmentType = normalizeAppointmentType(customer.appointmentType);
       const appointmentQuoteItems = customer.quoteItems || quoteItems;
-      const response = await authenticatedFetch("/api/send-appointment", {
+      if (!receipt) {
+        const response = await authenticatedFetch("/api/send-appointment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(quotePayload(customer, appointmentQuoteItems)),
-      });
+        }, workspaceId || undefined);
       const result = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
+      if (!response.ok || !result?.ok) {
         throw new Error(result?.error || "Nem sikerült elküldeni az időpont emailt.");
       }
-
-      const appointmentEmailSentAt = new Date().toISOString();
-      if (appointmentType !== "maintenance") {
-        await logDocument(customer, appointmentEmailDocumentType(appointmentType), brandedAppointmentDocumentTitle(appointmentType), "Elküldve", appointmentEmailSentAt);
+        if (currentWorkspaceId() !== workspaceId) return false;
+        receipt = { customer: JSON.parse(JSON.stringify(customer)), sentAt: new Date().toISOString() };
+        appointmentReceiptsRef.current.set(receiptKey, receipt);
       }
+      if (currentWorkspaceId() !== workspaceId) return false;
+      if (appointmentType !== "maintenance") {
+        await logDocument(receipt.customer, appointmentEmailDocumentType(appointmentType), brandedAppointmentDocumentTitle(appointmentType), "Elküldve", receipt.sentAt);
+      }
+      if (currentWorkspaceId() !== workspaceId) return false;
+      appointmentReceiptsRef.current.delete(receiptKey);
       setMessage("Időpont tájékoztató email elküldve ✅");
       return true;
     } catch (error: any) {
-      setMessage(`Időpont email küldési hiba: ${error.message}`);
+      if (currentWorkspaceId() === workspaceId) setMessage(savedNotice + (receipt
+        ? `Az időpont email elküldve, de a naplózása nem sikerült: ${error.message} Újrapróbáláskor csak a naplózást ismételjük.`
+        : `Időpont email küldési hiba: ${error.message}`), receipt || savedNotice ? "warning" : "error");
       return false;
     } finally {
       setAppointmentEmailBusy(false);
+      endAction("appointment-email");
     }
   }
 
@@ -4707,50 +4943,74 @@ export default function Home() {
   }
 
   async function sendSavedWorkDocuments(customer: Customer, documents: "work_report" | "purchase_declaration" | "both", declarationId?: string) {
-    if (workReportEmailBusy) return;
+    if (pendingActionsRef.current.has("work-report")) return false;
     const declarations = purchaseDeclarationsFor(customer);
     const declaration = declarationId ? declarations.find((item) => item.id === declarationId) : undefined;
     const reportId = declaration?.workReportId || customer.activeWorkReportId || savedReportFor(customer)?.id;
     const declarationIds = (documents === "work_report" ? [] : declaration ? [declaration.id]
       : declarations.filter((item) => item.workReportId === reportId).map((item) => item.id))
       .filter((id): id is string => Boolean(id));
-    if (!customer.email?.trim()) { setMessage("A PDF küldéséhez add meg az ügyfél email címét."); return; }
-    if (!reportId || !customer.activeAppointmentId || (declarationId && !declaration)) {
-      setMessage("Előbb nyisd meg és mentsd el az adott munka aláírt dokumentumát."); return;
+    const workspaceId = currentWorkspaceId();
+    const receiptKey = `${workspaceId}:${customer.id}:${customer.activeAppointmentId}:${reportId}`;
+    let receipt = workReportReceiptsRef.current.get(receiptKey);
+    const recordingOnly = Boolean(receipt);
+    if (!receipt && !customer.email?.trim()) { setMessage("A PDF küldéséhez add meg az ügyfél email címét."); return false; }
+    if (!reportId || !customer.activeAppointmentId || (!receipt && declarationId && !declaration)) {
+      setMessage("Előbb nyisd meg és mentsd el az adott munka aláírt dokumentumát."); return false;
     }
+    if (!beginAction("work-report")) return false;
     setWorkReportEmailBusy(true);
-    setMessage("A mentett dokumentumok PDF-jeinek küldése folyamatban...");
+    setMessage(recordingOnly ? "A korábban elküldött PDF-ek állapotának mentése..." : "A mentett dokumentumok PDF-jeinek küldése folyamatban...", "pending");
     try {
-      const response = await authenticatedFetch("/api/send-work-report", {
+      if (!receipt) {
+        const response = await authenticatedFetch("/api/send-work-report", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(workReportPayload({ id: reportId }, customer, declarationIds, documents)),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || "A PDF-küldés nem sikerült.");
-      const sentAt = new Date().toISOString();
-      try {
-        if (result.workReportId) {
+        }, workspaceId || undefined);
+        const result = await response.json().catch(() => ({}));
+        if (currentWorkspaceId() !== workspaceId) return false;
+        if (!response.ok || !result?.ok) throw new Error(result.error || "Nem érkezett sikeres visszaigazolás a PDF-küldésről.");
+        receipt = { customer: { ...customer, activeWorkReportId: reportId }, documents,
+          sentAt: new Date().toISOString(), workReportId: result.workReportId,
+          purchaseDeclarationIds: result.purchaseDeclarationIds || [] };
+        workReportReceiptsRef.current.set(receiptKey, receipt);
+      }
+      if (currentWorkspaceId() !== workspaceId) return false;
+      const target = receipt.customer;
+      const sentAt = receipt.sentAt;
+        if (receipt.workReportId) {
           const { error } = await workspaceQuery(supabase.from("work_reports").update({ email_sent_at: sentAt })
-            .eq("id", reportId).eq("customer_id", customer.id).eq("appointment_id", customer.activeAppointmentId));
+            .eq("id", reportId).eq("customer_id", target.id).eq("appointment_id", target.activeAppointmentId!));
+          if (currentWorkspaceId() !== workspaceId) return false;
           if (error) throw error;
           setWorkReportsByCustomer((prev) => Object.fromEntries(Object.entries(prev).map(([key, report]) =>
             [key, report.id === reportId ? { ...report, emailSentAt: sentAt } : report])));
-          setMaintenanceReportsByCustomer((prev) => ({ ...prev, [customer.id]: (prev[customer.id] || [])
+          setMaintenanceReportsByCustomer((prev) => ({ ...prev, [target.id]: (prev[target.id] || [])
             .map((report) => report.id === reportId ? { ...report, emailSentAt: sentAt } : report) }));
-          await logDocument(customer, "work_report", workReportTitle(customer.appointmentType), "Elküldve", sentAt);
+          setWorkReport((prev) => prev.id === reportId ? { ...prev, emailSentAt: sentAt } : prev);
+          await logDocument(target, "work_report", workReportTitle(target.appointmentType), "Elküldve", sentAt);
+          if (currentWorkspaceId() !== workspaceId) return false;
         }
-        if (result.purchaseDeclarationIds?.length) await logDocument(customer, "purchase_declaration", "Vásárlási nyilatkozat", "Elküldve", sentAt);
-        if (documents === "both" && result.workReportId && result.purchaseDeclarationIds?.length) {
-          await updateChecklistForCustomer(customer, { docsSent: true });
+        if (receipt.purchaseDeclarationIds.length) await logDocument(target, "purchase_declaration", "Vásárlási nyilatkozat", "Elküldve", sentAt);
+        if (currentWorkspaceId() !== workspaceId) return false;
+        if (receipt.checklist) {
+          await updateChecklistForCustomer(target, receipt.checklist);
+        } else if (receipt.documents === "both" && receipt.workReportId && receipt.purchaseDeclarationIds.length) {
+          await updateChecklistForCustomer(target, { docsSent: true });
         }
-      } catch {
-        setMessage("A PDF-mellékleteket elküldtük, de a küldés állapota nem mentődött. Ellenőrizd a Dokumentumoknál.");
-        return;
-      }
-      setMessage("A dokumentumok PDF-mellékletként elküldve ✅");
+      if (currentWorkspaceId() !== workspaceId) return false;
+      workReportReceiptsRef.current.delete(receiptKey);
+      setMessage(recordingOnly ? "A korábban elküldött PDF-ek állapota mentve ✅ Új email nem ment ki." : "A dokumentumok PDF-mellékletként elküldve ✅", "success");
+      return true;
     } catch (error: any) {
-      setMessage(`PDF-küldési hiba: ${error.message}`);
-    } finally { setWorkReportEmailBusy(false); }
+      if (currentWorkspaceId() === workspaceId) setMessage(receipt
+        ? `A PDF-mellékleteket elküldtük, de a küldés állapota nem mentődött: ${error.message} Újrapróbáláskor csak az állapot mentését ismételjük.`
+        : `PDF-küldési hiba: ${error.message}`, receipt ? "warning" : "error");
+      return false;
+    } finally {
+      setWorkReportEmailBusy(false);
+      endAction("work-report");
+    }
   }
 
   function workReportsForCustomer(customer: Customer, type?: AppointmentType) {
@@ -5004,14 +5264,31 @@ export default function Home() {
     return doc.sentAt || doc.updatedAt || doc.createdAt || undefined;
   }
 
+  function quoteDocumentFor(customer: Customer, documents: DocumentRecord[] = documentsByCustomer[customer.id] || []) {
+    const quoteDocuments = documents.filter((doc) => doc.type === "quote_email");
+    const scoped = quoteDocuments.find((doc) => doc.appointmentId === customer.activeAppointmentId);
+    if (customer.activeAppointmentId && scoped) return scoped;
+    const scope = customer.quoteReceiptScope;
+    if (!scope) return customer.activeAppointmentId ? undefined : scoped;
+    if (scope.quoteId !== customer.activeQuoteId || scope.appointmentId !== customer.activeAppointmentId) return undefined;
+    const notBefore = Date.parse(scope.notBefore);
+    const notAfter = scope.notAfter ? Date.parse(scope.notAfter) : Infinity;
+    if (!Number.isFinite(notBefore) || Number.isNaN(notAfter) || notBefore > notAfter) return undefined;
+    return quoteDocuments.find((doc) => {
+      if (doc.appointmentId || !doc.sentAt) return false;
+      const sentAt = Date.parse(doc.sentAt);
+      return Number.isFinite(sentAt) && sentAt >= notBefore && sentAt <= notAfter;
+    });
+  }
+
   function quoteSentAtFor(customer: Customer) {
-    const quoteDoc = docFor(customer, "quote_email");
+    const quoteDoc = quoteDocumentFor(customer);
     return sentDocumentTimestamp(quoteDoc)
       || (normalizeStatus(customer.status) === "Ajánlat elküldve" ? customer.quoteSentAt : undefined);
   }
 
   function customerHasSentQuote(customer: Customer) {
-    const quoteDoc = docFor(customer, "quote_email");
+    const quoteDoc = quoteDocumentFor(customer);
     return normalizeStatus(customer.status) === "Ajánlat elküldve"
       || Boolean(sentDocumentTimestamp(quoteDoc));
   }
@@ -5126,7 +5403,7 @@ export default function Home() {
 
   function documentRowsFor(customer: Customer): PageDocumentRow[] {
     const currentAppointmentType = normalizeAppointmentType(customer.appointmentType);
-    const quoteDoc = docFor(customer, "quote_email");
+    const quoteDoc = quoteDocumentFor(customer);
     const quoteSentAt = quoteSentAtFor(customer);
     const quoteBaseStatus = quoteDoc?.status || (customerHasSentQuote(customer) ? "Elküldve" : "Nincs elküldve");
     const quoteDisplayStatus = quoteBaseStatus.includes("Elküld") && quoteSentAt ? `${quoteBaseStatus} · ${formatQuoteSentAt(quoteSentAt)}` : quoteBaseStatus;
@@ -5345,7 +5622,7 @@ export default function Home() {
   }
 
   async function saveWorkReport(sendEmail = false) {
-    if (workReportBusy) return;
+    if (pendingActionsRef.current.has("work-report")) return;
     if (workReportLoadBlocked) {
       setMessage("A munkalap még nem töltődött be biztonságosan. Nyisd meg újra a dokumentumot.");
       return;
@@ -5356,6 +5633,15 @@ export default function Home() {
     }
     if (!selected.id) {
       setMessage("Előbb mentsd az ügyfelet, utána készíthető munkalap.");
+      return;
+    }
+
+    const workspaceId = currentWorkspaceId();
+    const previousReportId = workReport.id || selected.activeWorkReportId;
+    const pendingReceipt = workReportReceiptsRef.current.get(`${workspaceId}:${selected.id}:${selected.activeAppointmentId}:${previousReportId}`);
+    if (pendingReceipt) {
+      if (sendEmail) await sendSavedWorkDocuments(pendingReceipt.customer, pendingReceipt.documents);
+      else setMessage("A PDF-eket már elküldtük, de az állapot mentése nem fejeződött be. A PDF-küldés gombbal előbb a korábbi küldés naplózását fejezd be, utána menthetők az új módosítások.", "warning");
       return;
     }
 
@@ -5379,8 +5665,12 @@ export default function Home() {
       signedAt: signedAt || undefined,
     };
 
+    if (!beginAction("work-report")) return;
     setWorkReportBusy(true);
-    setMessage(sendEmail ? "Munkalap mentése és email küldése folyamatban..." : "Munkalap mentése folyamatban...");
+    setMessage(sendEmail ? "Munkalap mentése és email küldése folyamatban..." : "Munkalap mentése folyamatban...", "pending");
+    let reportSaved = false;
+    let emailAccepted = false;
+    let receiptKey: string | undefined;
 
     try {
       const currentAppointmentType = normalizeAppointmentType(selected.appointmentType);
@@ -5422,6 +5712,7 @@ export default function Home() {
         error = result.error;
       }
 
+      if (currentWorkspaceId() !== workspaceId) return;
       if (error) {
         if (currentAppointmentType === "maintenance" && errorMentionsWorkReportType(error)) {
           throw new Error("A karbantartási munkalap külön mentéséhez futtasd a SUPABASE_WORK_REPORT_TIPUS_OSZLOP.sql fájlt a Supabase-ben.");
@@ -5430,6 +5721,8 @@ export default function Home() {
       }
 
       // Keep the saved identity even if a later email or checklist update fails.
+      if (!data?.id) throw new Error("A munkalap mentéséről nem érkezett visszaigazolás.");
+      reportSaved = true;
       setWorkReport(workReportFromRow(data));
 
       if (data?.id && !data.legacy_source_key) {
@@ -5440,6 +5733,7 @@ export default function Home() {
           .eq("id", data.id))
           .select("legacy_source_key")
           .maybeSingle();
+        if (currentWorkspaceId() !== workspaceId) return;
         if (legacyResult.error && !errorMentionsWorkReportHistoryLink(legacyResult.error)) throw legacyResult.error;
         if (!legacyResult.error) data.legacy_source_key = legacyResult.data?.legacy_source_key || legacySourceKey;
       }
@@ -5468,10 +5762,10 @@ export default function Home() {
           .eq("legacy_source_key", legacySourceKey))
           .maybeSingle();
 
+        if (currentWorkspaceId() !== workspaceId) return;
         if (declarationSourceMatch.error) {
           if (isMissingSellerTableError(declarationSourceMatch.error)) {
-            setMessage("A vásárlási nyilatkozat eladóválasztásához előbb futtasd az új Supabase migrációt.");
-            return;
+            throw new Error("A vásárlási nyilatkozat eladóválasztásához előbb futtasd az új Supabase migrációt.");
           }
           throw declarationSourceMatch.error;
         }
@@ -5489,10 +5783,10 @@ export default function Home() {
               .select("*")
               .single();
 
+        if (currentWorkspaceId() !== workspaceId) return;
         if (declarationResult.error) {
           if (isMissingSellerTableError(declarationResult.error)) {
-            setMessage("A vásárlási nyilatkozat eladóválasztásához előbb futtasd az új Supabase migrációt.");
-            return;
+            throw new Error("A vásárlási nyilatkozat eladóválasztásához előbb futtasd az új Supabase migrációt.");
           }
           throw declarationResult.error;
         }
@@ -5501,16 +5795,28 @@ export default function Home() {
       // Both signed snapshots must exist before the server renders attachments.
       if (sendEmail) {
         setWorkReportEmailBusy(true);
+        if (currentWorkspaceId() !== workspaceId) throw new Error("A munkaterület megváltozott. A PDF-küldés leállt.");
         const response = await authenticatedFetch("/api/send-work-report", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(workReportPayload({ id: data.id }, selected,
             savedPurchaseDeclaration?.id ? [savedPurchaseDeclaration.id] : [], isMaintenanceReport ? "work_report" : "both")),
-        });
+        }, workspaceId || undefined);
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result?.error || "Nem sikerült elküldeni a PDF-mellékleteket.");
+        if (currentWorkspaceId() !== workspaceId) return;
+        if (!response.ok || !result?.ok) throw new Error(result?.error || "Nem érkezett sikeres visszaigazolás a PDF-mellékletek küldéséről.");
+        emailAccepted = true;
         emailSentAt = new Date().toISOString();
+        receiptKey = `${workspaceId}:${selected.id}:${selected.activeAppointmentId}:${data.id}`;
+        workReportReceiptsRef.current.set(receiptKey, {
+          customer: { ...selected, activeWorkReportId: data.id }, sentAt: emailSentAt,
+          documents: isMaintenanceReport ? "work_report" : "both", workReportId: data.id,
+          purchaseDeclarationIds: savedPurchaseDeclaration?.id ? [savedPurchaseDeclaration.id] : [],
+          checklist: isMaintenanceReport ? undefined : { worksheet: hasSignedReport, purchaseDeclaration: hasSignedReport, signature: hasSignedReport, docsSent: true },
+        });
+        if (currentWorkspaceId() !== workspaceId) return;
         const deliveryUpdate = await workspaceQuery(supabase.from("work_reports").update({ email_sent_at: emailSentAt })
           .eq("id", data.id).eq("customer_id", selected.id).eq("appointment_id", selected.activeAppointmentId!));
+        if (currentWorkspaceId() !== workspaceId) return;
         if (deliveryUpdate.error) throw new Error("A PDF-eket elküldtük, de a küldés állapota nem mentődött.");
       }
       const documentEventAt = emailSentAt || signedAt || new Date().toISOString();
@@ -5522,9 +5828,11 @@ export default function Home() {
           sendEmail ? "Elküldve" : hasSignedReport ? "Aláírva, mentve" : "Mentve, aláírásra vár",
           documentEventAt
         );
+        if (currentWorkspaceId() !== workspaceId) return;
       }
       if (!isMaintenanceReport && hasSignedReport) {
         await logDocument(selected, "purchase_declaration", `Vásárlási nyilatkozat${savedPurchaseDeclaration ? ` – ${savedPurchaseDeclaration.sellerName}` : ""}`, sendEmail ? "Elküldve" : "Elkészült", documentEventAt);
+        if (currentWorkspaceId() !== workspaceId) return;
       }
 
       if (!isMaintenanceReport) {
@@ -5534,6 +5842,7 @@ export default function Home() {
           signature: hasSignedReport,
           docsSent: Boolean(sendEmail && hasSignedReport),
         });
+        if (currentWorkspaceId() !== workspaceId) return;
       }
 
       const savedReportForState: WorkReport = {
@@ -5575,13 +5884,19 @@ export default function Home() {
         updateWorkHistory(updatedSelected);
       }
       setMessage(sendEmail ? `${workReportTitle(selected.appointmentType)} mentve és emailben elküldve ✅` : `${workReportTitle(selected.appointmentType)} mentve ✅`);
+      if (receiptKey) workReportReceiptsRef.current.delete(receiptKey);
       setWorkFocusTarget("close-actions");
       replaceView("work");
     } catch (error: any) {
-      setMessage(`Munkalap hiba: ${error.message}`);
+      if (currentWorkspaceId() === workspaceId) setMessage(emailAccepted
+        ? `A munkalap mentve és a PDF-ek elküldve, de az állapot mentése nem fejeződött be: ${error.message} A PDF-küldés gomb most csak a naplózást próbálja újra.`
+        : reportSaved
+          ? `A munkalap mentve, de ${sendEmail ? "a PDF-küldés nem fejeződött be" : "a kapcsolódó adatok mentése nem sikerült"}: ${error.message}`
+          : `Munkalap mentési hiba: ${error.message}`, reportSaved ? "warning" : "error");
     } finally {
       setWorkReportBusy(false);
       setWorkReportEmailBusy(false);
+      endAction("work-report");
     }
   }
 
@@ -5769,8 +6084,6 @@ export default function Home() {
             </div>
             <button type="button" onClick={() => setQuickAppointment(null)} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-cyan-100">Bezárás</button>
           </div>
-
-          {message ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-400/20 p-4 text-sm font-black text-amber-100">{message}</div> : null}
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {([
@@ -6045,7 +6358,6 @@ export default function Home() {
         <style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; min-height: 297mm !important; margin: 0 !important; background: #fff !important; } body * { visibility: hidden !important; } .print-document-area, .print-document-area * { visibility: visible !important; } .print-document-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; background: #fff !important; } .doc-print-page { box-sizing: border-box !important; width: 210mm !important; max-width: 210mm !important; min-height: 297mm !important; height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: hidden !important; page-break-after: always !important; break-after: page !important; } .work-report-doc { padding: 14mm !important; font-size: 11.5px !important; line-height: 1.2 !important; } .purchase-doc { padding: 12mm !important; font-size: 10px !important; line-height: 1.18 !important; } .doc-print-page * { box-sizing: border-box !important; } .doc-print-page:last-child { page-break-after: auto !important; break-after: auto !important; } }`}</style>
         <Back onClick={()=>goBack(documentBackView)}/>
         <div className="print:hidden">
-          {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
           {documentBackView === "documents" || isAppointmentPreview || isQuotePreview || isAllWorkReportsPreview ? (
             <div className="mb-5"><button onClick={()=>window.print()} className="document-action-button w-full rounded-2xl bg-white/10 px-5 py-4 font-black text-white sm:w-auto">Nyomtatás / mentés PDF-be</button></div>
           ) : (
@@ -6176,6 +6488,7 @@ export default function Home() {
 
   if (view==="lead") return (
     <LeadPanel
+      saving={customerSaveBusy}
       selected={selected}
       customers={customers}
       timelineItems={customerTimelineItems(selected)}
@@ -6200,6 +6513,7 @@ export default function Home() {
       installerAmount={installer}
       materialAmount={materialPrice}
       quoteEmailBusy={quoteEmailBusy}
+      quoteSentAt={quoteSentAtFor(selected)}
       canEditWorkResources={canEditWorkResources}
       quotePricingMode={selected.quotePricingMode || "bundle"}
       onBack={()=>goBack()}
@@ -6225,6 +6539,7 @@ export default function Home() {
         totalAmount={t}
         quoteEmailBusy={quoteEmailBusy}
         quoteIssuedAt={quoteIssuedAt}
+        quoteSentAt={quoteSentAtFor(selected)}
         workspaceSettings={workspaceSettings}
         onBack={() => goBack("quote")}
         onPrint={() => window.print()}
@@ -6247,6 +6562,7 @@ export default function Home() {
     const isExistingSchedule = Boolean(selected.date) && normalizeAppointmentType(selected.appointmentType) === normalizedScheduleAppointmentType;
     return (
       <SchedulePanel
+        saving={scheduleSaveBusy}
         selected={selected}
         isExistingSchedule={isExistingSchedule}
         mode={mode}
@@ -6313,6 +6629,7 @@ export default function Home() {
   if (view==="work") return (
     <Shell>
       <WorkPagePanel
+        saving={workActionBusy}
         selected={selected}
         onSendPdf={sendSavedWorkDocuments}
         pdfEmailBusy={workReportEmailBusy}
@@ -6340,11 +6657,11 @@ export default function Home() {
         workHistory={workHistoryByCustomer[selected.id] || []}
         workspaceSettings={workspaceSettings}
         onBack={()=>goBack()}
-        onCloseWork={closeWork}
+        onCloseWork={() => runGuardedAction("work-close", closeWork)}
         onRememberExternalCustomer={rememberExternalCustomer}
         onRecordCustomerPhoneCall={recordCustomerPhoneCall}
         onSaveCustomerData={saveCustomerData}
-        onSetEditCustomer={setEditCustomer}
+        onSetEditCustomer={setCustomerEditMode}
         onUpdateSelectedField={updateSelectedField}
         onSetScheduleDate={setScheduleDate}
         onSetScheduleTime={setScheduleTime}
@@ -6368,11 +6685,11 @@ export default function Home() {
         onSendAppointmentEmailFor={sendAppointmentEmailFor}
         onSendThankYouEmailFor={sendThankYouEmailFor}
         onOpenWorkReport={openWorkReport}
-        onMarkInstallationDone={markInstallationDone}
-        onCancelAppointment={cancelAppointment}
+        onMarkInstallationDone={() => runGuardedAction("work-close", markInstallationDone)}
+        onCancelAppointment={() => runGuardedAction("work-cancel", cancelAppointment)}
         onStartMaintenanceForCustomer={startMaintenanceForCustomer}
         onToggleMaintenanceOptOut={toggleCustomerMaintenanceOptOut}
-        onToggleChecklist={toggleChecklist}
+        onToggleChecklist={(key) => runGuardedAction("work-save", () => toggleChecklist(key))}
         onCreateInvoice={createInvoice}
         onMarkManualInvoice={markManualInvoice}
         onOpenWorkVersion={openWorkVersion}
@@ -6409,8 +6726,6 @@ export default function Home() {
           <button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-100">Kilépés</button>
         </div>
       </header>
-
-      {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
       {renderQuickAppointmentDialog()}
       {renderQuickAppointmentEmailPrompt()}
 

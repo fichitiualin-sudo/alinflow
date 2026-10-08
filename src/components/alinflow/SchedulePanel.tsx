@@ -26,6 +26,7 @@ type SchedulePanelProps = {
   totalQuantity: number;
   sendAppointmentNotice: boolean;
   appointmentEmailBusy: boolean;
+  saving?: boolean;
   onBack: () => void;
   onSaveSchedule: () => void;
   onSelectDate: (value: string) => void;
@@ -79,7 +80,6 @@ export function SchedulePanel({
   mode,
   calDate,
   calendarCustomers,
-  message,
   scheduleDate,
   scheduleTime,
   shownTime,
@@ -92,6 +92,7 @@ export function SchedulePanel({
   totalQuantity,
   sendAppointmentNotice,
   appointmentEmailBusy,
+  saving = false,
   onBack,
   onSaveSchedule,
   onSelectDate,
@@ -117,18 +118,14 @@ export function SchedulePanel({
   const selectedTimeLabel = normalizeAppointmentTimeInput(scheduleTime)
     ? appointmentTimeLabel(appointmentType, scheduleTime, quoteItems)
     : "adj meg időpontot";
-  const messageIsError = message.toLocaleLowerCase("hu-HU").startsWith("ez az idősáv") || message.toLocaleLowerCase("hu-HU").startsWith("adj meg");
+  const busy = saving || appointmentEmailBusy;
 
   return (
     <Shell>
-      <Back onClick={onBack} />
+      <Back onClick={onBack} disabled={busy} />
+      <fieldset disabled={busy} aria-busy={busy} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
       <Layout>
         <Main>
-          {message ? (
-            <div className={`mb-4 rounded-2xl border p-4 font-black ${messageIsError ? "border-red-300/40 bg-red-500/20 text-red-100" : "border-emerald-300/30 bg-emerald-400/20 text-emerald-100"}`}>
-              {message}
-            </div>
-          ) : null}
           <Calendar
             mode={mode}
             date={calDate}
@@ -262,12 +259,13 @@ export function SchedulePanel({
               />
               <span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span>
             </label>
-            <Btn color="green" onClick={onSaveSchedule}>
-              {appointmentEmailBusy ? "Mentés és email küldés..." : isExistingSchedule ? `${appointmentTypeLabel(appointmentType)} időpont frissítése` : `${appointmentTypeLabel(appointmentType)} időpont mentése`}
+            <Btn color="green" disabled={busy} onClick={onSaveSchedule}>
+              {appointmentEmailBusy ? "Mentés és email küldés..." : saving ? "Időpont mentése..." : isExistingSchedule ? `${appointmentTypeLabel(appointmentType)} időpont frissítése` : `${appointmentTypeLabel(appointmentType)} időpont mentése`}
             </Btn>
           </Card>
         </Side>
       </Layout>
+      </fieldset>
     </Shell>
   );
 }

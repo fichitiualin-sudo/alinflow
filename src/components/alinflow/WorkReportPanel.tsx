@@ -6,6 +6,7 @@ import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
 import { formatSignedAt, hasValidWorkReportSignature, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentSummaryLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
+import { Back } from "@/components/alinflow/LayoutPrimitives";
 
 type WorkReportPanelProps = {
   selected: Customer;
@@ -42,7 +43,6 @@ export function WorkReportPanel({
   workReport,
   workReportBusy,
   workReportEmailBusy,
-  message,
   sellerCompanies,
   selectedSellerId,
   newSellerName,
@@ -68,8 +68,8 @@ export function WorkReportPanel({
 
   return (
     <Shell>
-      <Back onClick={onBack}/>
-      {message ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 p-4 font-black text-emerald-100">{message}</div> : null}
+      <Back onClick={onBack} disabled={workReportBusy || workReportEmailBusy} />
+      <fieldset disabled={workReportBusy || workReportEmailBusy} aria-busy={workReportBusy || workReportEmailBusy} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
       <Layout>
         <Main>
           <Card title={`${reportTitle} adatai`}>
@@ -152,8 +152,8 @@ export function WorkReportPanel({
           <Gradient title="Munkalap státusz" value={hasValidSignature ? "Aláírva" : "Aláírásra vár"}/>
           <Card title="Műveletek">
             <div className="grid grid-cols-1 gap-3">
-              <StepButton color="green" onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>
-              <StepButton color="blue" onClick={()=>onSave(true)}>{workReportEmailBusy ? "PDF-ek küldése..." : isMaintenance ? "Munkalap küldése PDF-ben" : "Mentés és PDF-ek küldése"}</StepButton>
+              <StepButton color="green" disabled={workReportBusy || workReportEmailBusy} onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>
+              <StepButton color="blue" disabled={workReportBusy || workReportEmailBusy} onClick={()=>onSave(true)}>{workReportEmailBusy ? "PDF-ek küldése..." : workReportBusy ? "Mentés..." : isMaintenance ? "Munkalap küldése PDF-ben" : "Mentés és PDF-ek küldése"}</StepButton>
             </div>
           </Card>
           <Card title="Email állapot">
@@ -162,6 +162,7 @@ export function WorkReportPanel({
           </Card>
         </Side>
       </Layout>
+      </fieldset>
     </Shell>
   );
 }
@@ -174,14 +175,13 @@ function Layout({children}:{children:React.ReactNode}){return <section className
 function Main({children}:{children:React.ReactNode}){return <div className="space-y-6 xl:col-span-2">{children}</div>}
 function Side({children}:{children:React.ReactNode}){return <aside className="space-y-6">{children}</aside>}
 function Card({title,children}:{title:string;children:React.ReactNode}){return <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl"><h2 className="mb-5 text-2xl font-black">{title}</h2>{children}</section>}
-function Back({onClick}:{onClick:()=>void}){return <div className="sticky top-3 z-50 w-fit print:hidden"><button onClick={onClick} className="rounded-2xl border border-cyan-200/20 bg-slate-900/95 px-5 py-3 font-black text-cyan-100 shadow-2xl shadow-slate-950/40 backdrop-blur">← Vissza</button></div>}
 function Field({label,value}:{label:string;value:string}){return <div className="rounded-2xl bg-slate-900/80 p-4"><p className="text-sm text-slate-400">{label}</p><p className="mt-1 text-lg font-black">{value}</p></div>}
 function EditField({label,value,onChange}:{label:string;value:string;onChange:(value:string)=>void}) {return <label className="rounded-2xl bg-slate-900/80 p-4"><span className="text-sm text-slate-400">{label}</span><input className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={value || ""} onChange={(event) => onChange(event.target.value)} /></label>}
 function InfoRow({label,value}:{label:string;value:string}){return <div className="flex justify-between gap-4 border-b border-white/10 py-3 text-sm"><span className="text-slate-400">{label}</span><b className="text-right">{value}</b></div>}
 function Gradient({title,value}:{title:string;value:string}) {return <section className="rounded-[2rem] bg-gradient-to-br from-cyan-300 to-blue-400 p-6 text-slate-950 shadow-2xl"><p className="text-sm font-black opacity-80">{title}</p><h3 className="mt-2 text-3xl font-black">{value}</h3></section>}
-function StepButton({children,onClick,color="cyan"}:{children:React.ReactNode;onClick?:()=>void;color?:"green"|"blue"|"amber"|"cyan"|"red"|"slate"}) {
+function StepButton({children,onClick,color="cyan",disabled=false}:{children:React.ReactNode;onClick?:()=>void;color?:"green"|"blue"|"amber"|"cyan"|"red"|"slate";disabled?:boolean}) {
   const map: Record<string,string> = {green:"bg-emerald-400 text-slate-950",blue:"bg-blue-400 text-slate-950",amber:"bg-amber-300 text-slate-950",cyan:"bg-cyan-300 text-slate-950",red:"bg-red-500/90 text-white",slate:"bg-white/10 text-white"};
-  return <button onClick={onClick} className={`rounded-2xl px-5 py-4 text-center font-black ${map[color] || map.cyan}`}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} className={`rounded-2xl px-5 py-4 text-center font-black disabled:cursor-wait disabled:opacity-60 ${map[color] || map.cyan}`}>{children}</button>;
 }
 
 function SignaturePad({ value, onChange }: { value?: string; onChange: (value: string) => void }) {

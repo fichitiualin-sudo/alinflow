@@ -28,7 +28,7 @@ test("Release: leaving unsaved maintenance restores the original work without wr
     setScheduleTime: noop, setScheduleAppointmentType: noop, setWorkReport: noop,
     setWorkChecklist: noop, effectiveChecklistFor: () => ({}), setAllowWorkResourceEdit: noop,
     clearCustomerDraft: id => cleared=id, readCustomerDraft: () => null, setDraftNotice: noop,
-    setMessage: noop, replaceView: v => view=v,
+    setMessage: noop, setView: v => view=v,
   }).goBack();
   assert.equal(restored,source);
   assert.equal(items,source.quoteItems);
@@ -43,7 +43,7 @@ test("Release: back from an existing maintenance schedule does not replace the w
   let writes=0, view;
   h.functions(["goBack"], { ...base, selected: { ...customer, appointmentType: "maintenance", activeAppointmentId: "saved-maintenance" },
     currentViewRef: { current: "schedule" }, maintenanceReturnRef: { current: customer },
-    viewHistoryRef: { current: ["work"] }, setSelected: () => writes++, replaceView: v => view=v,
+    viewHistoryRef: { current: ["work"] }, setSelected: () => writes++, setView: v => view=v,
   }).goBack();
   assert.equal(writes,0);
   assert.equal(view,"work");
@@ -161,6 +161,7 @@ test("A02: saving a report from another appointment never writes to the database
   let writes = 0, message = "";
   const f = h.functions(["saveWorkReport"], {
     ...base, selected: customer, workReportBusy: false, workReportLoadBlocked: false,
+    pendingActionsRef: { current: new Set() },
     workReport: { ...reports.emptyWorkReport(customer), id: "old-report", appointmentId: "installation-A", signatureDataUrl: "signed" },
     setMessage: v => message = v, supabase: database(() => { writes++; return { error: null }; }),
   });
@@ -240,15 +241,27 @@ for (const [label, needed, reserved, stock, shortage] of [
 
 test("A08: cancellation replaces the existing history entry immediately", async () => {
   let history = { [customer.id]: [customer] }, customers = [customer];
-  const f = h.functions(["cancelAppointment", "promoteCustomerWork", "updateWorkHistory",
+  const writes = [];
+  const db = database(op => { writes.push(op); return { data: { id: customer.id }, error: null }; });
+  db.rpc = async (name, args) => {
+    writes.push({ method: "rpc", name, args });
+    return { data: [{ appointment_id: customer.activeAppointmentId, job_id: "test-job" }], error: null };
+  };
+  const f = h.functions(["cancelAppointment", "cancelAppointmentWithJobMirror", "promoteCustomerWork", "updateWorkHistory",
     "shouldPromoteWorkToCustomerList", "workCustomersForScheduling"], {
     ...base, selected: customer, setSelected: noop, setMessage: noop, returnToLastMenu: noop,
-    persistCustomerToDb: async () => ({}), sortCustomersBySchedule: identity, sortCustomersByCreatedAtDesc: identity,
+    supabase: db, sortCustomersBySchedule: identity, sortCustomersByCreatedAtDesc: identity,
     setWorkHistoryByCustomer: fn => history = fn(history), setCustomers: fn => customers = fn(customers) });
   await f.cancelAppointment();
   const active = f.workCustomersForScheduling(customers, history).filter(row => row.status !== "Lemondva");
   assert.equal(active.length, 0);
   assert.equal(history[customer.id].length, 1);
+  assert.equal(writes[0].name, "cancel_appointment_with_job_mirror");
+  assert.equal(writes[0].args.p_appointment_id, customer.activeAppointmentId);
+  assert.equal(writes[1].table, "customers");
+  assert.equal(writes[1].method, "update");
+  assert.equal(writes[1].filters.workspace_id, "test-workspace");
+  assert.equal(writes.length, 2);
 });
 
 test("A09: failed manual billing does not tick a box or report success", async () => {
@@ -291,7 +304,9 @@ test("A10: material reservation distinguishes two appointments of the same custo
 });
 
 function schedule(selected, onPersist) {
-  return h.functions(["saveSchedule", "stockDeductedFromWorkStatus"], { ...base, selected,
+  return h.functions(["beginAction", "endAction", "saveSchedule", "stockDeductedFromWorkStatus"], { ...base, selected,
+    pendingActionsRef: { current: new Set() }, setPendingActions: noop,
+    maintenanceReturnRef: { current: null },
     scheduleDate: "2026-09-07", scheduleTime: "08:00", normalizedScheduleAppointmentType: "installation",
     quoteItems: [{ customName: "AC", quantity: 1, customPrice: 100 }], allWorkCustomers: [],
     appointmentTimeAvailable: () => true, EMPTY_QUOTE_ITEMS: [],
@@ -368,7 +383,8 @@ test("R01: export follows server page limits and uses stable ordering", async ()
 
 test("A10: invalid materials prevent saving a work rather than persisting corrupt quantities", async () => {
   let writes = 0, message = "";
-  const f = h.functions(["saveWorkChanges"], { ...base, selected: customer,
+  const f = h.functions(["beginAction", "endAction", "saveWorkChanges"], { ...base, selected: customer,
+    pendingActionsRef: { current: new Set() }, setPendingActions: noop,
     workResourceEditLocked: false, allowWorkResourceEdit: true, quoteItems: [],
     materials: [{ name: "Pipe", qty: "-1", unit: "m" }], materialOverrides: {},
     stockMaterialQuantities: materials.stockMaterialQuantities,

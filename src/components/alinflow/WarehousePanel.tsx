@@ -39,7 +39,7 @@ type WarehousePanelProps = {
   addStock: (productId: string, amount: number) => void | Promise<void>;
   materialReserved: (materialName: string) => number;
   addMaterialStock: (materialName: string, amount: number) => void | Promise<void>;
-  onAddMaterialItem: (item: MaterialInventoryItem) => void | Promise<void>;
+  onAddMaterialItem: (item: MaterialInventoryItem) => boolean | void | Promise<boolean | void>;
 };
 
 function productDevicePrice(product: ClimateProduct) {
@@ -83,6 +83,8 @@ export function WarehousePanel({
   const [newMaterialStock, setNewMaterialStock] = useState("0");
   const [newMaterialLowAt, setNewMaterialLowAt] = useState("1");
   const [materialMessage, setMaterialMessage] = useState("");
+  const [materialBusy, setMaterialBusy] = useState(false);
+  const materialInFlight = useRef(false);
   const query = search.trim().toLocaleLowerCase("hu-HU");
   const visibleProducts = products.filter((product) => product.name.toLocaleLowerCase("hu-HU").includes(query));
   const visibleMaterials = materialInventory.filter((item) => item.name.toLocaleLowerCase("hu-HU").includes(query));
@@ -94,6 +96,7 @@ export function WarehousePanel({
   ], purchasePrices.prices);
 
   async function addMaterialItem() {
+    if (materialInFlight.current) return;
     const name = newMaterialName.trim();
     if (!name) {
       setMaterialMessage("Add meg az anyag nevét.");
@@ -104,20 +107,30 @@ export function WarehousePanel({
       return;
     }
 
+    materialInFlight.current = true;
+    setMaterialBusy(true);
+    setMaterialMessage("Anyag mentése...");
     try {
-      await onAddMaterialItem({
+      const saved = await onAddMaterialItem({
         name,
         unit: newMaterialUnit.trim() || "db",
         stock: Math.max(0, Number(newMaterialStock || 0)),
         lowAt: Math.max(0, Number(newMaterialLowAt || 0)),
       });
+      if (saved === false) {
+        setMaterialMessage("Az anyag nem került mentésre. Ellenőrizd a megadott adatokat.");
+        return;
+      }
       setNewMaterialName("");
       setNewMaterialUnit("db");
       setNewMaterialStock("0");
       setNewMaterialLowAt("1");
       setMaterialMessage("Anyag hozzáadva ✓");
-    } catch (error: any) {
-      setMaterialMessage(`Anyag mentési hiba: ${error.message || "ismeretlen hiba"}`);
+    } catch (error) {
+      setMaterialMessage(`Anyag mentési hiba: ${error instanceof Error ? error.message : "ismeretlen hiba"}`);
+    } finally {
+      materialInFlight.current = false;
+      setMaterialBusy(false);
     }
   }
 
@@ -191,18 +204,7 @@ export function WarehousePanel({
                       </div>
                     ) : null}
 
-                    <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
-                      <input id={`stock-${product.id}`} type="number" defaultValue={1} className="input md:max-w-[140px]" />
-                      <button
-                        onClick={() => {
-                          const input = document.getElementById(`stock-${product.id}`) as HTMLInputElement | null;
-                          addStock(product.id, Number(input?.value || 0));
-                        }}
-                        className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
-                      >
-                        Készlet módosítása
-                      </button>
-                    </div>
+                    <StockAdjustment itemName={product.name} onAdjust={(amount) => addStock(product.id, amount)} />
                   </div>
                 );
               })] : [])}
@@ -213,6 +215,7 @@ export function WarehousePanel({
           <Card title="Szerelési anyagok">
             <button
               type="button"
+              disabled={materialBusy}
               onClick={() => setShowMaterialManager((open) => !open)}
               className="mb-5 w-full rounded-2xl bg-emerald-300 px-5 py-4 font-black text-slate-950"
             >
@@ -222,7 +225,7 @@ export function WarehousePanel({
             {showMaterialManager ? (
               <div className="mb-5 rounded-3xl border border-emerald-300/20 bg-emerald-300/10 p-4">
                 <p className="mb-3 text-lg font-black">Új szerelési anyag</p>
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_120px_120px_120px_auto] lg:items-end">
+                <fieldset disabled={materialBusy} className="grid min-w-0 grid-cols-1 gap-3 disabled:opacity-60 lg:grid-cols-[1fr_120px_120px_120px_auto] lg:items-end">
                   <Field label="Anyag neve">
                     <input className="input" value={newMaterialName} onChange={(event) => setNewMaterialName(event.target.value)} placeholder="pl. 5 eres kábel" />
                   </Field>
@@ -236,10 +239,10 @@ export function WarehousePanel({
                     <input className="input" type="number" min={0} step="0.1" value={newMaterialLowAt} onChange={(event) => setNewMaterialLowAt(event.target.value)} />
                   </Field>
                   <button type="button" onClick={() => void addMaterialItem()} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">
-                    + Hozzáadás
+                    {materialBusy ? "Mentés..." : "+ Hozzáadás"}
                   </button>
-                </div>
-                {materialMessage ? <p className="mt-3 text-sm font-bold text-emerald-100">{materialMessage}</p> : null}
+                </fieldset>
+                {materialMessage ? <p role="status" className="mt-3 text-sm font-bold text-slate-100">{materialMessage}</p> : null}
               </div>
             ) : null}
 
@@ -278,18 +281,7 @@ export function WarehousePanel({
                       </div>
                     ) : null}
 
-                    <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
-                      <input id={`mat-${item.name}`} type="number" defaultValue={1} className="input md:max-w-[140px]" />
-                      <button
-                        onClick={() => {
-                          const input = document.getElementById(`mat-${item.name}`) as HTMLInputElement | null;
-                          addMaterialStock(item.name, Number(input?.value || 0));
-                        }}
-                        className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950"
-                      >
-                        Készlet módosítása
-                      </button>
-                    </div>
+                    <StockAdjustment itemName={item.name} onAdjust={(amount) => addMaterialStock(item.name, amount)} />
                   </div>
                 );
               })] : [])}
@@ -299,6 +291,43 @@ export function WarehousePanel({
       </div>
     </Shell>
   );
+}
+
+function StockAdjustment({ itemName, onAdjust }: { itemName: string; onAdjust: (amount: number) => void | Promise<void> }) {
+  const [amount, setAmount] = useState("1");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const inFlight = useRef(false);
+
+  async function adjust() {
+    if (inFlight.current) return;
+    const delta = Number(amount);
+    if (!Number.isFinite(delta) || delta === 0) {
+      setError("Adj meg nullától eltérő készletváltozást.");
+      return;
+    }
+    inFlight.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await onAdjust(delta);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "A készlet módosítása nem sikerült.");
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }
+
+  return <div className="mt-4">
+    <div className="flex flex-col gap-3 md:flex-row md:items-center">
+      <input type="number" aria-label={`Készletváltozás: ${itemName}`} disabled={busy} value={amount} onChange={(event) => setAmount(event.target.value)} className="input disabled:opacity-60 md:max-w-[140px]" />
+      <button type="button" disabled={busy} onClick={() => void adjust()} className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
+        {busy ? "Mentés..." : "Készlet módosítása"}
+      </button>
+    </div>
+    {error ? <p role="alert" className="mt-2 text-sm text-amber-100">{error}</p> : null}
+  </div>;
 }
 
 function WarehouseValueSummary({ value, loading, error }: { value: ReturnType<typeof summarizeWarehouseValue>; loading: boolean; error: boolean }) {

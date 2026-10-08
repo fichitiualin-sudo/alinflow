@@ -1,4 +1,5 @@
-import { authorizeCustomerRequest, apiErrorResponse, ApiError } from "@/lib/alinflow/server-auth";
+import { authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
+import { sendEmailThroughProvider } from "@/lib/alinflow/email-provider";
 import { calendarEmailDeliveryForRequest, CALENDAR_EMAIL_CONFLICT_MESSAGE } from "@/lib/alinflow/calendar-email-idempotency";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import {
@@ -261,14 +262,11 @@ export async function POST(request: Request) {
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
 
-    const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        ...(calendarDelivery ? { "Idempotency-Key": calendarDelivery.idempotencyKey } : {}),
-      },
-      body: JSON.stringify({
+    const result = await sendEmailThroughProvider({
+      apiKey,
+      idempotencyKey: calendarDelivery?.idempotencyKey,
+      conflictMessage: calendarDelivery ? CALENDAR_EMAIL_CONFLICT_MESSAGE : undefined,
+      payload: {
         from,
         to: [to],
         reply_to: replyTo,
@@ -277,14 +275,10 @@ export async function POST(request: Request) {
           "X-Entity-Ref-ID": calendarDelivery?.idempotencyKey || uniqueEmailRef("alinflow-quote"),
         },
         html: quoteEmailHtml(customer, items, totalAmount, pricingMode, quoteIssuedAt, workspaceSettings),
-      }),
+      },
     });
 
-    const result = await resendResponse.json().catch(() => ({}));
-    if (calendarDelivery && resendResponse.status === 409) throw new ApiError(CALENDAR_EMAIL_CONFLICT_MESSAGE, 409);
-    if (!resendResponse.ok) return Response.json({ error: result?.message || "A Resend nem tudta elküldeni az emailt." }, { status: resendResponse.status });
-
-    return Response.json({ ok: true, id: result?.id });
+    return Response.json({ ok: true, id: result.id });
   } catch (error: any) {
     return apiErrorResponse(error);
   }

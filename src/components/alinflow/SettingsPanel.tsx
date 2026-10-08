@@ -78,7 +78,6 @@ export function SettingsPanel({
   settings,
   schemaAvailable,
   saving,
-  message,
   onBack,
   onSave,
 }: SettingsPanelProps) {
@@ -104,11 +103,11 @@ export function SettingsPanel({
 
   return (
     <Shell>
-      <Back onClick={onBack} />
+      <Back onClick={onBack} disabled={saving} />
       <Layout>
         <Main>
           <Card title="Beállítások">
-            <div className="space-y-6">
+            <fieldset disabled={saving} aria-busy={saving} className="min-w-0 space-y-6 border-0 p-0">
               <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-bold text-cyan-100">
                 <p className="text-base font-black">{activeWorkspace?.name || "Aktuális munkaterület"}</p>
                 <p className="mt-1 text-cyan-100/80">Ezek a beállítások csak ehhez a munkaterülethez tartoznak. Zoli adatai nem keverednek Alin adataival.</p>
@@ -117,12 +116,6 @@ export function SettingsPanel({
               {!schemaAvailable ? (
                 <div className="rounded-3xl border border-amber-300/30 bg-amber-300/15 p-4 text-sm font-black text-amber-100">
                   A személyre szabott beállítások mentéséhez előbb futtasd a workspace settings Supabase SQL-t.
-                </div>
-              ) : null}
-
-              {message ? (
-                <div className="rounded-3xl border border-emerald-300/30 bg-emerald-300/15 p-4 text-sm font-black text-emerald-100">
-                  {message}
                 </div>
               ) : null}
 
@@ -223,9 +216,9 @@ export function SettingsPanel({
                 >
                   {saving ? "Mentés..." : "Beállítások mentése"}
                 </button>
-                <Btn color="blue" onClick={onBack}>Vissza</Btn>
+                <Btn color="blue" onClick={onBack} disabled={saving}>Vissza</Btn>
               </div>
-            </div>
+            </fieldset>
           </Card>
         </Main>
         <Side>
