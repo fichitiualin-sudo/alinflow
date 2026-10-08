@@ -15,6 +15,7 @@ import {
 } from "@/lib/alinflow/maintenance-map";
 import { GoogleMapCanvas, type MapCanvasMarker } from "./GoogleMapCanvas";
 import type { MapMarkerSegment } from "@/lib/alinflow/map-marker-style";
+import { createMapPopupActions, createMapPopupList } from "@/lib/alinflow/map-popup-actions";
 
 type MaintenanceMapPanelProps = {
   points: MaintenanceMapPoint[];
@@ -112,7 +113,6 @@ export function MaintenanceMapPanel({
 
   const createPopupContent = useCallback((id: string) => {
     const content = document.createElement("div");
-    content.className = "alinflow-map-popup";
     content.style.cssText = "font-family:Arial,sans-serif;max-width:280px;color:#0f172a;overflow-wrap:anywhere";
     const group = current.current.groups.find((item) => item.id === id);
     if (!group) {
@@ -123,9 +123,7 @@ export function MaintenanceMapPanel({
     heading.style.cssText = "font-size:16px;font-weight:900;margin:0 0 10px";
     heading.textContent = `${group.points.length} telepítés ezen a helyen`;
     content.appendChild(heading);
-    const scroll = document.createElement("div");
-    scroll.style.cssText = "padding-right:4px";
-    group.points.slice(0, 10).forEach((point) => {
+    content.appendChild(createMapPopupList(group.points, (point) => {
       const item = document.createElement("div");
       item.style.cssText = "padding:10px 0;border-top:1px solid #cbd5e1";
       const appendLine = (text: string, style: string) => {
@@ -142,24 +140,15 @@ export function MaintenanceMapPanel({
       appendLine(`Utolsó karbantartás: ${formatMapDate(point.lastMaintenanceDate)}`, "font-size:12px;color:#475569");
       appendLine(`Következő esedékes: ${formatMapDate(point.nextMaintenanceDue)}`, "font-size:12px;color:#475569");
       appendLine(`Karbantartások száma: ${point.maintenanceCount}`, "font-size:12px;color:#475569");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = "Ügyfél megnyitása";
-      button.style.cssText = "margin-top:5px;width:100%;border:0;border-radius:12px;background:#67e8f9;color:#0f172a;padding:12px;font-weight:900;cursor:pointer";
-      button.onclick = () => {
-        const latestPoint = current.current.points.find((item) => item.appointmentId === point.appointmentId);
-        if (latestPoint) current.current.onOpenCustomer(latestPoint.customer);
-      };
-      item.appendChild(button);
-      scroll.appendChild(item);
-    });
-    content.appendChild(scroll);
-    if (group.points.length > 10) {
-      const remaining = document.createElement("p");
-      remaining.style.cssText = "font-size:12px;margin:10px 0 0;color:#475569";
-      remaining.textContent = `A további ${group.points.length - 10} telepítés a helyszín listájában lapozható.`;
-      content.appendChild(remaining);
-    }
+      item.appendChild(createMapPopupActions({
+        name: point.customerName, phone: point.customer.phone, destination: routeTarget(point),
+        onOpenCustomer: () => {
+          const latestPoint = current.current.points.find((item) => item.appointmentId === point.appointmentId);
+          if (latestPoint) current.current.onOpenCustomer(latestPoint.customer);
+        },
+      }));
+      return item;
+    }));
     return content;
   }, []);
 

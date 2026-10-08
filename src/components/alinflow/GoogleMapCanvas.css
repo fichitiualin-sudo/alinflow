@@ -11,10 +11,24 @@
 }
 .alinflow-map-control:focus-visible { outline: 3px solid #0891b2; outline-offset: 2px; }
 .alinflow-map .gm-style-iw { color: #0f172a; }
-.alinflow-map-popup { max-width: 280px; max-height: 280px; overflow: auto; color: #0f172a; font: 14px/1.5 system-ui, sans-serif; }
+.alinflow-map-popup { max-width: 280px; max-height: 280px; overflow: auto; overflow-wrap: anywhere; color: #0f172a; font: 14px/1.5 system-ui, sans-serif; }
 .alinflow-map-popup button { min-height: 44px; }
 .alinflow-map-popup-heading { margin: 0 0 10px; font-size: 16px; font-weight: 900; }
 .alinflow-map-breakdown { display: grid; gap: 6px; margin: 0 0 12px; padding: 0; list-style: none; }
 .alinflow-map-breakdown li { display: flex; align-items: center; gap: 8px; font-weight: 700; }
 .alinflow-map-status-dot { width: 12px; height: 12px; flex-shrink: 0; border: 1px solid rgb(15 23 42 / 25%); border-radius: 50%; }
-.alinflow-map-popup button:focus-visible { outline: 2px solid #0891b2; outline-offset: -2px; }
+.alinflow-map-popup button:focus-visible,
+.alinflow-map-popup a:focus-visible { outline: 2px solid #0891b2; outline-offset: -2px; }
+.alinflow-map-popup-customer { padding: 10px 0; border-top: 1px solid #cbd5e1; }
+.alinflow-map-popup-name { margin: 0 0 5px; font-size: 14px; font-weight: 900; }
+.alinflow-map-popup-climate { margin: 0 0 5px; color: #0f766e; font-size: 13px; font-weight: 800; }
+.alinflow-map-popup-detail { margin: 0 0 5px; color: #475569; font-size: 12px; }
+.alinflow-map-popup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.alinflow-map-popup-action { display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; border-radius: 12px; padding: 10px 8px; color: #0f172a; font: 800 13px/1.4 system-ui, sans-serif; text-align: center; text-decoration: none; cursor: pointer; }
+.alinflow-map-popup-call { background: #67e8f9; }
+.alinflow-map-popup-route { background: #6ee7b7; }
+.alinflow-map-popup-open { grid-column: 1 / -1; background: #e2e8f0; }
+.alinflow-map-popup-unavailable { background: #f1f5f9; color: #64748b; font-size: 11px; cursor: default; }
+.alinflow-map-popup-pagination { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 10px; font-size: 12px; }
+.alinflow-map-popup-pagination button { background: #e2e8f0; }
+.alinflow-map-popup-pagination button:disabled { opacity: .4; cursor: default; }
