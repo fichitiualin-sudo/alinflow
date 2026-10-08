@@ -61,6 +61,14 @@ export function callbackClimateLabel(customer: Customer) {
   return customer.need?.trim() || climateSummary(customer.quoteItems);
 }
 
+export function callbackInquiryDate(customer: Pick<Customer, "createdAt" | "timeline">) {
+  const value = customer.createdAt || customer.timeline?.inquiredAt;
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleDateString("hu-HU", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Europe/Budapest" });
+}
+
 export function buildCallbackMap(customers: Customer[], search = ""): CallbackMapData {
   const grouped = new Map<string, CallbackMapGroup>();
   const unlocated: Customer[] = [];
