@@ -1,10 +1,9 @@
 import { telHref } from "./format";
 
-export function createMapPopupList<T>(items: T[], renderItem: (item: T) => HTMLElement) {
+export function createMapPopupList<T>(items: T[], renderItem: (item: T) => HTMLElement, pageSize = 10) {
   const list = document.createElement("div");
   const rows = document.createElement("div");
   list.appendChild(rows);
-  const pageSize = 10;
   const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
   let page = 0;
 
@@ -27,7 +26,7 @@ export function createMapPopupList<T>(items: T[], renderItem: (item: T) => HTMLE
     rows.replaceChildren(...items.slice(page * pageSize, (page + 1) * pageSize).map(renderItem));
     previous.disabled = page === 0;
     next.disabled = page === pageCount - 1;
-    status.textContent = `${page + 1}. oldal / ${pageCount} · ${items.length} tétel`;
+    status.textContent = pageSize === 1 ? `${page + 1} / ${items.length}` : `${page + 1}. oldal / ${pageCount} · ${items.length} tétel`;
   }
 
   function changePage(offset: number) {
@@ -43,14 +42,15 @@ export function createMapPopupList<T>(items: T[], renderItem: (item: T) => HTMLE
   return list;
 }
 
-export function createMapPopupActions({ name, phone, destination, onOpenCustomer }: {
+export function createMapPopupActions({ name, phone, destination, onOpenCustomer, onDeleteCustomer }: {
   name: string;
   phone: string;
   destination: string;
   onOpenCustomer: () => void;
+  onDeleteCustomer?: () => Promise<boolean>;
 }) {
   const actions = document.createElement("div");
-  actions.className = "alinflow-map-popup-actions";
+  actions.className = `alinflow-map-popup-actions${onDeleteCustomer ? " alinflow-map-popup-actions-with-delete" : ""}`;
   const phoneUrl = telHref(phone || "");
   const addLink = (label: string, href: string, kind: string) => {
     const link = document.createElement("a");
@@ -77,9 +77,28 @@ export function createMapPopupActions({ name, phone, destination, onOpenCustomer
   const open = document.createElement("button");
   open.type = "button";
   open.className = "alinflow-map-popup-action alinflow-map-popup-open";
-  open.textContent = "Ügyfél megnyitása";
+  open.textContent = onDeleteCustomer ? "Ügyfél" : "Ügyfél megnyitása";
   open.setAttribute("aria-label", `Ügyfél megnyitása: ${name}`);
   open.onclick = onOpenCustomer;
   actions.appendChild(open);
+  if (onDeleteCustomer) {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "alinflow-map-popup-action alinflow-map-popup-delete";
+    remove.textContent = "Törlés";
+    remove.setAttribute("aria-label", `Ügyfél törlése: ${name}`);
+    remove.onclick = async () => {
+      if (remove.disabled) return;
+      remove.disabled = true;
+      remove.textContent = "Törlés…";
+      try {
+        await onDeleteCustomer();
+      } finally {
+        remove.disabled = false;
+        remove.textContent = "Törlés";
+      }
+    };
+    actions.appendChild(remove);
+  }
   return actions;
 }

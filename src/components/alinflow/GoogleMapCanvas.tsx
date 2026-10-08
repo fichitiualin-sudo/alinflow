@@ -14,6 +14,7 @@ type GoogleMapCanvasProps = {
   selectedMarkerId?: string;
   onSelectMarker?: (id: string) => void;
   createPopupContent?: (id: string) => HTMLElement;
+  compactPopup?: boolean;
   maxFitZoom?: number;
   attribution?: ReactNode;
   ariaLabel?: string;
@@ -23,12 +24,12 @@ type GoogleMapCanvasProps = {
 type MapRuntime = { maps: any; map: any; info: any; layer: ReturnType<typeof createMapMarkerLayer> };
 
 export function GoogleMapCanvas({ apiKey, markers, selectedMarkerId, onSelectMarker, createPopupContent,
-  maxFitZoom = 15, attribution, ariaLabel = "Ügyfelek térképe", itemLabel }: GoogleMapCanvasProps) {
+  compactPopup = false, maxFitZoom = 15, attribution, ariaLabel = "Ügyfelek térképe", itemLabel }: GoogleMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const callbacks = useRef({ onSelectMarker, createPopupContent, itemLabel });
-  callbacks.current = { onSelectMarker, createPopupContent, itemLabel };
+  const callbacks = useRef({ onSelectMarker, createPopupContent, compactPopup, itemLabel });
+  callbacks.current = { onSelectMarker, createPopupContent, compactPopup, itemLabel };
   const [runtime, setRuntime] = useState<MapRuntime | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState("");
