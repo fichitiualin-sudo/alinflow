@@ -88,6 +88,16 @@ https://www.facebook.com/100094506956317/reviews/
 
 ## Google Naptár
 
+A naptárkapcsolat munkaterületenként, tulajdonosi vagy adminisztrátori Google-jóváhagyással kapcsolható be. A Google által igazolt email-címhez tartozó elsődleges naptár tulajdonosi hozzáférését a szerver a mentés előtt ellenőrzi. Részletes telepítés, környezeti változók és aktiválási állapot: [Google Naptár üzemeltetési útmutató](GOOGLE_CALENDAR_SETUP.md).
+
+Az első sikeres összekapcsolás után **létrehozott** szerelési, felmérési és karbantartási időpontok automatikusan kerülnek a naptárba. A korábban felvett időpontok nem kerülnek át visszamenőleg, akkor sem, ha a munkavégzésük későbbre esik. A meglévő, kézzel létrehozott Google-eseményeket nem módosítjuk.
+
+Az AlinFlow-ban módosított időpont ugyanazt a kezelt Google-eseményt frissíti; lemondás vagy törlés csak a hozzá kapcsolt eseményt távolítja el. A kapcsolat egyirányú: a Google oldali szerkesztés nem írja át az AlinFlow-t. A már automatikusan kezelt időpontnál nincs külön kézi `+ Naptár` gomb.
+
+Az automatikus eseménynek nincsenek meghívottai. A Google írások `sendUpdates=none` paraméterrel mennek, az alapértelmezett naptáremlékeztetők kikapcsolva maradnak. Emiatt nem indul második Google-meghívó vagy visszaigazoló levél; a meglévő AlinFlow-emailküldés változatlan. Google-hiba nem vonhatja vissza az időpont mentését vagy a saját levélküldést.
+
+A szinkronizálás tartós, verziózott feldolgozási sort használ. A megnyitott alkalmazás mentés után és látható állapotban percenként próbál feldolgozni; a böngészőtől független újrapróbáláshoz az opcionális Supabase/Vault cronfeladatot külön aktiválni kell. A **Szinkronizálás szüneteltetése** megőrzi az eseményeket és a várakozó sorokat. Ugyanazon fiók újraengedélyezése az eredeti kapcsolódási határt megtartja.
+
 A szerelési esemény leírásában szerepelhet:
 
 ```text

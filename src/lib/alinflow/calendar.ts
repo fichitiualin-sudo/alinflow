@@ -1,7 +1,7 @@
 import type { CalendarMode, Customer } from "./types";
-import { displayAddress, ft, pad, todayIso } from "./format";
-import { cleanQuoteItems, climateSummary, isQuoteAlternatives, itemName, itemQuantity, itemTotal, total } from "./products";
-import { appointmentDurationMinutes, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkSummary, firstAppointmentTime, isInstallationAppointment } from "./appointments";
+import { pad, todayIso } from "./format";
+import { appointmentDurationMinutes, firstAppointmentTime } from "./appointments";
+import { googleCalendarDetails } from "./google-calendar-event";
 
 export function weekStart(d: Date) {
   const x = new Date(d);
@@ -26,19 +26,6 @@ function compactCalendarDate(date: Date) {
   return `${y}${m}${d}T${h}${min}00`;
 }
 
-function calendarPriceSummary(customer: Customer) {
-  const items = cleanQuoteItems(customer.quoteItems || []);
-  if (!items.length) return "";
-
-  if (isQuoteAlternatives(customer.quotePricingMode)) {
-    return items
-      .map((item, index) => `${index + 1}. lehetőség: ${itemQuantity(item)} db ${itemName(item)} – ${ft(itemTotal(item))}`)
-      .join(" | ");
-  }
-
-  return ft(total(items));
-}
-
 function parseCalendarTime(value?: string) {
   const firstTime = firstAppointmentTime(value);
   const [hour, minute] = firstTime.split(":").map(Number);
@@ -54,30 +41,15 @@ export function googleCalendarHref(customer: Customer) {
   const durationMinutes = appointmentDurationMinutes(customer.appointmentType, customer.quoteItems, customer.time);
   end.setMinutes(end.getMinutes() + durationMinutes);
 
-  const workLabel = appointmentTypeLabel(customer.appointmentType);
-  const isInstallation = isInstallationAppointment(customer.appointmentType);
-  const workSummary = isInstallation ? climateSummary(customer.quoteItems) : appointmentWorkSummary(customer);
-  const title = `${workLabel} – ${customer.name || "ügyfél"}`;
-  const priceSummary = isInstallation ? calendarPriceSummary(customer) : "";
-  const details = [
-    customer.name ? `Ügyfél: ${customer.name}` : "",
-    customer.phone ? `Telefon: ${customer.phone}` : "",
-    customer.email ? `Email: ${customer.email}` : "",
-    isInstallation ? `Klíma: ${workSummary} – szereléssel együtt${priceSummary ? `: ${priceSummary}` : ""}` : `Munka: ${workSummary}`,
-    customer.need ? `Igény: ${customer.need}` : "",
-    customer.notes ? `Megjegyzés: ${customer.notes}` : "",
-    `Időpont típusa: ${workLabel}`,
-    `Idősáv: ${appointmentTimeRangeLabel(customer)}`,
-    customer.status ? `Státusz: ${customer.status}` : "",
-  ].filter(Boolean).join("\n");
+  const details = googleCalendarDetails(customer);
 
   const params = new URLSearchParams({
     action: "TEMPLATE",
-    text: title,
+    text: details.summary,
     dates: `${compactCalendarDate(start)}/${compactCalendarDate(end)}`,
     ctz: "Europe/Budapest",
-    details,
-    location: displayAddress(customer),
+    details: details.description,
+    location: details.location,
   });
 
   return `https://calendar.google.com/calendar/render?${params.toString()}`;

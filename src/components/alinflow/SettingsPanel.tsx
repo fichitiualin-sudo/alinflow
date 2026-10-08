@@ -4,9 +4,13 @@ import { useEffect, useState } from "react";
 import type { Workspace } from "@/lib/alinflow/types";
 import type { BillingInvoiceMode, PaymentMethod, WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { GoogleCalendarSettingsPanel } from "@/components/alinflow/GoogleCalendarSettingsPanel";
+import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
 
 type SettingsPanelProps = {
   activeWorkspace: Workspace | null;
+  userId?: string;
+  googleCalendar: { status: GoogleCalendarStatus | null; loading: boolean; error: string; returnMessage: string };
   settings: WorkspaceSettings;
   schemaAvailable: boolean;
   saving: boolean;
@@ -75,6 +79,8 @@ function TextArea({
 
 export function SettingsPanel({
   activeWorkspace,
+  userId,
+  googleCalendar,
   settings,
   schemaAvailable,
   saving,
@@ -112,6 +118,10 @@ export function SettingsPanel({
                 <p className="text-base font-black">{activeWorkspace?.name || "Aktuális munkaterület"}</p>
                 <p className="mt-1 text-cyan-100/80">Ezek a beállítások csak ehhez a munkaterülethez tartoznak. Zoli adatai nem keverednek Alin adataival.</p>
               </div>
+
+              {activeWorkspace?.id && userId ? (
+                <GoogleCalendarSettingsPanel key={`${activeWorkspace.id}:${userId}`} workspaceId={activeWorkspace.id} userId={userId} {...googleCalendar} />
+              ) : null}
 
               {!schemaAvailable ? (
                 <div className="rounded-3xl border border-amber-300/30 bg-amber-300/15 p-4 text-sm font-black text-amber-100">

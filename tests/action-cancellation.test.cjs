@@ -31,6 +31,7 @@ function scenario(options = {}) {
   const api = harness({ Error }).functions(["cancelAppointment", "cancelAppointmentWithJobMirror"], {
     selected: customer,
     currentWorkspaceId: () => state.workspaceId,
+    notifyGoogleCalendarAppointmentsChanged: noop,
     supabase: {
       ...db,
       rpc: async (name, input) => {

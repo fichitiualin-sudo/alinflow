@@ -88,6 +88,8 @@ Felül a teljes klíma- és anyagkészlet bruttó beszerzési értéke, ebből a
 
 ## Naptár
 
+A Beállítások Google Naptár blokkja mutatja a kapcsolt fiókot, a várakozó frissítések számát és az esetleges újraengedélyezési igényt. A tulajdonos/admin kapcsolhatja össze vagy szüneteltetheti a kapcsolatot. A fő naptár rövid állapotsort mutat; az automatikusan kezelt időpontoknál a kézi `+ Naptár` helyett szinkronjelzés látszik. A kapcsolás előtti időpontok kézi gombja megmarad. A háttérhibák nem írják felül az időpontmentés sikeréről szóló visszajelzést.
+
 - az aznapi események kezdési idő szerint rendezve;
 - az eseményen látszódjon a típus: Szerelés, Felmérés vagy Karbantartás;
 - a rövid időpontok valós 1 órás tartományként jelenjenek meg;

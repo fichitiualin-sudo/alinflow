@@ -99,6 +99,7 @@ function fixture({ rejectedEmail = false, rejectedDocumentWrites = 0 } = {}) {
       ...business, ...state, supabase, user: { id: "synthetic-user" },
       workspaceSettings: business.defaultWorkspaceSettings(null), workReport: {}, workChecklist: business.EMPTY_WORK_CHECKLIST,
       currentWorkspaceId: () => workspaceId, pendingActionsRef, quoteReceiptsRef,
+      notifyGoogleCalendarAppointmentsChanged: noop,
       normalizedScheduleAppointmentType: "installation", scheduleDate: "2026-10-12", scheduleTime: "08:00",
       allWorkCustomers: [], sendAppointmentNotice: false, maintenanceReturnRef: { current: null },
       detailDataLoadedRef, detailDataLoadingRef, selectedCustomerIdRef: { current: state.selected.id },

@@ -6,6 +6,7 @@ import { cleanQuoteItems, itemName, itemQuantity } from "@/lib/alinflow/products
 import { iso } from "@/lib/alinflow/format";
 import { calLabel, googleCalendarHref, weekStart } from "@/lib/alinflow/calendar";
 import { appointmentTimeRangeLabel, appointmentTypeLabel, isInstallationAppointment } from "@/lib/alinflow/appointments";
+import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
 
 type CalendarProps = {
   mode: CalendarMode;
@@ -18,6 +19,9 @@ type CalendarProps = {
   selectedDate?: string;
   onSelect?: (date: string) => void;
   onCreate?: (date: string) => void;
+  googleCalendar?: GoogleCalendarStatus | null;
+  googleCalendarError?: string;
+  managedCalendarAppointmentIds?: ReadonlySet<string>;
 };
 
 
@@ -73,6 +77,9 @@ export function Calendar({
   selectedDate,
   onSelect,
   onCreate,
+  googleCalendar,
+  googleCalendarError,
+  managedCalendarAppointmentIds,
 }: CalendarProps) {
   const start = weekStart(date);
   const weekdayNames = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"];
@@ -98,6 +105,15 @@ export function Calendar({
 
   return (
     <Card title={selectable ? "Válassz napot a naptárból" : mode === "week" ? "Heti naptár" : "Havi naptár"}>
+      {!selectable && (googleCalendar?.connected || googleCalendar?.status === "paused" || googleCalendar?.status === "reauth_required") ? (
+        <p className={`mb-4 text-sm font-bold ${googleCalendarError || googleCalendar.lastError || !googleCalendar.connected ? "text-amber-200" : "text-emerald-200"}`}>
+          {googleCalendarError || googleCalendar.lastError ? "A Google Naptár frissítése várakozik. Részletek a Beállításokban."
+            : googleCalendar.status === "paused" ? "Google Naptár: a szinkronizálás szünetel."
+            : googleCalendar.status === "reauth_required" ? "Google Naptár: engedélyezd újra a kapcsolatot a Beállításokban."
+            : googleCalendar.pending > 0 ? `Google Naptár: ${googleCalendar.pending} frissítés várakozik.`
+            : "Új időpontok: automatikus Google Naptár-mentés."}
+        </p>
+      ) : null}
       <div className="mb-5 flex flex-col gap-4">
         <div className="flex justify-end gap-2">
           <button onClick={() => onMode("week")} className={mode === "week" ? "tab-active" : "tab"}>Heti</button>
@@ -158,7 +174,9 @@ export function Calendar({
                       </div>
                       <p className="truncate text-xs opacity-70 md:text-[11px]">{job.city}</p>
                     </button>
-                    {mode === "week" && !selectable ? (
+                    {mode === "week" && !selectable && job.activeAppointmentId && managedCalendarAppointmentIds?.has(job.activeAppointmentId) ? (
+                      <p className="mt-2 text-[10px] font-bold opacity-80">Google Naptár-szinkron</p>
+                    ) : mode === "week" && !selectable ? (
                       <a
                         href={googleCalendarHref(job)}
                         target="_blank"
