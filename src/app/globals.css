@@ -409,6 +409,66 @@ html[data-theme="light"] .document-action-button:disabled {
   color: #64748b !important;
 }
 
+/* Keep editable areas visible without adding decoration to printed documents. */
+@media screen {
+  :root {
+    --form-field-background: #142238;
+    --form-field-border: #52677f;
+    --form-field-focus: #67e8f9;
+    --form-field-ring: rgba(103, 232, 249, 0.16);
+    --form-field-placeholder: #94a3b8;
+  }
+
+  html[data-theme="light"] {
+    --form-field-background: #f1f6fc;
+    --form-field-border: #9daec2;
+    --form-field-focus: #0f766e;
+    --form-field-ring: rgba(15, 118, 110, 0.13);
+    --form-field-placeholder: #64748b;
+  }
+
+  html main :is(
+    input:not([type]), input[type="text"], input[type="email"],
+    input[type="tel"], input[type="search"], input[type="password"],
+    input[type="url"], input[type="number"], input[type="date"],
+    input[type="time"], input[type="datetime-local"], input[type="month"],
+    input[type="week"], textarea, select
+  ):not(.invoice-amount-input),
+  html main .invoice-amount-field,
+  html[data-theme] main .invoice-amount-field {
+    min-width: 0;
+    border: 1px solid var(--form-field-border) !important;
+    background-color: var(--form-field-background) !important;
+    box-shadow: var(--form-field-shadow, 0 1px 2px rgba(15, 23, 42, 0.06)) !important;
+    outline: none;
+  }
+
+  main :is(input, textarea, select).bg-transparent:not(.invoice-amount-input) {
+    border-radius: 0.75rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  main :is(input, textarea, select):focus,
+  main .invoice-amount-field:focus-within {
+    --form-field-border: var(--form-field-focus);
+    --form-field-shadow: 0 0 0 3px var(--form-field-ring);
+  }
+
+  html[data-theme] main .invoice-amount-field .invoice-amount-input {
+    background-color: transparent !important;
+  }
+
+  main :is(input, textarea, select):is(:disabled, [readonly]) {
+    --form-field-shadow: none;
+    opacity: 0.6;
+  }
+
+  html main :is(input, textarea)::placeholder {
+    color: var(--form-field-placeholder) !important;
+    opacity: 1;
+  }
+}
+
 
 @media print {
   @page {
