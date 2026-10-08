@@ -46,17 +46,18 @@ A kapcsolat szüneteltetésével leállítható a szinkronizálás; az AlinFlow-
 
 ## Állapot
 
-A kód, az idempotens migráció és az opcionális háttérfeldolgozó elkészült. A külső kapcsolat létrehozását a felhasználó jóváhagyta; a Google Cloud, Vercel és Supabase éles beállítása folyamatban van. Beállított kapcsolat nélkül az új funkció inaktív, a kézi naptárgomb megmarad.
+A kód éles kiadásban van, az idempotens migráció lefutott, a percenkénti háttérfeldolgozó aktív. A Google Cloud projekt/API/OAuth-kliens és a Vercel Production titkos változói elkészültek. A cron sikeresen futott; a Vaultból hitelesített éles HTTP-próba 200 választ és üres feldolgozást adott. A nyilvános adatkezelési tájékoztató közzétételét a felhasználó jóváhagyta. A Google Production állapot és a munkaterületi OAuth-összekapcsolás még hátravan. Beállított kapcsolat nélkül az új funkció inaktív, a kézi naptárgomb megmarad.
 
-Ellenőrzések: a teljes tesztfutás 699 tesztből 697 sikeres és két korábban is kihagyott helyi SQL-teszt; hiba nincs. Az utolsó módosítások után a 70 naptárteszt külön is sikeres, az SQL-tesztek PGlite-on futottak. `npx tsc --noEmit` és `npm run build` sikeres (a helyi buildhez nem éles Supabase publikus helyőrző változókkal). A valódi beállítókomponens 390×844 és 1440×900 előnézete rendben. Nincs gyökérszintű `app/` vagy duplikált `page.tsx`.
+Ellenőrzések: a teljes tesztfutás 699 tesztből 697 sikeres és két korábban is kihagyott helyi SQL-teszt; hiba nincs. Az aktiválási javítások után a 71 naptárteszt külön is sikeres, az SQL-tesztek PGlite-on futottak. `npx tsc --noEmit` és `npm run build` sikeres (a helyi buildhez nem éles Supabase publikus helyőrző változókkal). A valódi beállítókomponens 390×844 és 1440×900 előnézete rendben. Nincs gyökérszintű `app/` vagy ütköző oldalútvonal.
 
-Az éles Google-esemény létrehozása/módosítása/lemondása és a bezárt alkalmazás melletti cron csak az aktiválás után ellenőrizhető. Telepítési lépések és környezeti változók: `docs/GOOGLE_CALENDAR_SETUP.md`.
+Az éles Google-esemény létrehozása/módosítása/lemondása csak az összekapcsolás után ellenőrizhető. Telepítési lépések és környezeti változók: `docs/GOOGLE_CALENDAR_SETUP.md`.
 
 ## Módosított fájlok
 
 - `src/app/page.tsx`
 - `src/components/alinflow/CalendarPanel.tsx`
 - `src/components/alinflow/SettingsPanel.tsx`
+- `src/components/alinflow/LoginScreen.tsx`
 - `src/components/alinflow/GoogleCalendarSettingsPanel.tsx`
 - `src/components/alinflow/GoogleCalendarSync.tsx`
 - `src/lib/alinflow/calendar.ts`
@@ -64,9 +65,11 @@ Az éles Google-esemény létrehozása/módosítása/lemondása és a bezárt al
 - `src/lib/alinflow/google-calendar-event.ts`
 - `src/lib/alinflow/google-calendar-sync.ts`
 - `src/app/api/google-calendar/{connect,callback,status,disconnect,sync,cron}/route.ts`
+- `src/app/adatvedelem/google-naptar/page.tsx`
 - `docs/sql/GOOGLE_CALENDAR_SYNC.sql`
 - `docs/sql/GOOGLE_CALENDAR_CRON.sql`
 - `docs/GOOGLE_CALENDAR_SETUP.md`
+- `docs/GOOGLE_CALENDAR_PRIVACY_REVIEW.md`
 - `docs/GOOGLE_CALENDAR_SYNC_PLAN.md`
 - `docs/EMAILS_AND_CALENDAR.md`
 - `docs/SCREENS_AND_UX.md`

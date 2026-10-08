@@ -10,16 +10,21 @@
 --    alinflow_google_calendar_cron_secret: the same randomly generated token as
 --      GOOGLE_CALENDAR_CRON_SECRET (at least 32 characters; base64url recommended).
 -- No Google token or Supabase service-role key belongs in the cron command.
+-- 3. Keep net and vault out of Data API exposed schemas. If no explicit
+--    authenticator pgrst.db_schemas setting is stored in the database, inspect
+--    Project Settings > Data API > Exposed schemas. Only after that check, add
+--    SET LOCAL alinflow.calendar_net_schema_not_exposed='confirmed'; immediately
+--    after BEGIN in the execution copy. This template never confirms it itself.
 --
 -- Official references:
 -- https://supabase.com/docs/guides/functions/schedule-functions
 -- https://supabase.com/docs/guides/database/extensions/pg_net
 -- https://supabase.com/docs/guides/database/vault
 -- https://supabase.com/docs/guides/cron/quickstart
+-- https://supabase.com/docs/guides/troubleshooting/revoking-access-to-pg_net-objects-has-no-effect-0bbc16
 begin;
 
 do $preflight$
-declare v_role text; v_origin text; v_secret text;
 begin
   if current_user <> 'postgres' then
     raise exception 'Run this optional Google Calendar cron setup as postgres.';
@@ -34,14 +39,50 @@ begin
   if to_regclass('public.google_calendar_sync_queue') is null then
     raise exception 'Apply GOOGLE_CALENDAR_SYNC.sql first.';
   end if;
-  -- pg_net temporarily holds outgoing headers in its private request queue.
-  -- Fail closed instead of changing access rules of shared infrastructure.
-  foreach v_role in array array['anon','authenticated'] loop
-    if has_column_privilege(v_role,'vault.decrypted_secrets','decrypted_secret','SELECT')
-      or has_column_privilege(v_role,'net.http_request_queue','headers','SELECT') then
-      raise exception 'Vault or pg_net request headers are readable by a browser role; audit privileges first.';
+end;
+$preflight$;
+
+do $api_access$
+declare v_role text; v_schemas text;
+begin
+  -- Supabase manages pg_net's PUBLIC grants. Do not revoke or replace them:
+  -- browser isolation comes from NOLOGIN roles and the unexposed net schema.
+  foreach v_role in array array['anon','authenticated','service_role'] loop
+    if not exists(select 1 from pg_roles where rolname=v_role and not rolcanlogin) then
+      raise exception 'An application role can log in directly; audit database access before enabling cron.';
     end if;
   end loop;
+  foreach v_role in array array['anon','authenticated'] loop
+    if has_column_privilege(v_role,'vault.decrypted_secrets','decrypted_secret','SELECT') then
+      raise exception 'Vault secrets are readable by a browser role; audit privileges first.';
+    end if;
+  end loop;
+  -- Database-specific role settings override the role-wide setting. A missing
+  -- value can mean PostgREST uses Dashboard/environment configuration; it is
+  -- unknown, never proof of privacy. Only an explicit operator check covers it.
+  select btrim(substr(setting,length('pgrst.db_schemas=')+1)) into v_schemas
+  from pg_db_role_setting s
+  join pg_roles r on r.oid=s.setrole
+  cross join lateral unnest(s.setconfig) as config(setting)
+  where r.rolname='authenticator'
+    and s.setdatabase in (0,(select oid from pg_database where datname=current_database()))
+    and split_part(setting,'=',1)='pgrst.db_schemas'
+  order by (s.setdatabase<>0) desc limit 1;
+  if v_schemas is not null then
+    -- Refuse an unrecognized quoted/custom format instead of assuming it safe.
+    if v_schemas !~ '^[a-z_][a-z0-9_]*(\s*,\s*[a-z_][a-z0-9_]*)*$'
+      or regexp_split_to_array(v_schemas,'\s*,\s*') && array['net','vault'] then
+      raise exception 'PostgREST exposed schemas are unsafe or unrecognized; verify net and vault are excluded.';
+    end if;
+  elsif current_setting('alinflow.calendar_net_schema_not_exposed',true) is distinct from 'confirmed' then
+    raise exception 'PostgREST exposed schemas are unknown. Inspect Data API settings, then explicitly confirm for this transaction.';
+  end if;
+end;
+$api_access$;
+
+do $configuration$
+declare v_origin text; v_secret text;
+begin
   select decrypted_secret into v_origin from vault.decrypted_secrets where name='alinflow_app_url';
   select decrypted_secret into v_secret from vault.decrypted_secrets where name='alinflow_google_calendar_cron_secret';
   if v_origin is null or v_origin !~ '^https://([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$'
@@ -54,7 +95,7 @@ begin
     raise exception 'A different cron job already uses the Google Calendar job name; nothing was replaced.';
   end if;
 end;
-$preflight$;
+$configuration$;
 
 create or replace function public.dispatch_google_calendar_sync()
 returns bigint language plpgsql security definer set search_path='' set row_security=off as $dispatch$
