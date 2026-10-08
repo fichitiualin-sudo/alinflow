@@ -180,11 +180,20 @@ for (const rejectedScope of ["openid email", "https://www.googleapis.com/auth/ca
   test(`callback refuses a token that lacks owned-event permission: ${rejectedScope}`, async () => {
     const f = fixture({ tokens: { scope: rejectedScope } });
     const { url, cookie } = await f.begin();
-    assert.equal(outcome(await f.routes.callback.GET(new Request(url, { headers: { cookie } }))), "failed");
+    assert.equal(outcome(await f.routes.callback.GET(new Request(url, { headers: { cookie } }))), "permissions_missing");
     assert.equal(f.googleCalls.length, 1);
     assert.equal(f.rpcs.some((call) => call.name === "complete_google_calendar_connection"), false);
   });
 }
+
+test("token exchange failures remain generic instead of claiming a missing Calendar checkbox", async () => {
+  const f = fixture({ tokenStatus: 400, tokens: { access_token: undefined, scope: "", error: "invalid_grant" } });
+  const { url, cookie } = await f.begin();
+  const response = await f.routes.callback.GET(new Request(url, { headers: { cookie } }));
+  assert.equal(outcome(response), "failed");
+  assert.equal(f.googleCalls.length, 1);
+  assert.equal(f.rpcs.some((call) => call.name === "complete_google_calendar_connection"), false);
+});
 
 for (const [label, options] of [["disabled Calendar API", { calendarStatus: 403 }], ["calendar without ownership", { calendar: { accessRole: "writer" } }]]) {
   test(`callback refuses ${label} before completing the connection`, async () => {

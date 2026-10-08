@@ -54,6 +54,7 @@ const RETURN_MESSAGES: Record<string, string> = {
   connected: "A Google Naptár összekapcsolása sikerült.",
   denied: "A Google Naptár engedélyezése elmaradt. Az AlinFlow-időpontok változatlanok.",
   failed: "A Google Naptár összekapcsolása nem sikerült. Próbáld újra.",
+  permissions_missing: "A Google Naptár engedélye kimaradt. Indítsd újra az összekapcsolást, és a Google oldalán jelöld be a naptáresemények kezeléséhez tartozó jelölőnégyzetet.",
   wrong_account: "Másik Google-fiókot választottál. Próbáld újra a megadott email-címmel.",
   expired: "Az összekapcsolásra rendelkezésre álló idő lejárt. Indítsd újra.",
 };

@@ -33,7 +33,8 @@ export async function GET(request: Request) {
         grant_type: "authorization_code", code_verifier: decryptCalendarToken(pending.code_verifier, pending.state_hash),
       }) });
     const tokens = await exchange.json();
-    if (!exchange.ok || typeof tokens.access_token !== "string" || !String(tokens.scope || "").split(" ").includes(CALENDAR_SCOPE)) return redirect("failed");
+    if (!exchange.ok || typeof tokens.access_token !== "string") return redirect("failed");
+    if (!String(tokens.scope || "").split(" ").includes(CALENDAR_SCOPE)) return redirect("permissions_missing");
     const identityResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
       headers: { Authorization: `Bearer ${tokens.access_token}` }, cache: "no-store", signal: AbortSignal.timeout(10000),
     });

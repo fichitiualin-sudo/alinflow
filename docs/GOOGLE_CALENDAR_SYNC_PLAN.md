@@ -46,7 +46,7 @@ A kapcsolat szüneteltetésével leállítható a szinkronizálás; az AlinFlow-
 
 ## Állapot
 
-A kód éles kiadásban van, az idempotens migráció lefutott, a percenkénti háttérfeldolgozó aktív. A Google Cloud projekt/API/OAuth-kliens és a Vercel Production titkos változói elkészültek. A cron sikeresen futott; a Vaultból hitelesített éles HTTP-próba 200 választ és üres feldolgozást adott. A nyilvános adatkezelési tájékoztató közzétételét a felhasználó jóváhagyta. A Google Production állapot és a munkaterületi OAuth-összekapcsolás még hátravan. Beállított kapcsolat nélkül az új funkció inaktív, a kézi naptárgomb megmarad.
+A kód éles kiadásban van, az idempotens migráció lefutott, a percenkénti háttérfeldolgozó aktív. A Google Cloud projekt/API/OAuth-kliens és a Vercel Production titkos változói elkészültek. A cron sikeresen futott; a Vaultból hitelesített éles HTTP-próba 200 választ és üres feldolgozást adott. A jóváhagyott nyilvános adatkezelési tájékoztató élesben elérhető; a Google alkalmazás In production állapotú. A munkaterületi OAuth-összekapcsolás a Google figyelmeztetésénél felhasználói folytatásra vár. Beállított kapcsolat nélkül az új funkció inaktív, a kézi naptárgomb megmarad.
 
 Ellenőrzések: a teljes tesztfutás 699 tesztből 697 sikeres és két korábban is kihagyott helyi SQL-teszt; hiba nincs. Az aktiválási javítások után a 71 naptárteszt külön is sikeres, az SQL-tesztek PGlite-on futottak. `npx tsc --noEmit` és `npm run build` sikeres (a helyi buildhez nem éles Supabase publikus helyőrző változókkal). A valódi beállítókomponens 390×844 és 1440×900 előnézete rendben. Nincs gyökérszintű `app/` vagy ütköző oldalútvonal.
 
