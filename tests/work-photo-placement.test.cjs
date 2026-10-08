@@ -73,20 +73,20 @@ test("installation serial photos have one entry point inside Munkafotók, indepe
   const run = workPage();
   assert.equal(run.photos().length, 0);
   assert.equal(run.devices().length, 0, "The initially open climate list must not contain serial photos");
-  run.toggle("Munkafotók megjelenítése");
+  run.toggle("Munkafotók");
   assert.equal(run.photos().length, 1);
   assert.equal(run.devices().length, 1);
   assert.equal(nodes(run.photos()[0], (node) => node.type === "test-appointment-devices").length, 1);
   const deviceKey = run.devices()[0].key;
-  run.toggle("Időponthoz tartozó klímák elrejtése");
+  run.toggle("Időponthoz tartozó klímák");
   assert.equal(run.devices().length, 1, "Collapsing the climate list must leave the serial-photo section accessible");
   assert.equal(run.devices()[0].key, deviceKey);
   assert.strictEqual(run.devices()[0].props.customer.quoteItems, run.props.quoteItems, "Use the current edited devices, not the old stored quote");
   assert.equal(run.devices()[0].props.workspaceId, "workspace-a");
   assert.equal(run.devices()[0].props.customer.activeAppointmentId, "appointment-a");
-  run.toggle("Munkafotók elrejtése");
+  run.toggle("Munkafotók");
   assert.equal(run.devices().length, 0);
-  run.toggle("Munkafotók megjelenítése");
+  run.toggle("Munkafotók");
   assert.equal(run.devices().length, 1);
   assert.equal(run.devices()[0].key, deviceKey);
 
@@ -101,7 +101,7 @@ test("installation serial photos have one entry point inside Munkafotók, indepe
 test("maintenance and survey retain only their own ordinary work-photo gallery", () => {
   for (const appointmentType of ["maintenance", "survey"]) {
     const run = workPage(appointmentType);
-    run.toggle("Munkafotók megjelenítése");
+    run.toggle("Munkafotók");
     assert.equal(run.photos().length, 1);
     assert.equal(run.devices().length, 0);
     assert.strictEqual(run.photos()[0].props.customer, run.props.selected);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, MaintenanceInstallationSummary, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
-import { Back, Btn, Card, Field, Gradient, Layout, Main, Side } from "@/components/alinflow/LayoutPrimitives";
+import { Back, Btn, Card, Field, Gradient, Layout } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { WorkPhotosPanel } from "@/components/alinflow/WorkPhotosPanel";
 import { AppointmentDevicesPanel } from "@/components/alinflow/AppointmentDevicesPanel";
@@ -51,11 +51,13 @@ type WorkActionDates = {
 
 function WorkSectionToggleButton({
   label,
+  icon,
   open,
   onClick,
   color = "cyan",
 }: {
   label: string;
+  icon: string;
   open: boolean;
   onClick: () => void;
   color?: "cyan" | "orange";
@@ -71,8 +73,11 @@ function WorkSectionToggleButton({
       aria-expanded={open}
       className={`group flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black text-slate-950 shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]`}
     >
-      <span className="min-w-0 leading-tight">{label}</span>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 text-lg font-black text-slate-950 transition group-hover:translate-x-1">
+      <span className="flex min-w-0 items-center gap-3">
+        <span aria-hidden="true" className="w-5 shrink-0 text-lg leading-none opacity-80">{icon}</span>
+        <span className="min-w-0 leading-tight">{label}</span>
+      </span>
+      <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 text-lg font-black text-slate-950 transition group-hover:translate-x-1">
         {open ? "-" : "+"}
       </span>
     </button>
@@ -349,9 +354,9 @@ export function WorkPagePanel({
   const [showMaterials, setShowMaterials] = useState(false);
   const [showPhotos, setShowPhotos] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
-  const [showMaintenance, setShowMaintenance] = useState(true);
+  const [showMaintenance, setShowMaintenance] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
-  const [showWorkItems, setShowWorkItems] = useState(true);
+  const [showWorkItems, setShowWorkItems] = useState(!isMaintenance);
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const defaultCombinedAmount = total(quoteItems);
@@ -396,6 +401,11 @@ export function WorkPagePanel({
     : "Időponthoz tartozó klímák";
   const workStatusValue = selected.status === "Szerelés kész – admin folyamatban" ? `${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban` : selected.status || "Folyamatban";
   const maintenanceBillingDone = Boolean(currentWorkChecklist.alinInvoice);
+
+  useEffect(() => {
+    setShowMaintenance(false);
+    setShowWorkItems(!isMaintenance);
+  }, [workspaceId, selected.id, selected.activeAppointmentId, isMaintenance]);
 
   useEffect(() => {
     setLaborInvoiceAmount(String(defaultLaborAmount));
@@ -451,7 +461,8 @@ export function WorkPagePanel({
     return (
       <>
         <WorkSectionToggleButton
-          label={showMaintenance ? "Klímák karbantartási állapotának elrejtése" : "Klímák karbantartási állapotának megjelenítése"}
+          label="Klímák karbantartási állapota"
+          icon="🛠️"
           open={showMaintenance}
           onClick={() => setShowMaintenance((open) => !open)}
         />
@@ -498,7 +509,7 @@ export function WorkPagePanel({
       <Back onClick={onBack} disabled={saving || quoteEmailBusy || appointmentEmailBusy || thankYouEmailBusy || Boolean(pdfEmailBusy) || Boolean(invoiceBusy)} />
       <fieldset disabled={saving || quoteEmailBusy || appointmentEmailBusy || thankYouEmailBusy || Boolean(pdfEmailBusy) || Boolean(invoiceBusy)} aria-busy={saving || quoteEmailBusy || appointmentEmailBusy || thankYouEmailBusy || Boolean(pdfEmailBusy) || Boolean(invoiceBusy)} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
       <Layout>
-        <Main>
+        <div className="flex min-w-0 flex-col gap-6 xl:col-span-2">
           <Card title="Ügyféladatok">
             <CustomerGrid
               c={selected}
@@ -514,13 +525,16 @@ export function WorkPagePanel({
           </Card>
 
           {previousInstallationWorks.length ? (
-            <div className="mt-4">
+            <div>
               <button
                 type="button"
                 onClick={() => setShowWorkHistory((open) => !open)}
+                aria-expanded={showWorkHistory}
                 className="rounded-2xl bg-white/10 px-5 py-4 font-black text-cyan-100 ring-1 ring-white/10"
               >
-                {showWorkHistory ? "Más klímaszerelések elrejtése" : "Más klímaszerelések megjelenítése"}
+                <span aria-hidden="true" className="mr-2 text-lg opacity-80">🗂️</span>
+                Más klímaszerelések
+                <span aria-hidden="true" className="ml-3">{showWorkHistory ? "−" : "+"}</span>
               </button>
             </div>
           ) : null}
@@ -548,13 +562,14 @@ export function WorkPagePanel({
             <Gradient title="Munka státusz" value={workStatusValue} />
           </div>
 
-          <div className="mt-4 space-y-6 xl:hidden">
+          {hasMaintenanceSection ? <div className="flex flex-col gap-6 xl:hidden">
             {renderMaintenanceSection()}
-          </div>
+          </div> : null}
 
-          <div className="mt-4">
+          <div>
             <WorkSectionToggleButton
-              label={showWorkItems ? `${workItemsTitle} elrejtése` : `${workItemsTitle} megjelenítése`}
+              label={workItemsTitle}
+              icon={isSurvey ? "📋" : "❄️"}
               open={showWorkItems}
               onClick={() => setShowWorkItems((open) => !open)}
             />
@@ -677,9 +692,10 @@ export function WorkPagePanel({
             </div> : null}
           </Card> : null}
 
-          <div className="mt-4">
+          <div>
             <WorkSectionToggleButton
-              label={showPhotos ? "Munkafotók elrejtése" : "Munkafotók megjelenítése"}
+              label="Munkafotók"
+              icon="📷"
               open={showPhotos}
               onClick={() => setShowPhotos((open) => !open)}
             />
@@ -697,9 +713,10 @@ export function WorkPagePanel({
           </WorkPhotosPanel> : null}
 
           {isInstallation ? (
-            <div className="mt-4">
+            <div>
               <WorkSectionToggleButton
-                label={showMaterials ? "Felhasznált anyagok elrejtése" : "Felhasznált anyagok megjelenítése"}
+                label="Felhasznált anyagok"
+                icon="🧰"
                 open={showMaterials}
                 onClick={() => setShowMaterials((open) => !open)}
               />
@@ -743,15 +760,16 @@ export function WorkPagePanel({
               ))}
             </div>
           </Card> : null}
-        </Main>
+        </div>
 
-        <Side>
+        <aside className="flex min-w-0 flex-col gap-6">
           <div className="hidden xl:block">
             <Gradient title="Munka státusz" value={workStatusValue} />
           </div>
 
           <WorkSectionToggleButton
-            label={showDocuments ? "Dokumentumok elrejtése" : "Dokumentumok megjelenítése"}
+            label="Dokumentumok"
+            icon="📄"
             open={showDocuments}
             onClick={() => setShowDocuments((open) => !open)}
           />
@@ -782,9 +800,9 @@ export function WorkPagePanel({
             </div>
           </Card> : null}
 
-          <div className="hidden space-y-6 xl:block">
+          {hasMaintenanceSection ? <div className="hidden flex-col gap-6 xl:flex">
             {renderMaintenanceSection()}
-          </div>
+          </div> : null}
 
           <div id="work-close-actions" className="scroll-mt-4">
             <Card title={isMaintenance ? "Karbantartás műveletei" : "Lezárási műveletek"}>
@@ -862,7 +880,7 @@ export function WorkPagePanel({
             </Card>
           </div>
 
-        </Side>
+        </aside>
       </Layout>
       </fieldset>
     </>
@@ -950,7 +968,8 @@ function BillingPreparationPanel({
   return (
     <div className="space-y-3">
       <WorkSectionToggleButton
-        label={isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}
+        label="Számlázás"
+        icon="🧾"
         open={isOpen}
         onClick={() => setIsOpen((value) => !value)}
         color="orange"
@@ -1062,7 +1081,8 @@ function MaintenanceBillingPanel({
   return (
     <div className="space-y-3">
       <WorkSectionToggleButton
-        label={isOpen ? "Számlázás elrejtése" : "Számlázás megjelenítése"}
+        label="Számlázás"
+        icon="🧾"
         open={isOpen}
         onClick={() => setIsOpen((value) => !value)}
         color="orange"
