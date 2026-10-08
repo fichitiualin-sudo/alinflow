@@ -12,6 +12,8 @@
 
 A műveleti értesítések világos, pasztell hátteret, sötét szöveget és állapot szerinti színes keretet kapnak sötét és világos témában is. Minden értesítés öt másodperc után automatikusan eltűnik, és kézzel is bezárható. Új értesítéskor az öt másodperc újraindul, azonos szöveg ismétlésekor is; korábbi időzítő nem tüntethet el újabb üzenetet.
 
+A kitölthető szöveges, számos, dátum- és választómezők finom keretet és enyhén eltérő hátteret kapnak mindkét témában. Az addig átlátszó ügyféladat- és jegyzetmezők belső térköze is jelzi a beviteli területet. Fókuszban türkiz keret és halvány külső gyűrű látszik; a letiltott mezők visszafogottak. A jelölés csak képernyőn jelenik meg, a nyomtatott dokumentumokat nem változtatja meg.
+
 ## Dashboard – mobil sorrend
 
 1. AlinFlow fejléc és `+ ügyfél` műveletek
