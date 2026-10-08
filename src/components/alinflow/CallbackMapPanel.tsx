@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { buildCallbackMap, callbackClimateLabel } from "@/lib/alinflow/callback-map";
+import { buildCallbackMap, callbackClimateLabel, callbackInquiryDate } from "@/lib/alinflow/callback-map";
 import { paginateItems } from "@/lib/alinflow/customers";
 import { formatPostalCity } from "@/lib/alinflow/postal-codes";
 import { displayAddress } from "@/lib/alinflow/format";
@@ -63,6 +63,8 @@ export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer, 
       const address = (customer.workAddress || customer.address || "").trim();
       const destination = displayAddress({ ...customer, city: group.city, address });
       appendLine(customer.name || "Név nélkül", "alinflow-map-popup-name");
+      const inquiryDate = callbackInquiryDate(customer);
+      if (inquiryDate) appendLine(`Érdeklődött: ${inquiryDate}`, "alinflow-map-popup-detail");
       appendLine(callbackClimateLabel(customer), "alinflow-map-popup-climate");
       item.appendChild(createMapPopupActions({
         name: customer.name || "Név nélkül", phone: customer.phone, destination,
@@ -117,7 +119,6 @@ export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer, 
           <GoogleMapCanvas apiKey={googleMapsApiKey} markers={markers} selectedMarkerId={activeTown}
             onSelectMarker={selectTown} createPopupContent={createPopupContent} compactPopup maxFitZoom={11} itemLabel="visszahívandó ügyfél" ariaLabel="Visszahívandók településtérképe"
             attribution={<>Település-koordináták: <a href="https://www.geonames.org/" target="_blank" rel="noreferrer" className="underline">GeoNames</a></>} />
-          <p className="text-xs leading-relaxed text-slate-400">Minden települést külön gombostű jelöl. A szám az ottani visszahívandó ügyfelek darabszáma, egy ügyfélnél pont látszik. Koppints a részletekhez. A helyek településszintűek, közelítőek.</p>
           {data.total > 0 && !data.groups.length ? <p className="rounded-2xl bg-white/5 p-3 text-sm text-slate-300">A találatok települése nem jelölhető a térképen. Az ügyfelek a listából megnyithatók.</p> : null}
         </div>
 
@@ -127,12 +128,16 @@ export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer, 
             <span className="text-sm font-bold text-slate-400">{list.length} ügyfél</span>
           </div>
           {!list.length ? <p className="rounded-2xl bg-white/5 p-4 text-sm text-slate-300">{search.trim() ? "Nincs találat erre a keresésre." : "Nincs visszahívandó ügyfél."}</p> : null}
-          {pagination.items.map((customer) => <button key={customer.id} type="button" onClick={() => onOpenCustomer(customer)} className="block w-full min-w-0 rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
-            <span className="block break-words text-lg font-black">{customer.name || "Név nélkül"}</span>
-            <span className="mt-1 block break-words text-sm text-slate-300">{formatPostalCity(customer.postalCode, customer.city) || "Település nincs megadva"}</span>
-            <span className="mt-2 block break-words text-sm font-bold text-cyan-200">{callbackClimateLabel(customer)}</span>
-            <span className="mt-3 block text-xs font-black text-cyan-100">Ügyfél megnyitása →</span>
-          </button>)}
+          {pagination.items.map((customer) => {
+            const inquiryDate = callbackInquiryDate(customer);
+            return <button key={customer.id} type="button" onClick={() => onOpenCustomer(customer)} className="block w-full min-w-0 rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-left transition hover:border-cyan-300/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
+              <span className="block break-words text-lg font-black">{customer.name || "Név nélkül"}</span>
+              {inquiryDate ? <span className="mt-1 block text-xs text-slate-400">Érdeklődött: {inquiryDate}</span> : null}
+              <span className="mt-1 block break-words text-sm text-slate-300">{formatPostalCity(customer.postalCode, customer.city) || "Település nincs megadva"}</span>
+              <span className="mt-2 block break-words text-sm font-bold text-cyan-200">{callbackClimateLabel(customer)}</span>
+              <span className="mt-3 block text-xs font-black text-cyan-100">Ügyfél megnyitása →</span>
+            </button>;
+          })}
           {list.length > 0 ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-sm text-slate-400">
             <span>{pagination.currentPage}. oldal / {pagination.pageCount}</span>
             {pagination.pageCount > 1 ? <div className="flex flex-wrap gap-2">

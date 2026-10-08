@@ -47,6 +47,17 @@ export function createMapMarkerLayer({ maps, map, info, getCallbacks }: {
     const content = document.createElement("div");
     const compactPopup = getCallbacks().compactPopup;
     content.className = `alinflow-map-popup${compactPopup ? " alinflow-map-popup-compact" : ""}`;
+    // Google's otherwise empty close-button row takes valuable space on mobile.
+    info.setOptions({ headerDisabled: Boolean(compactPopup) });
+    if (compactPopup) {
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "alinflow-map-popup-close";
+      close.setAttribute("aria-label", "Térképes ablak bezárása");
+      close.textContent = "×";
+      close.addEventListener("click", () => info.close());
+      content.appendChild(close);
+    }
     const heading = document.createElement("p");
     heading.className = "alinflow-map-popup-heading";
     heading.textContent = `${summary.count} ${getCallbacks().itemLabel || "bejegyzés"}`;

@@ -11,7 +11,8 @@ const source = (id, patch = {}) => ({ id: String(id), latitude: 47 + Number(id) 
 function fixture({ zoom = 10, synchronousFit = false } = {}) {
   const markerInstances = [], clearedListeners = [], removedListeners = [], listeners = [], selected = [];
   class Element {
-    constructor(tag) { this.tagName = tag; this.children = []; this.style = {}; this.attributes = {}; this.value = ""; }
+    constructor(tag) { this.tagName = tag; this.children = []; this.style = {}; this.attributes = {}; this.value = ""; this.events = {}; }
+    addEventListener(name, callback) { this.events[name] = callback; }
     set textContent(value) { this.value = value; this.children = []; }
     get textContent() { return this.value + this.children.map(child => child.textContent).join(""); }
     append(...children) { this.children.push(...children); }
@@ -54,6 +55,7 @@ function fixture({ zoom = 10, synchronousFit = false } = {}) {
     fitBounds(bounds, padding) { this.fitCalls.push({ bounds, padding }); if (synchronousFit) { this.zoom = 23; emit(this, "idle"); } },
   };
   const info = { openCalls: [], closeCalls: 0, content: null, position: null, isOpen: false,
+    setOptions(options) { this.options = options; },
     close() { this.closeCalls++; this.isOpen = false; }, setContent(content) { this.content = content; },
     setPosition(position) { this.position = position; }, open(options) { this.openCalls.push(options); this.isOpen = true; },
   };
@@ -197,6 +199,19 @@ test("without custom details a normal popup shows that location title and curren
   f.layer.update([source(0, { title: "Tesztváros", segments: [segment("callback", 3, "#0f766e")] })]);
   f.markerInstances[0].click();
   assert.match(f.info.content.textContent, /3 visszahívandó ügyfél/); assert.match(f.info.content.textContent, /Tesztváros/);
+});
+
+test("compact popup replaces the empty Google header with an accessible working close button", () => {
+  const f = fixture(); f.callbacks.compactPopup = true;
+  f.layer.update([source(0)]); f.markerInstances[0].click();
+  assert.equal(f.info.options.headerDisabled, true);
+  assert.doesNotMatch(f.info.content.textContent, /1 telepítés|ok: 1/);
+  const close = descend(f.info.content).find(item => item.tagName === "button");
+  assert.equal(close.attributes["aria-label"], "Térképes ablak bezárása");
+  close.events.click(); assert.equal(f.info.isOpen, false);
+  f.callbacks.compactPopup = false; f.markerInstances[0].click();
+  assert.equal(f.info.options.headerDisabled, false);
+  assert.equal(descend(f.info.content).filter(item => item.tagName === "button").length, 0);
 });
 
 test("selection preserves popup; deselection or changed data closes stale details", () => {
