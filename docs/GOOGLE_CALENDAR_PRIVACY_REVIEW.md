@@ -2,7 +2,7 @@
 
 Az oldal forrása: `src/app/adatvedelem/google-naptar/page.tsx`.
 Cím: `/adatvedelem/google-naptar`.
-A felhasználó **2026-10-08-án kifejezetten jóváhagyta a szöveg közzétételét**. A tervezetjelzés eltávolítva; a jóváhagyott üzleti tartalom változatlan. A nyilvános közzététel a kapcsolódó PR éles telepítéséig függőben van. Az oldal bejelentkezés nélkül elérhető lesz, keresőindexelés nélkül.
+A felhasználó **2026-10-08-án kifejezetten jóváhagyta a szöveg közzétételét**. A tervezetjelzés eltávolítva; a jóváhagyott üzleti tartalom változatlan. A #123 PR éles telepítése után az oldal megnyitását 390×844 és 1440×900 nézetben ellenőriztük. Az oldal bejelentkezés nélkül elérhető, keresőindexelés nélkül; a Google Branding beállításban a hivatkozás mentve.
 
 ## A szöveg forrása
 
@@ -16,8 +16,8 @@ A felhasználó **2026-10-08-án kifejezetten jóváhagyta a szöveg közzétét
 1. A jóváhagyott szöveg tartalmazza az ügyfél-elérhetőségek, megjegyzések és eladási árak naptárba kerülését.
 2. A kapcsolattartás első pontja a munkaterület tulajdonosa. A szerveroldali `EMAIL_REPLY_TO` csak érvényes, biztonságosan megjeleníthető email-címként kerülhet az oldalra; nincs beégetett személyes cím.
 3. A szöveg nem ígér automatikus teljes adattörlést, meghatározott megőrzési határidőt vagy általános jogszabályi megfelelést.
-4. A nyilvános oldal és a Google-beállításban szereplő hivatkozás éles ellenőrzése a telepítés után történik.
+4. A nyilvános oldal és a Google-beállításban szereplő hivatkozás éles ellenőrzése megtörtént.
 
 ## Minimális felületi hivatkozás
 
-A `GoogleCalendarSettingsPanel.tsx` összekapcsolási gombja elé kerülhet a „Google Naptár adatkezelési tájékoztató” link. A bejelentkezési oldal alján ugyanez a hivatkozás nyilvános belépési pontot adhat. Az oldal véglegesítése önmagában ezeket a meglévő felületeket nem módosítja.
+A `GoogleCalendarSettingsPanel.tsx` összekapcsolási gombja alatt és a bejelentkezési oldal láblécében is szerepel a „Google Naptár adatkezelési tájékoztató” hivatkozás. Új lapon nyílik, hogy a beírt adatok megmaradjanak.

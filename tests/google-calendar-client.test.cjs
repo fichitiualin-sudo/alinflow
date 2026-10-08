@@ -185,6 +185,20 @@ test("OAuth outcome is consumed once and opens settings with a visible result", 
   run.unmount();
 });
 
+test("missing Calendar permission opens settings with a specific checkbox instruction", async () => {
+  let opened = 0;
+  const run = setup({ url: "https://app.example.test/?googleCalendar=permissions_missing&keep=1", onReturn: () => opened++,
+    status: { ...connected, connected: false, status: "not_connected" } });
+  run.mount();
+  await tick();
+  assert.equal(opened, 1);
+  assert.equal(run.window.location.href, "https://app.example.test/?keep=1");
+  assert.match(run.states[1], /Google Naptár engedélye kimaradt/);
+  assert.match(run.states[1], /Indítsd újra.*jelöld be.*jelölőnégyzetet/);
+  assert.equal(run.requests.some(({ init }) => init.method === "POST"), false);
+  run.unmount();
+});
+
 test("a failed appointment write never starts calendar sync; a completed write keeps its original workspace", async () => {
   let workspaceId = "original-workspace";
   let fail = true;
