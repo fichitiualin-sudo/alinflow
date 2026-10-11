@@ -89,17 +89,17 @@ export function CustomerSearchPanel({
               <button
                 key={customer.id}
                 onClick={() => onOpenCustomer(customer)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-left transition hover:border-cyan-300/40"
+                className="w-full min-w-0 rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-left [overflow-wrap:anywhere] transition hover:border-cyan-300/40"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-black text-white">{customer.name || "Névtelen ügyfél"}</p>
+                <div className="min-w-0 space-y-2">
+                  <p className="font-black leading-snug text-white">{customer.name || "Névtelen ügyfél"}</p>
+                  <div className="space-y-1 leading-relaxed">
                     <p className="mt-1 text-xs text-slate-400">{formatPostalCity(customer.postalCode, customer.city)} · {customer.phone || customer.email || "nincs elérhetőség"}</p>
                     {!customer.need || cleanQuoteItems(customer.quoteItems).some((item) => Number(item.quantity) > 0) ? <p className="mt-1 text-xs text-cyan-200/80">{climateSummary(customer.quoteItems)}</p> : null}
                     {customer.need ? <p className="mt-1 break-words text-sm font-bold text-cyan-200">Érdeklődés: {customer.need}</p> : null}
-                    {customerCreatedLabel(customer) ? <p className="mt-1 text-xs font-bold text-emerald-200/80">{customerCreatedLabel(customer)}</p> : null}
                   </div>
-                  <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black text-slate-200">{customerStatusLabel(customer)}</span>
+                  <span className="inline-block max-w-full whitespace-normal rounded-xl bg-white/10 px-2.5 py-1 text-[11px] font-black leading-relaxed text-slate-200">{customerStatusLabel(customer)}</span>
+                  {customerCreatedLabel(customer) ? <p className="text-xs leading-relaxed text-emerald-200/80">{customerCreatedLabel(customer)}</p> : null}
                 </div>
               </button>
             ))}
