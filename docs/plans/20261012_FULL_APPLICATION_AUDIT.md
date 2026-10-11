@@ -48,12 +48,12 @@ Kódváltozás visszavonható a kiinduló éles verzióra, ügyféladatok vissza
 - A mentett munkalap a mentéskor rögzített ügyféladatokat használja a nézetekben és exportokban. Az összes munkalap nézete a teljes mentett előzményt adja. Módosított vásárlási nyilatkozat új aláírást igényel, a mentetlen szerkesztői aláírás nem helyettesíti a tárolt munkalapot.
 - A számlázás tartós, munkához kötött foglalást kapott. Bizonytalan szolgáltatói válasz után nincs automatikus ismétlés; az összevont és külön számla átfedése sem engedett. A keltezés Budapest szerinti napot használ.
 - A korábbi partner karbantartási dátuma és neve megjelenhet a meglévő megosztás szűk összesítésében. A profil- és inaktív munkaterületi hozzáférés szigorítása nem hoz létre új megosztást.
-- Címváltozás után a régi térképpont érvénytelen. A mentés megvárja a már futó korábbi adatbetöltést, majd friss pillanatképet kér; régi címhez indult geokódolás nem írhatja felül az új címet.
+- Címváltozás után a régi térképpont érvénytelen. A mentés megvárja a már futó korábbi adatbetöltést, majd friss pillanatképet kér; régi címhez indult geokódolás nem írhatja felül az új címet. A megnyitott munka címverziója is frissül, közben más ügyfélre váltás vagy új szerkesztés nem íródik felül.
 - 420 px alatt kétoszlopos főmenü akadályozza meg a Dokumentumok felirat levágását.
 - Next.js 16.3.8, sharp 0.35.5 és source-map-js 1.2.2: a futtatási függőségek ismert npm-audit találatainak javítása.
 
 ### Automatizált és adatbázis-ellenőrzések
-- Teljes CJS futás: 944 tesztből 939 sikeres, 5 környezetfüggő kihagyás, 0 hiba. Az utolsó címmentési javítás külön 3 sikeres regressziós tesztet kapott.
+- Teljes CJS futás: 944 tesztből 939 sikeres, 5 környezetfüggő kihagyás, 0 hiba. Az utolsó címmentési javítás külön 5 sikeres regressziós tesztet kapott; a kapcsolódó hitelesítés-, részletbetöltés- és geokódolási sorozat további 34 tesztje is újra sikeresen lefutott.
 - A kihagyott PGlite-sorozatok külön, beállított modullal futtatva: 49 sikeres teszt, 0 kihagyás. A további MJS SQL-sorozat mind a 13 fájlja sikeres.
 - A két dedikált helyi klónt igénylő régebbi CJS-sorozatot a teljes tesztparancs kihagyta. Az audit öt migrációját ehelyett friss éles mentésből létrehozott külön natív helyi adatbázisban is ellenőriztük: kétszeri alkalmazás sikeres, mind a 69 eredeti auth/public/storage tábla darabszáma és soradat-ujjlenyomata változatlan.
 - Visszagörgetett natív próbák: számlafoglalás, párhuzamos kérés, visszaigazolt eredmény újrakérése, összevont/külön számlaütközés, RPC-jogosultság, idegen profil és inaktív munkaterület elutasítása. A helyi PostgreSQL-klaszter a próba után leállt.

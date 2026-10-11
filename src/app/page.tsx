@@ -584,7 +584,7 @@ function HomeContent() {
   const authLoadPromiseRef = useRef<{ userId: string; generation: number; promise: Promise<void> } | null>(null);
   const loadCustomersPromiseRef = useRef<Promise<void> | null>(null);
   const loadCustomersWorkspaceIdRef = useRef<string | null | undefined>(undefined);
-  const lastCustomerLoadRef = useRef<{ workspaceId: string | null; customers: Customer[] } | null>(null);
+  const lastCustomerLoadRef = useRef<{ workspaceId: string | null; customers: Customer[]; workHistory?: Record<string, Customer[]> } | null>(null);
   const initialDataReadyRef = useRef(false);
   const activeWorkspaceIdRef = useRef<string | null>(null);
   const detailDataLoadedRef = useRef<Record<string, boolean>>({});
@@ -3040,7 +3040,7 @@ function HomeContent() {
     });
 
     if (currentWorkspaceId() !== loadingWorkspaceId) return;
-    lastCustomerLoadRef.current = { workspaceId: loadingWorkspaceId, customers: loadedCustomers };
+    lastCustomerLoadRef.current = { workspaceId: loadingWorkspaceId, customers: loadedCustomers, workHistory: nextWorkHistory };
     setCustomers(loadedCustomers);
     setWorkHistoryByCustomer(nextWorkHistory);
     if (options.preserveEditing) return;
@@ -3632,7 +3632,8 @@ function HomeContent() {
       if (!isCurrent()) return;
       const savedUpdated: Customer = {
         ...updated,
-        ...(addressChanged ? { mapLatitude: undefined, mapLongitude: undefined, mapGeocodedAt: undefined, mapGeocodeStatus: undefined } : {}),
+        ...(addressChanged ? { workAddress: updated.address, mapLatitude: undefined, mapLongitude: undefined,
+          mapGeocodedAt: undefined, mapGeocodeStatus: undefined, mapGeocodeError: undefined } : {}),
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
         activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
@@ -3655,6 +3656,16 @@ function HomeContent() {
           setMessage("Ügyféladatok mentve. A térképi címadatokat most nem sikerült frissíteni; nyisd meg újra az oldalt.", "warning");
           return;
         }
+        const freshLoad = lastCustomerLoadRef.current;
+        const refreshed = freshLoad?.workHistory?.[savedUpdated.id]?.find((work) => work.activeAppointmentId === savedUpdated.activeAppointmentId)
+          || freshLoad?.customers.find((customer) => customer.id === savedUpdated.id && customer.activeAppointmentId === savedUpdated.activeAppointmentId);
+        if (refreshed) setSelected((previous) => {
+          if (!isCurrent() || previous.id !== savedUpdated.id || previous.activeAppointmentId !== savedUpdated.activeAppointmentId
+            || previous.address !== savedUpdated.address || previous.city !== savedUpdated.city || previous.postalCode !== savedUpdated.postalCode) return previous;
+          return { ...previous, workAddress: refreshed.workAddress, appointmentUpdatedAt: refreshed.appointmentUpdatedAt,
+            mapLatitude: refreshed.mapLatitude, mapLongitude: refreshed.mapLongitude, mapGeocodedAt: refreshed.mapGeocodedAt,
+            mapGeocodeStatus: refreshed.mapGeocodeStatus, mapGeocodeError: refreshed.mapGeocodeError };
+        });
       }
       setMessage("Ügyféladatok mentve ✅");
     } catch (error: any) {
