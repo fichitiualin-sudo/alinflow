@@ -150,6 +150,7 @@ import {
   workReportSignatureState,
   workReportTitle,
 } from "@/lib/alinflow/work-report";
+import { parsePrivacyNoticeSnapshot, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
@@ -655,11 +656,17 @@ function HomeContent() {
       return fallback;
     }
 
-    const { data, error } = await supabase
-      .from("workspace_settings")
-      .select("*")
-      .eq("workspace_id", workspace.id)
-      .maybeSingle();
+    let result;
+    try {
+      result = await supabase.from("workspace_settings").select("*")
+        .eq("workspace_id", workspace.id).maybeSingle();
+    } catch (error) {
+      if (currentWorkspaceId() !== workspace.id) return fallback;
+      throw error;
+    }
+    const { data, error } = result;
+
+    if (currentWorkspaceId() !== workspace.id) return fallback;
 
     if (error) {
       if (isMissingWorkspaceSettingsSchemaError(error)) {
@@ -5532,6 +5539,7 @@ function HomeContent() {
 
   async function loadWorkReportFor(customer: Customer, reportId?: string) {
     const sequence = ++workReportLoadSequence.current;
+    const workspaceId = currentWorkspaceId();
     setWorkReportLoadBlocked(true);
     const targetType = normalizeAppointmentType(customer.appointmentType);
     const activeReportId = reportId || customer.activeWorkReportId;
@@ -5548,7 +5556,7 @@ function HomeContent() {
         throw new Error("A munkalaphoz előbb ments egy időpontot.");
       }
       const { data, error } = await query.eq("appointment_type", targetType).order("created_at", { ascending: false }).limit(2);
-      if (sequence !== workReportLoadSequence.current) return;
+      if (sequence !== workReportLoadSequence.current || currentWorkspaceId() !== workspaceId) return;
       if (error) throw error;
       if (!data?.length) {
         if (activeReportId) throw new Error("A kiválasztott munkalap nem található.");
@@ -5567,7 +5575,7 @@ function HomeContent() {
         setWorkReportsByCustomer(prev => ({ ...prev, [workReportKeyFromReport(report, customer.id)]: report }));
       }
     } catch (error: any) {
-      if (sequence === workReportLoadSequence.current) setMessage(`Munkalap betöltési hiba: ${error.message}`);
+      if (sequence === workReportLoadSequence.current && currentWorkspaceId() === workspaceId) setMessage(`Munkalap betöltési hiba: ${error.message}`);
     }
   }
 
@@ -5616,7 +5624,48 @@ function HomeContent() {
   }
 
   function updateWorkReportField(field: keyof WorkReport, value: string) {
-    setWorkReport((prev) => ({ ...prev, [field]: value }));
+    setWorkReport((prev) => prev[field] === value ? prev : ({
+      ...prev, [field]: value, signatureDataUrl: "", signedAt: undefined,
+      privacyNotice: undefined, privacyConsentRevokedAt: undefined,
+    }));
+  }
+
+  function updateWorkReportSignature(value: string, signedAt?: string, privacyNotice?: PrivacyNoticeSnapshot) {
+    setWorkReport((prev) => ({
+      ...prev, signatureDataUrl: value, signedAt: value ? signedAt : undefined,
+      signerName: privacyNotice?.signerName || prev.signerName,
+      privacyNotice: value ? privacyNotice : undefined, privacyConsentRevokedAt: undefined,
+    }));
+  }
+
+  async function revokeWorkReportPrivacyConsent() {
+    if (!workReport.id || !workReport.privacyNotice?.consentGranted || workReport.privacyConsentRevokedAt || workReportLoadBlocked) return;
+    if (!beginAction("work-report")) return;
+    const workspaceId = currentWorkspaceId();
+    setWorkReportBusy(true);
+    try {
+      const result = await workspaceQuery(supabase.from("work_reports")
+        .update({ privacy_consent_revoked_at: new Date().toISOString() })
+        .eq("id", workReport.id).eq("customer_id", selected.id)
+        .eq("privacy_notice->>signedAt", workReport.privacyNotice.signedAt))
+        .select("*").single();
+      if (currentWorkspaceId() !== workspaceId) return;
+      if (result.error) throw result.error;
+      const saved = workReportFromRow(result.data);
+      if (!saved.privacyConsentRevokedAt) throw new Error("A visszavonásról nem érkezett visszaigazolás.");
+      setWorkReport(saved);
+      if (saved.appointmentType === "maintenance") {
+        setMaintenanceReportsByCustomer((prev) => ({ ...prev, [selected.id]: (prev[selected.id] || []).map((report) => report.id === saved.id ? saved : report) }));
+      } else {
+        setWorkReportsByCustomer((prev) => ({ ...prev, [workReportKeyFromReport(saved, selected.id)]: saved }));
+      }
+      setMessage("A partneri hozzájárulás visszavonását rögzítettük.", "success");
+    } catch (error: any) {
+      if (currentWorkspaceId() === workspaceId) setMessage(`A visszavonás nem mentődött: ${error.message}`, "error");
+    } finally {
+      setWorkReportBusy(false);
+      endAction("work-report");
+    }
   }
 
   function togglePurchaseDeclarationItem(key: string) {
@@ -5723,6 +5772,7 @@ function HomeContent() {
         signature_data_url: reportToSave.signatureDataUrl || null,
         signer_name: reportToSave.signerName || selected.name || null,
         signed_at: signedAt,
+        privacy_notice: reportToSave.privacyNotice ? parsePrivacyNoticeSnapshot(reportToSave.privacyNotice) : null,
         created_by: user?.id || null,
       });
       const currentReportId = workReport.id || reportToSave.id || selected.activeWorkReportId;
@@ -5879,6 +5929,7 @@ function HomeContent() {
       }
 
       const savedReportForState: WorkReport = {
+        ...workReportFromRow(data),
         id: data.id,
         customerId: data.customer_id,
         appointmentId: data.appointment_id || reportToSave.appointmentId || selected.activeAppointmentId,
@@ -6662,7 +6713,9 @@ function HomeContent() {
       onBack={()=>goBack("work")}
       onSave={(sendEmail)=>saveWorkReport(sendEmail)}
       onUpdateWorkReportField={updateWorkReportField}
-      onSignatureChange={(value)=>setWorkReport((prev)=>({ ...prev, signatureDataUrl: value, signedAt: value ? new Date().toISOString() : undefined }))}
+      privacyConfig={workspaceSettings.documentSettings.privacyNotice}
+      onSignatureChange={updateWorkReportSignature}
+      onRevokePrivacyConsent={revokeWorkReportPrivacyConsent}
       onSelectSeller={setSelectedSellerId}
       onNewSellerNameChange={setNewSellerName}
       onNewSellerTaxNumberChange={setNewSellerTaxNumber}

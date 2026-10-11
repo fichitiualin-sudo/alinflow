@@ -6,6 +6,7 @@ import { DEFAULT_SELLER_COMPANY } from "./purchase-declarations";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "./work-report";
 import type { WorkspaceSettings } from "./workspace-settings";
 import { defaultWorkspaceSettings, settingsBrandName, settingsFooterLines } from "./workspace-settings";
+import { parsePrivacyNoticeSnapshot } from "./privacy-notice";
 
 export type SignedDocumentExportFile = {
   path: string;
@@ -104,6 +105,42 @@ export function buildSignedDocumentsIndex(items: SignedDocumentIndexItem[]) {
   </article>`);
 }
 
+const privacyNoticeStyles = `
+  .privacy-notice { width: calc(100% - 32px); max-width: 210mm; font-family: Arial, sans-serif; overflow-wrap: anywhere; }
+  .privacy-notice h1 { text-align: left; text-transform: none; font-size: 24px; }
+  .privacy-notice h2 { color: #0f766e; font-size: 13px; break-after: avoid; }
+  .privacy-notice p { font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+  .privacy-notice .notice-meta { font-size: 10px; color: #64748b; }
+  .privacy-notice .notice-signature { margin-top: 24px; margin-left: auto; width: 56mm; max-width: 100%; text-align: center; break-inside: avoid; }
+  .privacy-notice .notice-signature img { height: 18mm; max-width: 100%; object-fit: contain; }
+  .privacy-notice .notice-signature p { border-top: 1px solid #94a3b8; padding-top: 4px; }
+  @media screen and (max-width: 600px) { .privacy-notice { padding: 20px; } }
+  @media print { .privacy-notice { width: auto; max-width: none; height: auto; overflow: visible; break-before: page; } }
+`;
+
+function privacyNoticeBody(snapshot: unknown, revokedAt?: string) {
+  const notice = parsePrivacyNoticeSnapshot(snapshot);
+  if (!notice) return "";
+  const party = (value: (typeof notice.controllers)[number]["party"]) => `<strong>${escapeHtml(value.legalName)}</strong><br>${[value.address, value.taxNumber ? `Adószám: ${value.taxNumber}` : "", value.email, value.phone].filter(Boolean).map(escapeHtml).join(" · ")}`;
+  return `<article class="page privacy-notice">
+    <h1>Adatkezelési tájékoztató</h1><p class="notice-meta">Verzió: ${escapeHtml(notice.version)}</p>
+    <h2>Adatkezelők</h2>
+    ${notice.controllers.map(({ role, party: controller }) => `<p>${role === "device_seller" ? "Készülék értékesítője" : "Szerelési / karbantartási szolgáltató"}<br>${party(controller)}</p>`).join("")}
+    <h2>Ügyfél adatai</h2>
+    <p>Név: ${escapeHtml(notice.customer.name)}<br>Cím: ${escapeHtml(notice.customer.address)}<br>Telefonszám: ${escapeHtml(notice.customer.phone || "Nincs megadva")}<br>Email: ${escapeHtml(notice.customer.email || "Nincs megadva")}</p>
+    ${notice.sections.map((section) => `<h2>${escapeHtml(section.title)}</h2><p>${escapeHtml(section.text)}</p>`).join("")}
+    <h2>Önkéntes karbantartói adattovábbítás</h2><p>${escapeHtml(notice.consentText)}</p>
+    <p>Karbantartó partner: ${notice.partner ? party(notice.partner) : "Nincs kijelölve; adattovábbítás nem engedélyezett."}</p>
+    <p><strong>${notice.consentGranted ? "☑ Hozzájárultam a megjelölt partner részére történő adattovábbításhoz." : "☐ Nem adtam hozzájárulást karbantartó partner részére történő adattovábbításhoz."}</strong></p>
+    ${revokedAt ? `<p>A hozzájárulást később visszavonták: ${escapeHtml(formatSignedAt(revokedAt))}. Az eredeti döntés fent látható.</p>` : ""}
+    <div class="notice-signature"><img src="${escapeHtml(notice.signatureDataUrl)}" alt="Az adatkezelési dokumentumhoz rögzített ügyfélaláírás"><p>${escapeHtml(notice.signerName)}</p><span class="notice-meta">Aláírva: ${escapeHtml(formatSignedAt(notice.signedAt))}</span></div>
+  </article>`;
+}
+
+export function buildPrivacyNoticeHtml(snapshot: unknown, revokedAt?: string) {
+  return documentShell("Adatkezelési tájékoztató", privacyNoticeBody(snapshot, revokedAt), privacyNoticeStyles);
+}
+
 export function buildWorkReportHtml(customer: Customer, report: WorkReport, quoteItems: QuoteItem[], workspaceSettings?: WorkspaceSettings) {
   const reportCustomer = {
     ...customer,
@@ -180,7 +217,8 @@ export function buildWorkReportHtml(customer: Customer, report: WorkReport, quot
     </section>
 
     <footer class="footer">${workReportFooterHtml(settings)}</footer>
-  </article>`, `
+  </article>${privacyNoticeBody(report.privacyNotice, report.privacyConsentRevokedAt)}`, `
+    ${privacyNoticeStyles}
     .work-report { max-width: 210mm; width: calc(100% - 32px); border-radius: 16px; font-family: Arial, Helvetica, sans-serif; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
     .work-report p { line-height: 1.6; }
     .work-report .report-header { border-bottom: 2px solid #0f766e; padding-bottom: 20px; }

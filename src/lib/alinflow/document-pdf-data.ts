@@ -11,6 +11,7 @@ export type SavedPdfReport = {
   customer_name?: string; customer_email?: string; customer_phone?: string; customer_address?: string;
   climate_summary?: string; work_description?: string; notes?: string;
   signature_data_url?: string; signer_name?: string; signed_at?: string;
+  privacy_notice?: unknown; privacy_consent_revoked_at?: string;
 };
 
 export type SavedPdfDeclaration = {

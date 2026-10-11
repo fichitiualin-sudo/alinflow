@@ -30,7 +30,7 @@ function harness(extra = {}, external = {}) {
       if (name.startsWith("@/")) resolved = path.join(repo, "src", name.slice(2));
       else if (name.startsWith(".")) resolved = path.resolve(path.dirname(full), name);
       else throw Error("External module forbidden: " + name);
-      if (!path.extname(resolved)) resolved += ".ts";
+      if (!path.extname(resolved)) resolved += fs.existsSync(`${resolved}.ts`) ? ".ts" : ".tsx";
       return load(resolved);
     }
     vm.runInNewContext(compile(fs.readFileSync(full, "utf8")),
