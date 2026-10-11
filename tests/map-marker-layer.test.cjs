@@ -239,3 +239,58 @@ test("disposal cancels fit, detaches every pin, closes popup, and safely ignores
   assert.equal(f.info.closeCalls, closes); assert.ok(f.markerInstances.every(marker => marker.mapUpdates.length === 1));
   assert.equal(f.markerInstances.length, 2); assert.deepEqual(f.selected, []);
 });
+
+for (const compact of [false, true]) {
+  test(`maintenance refresh preserves the open ${compact ? "mobile" : "desktop"} popup and viewport until a real removal`, async () => {
+    const states = [], refs = [], replies = [];
+    let stateIndex = 0, refIndex = 0;
+    const react = {
+      useState(initial) {
+        const index = stateIndex++;
+        if (!(index in states)) states[index] = typeof initial === "function" ? initial() : initial;
+        return [states[index], value => { states[index] = typeof value === "function" ? value(states[index]) : value; }];
+      },
+      useRef(initial) { const index = refIndex++; return refs[index] ||= { current: initial }; },
+      useCallback: callback => callback, useEffect: () => {},
+    };
+    const { useSharedMaintenance } = harness({}, {
+      react,
+      "@/lib/alinflow/shared-maintenance-client": {
+        listReceivedMaintenance: () => new Promise(resolve => replies.push(resolve)),
+        listMaintenanceResults: async () => [],
+      },
+    }).load("src/components/alinflow/useSharedMaintenance.ts");
+    const render = () => { stateIndex = 0; refIndex = 0; return useSharedMaintenance("target", true, "user"); };
+    const f = fixture();
+    const rows = [{ installationId: "installation", latitude: 47, longitude: 19 }];
+    const updateMap = result => f.layer.update(result.received.map(row => source(0, {
+      id: row.installationId, latitude: row.latitude, longitude: row.longitude,
+    })), f.selected.at(-1), 15, compact);
+
+    const first = render().refresh(); replies.shift()(structuredClone(rows)); await first;
+    updateMap(render()); f.emit(f.map, "idle");
+    f.markerInstances[0].click(); updateMap(render());
+    const popup = f.info.content, marker = f.markerInstances[0], initialFits = f.map.fitCalls.length;
+    f.map.zoom = 17;
+
+    const refresh = render().refresh();
+    updateMap(render());
+    assert.equal(f.info.isOpen, true, "Starting a background refresh must not close the customer popup");
+    assert.equal(f.info.content, popup);
+    assert.equal(marker.map, f.map);
+    assert.equal(f.map.fitCalls.length, initialFits);
+    assert.equal(f.map.zoom, 17);
+    replies.shift()(structuredClone(rows)); await refresh;
+    updateMap(render());
+    assert.equal(f.info.isOpen, true);
+    assert.equal(f.info.content, popup);
+    assert.equal(f.markerInstances.length, 1);
+    assert.equal(f.map.fitCalls.length, initialFits);
+
+    const revoked = render().refresh(); replies.shift()([]); await revoked;
+    updateMap(render());
+    assert.equal(f.info.isOpen, false, "Confirmed removal still removes the obsolete popup and marker");
+    assert.equal(marker.map, null);
+    f.layer.dispose();
+  });
+}

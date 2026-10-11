@@ -148,20 +148,103 @@ test('accepted reference keeps one marker and combines source history with newer
   assert.equal(shared.mergeSharedMaintenancePoints([local],[])[0],local,'revoked source summary disappears while local work remains');
   assert.equal(shared.mergeSharedMaintenancePoints([], [received]).length,1,'handoff still appears before local reload finishes');
 });
-test('shared hook hides another user cache immediately and discards an older in-flight response in the same workspace',async()=>{
-  let state;const request={current:0},pending=[];
-  const hookHarness=harness({}, {
-    react:{useState:initial=>{state??=initial;return [state,next=>{state=typeof next==='function'?next(state):next;}];},
-      useRef:()=>request,useCallback:fn=>fn,useEffect:noop},
-    '@/lib/alinflow/shared-maintenance-client':{listReceivedMaintenance:()=>new Promise(resolve=>pending.push(resolve)),listMaintenanceResults:async()=>[]},
+// Preserve hook slots/dependencies and run effect cleanup when identity changes.
+// Controlled focus/timer events and deferred RPCs exercise the actual hook.
+function sharedHookHarness() {
+  const slots=[],effects=[],focusListeners=new Set(),intervals=new Set(),receivedCalls=[],resultCalls=[];
+  let cursor=0,args=['workspace',true,'user'];
+  const document={visibilityState:'visible'};
+  const sameDeps=(left,right)=>left && left.length===right.length && left.every((value,index)=>Object.is(value,right[index]));
+  function deferred(calls,workspaceId) {
+    const call={workspaceId};calls.push(call);
+    return new Promise((resolve,reject)=>{call.resolve=resolve;call.reject=reject;});
+  }
+  const hookHarness=harness({document,window:{
+    addEventListener:(event,fn)=>{assert.equal(event,'focus');focusListeners.add(fn);},
+    removeEventListener:(event,fn)=>focusListeners.delete(fn),
+    setInterval:(fn,delay)=>{assert.equal(delay,60000);intervals.add(fn);return fn;},
+    clearInterval:fn=>intervals.delete(fn),
+  }},{
+    react:{
+      useState:initial=>{const index=cursor++;slots[index]??={value:initial};return [slots[index].value,next=>{
+        slots[index].value=typeof next==='function'?next(slots[index].value):next;
+      }];},
+      useRef:initial=>{const index=cursor++;slots[index]??={current:initial};return slots[index];},
+      useCallback:(fn,deps)=>{const index=cursor++;if(!sameDeps(slots[index]?.deps,deps))slots[index]={value:fn,deps};return slots[index].value;},
+      useEffect:(fn,deps)=>{const index=cursor++;if(!sameDeps(slots[index]?.deps,deps))effects.push(()=>{
+        slots[index]?.cleanup?.();slots[index]={deps,cleanup:fn()};
+      });},
+    },
+    '@/lib/alinflow/shared-maintenance-client':{
+      listReceivedMaintenance:workspaceId=>deferred(receivedCalls,workspaceId),
+      listMaintenanceResults:workspaceId=>deferred(resultCalls,workspaceId),
+    },
   });
   const {useSharedMaintenance}=hookHarness.load('src/components/alinflow/useSharedMaintenance.ts');
-  const old=useSharedMaintenance('same-workspace',true,'old-user');const oldRequest=old.refresh();
-  const next=useSharedMaintenance('same-workspace',true,'new-user');assert.equal(next.received.length,0);
-  const nextRequest=next.refresh();pending[1]([]);await nextRequest;pending[0]([item]);await oldRequest;
-  assert.equal(useSharedMaintenance('same-workspace',true,'new-user').received.length,0);
-  const first=useSharedMaintenance('same-workspace',true,'old-user');const populated=first.refresh();pending[2]([item]);await populated;
-  assert.equal(useSharedMaintenance('same-workspace',true,'old-user').received.length,1);
-  assert.equal(useSharedMaintenance('same-workspace',true,'new-user').received.length,0);
-  assert.equal(useSharedMaintenance('same-workspace',false,'old-user').received.length,0);
+  const flush=()=>new Promise(resolve=>setImmediate(resolve));
+  return {document,receivedCalls,resultCalls,
+    render(nextArgs=args){args=nextArgs;cursor=0;const value=useSharedMaintenance(...args);effects.splice(0).forEach(effect=>effect());return value;},
+    focus(){[...focusListeners].forEach(fn=>fn());},tick(){[...intervals].forEach(fn=>fn());},
+    async complete(index,received=[item],results=[]){receivedCalls[index].resolve(received);resultCalls[index].resolve(results);await flush();},
+    async fail(index){receivedCalls[index].reject(new Error('Network unavailable'));resultCalls[index].resolve([]);await flush();},
+  };
+}
+
+test('focus/interval refresh retains marker data and source summaries in flight and after unchanged response',async()=>{
+  const hook=sharedHookHarness();hook.render();
+  const results=[{installationId:'own-installation',date:'2026-10-11',status:'Lezárva',providerName:'Partner'}];
+  await hook.complete(0,[item],results);const initial=hook.render();
+  const markerId=shared.sharedMaintenanceMapPoint(initial.received[0]).appointmentId;
+  hook.focus();const loading=hook.render();
+  assert.equal(loading.loading,true);assert.equal(loading.received,initial.received);assert.equal(loading.results,initial.results);
+  assert.equal(shared.sharedMaintenanceMapPoint(loading.received[0]).appointmentId,markerId);
+  hook.tick();hook.focus();await loading.refresh();
+  assert.equal(hook.receivedCalls.length,2,'overlapping focus, timer and manual refresh share the ongoing check');
+  assert.equal(hook.resultCalls.length,2);
+  await hook.complete(1,JSON.parse(JSON.stringify([item])),JSON.parse(JSON.stringify(results)));
+  const unchanged=hook.render();assert.equal(unchanged.loading,false);
+  assert.equal(unchanged.received,initial.received,'unchanged data does not rebuild markers');
+  assert.equal(unchanged.results,initial.results,'unchanged source results do not rebuild own markers');
+});
+
+test('successful empty refresh removes revoked shared installations instead of preserving stale access',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0);const initial=hook.render();
+  hook.tick();assert.equal(hook.render().received,initial.received);
+  await hook.complete(1,[]);const revoked=hook.render();
+  assert.equal(revoked.received.length,0);assert.equal(revoked.loading,false);assert.equal(revoked.error,'');
+});
+
+test('failed or malformed permission refresh clears previously visible shared data and summaries',async()=>{
+  for(const malformed of [false,true]) {
+    const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[{installationId:'own-installation',date:'2026-10-11'}]);
+    hook.focus();assert.equal(hook.render().received.length,1);
+    if(malformed)await hook.complete(1,{invalid:true});else await hook.fail(1);
+    const failed=hook.render();assert.equal(failed.received.length,0);assert.equal(failed.results.length,0);
+    assert.equal(failed.loading,false);assert.ok(failed.error);
+  }
+});
+
+test('user or workspace switches hide data before effects and discard prior identity responses',async()=>{
+  for(const nextArgs of [['workspace',true,'new-user'],['other-workspace',true,'user']]) {
+    const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();hook.focus();
+    const switched=hook.render(nextArgs);assert.equal(switched.received.length,0);assert.equal(switched.results.length,0);
+    assert.equal(hook.receivedCalls.length,3);
+    await hook.complete(2,[]);await hook.complete(1,[item]);
+    const current=hook.render();assert.equal(current.received.length,0);assert.equal(current.loading,false);
+  }
+});
+
+test('disabled hook hides data immediately, cancels timers and ignores an outstanding response',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();hook.focus();
+  const disabled=hook.render(['workspace',false,'user']);assert.equal(disabled.received.length,0);
+  hook.focus();hook.tick();assert.equal(hook.receivedCalls.length,2);
+  await hook.complete(1,[item]);assert.equal(hook.render().received.length,0);
+  assert.equal(hook.render(['workspace',true,undefined]).received.length,0,'signed-out identity cannot reuse cached data');
+});
+
+test('hidden tabs skip background polling and resume a single check on visible focus',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();
+  hook.document.visibilityState='hidden';hook.tick();hook.focus();assert.equal(hook.receivedCalls.length,1);
+  hook.document.visibilityState='visible';hook.focus();hook.tick();assert.equal(hook.receivedCalls.length,2);
+  await hook.complete(1);assert.equal(hook.render().received.length,1);
 });
