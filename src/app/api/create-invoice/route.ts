@@ -68,8 +68,15 @@ function agentKeyEnvName(kind: BillingInvoiceKind) {
 }
 
 function getAgentKey(kind: BillingInvoiceKind, workspaceId: string) {
-  if (!readEnv("SZAMLAZZ_WORKSPACE_ID").trim() || readEnv("SZAMLAZZ_WORKSPACE_ID").trim() !== workspaceId) {
-    throw new ApiError("Ehhez a munkaterülethez nincs számlakibocsátó beállítva. Ellenőrizd a szerveren a SZAMLAZZ_WORKSPACE_ID értékét.", 403);
+  const primaryWorkspaceId = readEnv("SZAMLAZZ_WORKSPACE_ID").trim();
+  // Extra workspaces may use the combined issuer only, never the separate labor issuer.
+  const combinedWorkspaceAllowed = kind === "combined" && readEnv("SZAMLAZZ_COMBINED_WORKSPACE_IDS")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .includes(workspaceId);
+  if (!(primaryWorkspaceId && primaryWorkspaceId === workspaceId) && !combinedWorkspaceAllowed) {
+    throw new ApiError("Ehhez a munkaterülethez ez a számlatípus még nincs beállítva. A számlázási kapcsolat beállítása szükséges.", 403);
   }
   if (kind === "combined") return readEnv("SZAMLAZZ_COMBINED_AGENT_KEY") || readEnv("SZAMLAZZ_DEVICE_AGENT_KEY");
   return readEnv(agentKeyEnvName(kind));
