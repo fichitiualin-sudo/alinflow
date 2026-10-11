@@ -59,11 +59,13 @@ Minden külön helyszínt kicsi gombostű jelöl, közeli pontok összevonása n
 
 A „Telepített klímák” fül a mentett szerelési koordinátákat és karbantartási állapotokat mutatja. Az azonos koordinátájú telepítések közös jelölője is megőrzi az összes állapot színét és darabszámát. A helyszín kiválasztása szűri a tízesével lapozható listát; az egyes időpontok a felugró ablakból is külön megnyithatók. Az „Összes helyszín” gomb megszünteti a helyszín szerinti szűrést. Az állapotszűrők egyben színmagyarázatot adnak; a cím/név/klíma keresés, hiányzó koordináták keresése és az időpontonkénti „Nem kéri a karbantartást” beállítás megmarad.
 
-A „Saját telepítéseim” és „Karbantartásra átvett klímák” kapcsoló külön-külön szűri ugyanazt a térképet és listát; mindkettő alapból be van kapcsolva. A böngésző felhasználónként és munkaterületenként megjegyzi a választást. Kikapcsoláskor adat és megbízás nem törlődik. A darabszámok a kiválasztott csoportokat és a keresést követik; a keresés az átadó nevére is működik. A „Besorolás” művelet az adott telepítés kártyáján nyit szerkesztőt, ahol az átvett kategóriához opcionális átadónév is menthető. Ez nem hoz létre munkaterületek közötti adatmegosztást.
+A „Saját telepítés” és „Karbantartásra átvett” pipa közvetlenül az állapotszűrők folytatásában, azokkal azonos stílusban szerepel. Külön-külön szűrik ugyanazt a térképet és listát; mindkettő alapból be van kapcsolva. A böngésző felhasználónként és munkaterületenként megjegyzi a választást. Kikapcsoláskor adat és megbízás nem törlődik. A darabszámok a kiválasztott csoportokat és a keresést követik; a keresés az átadó nevére is működik. A „Besorolás” művelet az adott telepítés kártyáján nyit szerkesztőt, ahol az átvett kategóriához opcionális átadónév is menthető. Ez nem hoz létre munkaterületek közötti adatmegosztást.
 
 A megjelenítő minden helyszín jelölőjét a Google optimalizált képrétegéhez kapcsolja, gyorsítótárazott PNG-ként. A mozgatást és a képernyőn kívüli képek kezelését maga a térkép végzi, alkalmazásoldali csoportosítás vagy képkockánkénti újraszámítás nélkül. A változatlan helyszínek jelölői megmaradnak; kijelölés vagy változatlan adatok visszaadása nem állítja vissza a nézetet. A térkép mellett/alatt levő ügyféllista billentyűzettel is használható.
 
 ## Ügyféladatok
+
+Az adatkezelési tájékoztató beállításában a „Karbantartó partner” a partner teljes AlinFlow bejelentkezési email-címével kereshető. A találatból kiválasztott vállalkozás adatai automatikusan kitöltődnek, külön kézzel nem szerkeszthetők. Hiányos vállalkozási adatoknál a felület jelzi, mit kell a partnernek a saját beállításában pótolnia. A kiválasztást vagy eltávolítást a beállítások mentése véglegesíti, és csak a később aláírt tájékoztatókat érinti. Korábban kézzel megadott partner megmarad a cseréig vagy eltávolításig.
 
 - a nagy felső ügyfél-fejléc/modal ne jelenjen meg;
 - a telefonszám mellett legyen az egyetlen hívásgomb;

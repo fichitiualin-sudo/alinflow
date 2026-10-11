@@ -14,6 +14,8 @@ export type PrivacyNoticeConfig = {
   serviceProvider: PrivacyParty;
   deviceSeller: PrivacyParty;
   partner: PrivacyParty;
+  partnerUserId?: string;
+  partnerWorkspaceId?: string;
   retentionText: string;
   recipientsText: string;
   internationalTransfersText: string;
@@ -54,6 +56,8 @@ export function normalizePrivacyNoticeConfig(input: unknown): PrivacyNoticeConfi
     enabled: value.enabled === true,
     serviceProvider: normalizePrivacyParty(value.serviceProvider), deviceSeller: normalizePrivacyParty(value.deviceSeller),
     partner: normalizePrivacyParty(value.partner), retentionText: normalizedText(value.retentionText),
+    ...(normalizedText(value.partnerUserId) ? { partnerUserId: normalizedText(value.partnerUserId).toLowerCase() } : {}),
+    ...(normalizedText(value.partnerWorkspaceId) ? { partnerWorkspaceId: normalizedText(value.partnerWorkspaceId).toLowerCase() } : {}),
     recipientsText: normalizedText(value.recipientsText), internationalTransfersText: normalizedText(value.internationalTransfersText),
   };
 }
@@ -71,6 +75,11 @@ function partyErrors(party: PrivacyParty, label: string) {
 
 export function privacyNoticeConfigValidation(input: PrivacyNoticeConfig, options: { requirePartner?: boolean } = {}): string[] {
   const config = normalizePrivacyNoticeConfig(input);
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if ((config.partnerUserId || config.partnerWorkspaceId)
+      && (!uuid.test(config.partnerUserId || "") || !uuid.test(config.partnerWorkspaceId || ""))) {
+    return ["Válaszd ki újra a karbantartó AlinFlow-felhasználót."];
+  }
   if (!config.enabled && !options.requirePartner) return [];
   const errors = [...partyErrors(config.serviceProvider, "Munkát végző vállalkozás"), ...partyErrors(config.deviceSeller, "Készülékértékesítő")];
   for (const [key, label] of [
