@@ -78,6 +78,7 @@ test("real PDF attachments have embedded Hungarian fonts and distinct saved sign
     documents.push(pdf);
   }
   assert.notDeepEqual(embeddedImages(documents[0])[0][1].contents, embeddedImages(documents[1])[0][1].contents);
+  assert.equal(documents[1].getPageCount(), 1, "The standard declaration must contain only one copy");
 });
 test("long saved notes and device lists flow to further pages without dropping content", async () => {
   const longReport = report({ notes: Array(120).fill("Árvíztűrő tükörfúrógép: hosszú mentett megjegyzés Ő Ű.").join("\n") });

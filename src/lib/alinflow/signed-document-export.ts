@@ -251,8 +251,7 @@ export function buildPurchaseDeclarationHtml(customer: Customer, declaration: Pu
   const items = shownItems.length ? shownItems : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
   const signature = safeDataUrl(declaration.signatureDataUrl);
   const field = (label: string, value = "") => `<p class="purchase-field"><span>${escapeHtml(label)}</span><span class="purchase-field-value">${escapeHtml(value || "\u00A0")}</span></p>`;
-  const copies = ["I.", "II."].map((copy) => `<article class="page purchase-original">
-    <p class="purchase-copy">${copy} példány</p>
+  const content = `<article class="page purchase-original">
     <header>
       <h1>VÁSÁRLÁSI<br>NYILATKOZAT</h1>
       <p class="purchase-subtitle">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló <strong>458/2024. (XII. 30.) Korm. rendelet</strong><br>28. § (5) bekezdése alapján</p>
@@ -297,11 +296,10 @@ export function buildPurchaseDeclarationHtml(customer: Customer, declaration: Pu
       </div>
     </section>
     <footer class="purchase-footnote"><sup>1</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</footer>
-  </article>`).join("");
-  return documentShell("Vásárlási nyilatkozat", copies, `
+  </article>`;
+  return documentShell("Vásárlási nyilatkozat", content, `
     .purchase-original { position: relative; width: calc(100% - 32px); max-width: 210mm; min-height: 297mm; padding: 19mm 25mm 18mm; color: black; font-family: "Times New Roman", Times, serif; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
     .purchase-original p { font-size: 16px; line-height: 1.2; }
-    .purchase-original .purchase-copy { position: absolute; top: 8mm; right: 29mm; color: #999; font-size: 20px; }
     .purchase-original h1 { font-size: 18.67px; line-height: 1.15; font-weight: bold; }
     .purchase-original .purchase-subtitle { font-size: 13.33px; line-height: 1.15; }
     .purchase-original section { margin-top: 18px; }
@@ -327,7 +325,7 @@ export function buildPurchaseDeclarationHtml(customer: Customer, declaration: Pu
     .purchase-original .purchase-signature-line { border-top: .7px solid black; font-style: italic; }
     .purchase-original .purchase-footnote { margin-top: 20px; font-size: 13.33px; line-height: 1.15; break-inside: avoid; }
     .purchase-original .purchase-footnote::before { display: block; width: 50mm; border-top: .7px solid black; content: ""; margin-bottom: 7px; }
-    @media screen and (max-width: 600px) { .purchase-original { padding: 55px 20px 28px; min-height: 0; } .purchase-original .purchase-copy { top: 16px; right: 20px; } .purchase-original .purchase-seller, .purchase-original .purchase-buyer, .purchase-original .purchase-buyer-fields { margin-left: 12px; } .purchase-original .purchase-signatures { flex-wrap: wrap; } .purchase-original .purchase-date { flex-basis: 100%; } .purchase-original .purchase-signature { margin-left: auto; max-width: 80%; } }
+    @media screen and (max-width: 600px) { .purchase-original { padding: 55px 20px 28px; min-height: 0; } .purchase-original .purchase-seller, .purchase-original .purchase-buyer, .purchase-original .purchase-buyer-fields { margin-left: 12px; } .purchase-original .purchase-signatures { flex-wrap: wrap; } .purchase-original .purchase-date { flex-basis: 100%; } .purchase-original .purchase-signature { margin-left: auto; max-width: 80%; } }
     @page { margin: 0; }
     @media print { .purchase-original { width: 210mm; max-width: 210mm; min-height: 297mm; height: auto; overflow: visible; margin: 0; padding: 19mm 25mm 18mm; line-height: 1.15; break-after: page; } .purchase-original p { line-height: inherit; } .purchase-original:last-child { break-after: auto; } .purchase-original thead { display: table-header-group; } }
   `);
