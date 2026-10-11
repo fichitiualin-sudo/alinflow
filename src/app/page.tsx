@@ -20,6 +20,7 @@ import type {
   InventoryItem,
   KlimalinCatalogProduct,
   LeadImportCandidate,
+  MaintenanceOrigin,
   PurchaseDeclaration,
   QuoteItem,
   QuotePricingMode,
@@ -127,6 +128,7 @@ import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
 import { QuotePreviewPanel } from "@/components/alinflow/QuotePreviewPanel";
 import { SchedulePanel } from "@/components/alinflow/SchedulePanel";
 import { SettingsPanel } from "@/components/alinflow/SettingsPanel";
+import { MaintenanceOriginEditor } from "@/components/alinflow/MaintenanceOriginEditor";
 import { notifyGoogleCalendarAppointmentsChanged, useGoogleCalendarSync } from "@/components/alinflow/GoogleCalendarSync";
 import { ActionFeedbackProvider, useActionFeedback } from "@/components/alinflow/ActionFeedback";
 import {
@@ -156,6 +158,7 @@ import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLab
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { buildMaintenanceMapPoints, hasMaintenanceMapCoordinates, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
+import { isMissingMaintenanceOriginSchemaError, maintenanceOriginFromRow, maintenanceOriginPayload } from "@/lib/alinflow/maintenance-origin";
 import { createCalendarEmailDelivery, runCalendarEmailDelivery, type CalendarEmailDelivery } from "@/lib/alinflow/calendar-email-delivery";
 import { normalizePostalCodeInput, uniqueSettlementByCity, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
 import {
@@ -430,6 +433,13 @@ export default function Home() {
   return <ActionFeedbackProvider><HomeContent /></ActionFeedbackProvider>;
 }
 
+function restoreCustomerMaintenanceOrigin(customer: Customer, savedWork?: Customer): Customer {
+  const source = savedWork?.id === customer.id && savedWork.activeAppointmentId === customer.activeAppointmentId
+    ? savedWork : customer;
+  const maintenanceOrigin = customer.activeAppointmentId && source.maintenanceOrigin === "external" ? "external" : "own";
+  return { ...customer, maintenanceOrigin, maintenanceSourceName: maintenanceOrigin === "external" ? source.maintenanceSourceName : undefined };
+}
+
 function HomeContent() {
   const [view,setView] = useState<View>("dashboard");
   const [taskFilter,setTaskFilter] = useState<TaskFilter>("today");
@@ -479,6 +489,7 @@ function HomeContent() {
   }>());
   const [workFocusTarget,setWorkFocusTarget] = useState<"close-actions" | null>(null);
   const [maintenanceMapGeocodingBusy,setMaintenanceMapGeocodingBusy] = useState(false);
+  const [maintenanceOriginEdit,setMaintenanceOriginEdit] = useState<{ point: MaintenanceMapPoint; workspaceId: string } | null>(null);
   const [mapMode,setMapMode] = useState<"callbacks" | "maintenance">("maintenance");
   const [user,setUser] = useState<User | null>(null);
   const [authLoading,setAuthLoading] = useState(true);
@@ -606,6 +617,7 @@ function HomeContent() {
   function setWorkspaceContext(workspace: Workspace | null, schemaAvailable: boolean) {
     if (activeWorkspaceIdRef.current !== (workspace?.id || null)) {
       setMessage("");
+      setMaintenanceOriginEdit(null);
       quoteReceiptsRef.current.clear();
       appointmentReceiptsRef.current.clear();
       invoiceReceiptsRef.current.clear();
@@ -1181,7 +1193,7 @@ function HomeContent() {
     const scopedCustomer = alreadyScoped ? c : workScopedCustomer(c);
     const draft = draftForCustomer(scopedCustomer);
     const activeDraft = draft?.customer.activeAppointmentId === scopedCustomer.activeAppointmentId ? draft : null;
-    const customerToOpen = activeDraft?.customer || scopedCustomer;
+    const customerToOpen = restoreCustomerMaintenanceOrigin(activeDraft?.customer || scopedCustomer, scopedCustomer);
     const itemsToOpen = activeDraft?.quoteItems || scopedCustomer.quoteItems || EMPTY_QUOTE_ITEMS;
 
     setSelected(customerToOpen);
@@ -1253,8 +1265,8 @@ function HomeContent() {
     setSelected((current) => applyPatch(current));
   }
 
-  async function geocodeMissingMaintenanceMapPoints() {
-    const targets = maintenanceMapPoints
+  async function geocodeMissingMaintenanceMapPoints(visiblePoints: MaintenanceMapPoint[] = maintenanceMapPoints) {
+    const targets = visiblePoints
       .filter((point) => !hasMaintenanceMapCoordinates(point) && point.address)
       .slice(0, 30);
 
@@ -1384,6 +1396,52 @@ function HomeContent() {
     await toggleAppointmentMaintenanceOptOut(point.appointmentId, checked);
   }
 
+  async function saveMaintenanceOrigin(point: MaintenanceMapPoint, origin: MaintenanceOrigin, sourceName: string, expectedWorkspaceId: string) {
+    const workspaceId = currentWorkspaceId();
+    if (!workspaceId || workspaceId !== expectedWorkspaceId) return false;
+    if (!point.appointmentId || !isInstallationAppointment(point.customer.appointmentType)) {
+      setMessage("A besorolás csak mentett telepítésnél módosítható.", "error");
+      return false;
+    }
+    const actionKey = `maintenance-origin:${workspaceId}:${point.appointmentId}`;
+    if (!beginAction(actionKey)) return false;
+    setMessage("Besorolás mentése...", "pending");
+    try {
+      const payload = maintenanceOriginPayload(origin, sourceName);
+      const { data, error } = await supabase.from("appointments").update(payload)
+        .eq("workspace_id", workspaceId).eq("customer_id", point.customerId).eq("id", point.appointmentId)
+        .or("appointment_type.is.null,appointment_type.eq.installation")
+        .select("id,customer_id,maintenance_origin,maintenance_source_name").maybeSingle();
+      if (currentWorkspaceId() !== workspaceId) return false;
+      if (error) {
+        if (isMissingMaintenanceOriginSchemaError(error)) throw new Error("A besorolás adatbázis-frissítése még nem elérhető.");
+        throw error;
+      }
+      if (!data || data.id !== point.appointmentId || data.customer_id !== point.customerId) {
+        throw new Error("A telepítés nem érhető el vagy nincs módosítási jogosultságod. Frissítsd a listát.");
+      }
+      // An already running read may still contain the pre-save classification.
+      const inFlightLoad = loadCustomersPromiseRef.current;
+      if (inFlightLoad) await inFlightLoad.catch(() => {});
+      if (currentWorkspaceId() !== workspaceId) return false;
+      const patch = maintenanceOriginFromRow(data);
+      patchAppointmentMapData(point.appointmentId, patch);
+      const draft = readCustomerDraft();
+      if (draft?.customer.id === point.customerId && draft.customer.activeAppointmentId === point.appointmentId) {
+        const nextDraft = { ...draft, customer: { ...draft.customer, ...patch } };
+        writeCustomerDraft(nextDraft);
+        setDraftNotice(nextDraft);
+      }
+      setMessage(origin === "external" ? "Mentve: karbantartásra átvett klímák." : "Mentve: saját telepítés.");
+      return true;
+    } catch (error: any) {
+      if (currentWorkspaceId() === workspaceId) setMessage(`Besorolás mentési hiba: ${error.message}`, "error");
+      return false;
+    } finally {
+      endAction(actionKey);
+    }
+  }
+
   async function toggleCustomerMaintenanceOptOut(customer: Customer, checked: boolean) {
     if (!customer.activeAppointmentId) {
       setMessage("A karbantartási jelöléshez előbb mentsd az időpontot.");
@@ -1399,7 +1457,7 @@ function HomeContent() {
       setDraftNotice(null);
       return;
     }
-    setSelected(draft.customer);
+    setSelected(restoreCustomerMaintenanceOrigin(draft.customer, workScopedCustomer(draft.customer)));
     setQuoteItems(draft.quoteItems.length ? draft.quoteItems : draft.customer.quoteItems || EMPTY_QUOTE_ITEMS);
     setScheduleDate(draft.scheduleDate || draft.customer.date || todayIso());
     setScheduleTime(draft.scheduleTime || firstAppointmentTime(draft.customer.time));
@@ -2858,6 +2916,7 @@ function HomeContent() {
         maintenanceInstallations: loadedAppointmentType === "maintenance" ? maintenanceInstallations : undefined,
         maintenanceOptOut: Boolean(appointment?.maintenance_opt_out),
         maintenanceOptOutAt: appointment?.maintenance_opt_out_at || undefined,
+        ...maintenanceOriginFromRow(appointment),
         mapLatitude: numericDbValue(appointment?.latitude),
         mapLongitude: numericDbValue(appointment?.longitude),
         mapGeocodedAt: appointment?.geocoded_at || undefined,
@@ -2892,12 +2951,15 @@ function HomeContent() {
     const selectedFromDraftDb = customerDraft?.customer.id
       ? loadedCustomers.find((customer) => customer.id === customerDraft.customer.id)
       : undefined;
+    const selectedFromDraftWork = customerDraft?.customer.activeAppointmentId
+      ? nextWorkHistory[customerDraft.customer.id]?.find((work) => work.activeAppointmentId === customerDraft.customer.activeAppointmentId)
+      : undefined;
     const selectedFromDraft = customerDraft
-      ? {
+      ? restoreCustomerMaintenanceOrigin({
           ...(selectedFromDraftDb || {}),
           ...customerDraft.customer,
           quoteItems: customerDraft.quoteItems.length ? customerDraft.quoteItems : customerDraft.customer.quoteItems,
-        } as Customer
+        } as Customer, selectedFromDraftWork)
       : undefined;
     const selectedFromCurrentState = selected.id
       ? loadedCustomers.find((customer) => customer.id === selected.id)
@@ -3375,6 +3437,8 @@ function HomeContent() {
       time: normalizedTime,
       appointmentType,
       activeAppointmentId: undefined,
+      maintenanceOrigin: "own",
+      maintenanceSourceName: undefined,
       activeQuoteId: undefined,
       activeWorkReportId: undefined,
       status: "Időpont foglalva",
@@ -3481,6 +3545,7 @@ function HomeContent() {
     if (!isInstallationAppointment(selected.appointmentType)) {
       setSelected((prev) => ({ ...prev, appointmentType: "installation", date: undefined, time: undefined,
         activeAppointmentId: undefined, activeQuoteId: undefined, activeWorkReportId: undefined,
+        maintenanceOrigin: "own", maintenanceSourceName: undefined,
         stockDeducted: false, stockDeductedAt: undefined, materialUsage: undefined }));
     }
     setScheduleAppointmentType("installation");
@@ -3885,6 +3950,8 @@ function HomeContent() {
       time:slotToValidate,
       appointmentType: normalizedScheduleAppointmentType,
       activeAppointmentId: typeChanged ? undefined : selected.activeAppointmentId,
+      maintenanceOrigin: typeChanged || !selected.activeAppointmentId ? "own" : selected.maintenanceOrigin,
+      maintenanceSourceName: typeChanged || !selected.activeAppointmentId ? undefined : selected.maintenanceSourceName,
       activeQuoteId: typeChanged ? undefined : selected.activeQuoteId,
       activeWorkReportId: typeChanged ? undefined : selected.activeWorkReportId,
       stockDeducted: typeChanged ? false : selected.stockDeducted,
@@ -4230,6 +4297,8 @@ function HomeContent() {
         time: undefined,
         appointmentType: "installation",
         activeAppointmentId: undefined,
+        maintenanceOrigin: "own",
+        maintenanceSourceName: undefined,
         activeQuoteId: undefined,
         activeWorkReportId: undefined,
         quoteItems: EMPTY_QUOTE_ITEMS,
@@ -4339,6 +4408,8 @@ function HomeContent() {
       time: undefined,
       appointmentType: "maintenance",
       activeAppointmentId: undefined,
+      maintenanceOrigin: "own",
+      maintenanceSourceName: undefined,
       activeQuoteId: undefined,
       activeWorkReportId: undefined,
       status: "Időpont foglalva",
@@ -4589,13 +4660,26 @@ function HomeContent() {
         {mapMode === "callbacks" ? (
           <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} onDeleteCustomer={(customer) => deleteCustomer(customer, { stayOnMap: true })} />
         ) : <MaintenanceMapPanel
+          key={`${activeWorkspace?.id || "no-workspace"}:${user?.id || "no-user"}`}
+          preferenceKey={activeWorkspace?.id && user?.id ? `alinflow:maintenance-visibility:${user.id}:${activeWorkspace.id}` : undefined}
           points={maintenanceMapPoints}
           googleMapsApiKey={googleMapsApiKey}
           geocodingBusy={maintenanceMapGeocodingBusy}
           onOpenCustomer={(customer) => openCustomer(customer, "work")}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
           onToggleMaintenanceOptOut={toggleMaintenanceOptOut}
+          onEditMaintenanceOrigin={(point) => {
+            const workspaceId = currentWorkspaceId();
+            if (workspaceId) setMaintenanceOriginEdit({ point, workspaceId });
+          }}
         />}
+        {maintenanceOriginEdit && maintenanceOriginEdit.workspaceId === activeWorkspace?.id ? <MaintenanceOriginEditor
+          key={`${maintenanceOriginEdit.workspaceId}:${maintenanceOriginEdit.point.appointmentId}`}
+          point={maintenanceOriginEdit.point}
+          busy={pendingActions.includes(`maintenance-origin:${maintenanceOriginEdit.workspaceId}:${maintenanceOriginEdit.point.appointmentId}`)}
+          onSave={(origin, sourceName) => saveMaintenanceOrigin(maintenanceOriginEdit.point, origin, sourceName, maintenanceOriginEdit.workspaceId)}
+          onClose={() => setMaintenanceOriginEdit(null)}
+        /> : null}
       </Shell>
     );
   }

@@ -83,6 +83,14 @@ A `WorkReport` több rekordot enged ugyanahhoz az ügyfélhez. A szerelési és 
 
 ## Supabase fő táblák
 
+### Saját és karbantartásra átvett telepítések (2026-10-11)
+
+Az `appointments.maintenance_origin` értéke `own` (alapérték) vagy `external`; domainmezője `Customer.maintenanceOrigin`. Az opcionális `maintenance_source_name` / `maintenanceSourceName` az átadó megjelenített neve, legfeljebb 160 karakter. Csak telepítési rekord sorolható átvettre, és átadó csak ehhez menthető. Az egy szerelési időponthoz tartozó klímák együtt kapják a besorolást, az ügyfél többi telepítése változatlan. Régi rekordok `own` értékkel maradnak láthatók; a migráció nem következtet importforrásból telepítőre.
+
+A besorolás nem jogosultság, nem partnerkapcsolat és nem hozzájárulás. A meglévő munkaterületi RLS változatlan, a szerkesztés munkaterület/ügyfél/időpont szerint szűkített. A két nézeti kapcsoló a böngészőben felhasználó és munkaterület szerint tárolódik, kizárólag a láthatóságot módosítja. Migráció: `docs/sql/20261011_ADD_MAINTENANCE_ORIGIN.sql`.
+
+A `20261011_EXCLUDE_MAINTENANCE_ORIGIN_FROM_CALENDAR.sql` külön, idempotens migráció a meglévő Google Naptár-triggerben a két besorolási mezőt kihagyja a változás-összehasonlításból. Egy önálló besorolásmentés így nem ütemez naptárfrissítést; időpont-, státusz- és egyéb tartalmi változások továbbra is igen. A függvény tulajdonosa, jogosultságai és biztonsági beállításai változatlanok.
+
 ### Aláírt adatkezelési tájékoztatók (2026-10-11)
 
 A `work_reports.privacy_notice` nullable JSON-pillanatkép; TypeScript-mezője `WorkReport.privacyNotice`. Tartalmazza a verziót, a készülékértékesítő és a munkát végző vállalkozás adatait (`controllers`), a név szerint megjelölt partnert vagy `null` értéket, az ügyfél négy adatát, a teljes tájékoztató és hozzájárulás szövegét, a pipa állapotát, az aláíró nevét, aláírásképét és az aláírás időpontját. A szerver ellenőrzi a megengedett mezőket és méreteket, valamint az egyezést a munkalap mentett aláírásával. Régi, hiányos aláírási időpontú munkalapok tájékoztató nélkül továbbra is menthetők; a migráció nem tölti visszamenőleg a mezőt.

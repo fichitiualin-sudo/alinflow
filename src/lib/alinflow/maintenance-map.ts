@@ -4,6 +4,7 @@ import { displayAddress } from "./format";
 import { climateSummary } from "./products";
 
 export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "optOut" | "unknown";
+export type MaintenanceMapVisibility = { own: boolean; external: boolean };
 
 export type MaintenanceMapPoint = {
   appointmentId: string;
@@ -19,6 +20,8 @@ export type MaintenanceMapPoint = {
   lastMaintenanceDate?: string;
   nextMaintenanceDue?: string;
   maintenanceCount: number;
+  maintenanceOrigin: "own" | "external";
+  maintenanceSourceName?: string;
   status: MaintenanceMapStatus;
   latitude?: number;
   longitude?: number;
@@ -35,6 +38,43 @@ export type MaintenanceMapPointGroup = {
 };
 
 export const MAINTENANCE_DUE_SOON_DAYS = 60;
+
+export function normalizeMaintenanceMapVisibility(value: unknown): MaintenanceMapVisibility {
+  const saved = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    own: typeof saved.own === "boolean" ? saved.own : true,
+    external: typeof saved.external === "boolean" ? saved.external : true,
+  };
+}
+
+function normalizeSearch(value?: string) {
+  return String(value || "").toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+}
+
+export function filterMaintenanceMapPoints(points: readonly MaintenanceMapPoint[], {
+  visibility, search = "", status = "all",
+}: {
+  visibility: MaintenanceMapVisibility;
+  search?: string;
+  status?: MaintenanceMapStatus | "all";
+}) {
+  const query = normalizeSearch(search);
+  return points.filter((point) => {
+    const origin = point.maintenanceOrigin === "external" ? "external" : "own";
+    if (!visibility[origin] || (status !== "all" && point.status !== status)) return false;
+    return !query || normalizeSearch([
+      point.customerName, point.climateSummary, point.address, point.city,
+      origin === "external" ? point.maintenanceSourceName : "",
+    ].join(" ")).includes(query);
+  });
+}
+
+export function maintenanceMapOriginLabel(point: MaintenanceMapPoint) {
+  if (point.maintenanceOrigin !== "external") return "Saját telepítés";
+  const source = point.maintenanceSourceName?.trim();
+  return `Karbantartásra átvett${source ? ` · ${source}` : ""}`;
+}
 
 export function hasMaintenanceMapCoordinates(
   point: MaintenanceMapPoint,
@@ -208,6 +248,8 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
         lastMaintenanceDate,
         nextMaintenanceDue,
         maintenanceCount: maintenances.length,
+        maintenanceOrigin: installation.maintenanceOrigin === "external" ? "external" : "own",
+        maintenanceSourceName: installation.maintenanceOrigin === "external" ? installation.maintenanceSourceName?.trim() : undefined,
         status,
         latitude: installation.mapLatitude,
         longitude: installation.mapLongitude,

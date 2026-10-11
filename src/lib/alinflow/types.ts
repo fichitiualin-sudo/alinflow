@@ -20,6 +20,7 @@ export type CalendarMode = "week" | "month";
 export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document" | "all_work_reports";
 export type QuotePricingMode = "bundle" | "alternatives";
 export type AppointmentType = "installation" | "survey" | "maintenance";
+export type MaintenanceOrigin = "own" | "external";
 export type CustomerTimelineTone = "emerald" | "cyan" | "violet" | "blue" | "amber" | "slate";
 
 export type Workspace = {
@@ -148,6 +149,8 @@ export type Customer = {
   maintenanceInstallations?: MaintenanceInstallationSummary[];
   maintenanceOptOut?: boolean;
   maintenanceOptOutAt?: string;
+  maintenanceOrigin?: MaintenanceOrigin;
+  maintenanceSourceName?: string;
   mapLatitude?: number;
   mapLongitude?: number;
   mapGeocodedAt?: string;

@@ -17,6 +17,8 @@ export type AppointmentRecordRow = {
   geocode_error?: string | null;
   maintenance_opt_out?: boolean | null;
   maintenance_opt_out_at?: string | null;
+  maintenance_origin?: string | null;
+  maintenance_source_name?: string | null;
   created_by?: string | null;
   legacy_source_key?: string | null;
   created_at?: string | null;
