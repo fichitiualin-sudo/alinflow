@@ -1,4 +1,4 @@
-import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
+import type { Customer, PurchaseDeclaration, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemProductMedia, itemQuantity, itemTotal, itemUnitPrice, total } from "@/lib/alinflow/products";
@@ -14,8 +14,16 @@ function formatDocumentDate(value?: string) {
   return date.toLocaleDateString("hu-HU", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
 }
 
-function dottedLine(value?: string) {
-  return <span className="inline-block min-w-[180px] border-b border-dotted border-slate-900 px-1 pb-0.5 font-bold">{value || "\u00A0"}</span>;
+function declarationDate(value?: string, fallbackDate?: string) {
+  if (value) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString("hu-HU", { timeZone: "Europe/Budapest", year: "numeric", month: "2-digit", day: "2-digit" });
+  }
+  if (fallbackDate) {
+    const date = new Date(`${fallbackDate.slice(0, 10)}T12:00:00`);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString("hu-HU");
+  }
+  return "";
 }
 
 function formatQuoteIssuedAt(value?: string) {
@@ -65,88 +73,93 @@ export function WorkReportDocument({ customer, report, quoteItems, workspaceSett
   const reportCustomer = customerWithReportDate(customer, report);
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
-  const footerLines = settingsFooterLines(workspaceSettings || defaultWorkspaceSettings(null), "workReport");
+  const settings = workspaceSettings || defaultWorkspaceSettings(null);
+  const footerLines = settingsFooterLines(settings, "workReport");
   const workType = appointmentTypeLabel(reportCustomer.appointmentType);
   const workTime = reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, items) : appointmentTimeRangeLabel(reportCustomer);
   const workTitle = workReportTitle(reportCustomer.appointmentType);
   const workNote = appointmentWorkLabel(reportCustomer.appointmentType);
   const workDate = reportCustomer.date;
   return (
-    <article className="doc-print-page work-report-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[13px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[14mm] print:text-[11.5px] print:shadow-none">
-      <div className="text-center">
-        <h2 className="text-xl font-black leading-none tracking-tight print:text-[17px]">{workTitle.toUpperCase()}</h2>
-        <p className="mt-1 text-xs font-bold print:text-[9.5px]">az elvégzett munka és átadás-átvétel visszaigazolására</p>
-      </div>
+    <article className="doc-print-page work-report-doc mx-auto max-w-[210mm] rounded-2xl bg-white p-5 font-sans text-[13px] leading-relaxed text-slate-900 shadow-xl [overflow-wrap:anywhere] sm:p-8 print:m-0 print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-visible print:rounded-none print:border-0 print:p-[14mm] print:text-[11.5px] print:shadow-none">
+      <header className="border-b-2 border-teal-700 pb-5 print:pb-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-teal-700 print:text-[9px]">{settingsBrandName(settings)}</p>
+        <h2 className="mt-2 text-[25px] font-bold leading-tight tracking-tight print:text-[23px]">{workTitle}</h2>
+        <p className="mt-2 text-[11px] text-slate-500 print:text-[10px]">az elvégzett munka és átadás-átvétel visszaigazolására</p>
+      </header>
 
-      <div className="mt-4 space-y-3 print:mt-3 print:space-y-2">
-        <section>
-          <h3 className="mb-1 font-black">Ügyfél adatai:</h3>
-          <div className="ml-3 space-y-0.5">
-            <p>neve: {dottedLine(customer.name)}</p>
-            <p>címe: {dottedLine(fullCustomerAddress(customer))}</p>
-            <p>telefonszáma: {dottedLine(customer.phone)}</p>
-            <p>email címe: {dottedLine(customer.email)}</p>
-          </div>
-        </section>
+      <div className="mt-6 space-y-6 print:mt-5 print:space-y-5">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 print:grid-cols-2 print:gap-8">
+          <section className="min-w-0">
+            <h3 className="mb-3 break-after-avoid text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700 print:text-[9.5px]">Ügyfél adatai</h3>
+            <dl className="space-y-2">
+              <div><dt className="text-[10px] text-slate-500">Név</dt><dd className="font-semibold">{customer.name || "—"}</dd></div>
+              <div><dt className="text-[10px] text-slate-500">Cím</dt><dd>{fullCustomerAddress(customer) || "—"}</dd></div>
+              <div><dt className="text-[10px] text-slate-500">Telefonszám</dt><dd>{customer.phone || "—"}</dd></div>
+              <div><dt className="text-[10px] text-slate-500">Email</dt><dd>{customer.email || "—"}</dd></div>
+            </dl>
+          </section>
+          <section className="min-w-0">
+            <h3 className="mb-3 break-after-avoid text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700 print:text-[9.5px]">Munka adatai</h3>
+            <dl className="space-y-2">
+              <div><dt className="text-[10px] text-slate-500">Munka típusa</dt><dd className="font-semibold">{workType}</dd></div>
+              <div><dt className="text-[10px] text-slate-500">Munka dátuma</dt><dd>{formatDocumentDate(workDate)}</dd></div>
+              <div><dt className="text-[10px] text-slate-500">Idősáv</dt><dd>{workTime}</dd></div>
+              <div><dt className="text-[10px] text-slate-500">Helyszín</dt><dd>{fullCustomerAddress(customer) || "—"}</dd></div>
+            </dl>
+          </section>
+        </div>
 
         <section>
-          <h3 className="mb-1 font-black">Munka adatai:</h3>
-          <div className="ml-3 space-y-0.5">
-            <p>munka típusa: {dottedLine(workType)}</p>
-            <p>munka dátuma: {dottedLine(formatDocumentDate(workDate))}</p>
-            <p>idősáv: {dottedLine(workTime)}</p>
-            <p>helyszín: {dottedLine(fullCustomerAddress(customer))}</p>
-          </div>
-        </section>
-
-        <section>
-          <table className="w-full border-collapse text-[11px] print:text-[9.5px]">
-            <thead>
+          <h3 className="mb-3 break-after-avoid text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700 print:text-[9.5px]">Készülékek</h3>
+          <table className="w-full table-fixed border-collapse text-[11px] print:text-[10px]">
+            <thead className="bg-slate-50">
               <tr>
-                <th className="border border-slate-900 p-1.5 text-center print:p-1">Készülék megnevezése</th>
-                <th className="w-16 border border-slate-900 p-1.5 text-center print:p-1">Darab</th>
-                <th className="w-32 border border-slate-900 p-1.5 text-center print:p-1">Megjegyzés</th>
+                <th className="border-y border-slate-200 px-3 py-2 text-left font-semibold">Készülék megnevezése</th>
+                <th className="w-14 border-y border-slate-200 px-2 py-2 text-center font-semibold">Darab</th>
+                <th className="w-[30%] border-y border-slate-200 px-3 py-2 text-left font-semibold">Megjegyzés</th>
               </tr>
             </thead>
             <tbody>
-              {shownItems.map((item, index)=><tr key={`${item.productId}-${index}`}>
-                <td className="border border-slate-900 p-1.5 print:p-1">{itemName(item)}</td>
-                <td className="border border-slate-900 p-1.5 text-center font-bold print:p-1">{itemQuantity(item)}</td>
-                <td className="border border-slate-900 p-1.5 print:p-1">{workNote}</td>
+              {shownItems.map((item, index)=><tr key={`${item.productId}-${index}`} className="break-inside-avoid">
+                <td className="border-b border-slate-200 px-3 py-2.5 align-top">{itemName(item)}</td>
+                <td className="border-b border-slate-200 px-2 py-2.5 text-center align-top font-semibold">{itemQuantity(item)}</td>
+                <td className="border-b border-slate-200 px-3 py-2.5 align-top text-slate-600">{workNote}</td>
               </tr>)}
             </tbody>
           </table>
         </section>
 
         <section>
-          <h3 className="mb-1 font-black">Elvégzett munka:</h3>
-          <p className="whitespace-pre-wrap border border-slate-900 p-2.5 text-justify print:p-2">{report.workDescription || defaultWorkDescription(reportCustomer.appointmentType)}</p>
+          <h3 className="mb-2 break-after-avoid text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700 print:text-[9.5px]">Elvégzett munka</h3>
+          <p className="whitespace-pre-wrap">{report.workDescription || defaultWorkDescription(reportCustomer.appointmentType)}</p>
         </section>
 
-        <section>
-          <h3 className="mb-1 font-black">Átadás-átvételi nyilatkozat:</h3>
-          <p className="border border-slate-900 p-2.5 text-justify print:p-2">{workAcceptanceText(reportCustomer.appointmentType)}</p>
+        {report.notes ? <section><h3 className="mb-2 break-after-avoid text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700 print:text-[9.5px]">Megjegyzés</h3><p className="whitespace-pre-wrap">{report.notes}</p></section> : null}
+
+        <section className="border-l-2 border-teal-700 pl-4">
+          <h3 className="mb-1 break-after-avoid text-[11px] font-semibold print:text-[10px]">Átadás-átvételi nyilatkozat</h3>
+          <p className="text-[11px] leading-relaxed text-slate-600 print:text-[10px]">{workAcceptanceText(reportCustomer.appointmentType)}</p>
         </section>
 
-        {report.notes ? <section><h3 className="mb-1 font-black">Megjegyzés:</h3><p className="whitespace-pre-wrap border border-slate-900 p-2 print:p-1.5">{report.notes}</p></section> : null}
-
-        <section className="mt-4 flex items-end justify-between gap-4 print:mt-3">
-          <div className="min-w-0">
-            <p>Kelt: {dottedLine(formatDocumentDate(workDate) || new Date().toLocaleDateString("hu-HU"))}</p>
+        <section className="flex break-inside-avoid flex-col items-end justify-between gap-5 pt-3 sm:flex-row print:flex-row print:pt-2">
+          <div className="min-w-0 self-start sm:self-auto print:self-auto">
+            <p className="text-[10px] text-slate-500">Kelt</p>
+            <p className="mt-1 text-[11px]">{formatDocumentDate(workDate)}</p>
           </div>
-          <div className="w-[56mm] text-center">
-            {report.signatureDataUrl ? <img src={report.signatureDataUrl} alt="Ügyfél aláírása" className="mx-auto mb-1 max-h-[22mm] max-w-full object-contain print:max-h-[18mm]"/> : <div className="mb-1 h-[18mm] border border-dashed border-slate-400"/>}
-            <div className="border-t border-slate-900 pt-1 italic">Ügyfél aláírása</div>
-            {hasValidWorkReportSignature(report) ? <p className="mt-0.5 text-[10px] print:text-[8.5px]">Aláírva: {formatSignedAt(report.signedAt)}</p> : null}
+          <div className="w-[56mm] max-w-full shrink-0 text-center">
+            {report.signatureDataUrl ? <img src={report.signatureDataUrl} alt="Ügyfél aláírása" className="mx-auto mb-2 max-h-[22mm] max-w-full object-contain print:max-h-[18mm]"/> : <div className="mb-2 h-[18mm]"/>}
+            <div className="border-t border-slate-400 pt-2 text-[11px] font-medium">Ügyfél aláírása</div>
+            {hasValidWorkReportSignature(report) ? <p className="mt-1 text-[9px] text-slate-500">Aláírva: {formatSignedAt(report.signedAt)}</p> : null}
           </div>
         </section>
 
-        <div className="border-t border-slate-900 pt-1 text-[10px] leading-tight print:text-[8.5px]">
+        <footer className="break-inside-avoid border-t border-slate-200 pt-3 text-[10px] leading-relaxed text-slate-500 print:text-[9px]">
           Üdvözlettel,<br />
           {footerLines.map((line, index) => (
             <span key={`${line}-${index}`}>{index === 0 ? <strong>{line}</strong> : line}{index < footerLines.length - 1 ? <br /> : null}</span>
           ))}
-        </div>
+        </footer>
       </div>
     </article>
   );
@@ -196,72 +209,97 @@ export function AllWorkReportsDocument({ customer, reports, quoteItems, workspac
   );
 }
 
-export function PurchaseDeclarationDocument({ customer, report, quoteItems, seller }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[]; seller?: SellerCompany }) {
+export function PurchaseDeclarationDocument({ customer, report, quoteItems, seller, declaration }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[]; seller?: SellerCompany; declaration?: PurchaseDeclaration }) {
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
   const shownSeller = seller || DEFAULT_SELLER_COMPANY;
+  const signature = declaration ? declaration.signatureDataUrl : report.signatureDataUrl;
+  const signerName = declaration ? declaration.signerName : report.signerName;
+  const savedDate = declaration ? declaration.signedAt || declaration.createdAt : report.signedAt || report.createdAt;
+  const issuedDate = declarationDate(savedDate, report.workDate || customer.date);
+  const field = (label: string, value = "") => <p className="purchase-field"><span>{label}</span><span className="purchase-field-value">{value || "\u00A0"}</span></p>;
   return (
-    <article className="doc-print-page purchase-doc mx-auto max-w-[210mm] rounded-3xl bg-white p-8 font-serif text-[12px] leading-snug text-slate-950 shadow-2xl print:m-0 print:h-[297mm] print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-hidden print:rounded-none print:border-0 print:p-[12mm] print:text-[10px] print:leading-[1.2] print:shadow-none">
-      <div className="text-center">
-        <h2 className="text-lg font-black leading-none tracking-tight print:text-[15px]">VÁSÁRLÁSI<br />NYILATKOZAT</h2>
-        <p className="mt-1 text-[10px] font-bold leading-tight print:text-[8.3px]">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet<br />28. § (5) bekezdése alapján</p>
-      </div>
-
-      <div className="mt-3 space-y-2 print:mt-2 print:space-y-1.5">
+    <>
+      <style>{`
+        .purchase-original { position: relative; box-sizing: border-box; width: 100%; max-width: 210mm; min-height: 297mm; margin: 0 auto 24px; padding: 19mm 25mm 18mm; background: white; color: black; font-family: "Times New Roman", Times, serif; font-size: 16px; line-height: 1.2; box-shadow: 0 12px 32px #0f172a18; overflow-wrap: anywhere; }
+        .purchase-original p, .purchase-original h2, .purchase-original h3 { margin: 0; }
+        .purchase-original .purchase-copy { position: absolute; top: 8mm; right: 29mm; color: #999; font-size: 20px; }
+        .purchase-original h2 { text-align: center; font-size: 18.67px; line-height: 1.15; font-weight: bold; }
+        .purchase-original .purchase-subtitle { font-size: 13.33px; line-height: 1.15; }
+        .purchase-original section { margin-top: 18px; }
+        .purchase-original h3 { margin-bottom: 16px; font-weight: bold; font-size: 16px; break-after: avoid; }
+        .purchase-original .purchase-seller { margin-left: 12.5mm; }
+        .purchase-original .purchase-buyer { margin-left: 6.25mm; }
+        .purchase-original .purchase-buyer-fields { margin-left: 6.25mm; }
+        .purchase-original .purchase-person { margin-top: 24px; }
+        .purchase-original .purchase-field { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 4px; line-height: 1.35; }
+        .purchase-original .purchase-field-value { flex: 1; min-width: 40px; border-bottom: 1px dotted black; padding: 0 2px; }
+        .purchase-original .purchase-paragraph { margin-top: 16px; text-align: justify; }
+        .purchase-original table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 18px; font-size: 14.67px; }
+        .purchase-original th, .purchase-original td { border: .7px solid black; padding: 12px; vertical-align: middle; }
+        .purchase-original th { font-weight: bold; text-align: center; height: 14mm; }
+        .purchase-original td { height: 15mm; }
+        .purchase-original tr { break-inside: avoid; }
+        .purchase-original .purchase-table-note { margin-top: 5px; text-align: justify; }
+        .purchase-original .purchase-signatures { display: flex; align-items: flex-end; gap: 16px; justify-content: space-between; margin-top: 18px; break-inside: avoid; }
+        .purchase-original .purchase-date { flex: 1; align-self: flex-start; margin-top: 4px; }
+        .purchase-original .purchase-signature { width: 82mm; max-width: 53%; text-align: center; }
+        .purchase-original .purchase-signature img { display: block; margin: 0 auto 3px; max-width: 100%; height: 15mm; object-fit: contain; }
+        .purchase-original .purchase-signature-space { height: 10mm; }
+        .purchase-original .purchase-signature-line { border-top: .7px solid black; font-style: italic; }
+        .purchase-original .purchase-footnote { margin-top: 20px; font-size: 13.33px; line-height: 1.15; break-inside: avoid; }
+        .purchase-original .purchase-footnote::before { display: block; width: 50mm; border-top: .7px solid black; content: ""; margin-bottom: 7px; }
+        @media screen and (max-width: 600px) { .purchase-original { padding: 55px 20px 28px; min-height: 0; } .purchase-original .purchase-copy { top: 16px; right: 20px; } .purchase-original .purchase-seller, .purchase-original .purchase-buyer, .purchase-original .purchase-buyer-fields { margin-left: 12px; } .purchase-original .purchase-signatures { flex-wrap: wrap; } .purchase-original .purchase-date { flex-basis: 100%; } .purchase-original .purchase-signature { margin-left: auto; max-width: 80%; } }
+        @media print { .purchase-original { width: 210mm; max-width: 210mm; min-height: 297mm; height: auto; overflow: visible; margin: 0; line-height: 1.15; box-shadow: none; break-after: page; } .purchase-original:last-child { break-after: auto; } .purchase-original thead { display: table-header-group; } }
+      `}</style>
+      {["I.", "II."].map((copy) => <article key={copy} className="doc-print-page purchase-doc purchase-original">
+        <p className="purchase-copy">{copy} példány</p>
+        <header>
+          <h2>VÁSÁRLÁSI<br />NYILATKOZAT</h2>
+          <p className="purchase-subtitle">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló <strong>458/2024. (XII. 30.) Korm. rendelet</strong><br />28. § (5) bekezdése alapján</p>
+        </header>
         <section>
-          <h3 className="font-black">Az értékesítő vállalkozás adatai:</h3>
-          <div className="ml-3 mt-0.5 space-y-0.5">
-            <p>neve: {dottedLine(shownSeller.name)}</p>
-            <p>adószáma: {dottedLine(shownSeller.taxNumber)}</p>
-            <p>a képviseletében eljáró természetes személy neve: {dottedLine(shownSeller.representative)}</p>
+          <h3>Az értékesítő vállalkozás adatai:</h3>
+          <div className="purchase-seller">
+            {field("neve:", shownSeller.name)}
+            {field("adószáma:", shownSeller.taxNumber)}
+            {field("a képviseletében eljáró természetes személy neve:", shownSeller.representative)}
           </div>
         </section>
-
         <section>
-          <h3 className="font-black">A telepíttető adatai:</h3>
-          <div className="ml-3 mt-0.5 space-y-0.5">
-            <p className="font-bold">A.) Vállalkozás, intézmény, egyéb adószámmal rendelkező szervezet</p>
-            <p>neve: {dottedLine("")}</p>
-            <p>adószáma: {dottedLine("")}</p>
-            <p>a képviseletében eljáró természetes személy neve: {dottedLine("")}</p>
-            <p className="mt-1 font-bold">B.) Természetes személy</p>
-            <p>neve: {dottedLine(customer.name || report.signerName)}</p>
-            <p>lakcíme: {dottedLine(fullCustomerAddress(customer))}</p>
+          <h3>A telepíttető adatai:</h3>
+          <div className="purchase-buyer">
+            <p>A.) Vállalkozás, intézmény, egyéb adószámmal rendelkező szervezet</p>
+            <div className="purchase-buyer-fields">
+              {field("neve:")}
+              {field("adószáma:")}
+              {field("a képviseletében eljáró természetes személy neve:")}
+            </div>
+            <p className="purchase-person">B.) Természetes személy</p>
+            <div className="purchase-buyer-fields">
+              {field("neve:", customer.name || signerName)}
+              {field("lakcíme:", fullCustomerAddress(customer))}
+            </div>
           </div>
         </section>
-
-        <p className="text-justify text-[10.2px] leading-tight print:text-[8.6px]">Telepíttető – megfelelve az Európai Parlament és a Tanács 2024/573 Rendeletében, valamint a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. §-ban foglaltaknak – jelen nyilatkozat aláírásával kötelezettséget vállal arra, hogy az alábbi telepítési tanúsítvány-köteles berendezés(ek) telepítését és beüzemelését az arra képesítéssel rendelkező vállalkozás képesített alkalmazottjával fogja elvégeztetni.</p>
-
-        <table className="w-full border-collapse text-[10.5px] print:text-[8.6px]">
-          <thead>
-            <tr>
-              <th className="border border-slate-900 p-1.5 text-center print:p-1">Termék megnevezése</th>
-              <th className="w-[34%] border border-slate-900 p-1.5 text-center print:p-1">Megvásárolt termékek darabszáma</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shownItems.map((item, index)=><tr key={`${item.productId}-${index}`}>
-              <td className="border border-slate-900 p-1.5 print:p-1">{itemName(item)}</td>
-              <td className="border border-slate-900 p-1.5 text-center font-bold print:p-1">{itemQuantity(item)}</td>
-            </tr>)}
-          </tbody>
+        <p className="purchase-paragraph">Telepíttető – megfelelve az Európai Parlament és a Tanács 2024/573 Rendeletében, valamint a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. §-ban foglaltaknak – <strong>jelen nyilatkozat aláírásával kötelezettséget vállal arra, hogy az alábbi telepítési tanúsítvány-köteles berendezés(ek) telepítését és beüzemelését az arra képesítéssel rendelkező vállalkozás képesített alkalmazottjával fogja elvégeztetni.</strong></p>
+        <table>
+          <thead><tr><th className="w-[59%]">Termék megnevezése</th><th>Megvásárolt termékek darabszáma</th></tr></thead>
+          <tbody>{shownItems.map((item, index) => <tr key={`${item.productId}-${index}`}><td>{itemName(item)}</td><td className="text-center">{itemQuantity(item)}</td></tr>)}</tbody>
         </table>
-
-        <p className="text-[9.5px] leading-tight print:text-[7.9px]">*Több berendezés típus vásárlása esetén a táblázat sorainak száma bővíthető egyéni szerkesztéssel</p>
-        <p className="text-justify text-[10.2px] leading-tight print:text-[8.6px]">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos jótállás telepítési tanúsítvány<sup>1</sup> birtokában érvényesíthető.</p>
-        <p className="text-justify text-[10.2px] font-bold leading-tight print:text-[8.6px]">Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</p>
-
-        <section className="mt-3 flex items-end justify-between gap-4 print:mt-2">
-          <div><p>Kelt: {dottedLine(new Date().toLocaleDateString("hu-HU"))}</p></div>
-          <div className="w-[56mm] text-center">
-            {report.signatureDataUrl ? <img src={report.signatureDataUrl} alt="Telepíttető aláírása" className="mx-auto mb-1 max-h-[20mm] max-w-full object-contain print:max-h-[15mm]"/> : <div className="mb-1 h-[16mm] border border-dashed border-slate-400"/>}
-            <div className="border-t border-slate-900 pt-1 italic">Telepíttető</div>
+        <p className="purchase-table-note">*Több berendezés típus vásárlása esetén a táblázat sorainak száma bővíthető egyéni szerkesztéssel</p>
+        <p className="purchase-paragraph">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos <strong>jótállás</strong> telepítési tanúsítvány<sup>1</sup> birtokában érvényesíthető.</p>
+        <p className="purchase-paragraph"><strong>Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</strong></p>
+        <section className="purchase-signatures">
+          <div className="purchase-date">{field("Kelt:", issuedDate)}</div>
+          <div className="purchase-signature">
+            {signature ? <img src={signature} alt="Telepíttető aláírása"/> : <div className="purchase-signature-space"/>}
+            <div className="purchase-signature-line">Telepíttető</div>
           </div>
         </section>
-
-        <div className="border-t border-slate-900 pt-1 text-[9px] leading-tight print:text-[7.3px]"><sup>1</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</div>
-      </div>
-    </article>
+        <footer className="purchase-footnote"><sup>1</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</footer>
+      </article>)}
+    </>
   );
 }
 

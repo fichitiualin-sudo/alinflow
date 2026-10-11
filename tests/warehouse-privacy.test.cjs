@@ -131,8 +131,11 @@ test("warehouse privacy: PDF renderers only pass public document fields to the P
   const record = (...values) => writes.push(values);
   const pdfHarness = harness({}, { "./document-pdf": { async createDocumentPdf(title) {
     record(title);
-    return { text: record, field: record, section: record, table: record, signature: record,
+    return { text: record, field: record, details: record, section: record, table: record, signature: record,
       keepTogether() {}, textHeight() { return 20; }, async save() { return new Uint8Array(); } };
+  } }, "./purchase-declaration-pdf": { async renderPurchaseDeclarationPdf(declaration, customer) {
+    record(declaration, customer);
+    return new Uint8Array();
   } } });
   const render = pdfHarness.load("src/lib/alinflow/document-pdf-render.ts");
   const savedReport = { id: report.id, appointment_type: "installation", work_date: customer.date,

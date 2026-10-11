@@ -1,11 +1,11 @@
 import type { Customer, PurchaseDeclaration, QuoteItem, SellerCompany, WorkReport } from "./types";
-import { appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "./appointments";
+import { appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel } from "./appointments";
 import { fullCustomerAddress } from "./format";
 import { cleanQuoteItems, itemName, itemQuantity } from "./products";
 import { DEFAULT_SELLER_COMPANY } from "./purchase-declarations";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "./work-report";
 import type { WorkspaceSettings } from "./workspace-settings";
-import { defaultWorkspaceSettings, settingsFooterLines } from "./workspace-settings";
+import { defaultWorkspaceSettings, settingsBrandName, settingsFooterLines } from "./workspace-settings";
 
 export type SignedDocumentExportFile = {
   path: string;
@@ -33,10 +33,6 @@ function safeDataUrl(value?: string) {
   return raw.startsWith("data:image/") ? raw : "";
 }
 
-function dottedLine(value?: string) {
-  return `<span class="dotted">${escapeHtml(value || "\u00A0")}</span>`;
-}
-
 function formatDocumentDate(value?: string) {
   if (!value) return "nincs megadva";
   const date = new Date(`${value}T00:00:00`);
@@ -52,7 +48,7 @@ function workReportFooterHtml(workspaceSettings?: WorkspaceSettings) {
   return `Üdvözlettel,<br><strong>${escapeHtml(title)}</strong>${detailHtml}`;
 }
 
-function documentShell(title: string, body: string) {
+function documentShell(title: string, body: string, documentStyles = "") {
   return `<!doctype html>
 <html lang="hu">
 <head>
@@ -89,6 +85,7 @@ function documentShell(title: string, body: string) {
       body { background: #fff; }
       .page { width: auto; min-height: auto; margin: 0; padding: 0; box-shadow: none; }
     }
+    ${documentStyles}
   </style>
 </head>
 <body>${body}</body>
@@ -120,34 +117,41 @@ export function buildWorkReportHtml(customer: Customer, report: WorkReport, quot
     ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, items)
     : appointmentTimeRangeLabel(reportCustomer);
   const signature = safeDataUrl(report.signatureDataUrl);
+  const settings = workspaceSettings || defaultWorkspaceSettings(null);
+  const detail = (label: string, value?: string) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || "—")}</dd></div>`;
 
-  return documentShell(workReportTitle(reportCustomer.appointmentType), `<article class="page">
-    <h1>${escapeHtml(workReportTitle(reportCustomer.appointmentType))}</h1>
-    <p class="center small">az elvégzett munka és átadás-átvétel visszaigazolására</p>
+  return documentShell(workReportTitle(reportCustomer.appointmentType), `<article class="page work-report">
+    <header class="report-header">
+      <p class="report-brand">${escapeHtml(settingsBrandName(settings))}</p>
+      <h1>${escapeHtml(workReportTitle(reportCustomer.appointmentType))}</h1>
+      <p class="report-subtitle">az elvégzett munka és átadás-átvétel visszaigazolására</p>
+    </header>
+
+    <div class="report-details">
+      <section>
+        <h2>Ügyfél adatai</h2>
+        <dl>
+          ${detail("Név", customer.name)}
+          ${detail("Cím", fullCustomerAddress(customer))}
+          ${detail("Telefonszám", customer.phone)}
+          ${detail("Email", customer.email)}
+        </dl>
+      </section>
+      <section>
+        <h2>Munka adatai</h2>
+        <dl>
+          ${detail("Munka típusa", appointmentTypeLabel(reportCustomer.appointmentType))}
+          ${detail("Munka dátuma", formatDocumentDate(reportCustomer.date))}
+          ${detail("Idősáv", workTime)}
+          ${detail("Helyszín", fullCustomerAddress(customer))}
+        </dl>
+      </section>
+    </div>
 
     <section class="section">
-      <h2>Ügyfél adatai:</h2>
-      <div class="indent">
-        <p>neve: ${dottedLine(customer.name)}</p>
-        <p>címe: ${dottedLine(fullCustomerAddress(customer))}</p>
-        <p>telefonszáma: ${dottedLine(customer.phone)}</p>
-        <p>email címe: ${dottedLine(customer.email)}</p>
-      </div>
-    </section>
-
-    <section class="section">
-      <h2>Munka adatai:</h2>
-      <div class="indent">
-        <p>munka típusa: ${dottedLine(appointmentTypeLabel(reportCustomer.appointmentType))}</p>
-        <p>munka dátuma: ${dottedLine(formatDocumentDate(reportCustomer.date))}</p>
-        <p>idősáv: ${dottedLine(workTime)}</p>
-        <p>helyszín: ${dottedLine(fullCustomerAddress(customer))}</p>
-      </div>
-    </section>
-
-    <section class="section">
-      <table>
-        <thead><tr><th>Készülék megnevezése</th><th>Darab</th><th>Megjegyzés</th></tr></thead>
+      <h2>Készülékek</h2>
+      <table class="report-devices">
+        <thead><tr><th>Készülék megnevezése</th><th class="quantity">Darab</th><th class="note">Megjegyzés</th></tr></thead>
         <tbody>
           ${shownItems.map((item) => `<tr><td>${escapeHtml(itemName(item))}</td><td class="center"><strong>${itemQuantity(item)}</strong></td><td>${escapeHtml(appointmentWorkLabel(reportCustomer.appointmentType))}</td></tr>`).join("")}
         </tbody>
@@ -155,28 +159,85 @@ export function buildWorkReportHtml(customer: Customer, report: WorkReport, quot
     </section>
 
     <section class="section">
-      <h2>Elvégzett munka:</h2>
-      <p class="box">${escapeHtml(report.workDescription || defaultWorkDescription(reportCustomer.appointmentType))}</p>
+      <h2>Elvégzett munka</h2>
+      <p class="report-text">${escapeHtml(report.workDescription || defaultWorkDescription(reportCustomer.appointmentType))}</p>
     </section>
 
-    <section class="section">
-      <h2>Átadás-átvételi nyilatkozat:</h2>
-      <p class="box">${escapeHtml(workAcceptanceText(reportCustomer.appointmentType))}</p>
-    </section>
+    ${report.notes ? `<section class="section"><h2>Megjegyzés</h2><p class="report-text">${escapeHtml(report.notes)}</p></section>` : ""}
 
-    ${report.notes ? `<section class="section"><h2>Megjegyzés:</h2><p class="box">${escapeHtml(report.notes)}</p></section>` : ""}
+    <section class="section report-acceptance">
+      <h2>Átadás-átvételi nyilatkozat</h2>
+      <p>${escapeHtml(workAcceptanceText(reportCustomer.appointmentType))}</p>
+    </section>
 
     <section class="signature-row">
-      <div><p>Kelt: ${dottedLine(formatDocumentDate(reportCustomer.date))}</p></div>
+      <div><p class="report-date-label">Kelt</p><p class="report-date">${escapeHtml(formatDocumentDate(reportCustomer.date))}</p></div>
       <div class="signature">
-        ${signature ? `<img src="${escapeHtml(signature)}" alt="Ügyfél aláírása">` : ""}
+        ${signature ? `<img src="${escapeHtml(signature)}" alt="Ügyfél aláírása">` : '<div class="signature-space"></div>'}
         <div class="signature-line">Ügyfél aláírása</div>
         ${hasValidWorkReportSignature(report) ? `<p class="tiny">Aláírva: ${escapeHtml(formatSignedAt(report.signedAt))}</p>` : ""}
       </div>
     </section>
 
-    <div class="footer">${workReportFooterHtml(workspaceSettings)}</div>
-  </article>`);
+    <footer class="footer">${workReportFooterHtml(settings)}</footer>
+  </article>`, `
+    .work-report { max-width: 210mm; width: calc(100% - 32px); border-radius: 16px; font-family: Arial, Helvetica, sans-serif; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+    .work-report p { line-height: 1.6; }
+    .work-report .report-header { border-bottom: 2px solid #0f766e; padding-bottom: 20px; }
+    .work-report .report-brand { color: #0f766e; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    .work-report h1 { margin-top: 8px; text-align: left; text-transform: none; font-size: 25px; font-weight: 700; line-height: 1.2; letter-spacing: -.025em; }
+    .work-report .report-subtitle { margin-top: 8px; color: #64748b; font-size: 11px; }
+    .work-report .report-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; margin-top: 24px; }
+    .work-report .report-details section { min-width: 0; }
+    .work-report h2 { margin: 0 0 10px; color: #0f766e; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; break-after: avoid; }
+    .work-report dl { margin: 0; }
+    .work-report dl > div + div { margin-top: 8px; }
+    .work-report dt { color: #64748b; font-size: 10px; }
+    .work-report dd { margin: 0; }
+    .work-report dl > div:first-child dd { font-weight: 600; }
+    .work-report .section { margin-top: 24px; }
+    .work-report table { table-layout: fixed; font-size: 11px; }
+    .work-report th, .work-report td { border: 0; border-bottom: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; }
+    .work-report th { border-top: 1px solid #e2e8f0; background: #f8fafc; font-weight: 600; }
+    .work-report .quantity { width: 56px; }
+    .work-report .note { width: 30%; }
+    .work-report th.quantity, .work-report td.center { text-align: center; }
+    .work-report td:last-child { color: #475569; }
+    .work-report tr { break-inside: avoid; }
+    .work-report .report-text { white-space: pre-wrap; }
+    .work-report .report-acceptance { border-left: 2px solid #0f766e; padding-left: 16px; }
+    .work-report .report-acceptance h2 { margin-bottom: 4px; font-size: 11px; color: #0f172a; letter-spacing: 0; text-transform: none; }
+    .work-report .report-acceptance p { font-size: 11px; color: #475569; }
+    .work-report .signature-row { margin-top: 32px; break-inside: avoid; }
+    .work-report .report-date-label { color: #64748b; font-size: 10px; }
+    .work-report .report-date { margin-top: 4px; font-size: 11px; }
+    .work-report .signature { width: 56mm; max-width: 100%; flex-shrink: 0; }
+    .work-report .signature-space { height: 18mm; }
+    .work-report .signature-line { border-color: #94a3b8; font-size: 11px; font-weight: 500; font-style: normal; padding-top: 8px; }
+    .work-report .signature .tiny { color: #64748b; font-size: 9px; margin-top: 4px; }
+    .work-report .footer { border-color: #e2e8f0; color: #64748b; line-height: 1.6; padding-top: 12px; margin-top: 24px; break-inside: avoid; }
+    @media screen and (max-width: 600px) {
+      .work-report { padding: 20px; }
+      .work-report .report-details { grid-template-columns: 1fr; gap: 24px; }
+      .work-report .signature-row { flex-direction: column; align-items: flex-end; }
+      .work-report .signature-row > div:first-child { align-self: flex-start; }
+    }
+    @media print {
+      .work-report { width: auto; max-width: none; min-height: auto; border-radius: 0; font-size: 11.5px; }
+      .work-report p { font-size: 11.5px; }
+      .work-report h1 { font-size: 23px; }
+      .work-report .report-details { gap: 32px; margin-top: 20px; }
+      .work-report .section { margin-top: 20px; }
+      .work-report .footer { font-size: 9px; }
+      .work-report thead { display: table-header-group; }
+    }
+  `);
+}
+
+function declarationDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("hu-HU", { timeZone: "Europe/Budapest", year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
 export function buildPurchaseDeclarationHtml(customer: Customer, declaration: PurchaseDeclaration) {
@@ -189,56 +250,87 @@ export function buildPurchaseDeclarationHtml(customer: Customer, declaration: Pu
   const shownItems = cleanQuoteItems(declaration.quoteItems || []);
   const items = shownItems.length ? shownItems : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
   const signature = safeDataUrl(declaration.signatureDataUrl);
-
-  return documentShell("Vásárlási nyilatkozat", `<article class="page">
-    <h1>Vásárlási<br>nyilatkozat</h1>
-    <p class="center small">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (5) bekezdése alapján</p>
-
-    <section class="section">
+  const field = (label: string, value = "") => `<p class="purchase-field"><span>${escapeHtml(label)}</span><span class="purchase-field-value">${escapeHtml(value || "\u00A0")}</span></p>`;
+  const copies = ["I.", "II."].map((copy) => `<article class="page purchase-original">
+    <p class="purchase-copy">${copy} példány</p>
+    <header>
+      <h1>VÁSÁRLÁSI<br>NYILATKOZAT</h1>
+      <p class="purchase-subtitle">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló <strong>458/2024. (XII. 30.) Korm. rendelet</strong><br>28. § (5) bekezdése alapján</p>
+    </header>
+    <section>
       <h2>Az értékesítő vállalkozás adatai:</h2>
-      <div class="indent">
-        <p>neve: ${dottedLine(shownSeller.name)}</p>
-        <p>adószáma: ${dottedLine(shownSeller.taxNumber)}</p>
-        <p>a képviseletében eljáró természetes személy neve: ${dottedLine(shownSeller.representative)}</p>
+      <div class="purchase-seller">
+        ${field("neve:", shownSeller.name)}
+        ${field("adószáma:", shownSeller.taxNumber)}
+        ${field("a képviseletében eljáró természetes személy neve:", shownSeller.representative)}
       </div>
     </section>
-
-    <section class="section">
+    <section>
       <h2>A telepíttető adatai:</h2>
-      <div class="indent">
-        <p><strong>A.) Vállalkozás, intézmény, egyéb adószámmal rendelkező szervezet</strong></p>
-        <p>neve: ${dottedLine("")}</p>
-        <p>adószáma: ${dottedLine("")}</p>
-        <p>a képviseletében eljáró természetes személy neve: ${dottedLine("")}</p>
-        <p><strong>B.) Természetes személy</strong></p>
-        <p>neve: ${dottedLine(customer.name || declaration.signerName)}</p>
-        <p>lakcíme: ${dottedLine(fullCustomerAddress(customer))}</p>
+      <div class="purchase-buyer">
+        <p>A.) Vállalkozás, intézmény, egyéb adószámmal rendelkező szervezet</p>
+        <div class="purchase-buyer-fields">
+          ${field("neve:")}
+          ${field("adószáma:")}
+          ${field("a képviseletében eljáró természetes személy neve:")}
+        </div>
+        <p class="purchase-person">B.) Természetes személy</p>
+        <div class="purchase-buyer-fields">
+          ${field("neve:", customer.name || declaration.signerName)}
+          ${field("lakcíme:", fullCustomerAddress(customer))}
+        </div>
       </div>
     </section>
-
-    <p class="section">Telepíttető jelen nyilatkozat aláírásával kötelezettséget vállal arra, hogy az alábbi telepítési tanúsítvány-köteles berendezés(ek) telepítését és beüzemelését az arra képesítéssel rendelkező vállalkozás képesített alkalmazottjával fogja elvégeztetni.</p>
-
-    <section class="section">
-      <table>
-        <thead><tr><th>Termék megnevezése</th><th>Megvásárolt termékek darabszáma</th></tr></thead>
-        <tbody>${items.map((item) => `<tr><td>${escapeHtml(itemName(item))}</td><td class="center"><strong>${itemQuantity(item)}</strong></td></tr>`).join("")}</tbody>
-      </table>
-    </section>
-
-    <p class="section small">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos jótállás telepítési tanúsítvány birtokában érvényesíthető.</p>
-    <p class="small"><strong>Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</strong></p>
-
-    <section class="signature-row">
-      <div><p>Kelt: ${dottedLine(formatDocumentDate(declaration.signedAt?.slice(0, 10) || declaration.createdAt?.slice(0, 10)))}</p></div>
-      <div class="signature">
-        ${signature ? `<img src="${escapeHtml(signature)}" alt="Telepíttető aláírása">` : ""}
-        <div class="signature-line">Telepíttető</div>
-        ${declaration.signedAt ? `<p class="tiny">Aláírva: ${escapeHtml(formatSignedAt(declaration.signedAt))}</p>` : ""}
+    <p class="purchase-paragraph">Telepíttető – megfelelve az Európai Parlament és a Tanács 2024/573 Rendeletében, valamint a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. §-ban foglaltaknak – <strong>jelen nyilatkozat aláírásával kötelezettséget vállal arra, hogy az alábbi telepítési tanúsítvány-köteles berendezés(ek) telepítését és beüzemelését az arra képesítéssel rendelkező vállalkozás képesített alkalmazottjával fogja elvégeztetni.</strong></p>
+    <table>
+      <thead><tr><th style="width:59%">Termék megnevezése</th><th>Megvásárolt termékek darabszáma</th></tr></thead>
+      <tbody>${items.map((item) => `<tr><td>${escapeHtml(itemName(item))}</td><td class="center">${itemQuantity(item)}</td></tr>`).join("")}</tbody>
+    </table>
+    <p class="purchase-table-note">*Több berendezés típus vásárlása esetén a táblázat sorainak száma bővíthető egyéni szerkesztéssel</p>
+    <p class="purchase-paragraph">Telepíttető tudomásul veszi, hogy a telepítési tanúsítvány-köteles berendezéssel kapcsolatos <strong>jótállás</strong> telepítési tanúsítvány<sup>1</sup> birtokában érvényesíthető.</p>
+    <p class="purchase-paragraph"><strong>Nyilatkozata megtételével egyidejűleg hozzájárul, hogy fentiekben megadott adatait a forgalmazó megismerje, kezelje, nyilvántartsa.</strong></p>
+    <section class="purchase-signatures">
+      <div class="purchase-date">${field("Kelt:", declarationDate(declaration.signedAt || declaration.createdAt))}</div>
+      <div class="purchase-signature">
+        ${signature ? `<img src="${escapeHtml(signature)}" alt="Telepíttető aláírása">` : '<div class="purchase-signature-space"></div>'}
+        <div class="purchase-signature-line">Telepíttető</div>
       </div>
     </section>
-
-    <div class="footer tiny">A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján.</div>
-  </article>`);
+    <footer class="purchase-footnote"><sup>1</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</footer>
+  </article>`).join("");
+  return documentShell("Vásárlási nyilatkozat", copies, `
+    .purchase-original { position: relative; width: calc(100% - 32px); max-width: 210mm; min-height: 297mm; padding: 19mm 25mm 18mm; color: black; font-family: "Times New Roman", Times, serif; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
+    .purchase-original p { font-size: 16px; line-height: 1.2; }
+    .purchase-original .purchase-copy { position: absolute; top: 8mm; right: 29mm; color: #999; font-size: 20px; }
+    .purchase-original h1 { font-size: 18.67px; line-height: 1.15; font-weight: bold; }
+    .purchase-original .purchase-subtitle { font-size: 13.33px; line-height: 1.15; }
+    .purchase-original section { margin-top: 18px; }
+    .purchase-original h2 { margin: 0 0 16px; font-weight: bold; font-size: 16px; break-after: avoid; }
+    .purchase-original .purchase-seller { margin-left: 12.5mm; }
+    .purchase-original .purchase-buyer { margin-left: 6.25mm; }
+    .purchase-original .purchase-buyer-fields { margin-left: 6.25mm; }
+    .purchase-original .purchase-person { margin-top: 24px; }
+    .purchase-original .purchase-field { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 4px; line-height: 1.35; }
+    .purchase-original .purchase-field-value { flex: 1; min-width: 40px; border-bottom: 1px dotted black; padding: 0 2px; }
+    .purchase-original .purchase-paragraph { margin-top: 16px; text-align: justify; }
+    .purchase-original table { table-layout: fixed; margin-top: 18px; font-size: 14.67px; }
+    .purchase-original th, .purchase-original td { border: .7px solid black; padding: 12px; vertical-align: middle; }
+    .purchase-original th { font-weight: bold; height: 14mm; }
+    .purchase-original td { height: 15mm; }
+    .purchase-original tr { break-inside: avoid; }
+    .purchase-original .purchase-table-note { margin-top: 5px; text-align: justify; }
+    .purchase-original .purchase-signatures { display: flex; align-items: flex-end; gap: 16px; justify-content: space-between; margin-top: 18px; break-inside: avoid; }
+    .purchase-original .purchase-date { flex: 1; align-self: flex-start; margin-top: 4px; }
+    .purchase-original .purchase-signature { width: 82mm; max-width: 53%; text-align: center; }
+    .purchase-original .purchase-signature img { display: block; margin: 0 auto 3px; max-width: 100%; height: 15mm; object-fit: contain; }
+    .purchase-original .purchase-signature-space { height: 10mm; }
+    .purchase-original .purchase-signature-line { border-top: .7px solid black; font-style: italic; }
+    .purchase-original .purchase-footnote { margin-top: 20px; font-size: 13.33px; line-height: 1.15; break-inside: avoid; }
+    .purchase-original .purchase-footnote::before { display: block; width: 50mm; border-top: .7px solid black; content: ""; margin-bottom: 7px; }
+    @media screen and (max-width: 600px) { .purchase-original { padding: 55px 20px 28px; min-height: 0; } .purchase-original .purchase-copy { top: 16px; right: 20px; } .purchase-original .purchase-seller, .purchase-original .purchase-buyer, .purchase-original .purchase-buyer-fields { margin-left: 12px; } .purchase-original .purchase-signatures { flex-wrap: wrap; } .purchase-original .purchase-date { flex-basis: 100%; } .purchase-original .purchase-signature { margin-left: auto; max-width: 80%; } }
+    @page { margin: 0; }
+    @media print { .purchase-original { width: 210mm; max-width: 210mm; min-height: 297mm; height: auto; overflow: visible; margin: 0; padding: 19mm 25mm 18mm; line-height: 1.15; break-after: page; } .purchase-original p { line-height: inherit; } .purchase-original:last-child { break-after: auto; } .purchase-original thead { display: table-header-group; } }
+  `);
 }
 
 export function safeExportFilePart(value?: string) {

@@ -6,6 +6,10 @@ A munkalap mentési képernyőjén a **Mentés és PDF-ek küldése** előbb elm
 
 A PDF megőrzi a dokumentum saját aláírását, magyar ékezeteit és a mentett adatpillanatképet. Hiányzó vagy más időponthoz tartozó dokumentumot nem helyettesít a legutóbbi ügyféldokumentummal. A PDF-ek a küldéskor készülnek, nem foglalnak külön Supabase Storage tárhelyet.
 
+A munkalap 2026-10-11-től modern, fehér alapú, visszafogott türkiz arculatot használ az előnézetben, HTML-exportban és email-PDF-ben. A saját munkaterület márkaneve, az ügyfél- és munkaadatok, készülékek, munkaleírás, megjegyzés és aláírás elkülönülnek. A hosszú tartalom további oldalakon folytatódik, nem vágódik le.
+
+A vásárlási nyilatkozat az eredeti, eladói mezőket is tartalmazó `vasarlasi_nyilatkozat_0416.pdf` mintát követi I. és II. példánnyal. Az email-PDF az üres eredeti nyomtatványra helyezi a mentett adatokat és a nyilatkozat saját aláírását. A rendelkezésre álló helyre olvashatóan nem férő adatok és készüléklisták hivatkozott mellékletben, teljes egészükben szerepelnek. A keltezés a mentett aláírás budapesti dátuma, nem a megnyitás napja. Az előnézet és a HTML-export ugyanezt a fekete-fehér, Times betűs elrendezést követi. A korábbi mentett dokumentumadatokat a megjelenés változása nem módosítja.
+
 2026-10-11-től a felhasználó kérésére a H tarifás nyomtatvány nem jelenik meg a Dokumentumok felületén. A korábban mentett adatokat a felület eltávolítása nem törli.
 
 ## Alapelv
