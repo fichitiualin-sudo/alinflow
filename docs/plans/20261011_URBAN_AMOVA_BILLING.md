@@ -48,6 +48,8 @@ Az új engedélylista eltávolítása és újratelepítés visszaállítja a kor
 
 ## Állapot
 
-A célzott kódjavítás elkészült. A számlázási/API-hitelesítési/adatvédelmi tesztek 45/45 sikeresek, a TypeScript-ellenőrzés sikeres. A helyi build fordítása és TypeScript-lépése sikeres, az oldaladatok gyűjtése hiányzó Supabase-környezet miatt leállt. A Vercel build ellenőrzése és az éles engedélylista aktiválása még hátravan. Nincs adatbázis-migráció. Új számla vagy email nem készült.
+A célzott kódjavítás elkészült. A számlázási/API-hitelesítési/adatvédelmi tesztek 45/45 sikeresek, a TypeScript-ellenőrzés sikeres. A helyi build fordítása és TypeScript-lépése sikeres, az oldaladatok gyűjtése hiányzó Supabase-környezet miatt leállt. A Vercel Preview build sikeres. Nincs adatbázis-migráció. Új számla vagy email nem készült.
 
-Az éles konfigurációban csak a meglévő `SZAMLAZZ_WORKSPACE_ID`, `SZAMLAZZ_DEVICE_AGENT_KEY` és `SZAMLAZZ_LABOR_AGENT_KEY` szerepel. Külön combined kulcs-, áfa- vagy előtagfelülírás nincs; a combined típus a meglévő készülék-kibocsátót és annak áfabeállítását használja.
+Az éles konfiguráció meglévő `SZAMLAZZ_WORKSPACE_ID`, `SZAMLAZZ_DEVICE_AGENT_KEY` és `SZAMLAZZ_LABOR_AGENT_KEY` értékei változatlanok. Külön combined kulcs-, áfa- vagy előtagfelülírás nincs; a combined típus a meglévő készülék-kibocsátót és annak áfabeállítását használja.
+
+2026-10-11: a felhasználó kifejezetten jóváhagyta az éles aktiválást. A `SZAMLAZZ_COMBINED_WORKSPACE_IDS` kizárólag Production környezetben, az Urbán munkaterület azonosítójával mentve és visszaellenőrizve. Az aktiváláshoz a javítást tartalmazó új éles telepítés szükséges; annak végső eredménye a [128. PR](https://github.com/fichitiualin-sudo/alinflow/pull/128) telepítési állapotában követhető.
