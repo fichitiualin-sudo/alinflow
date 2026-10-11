@@ -1,0 +1,167 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const vm = require('node:vm');
+const ts = require('typescript');
+const { harness, noop, source } = require('./helpers.cjs');
+const h = harness();
+const shared = h.load('src/lib/alinflow/shared-maintenance.ts');
+const privacy = h.load('src/lib/alinflow/privacy-notice.ts');
+const reports = h.load('src/lib/alinflow/work-report.ts');
+const scopes = h.load('src/lib/alinflow/report-scope.ts');
+const item = {
+  grantId:'grant-source',installationId:'source-installation',sourceWorkspaceId:'source-workspace',sourceWorkspaceName:'Source business',
+  customer:{name:'Synthetic customer',phone:'+3612345',email:'test@example.invalid',postalCode:'1234',city:'Test City',address:'New Work Street 2'},
+  installationDate:'2024-01-01',installationTime:'08:00',climates:[{productName:'Test AC',quantity:2}],
+  latitude:47,longitude:19,lastMaintenanceDate:null,maintenanceCount:0,
+};
+
+test('shared display IDs cannot be mistaken for source customer/appointment IDs; no prices or document IDs copied', () => {
+  const point = shared.sharedMaintenanceMapPoint(item);
+  assert.match(point.customer.id,/^shared:/); assert.match(point.appointmentId,/^shared:/);
+  assert.equal(point.customer.activeAppointmentId,undefined); assert.equal(point.customer.activeQuoteId,undefined);
+  assert.equal(point.customer.activeWorkReportId,undefined);
+  assert.equal(point.customer.quoteItems[0].customPrice,0); assert.equal(point.customer.quoteItems[0].customInstallPrice,0);
+  assert.equal(point.sharedMaintenance,item); assert.equal(point.maintenanceOrigin,'external');
+});
+
+function acceptance(overrides={}) {
+  const opened=[],errors=[],calls=[];
+  const context={
+    currentWorkspaceId:()=> 'target-workspace',beginAction:()=>true,endAction:noop,
+    acceptMaintenanceOrder:async value=>{calls.push(['accept',value]);return {customerId:'target-customer',installationId:'target-new-installation',created:true};},
+    loadCustomersFromDb:async ()=>calls.push(['reload']),lastCustomerLoadRef:{current:{workspaceId:'target-workspace',customers:[{
+      id:'target-customer',name:'Synthetic customer',address:'OLD OTHER JOB ADDRESS',workAddress:'OLD OTHER JOB ADDRESS',
+      activeAppointmentId:'target-old-installation',quoteItems:[{productId:'old',quantity:1,customPrice:999}],source:'Karbantartási átvétel',
+    }]}},
+    sharedMaintenanceMapPoint:shared.sharedMaintenanceMapPoint,setSharedMaintenanceSelection:noop,
+    startMaintenanceForCustomer:(...args)=>opened.push(args),setMessage:(...args)=>errors.push(args),
+    persistCustomerToDb:()=>{throw Error('Shared DTO must never enter generic persistence');},...overrides,
+  };
+  return {...h.functions(['startSharedMaintenance'],context),opened,errors,calls};
+}
+test('accepted order opens only returned target installation with its requested site, not stale primary work',async()=>{
+  const run=acceptance();await run.startSharedMaintenance(item,'target-workspace');
+  assert.equal(run.opened.length,1);
+  const [customer,explicit]=run.opened[0];
+  assert.equal(customer.id,'target-customer');assert.equal(customer.activeAppointmentId,'target-new-installation');
+  assert.equal(customer.address,item.customer.address);assert.equal(customer.workAddress,item.customer.address);
+  assert.equal(customer.activeQuoteId,undefined);assert.equal(customer.activeWorkReportId,undefined);
+  assert.equal(explicit.length,1);assert.equal(explicit[0],customer);
+  assert.equal(customer.quoteItems[0].customPrice,0);
+});
+test('revoked or rejected order never navigates to a local work or starts persistence',async()=>{
+  const run=acceptance({acceptMaintenanceOrder:async()=>{throw Error('Access revoked');}});
+  await run.startSharedMaintenance(item,'target-workspace');
+  assert.equal(run.opened.length,0);assert.equal(run.calls.length,0);assert.match(run.errors[0][0],/revoked/);
+});
+test('workspace change during accepted-order RPC cannot open results in another tenant',async()=>{
+  let resolve,workspace='target-workspace';
+  const run=acceptance({currentWorkspaceId:()=>workspace,acceptMaintenanceOrder:()=>new Promise(done=>{resolve=done;})});
+  const pending=run.startSharedMaintenance(item,'target-workspace');workspace='different-workspace';
+  resolve({customerId:'target-customer',installationId:'target-new-installation',created:true});await pending;
+  assert.equal(run.opened.length,0);assert.equal(run.calls.length,0);
+});
+test('explicit handoff selection bypasses stale same-customer installation history',()=>{
+  const selected=[],quoteItems=[];
+  const target={...item.customer,id:'target-customer',activeAppointmentId:'target-new-installation',appointmentType:'installation',
+    quoteItems:[{productId:'manual',quantity:2,customPrice:0}],date:item.installationDate,time:item.installationTime};
+  const {startMaintenanceForCustomer}=h.functions(['startMaintenanceForCustomer'],{
+    maintenanceReturnRef:{current:null},selected:{id:'different'},cleanQuoteItems:items=>items,
+    customerInstallationWorks:()=>{throw Error('Stale history must not override explicit selected installation');},
+    setSelected:value=>selected.push(value),setQuoteItems:value=>quoteItems.push(value),setScheduleDate:noop,setScheduleTime:noop,
+    setScheduleAppointmentType:noop,setSendAppointmentNotice:noop,setAllowWorkResourceEdit:noop,setMessage:noop,navigateToView:noop,
+    todayIso:()=> '2026-10-11',EMPTY_QUOTE_ITEMS:[],
+  });
+  startMaintenanceForCustomer(target,[target]);
+  assert.deepEqual(Array.from(selected[0].maintenanceInstallationIds),['target-new-installation']);
+  assert.equal(selected[0].id,'target-customer');assert.equal(selected[0].activeAppointmentId,undefined);
+  assert.equal(selected[0].appointmentType,'maintenance');assert.equal(quoteItems[0][0].quantity,2);
+});
+
+function completion(report,enabled=true) {
+  const writes=[],messages=[];
+  const customer={...item.customer,id:'target-customer',activeAppointmentId:'target-maintenance',appointmentType:'maintenance',quoteItems:[]};
+  const context={...reports,...scopes,...privacy,selected:customer,normalizeAppointmentType:type=>type,
+    workReportsByCustomer:{},maintenanceReportsByCustomer:{[customer.id]:report?[report]:[]},workReport:{},
+    workspaceSettings:{documentSettings:{privacyNotice:{enabled}}},quoteItems:[],
+    persistCustomerToDb:async value=>writes.push(value),logDocument:async()=>{},setSelected:noop,updateWorkHistory:noop,
+    setAllowWorkResourceEdit:noop,setMessage:value=>messages.push(value),replaceView:noop,
+  };
+  return {...h.functions(['markInstallationDone','savedReportFor'],context),writes,messages};
+}
+const party={legalName:'Test EV',address:'Test HQ',email:'provider@example.invalid',phone:'',taxNumber:''};
+const config={...privacy.defaultPrivacyNoticeConfig(),enabled:true,serviceProvider:party,
+  retentionText:'Test retention',recipientsText:'Test recipients',internationalTransfersText:'Test transfer'};
+const signed={id:'report',customerId:'target-customer',appointmentId:'target-maintenance',appointmentType:'maintenance',
+  signerName:'Synthetic customer',signatureDataUrl:'data:image/png;base64,c3ludGhldGlj',signedAt:'2026-10-11T12:00:00.000Z'};
+const notice=privacy.buildPrivacyNoticeSnapshot({config,customer:item.customer,...signed,consentGranted:false,appointmentType:'maintenance'});
+test('maintenance closure rejects missing notice, mismatched fresh signature, and another appointment report',async()=>{
+  for (const report of [signed,{...signed,privacyNotice:notice,signedAt:'2026-10-11T13:00:00.000Z'},
+    {...signed,privacyNotice:notice,appointmentId:'previous-maintenance'}]) {
+    const run=completion(report);await run.markInstallationDone();assert.equal(run.writes.length,0);assert.ok(run.messages.length);
+  }
+});
+test('properly signed current maintenance closes without mutating historical notice/report',async()=>{
+  const report=Object.freeze({...signed,privacyNotice:notice});const before=JSON.stringify(report);
+  const run=completion(report);await run.markInstallationDone();
+  assert.equal(run.writes.length,1);assert.equal(run.writes[0].activeAppointmentId,'target-maintenance');
+  assert.equal(run.writes[0].status,'Lezárva');assert.equal(JSON.stringify(report),before);
+});
+test('ordinary own maintenance without enabled notice keeps its previous close flow',async()=>{
+  const run=completion(signed,false);await run.markInstallationDone();assert.equal(run.writes.length,1);
+});
+
+test('calendar retains later own installation and maintenance for a handed-off customer, hiding only the historical mirror',()=>{
+  const tree=ts.createSourceFile('page.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let initializer;
+  (function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(tree)==='calendarCustomers')initializer=node.initializer.getText(tree);ts.forEachChild(node,visit);})(tree);
+  assert.ok(initializer);
+  const base={source:'Karbantartási átvétel',date:'2026-10-11',status:'Időpont foglalva'};
+  const sandbox={allWorkCustomers:[{...base,id:'reference',appointmentType:'installation',maintenanceOrigin:'external'},
+    {...base,id:'real-installation',appointmentType:'installation',maintenanceOrigin:'own'},
+    {...base,id:'real-maintenance',appointmentType:'maintenance',maintenanceOrigin:'own'}],
+    sortCustomersBySchedule:rows=>rows,isInstallationAppointment:type=>type==='installation'};
+  vm.runInNewContext(`globalThis.result = ${initializer};`,sandbox);
+  assert.deepEqual(Array.from(sandbox.result,row=>row.id),['real-installation','real-maintenance']);
+});
+test('older partner service never takes credit for a more recent own maintenance',()=>{
+  const point={appointmentId:'installation',lastMaintenanceDate:'2026-10-10',maintenanceCount:2,status:'ok'};
+  const old={installationId:'installation',date:'2026-08-01',status:'Lezárva',providerName:'Earlier partner'};
+  const first=shared.applySharedMaintenanceResults([point],[old])[0];
+  assert.equal(first.lastMaintenanceDate,'2026-10-10');assert.equal(first.maintenanceProviderName,undefined);
+  const latest=shared.applySharedMaintenanceResults([point],[{...old,date:'2026-10-11',providerName:'Latest partner'}])[0];
+  assert.equal(latest.lastMaintenanceDate,'2026-10-11');assert.equal(latest.maintenanceProviderName,'Latest partner');
+});
+test('accepted reference keeps one marker and combines source history with newer own maintenance without changing own contact',()=>{
+  const local={...shared.sharedMaintenanceMapPoint(item),appointmentId:'target-installation',customerId:'target-customer',sharedMaintenance:undefined,
+    customer:{id:'target-customer',name:'Locally corrected name'},lastMaintenanceDate:'2026-09-01',maintenanceCount:1,status:'ok'};
+  const received={...item,targetInstallationId:'target-installation',targetCustomerId:'target-customer',lastMaintenanceDate:'2026-08-01',maintenanceCount:3};
+  const merged=shared.mergeSharedMaintenancePoints([local],[received]);
+  assert.equal(merged.length,1);assert.equal(merged[0].lastMaintenanceDate,'2026-09-01');assert.equal(merged[0].maintenanceCount,4);
+  assert.equal(merged[0].customer,local.customer);assert.equal(merged[0].sharedMaintenance,undefined);
+  assert.equal(merged[0].maintenanceProviderName,undefined);assert.equal(merged[0].nextMaintenanceDue,'2027-09-01');
+  assert.equal(local.maintenanceCount,1,'input records remain unchanged across repeated refreshes');
+  assert.equal(shared.mergeSharedMaintenancePoints([local],[received])[0].maintenanceCount,4);
+  const sourceNewer=shared.mergeSharedMaintenancePoints([{...local,status:'optOut'}],[{...received,lastMaintenanceDate:'2026-10-10'}])[0];
+  assert.equal(sourceNewer.lastMaintenanceDate,'2026-10-10');assert.equal(sourceNewer.maintenanceProviderName,item.sourceWorkspaceName);
+  assert.equal(sourceNewer.status,'optOut');
+  assert.equal(shared.mergeSharedMaintenancePoints([local],[])[0],local,'revoked source summary disappears while local work remains');
+  assert.equal(shared.mergeSharedMaintenancePoints([], [received]).length,1,'handoff still appears before local reload finishes');
+});
+test('shared hook hides another user cache immediately and discards an older in-flight response in the same workspace',async()=>{
+  let state;const request={current:0},pending=[];
+  const hookHarness=harness({}, {
+    react:{useState:initial=>{state??=initial;return [state,next=>{state=typeof next==='function'?next(state):next;}];},
+      useRef:()=>request,useCallback:fn=>fn,useEffect:noop},
+    '@/lib/alinflow/shared-maintenance-client':{listReceivedMaintenance:()=>new Promise(resolve=>pending.push(resolve)),listMaintenanceResults:async()=>[]},
+  });
+  const {useSharedMaintenance}=hookHarness.load('src/components/alinflow/useSharedMaintenance.ts');
+  const old=useSharedMaintenance('same-workspace',true,'old-user');const oldRequest=old.refresh();
+  const next=useSharedMaintenance('same-workspace',true,'new-user');assert.equal(next.received.length,0);
+  const nextRequest=next.refresh();pending[1]([]);await nextRequest;pending[0]([item]);await oldRequest;
+  assert.equal(useSharedMaintenance('same-workspace',true,'new-user').received.length,0);
+  const first=useSharedMaintenance('same-workspace',true,'old-user');const populated=first.refresh();pending[2]([item]);await populated;
+  assert.equal(useSharedMaintenance('same-workspace',true,'old-user').received.length,1);
+  assert.equal(useSharedMaintenance('same-workspace',true,'new-user').received.length,0);
+  assert.equal(useSharedMaintenance('same-workspace',false,'old-user').received.length,0);
+});

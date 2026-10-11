@@ -8,6 +8,7 @@ import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflo
 import { GoogleCalendarSettingsPanel } from "@/components/alinflow/GoogleCalendarSettingsPanel";
 import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
 import { PrivacyNoticeSettings } from "@/components/alinflow/PrivacyNoticeSettings";
+import { MaintenanceAccessSettings } from "@/components/alinflow/MaintenanceAccessSettings";
 import { normalizePrivacyNoticeConfig, privacyNoticeConfigValidation } from "@/lib/alinflow/privacy-notice";
 
 type SettingsPanelProps = {
@@ -186,6 +187,7 @@ export function SettingsPanel({
               </section>
 
               <PrivacyNoticeSettings key={activeWorkspace?.id || "no-workspace"} workspaceId={activeWorkspace?.id} disabled={saving} value={draft.documentSettings.privacyNotice} onChange={(value) => updateSection("documentSettings", "privacyNotice", value)} />
+              {activeWorkspace?.id ? <MaintenanceAccessSettings key={activeWorkspace.id} workspaceId={activeWorkspace.id} privacy={settings.documentSettings.privacyNotice} /> : null}
 
               <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4">
                 <h3 className="text-xl font-black">Számlázás</h3>

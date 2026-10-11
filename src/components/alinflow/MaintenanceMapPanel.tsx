@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Customer } from "@/lib/alinflow/types";
+import type { SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
 import { paginateItems } from "@/lib/alinflow/customers";
 import {
   filterMaintenanceMapPoints,
@@ -27,6 +28,7 @@ type MaintenanceMapPanelProps = {
   geocodingBusy: boolean;
   preferenceKey?: string;
   onOpenCustomer: (customer: Customer) => void;
+  onOpenShared?: (item: SharedMaintenanceInstallation) => void;
   onGeocodeMissing: (points: MaintenanceMapPoint[]) => void;
   onToggleMaintenanceOptOut: (point: MaintenanceMapPoint, checked: boolean) => void;
   onEditMaintenanceOrigin?: (point: MaintenanceMapPoint) => void;
@@ -57,6 +59,7 @@ export function MaintenanceMapPanel({
   geocodingBusy,
   preferenceKey,
   onOpenCustomer,
+  onOpenShared,
   onGeocodeMissing,
   onToggleMaintenanceOptOut,
   onEditMaintenanceOrigin,
@@ -79,7 +82,7 @@ export function MaintenanceMapPanel({
   const list = selectedGroup?.points || filteredPoints;
   const pagination = paginateItems(list, page);
   const locatedCount = groups.reduce((sum, group) => sum + group.points.length, 0);
-  const missingCoordinateCount = filteredPoints.filter((point) => !hasMaintenanceMapCoordinates(point) && point.address).length;
+  const missingCoordinateCount = filteredPoints.filter((point) => !point.sharedMaintenance && !hasMaintenanceMapCoordinates(point) && point.address).length;
   const counts = useMemo(() => visiblePoints.reduce<Record<MaintenanceMapStatus | "all", number>>((result, point) => {
     result.all += 1;
     result[point.status] += 1;
@@ -98,8 +101,8 @@ export function MaintenanceMapPanel({
       return count ? [{ key: status, label: maintenanceMapStatusLabel(status), color: maintenanceMapStatusColor(status), count }] : [];
     }),
   })), [groups]);
-  const current = useRef({ points, groups, onOpenCustomer });
-  current.current = { points, groups, onOpenCustomer };
+  const current = useRef({ points, groups, onOpenCustomer, onOpenShared });
+  current.current = { points, groups, onOpenCustomer, onOpenShared };
 
   const selectGroup = useCallback((id: string) => {
     setSelectedGroupId(id);
@@ -170,7 +173,8 @@ export function MaintenanceMapPanel({
         name: point.customerName, phone: point.customer.phone, destination: routeTarget(point),
         onOpenCustomer: () => {
           const latestPoint = current.current.points.find((item) => item.appointmentId === point.appointmentId);
-          if (latestPoint) current.current.onOpenCustomer(latestPoint.customer);
+          if (latestPoint?.sharedMaintenance) current.current.onOpenShared?.(latestPoint.sharedMaintenance);
+          else if (latestPoint) current.current.onOpenCustomer(latestPoint.customer);
         },
       }));
       return item;
@@ -197,7 +201,7 @@ export function MaintenanceMapPanel({
             <span className="min-w-0 break-words">{label}</span>
           </label>)}
         </div>
-        <button type="button" onClick={() => onGeocodeMissing(filteredPoints)} disabled={geocodingBusy || missingCoordinateCount === 0} className="rounded-2xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" onClick={() => onGeocodeMissing(filteredPoints.filter(point => !point.sharedMaintenance))} disabled={geocodingBusy || missingCoordinateCount === 0} className="rounded-2xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
           {geocodingBusy ? "Koordináták keresése..." : `Hiányzó koordináták (${missingCoordinateCount})`}
         </button>
       </div>
@@ -231,7 +235,7 @@ export function MaintenanceMapPanel({
             </div>
             <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
               <span className={`min-w-0 max-w-full break-words rounded-xl px-3 py-2 text-xs font-black ${point.maintenanceOrigin === "external" ? "bg-violet-400/15 text-violet-200" : "bg-white/5 text-slate-300"}`}>{maintenanceMapOriginLabel(point)}</span>
-              {onEditMaintenanceOrigin ? <button type="button" onClick={() => onEditMaintenanceOrigin(point)} aria-label={`Besorolás módosítása: ${point.customerName}`} className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-black text-cyan-100">Besorolás</button> : null}
+              {onEditMaintenanceOrigin && !point.sharedMaintenance ? <button type="button" onClick={() => onEditMaintenanceOrigin(point)} aria-label={`Besorolás módosítása: ${point.customerName}`} className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-black text-cyan-100">Besorolás</button> : null}
             </div>
             <div className="mt-3 space-y-1 break-words text-sm font-bold text-slate-300">
               <p>{point.address || point.city || "Nincs cím megadva"}</p>
@@ -239,14 +243,15 @@ export function MaintenanceMapPanel({
               <p>Utolsó karbantartás: {formatMapDate(point.lastMaintenanceDate)}</p>
               <p>Következő esedékes: {formatMapDate(point.nextMaintenanceDue)}</p>
               <p>Karbantartások száma: {point.maintenanceCount}</p>
+              {point.maintenanceProviderName ? <p>Karbantartó: {point.maintenanceProviderName}</p> : null}
               {!hasMaintenanceMapCoordinates(point) ? <p className="font-black text-amber-100">Nincs használható koordináta{point.geocodeError ? `: ${point.geocodeError}` : "."}</p> : null}
             </div>
-            <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-black text-slate-100">
+            {!point.sharedMaintenance ? <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-black text-slate-100">
               <input type="checkbox" className="h-5 w-5 shrink-0 accent-zinc-400" checked={point.status === "optOut"} onChange={(event) => onToggleMaintenanceOptOut(point, event.target.checked)} />
               <span>Nem kéri a karbantartást</span>
-            </label>
+            </label> : <p className="mt-3 text-sm text-violet-200">Egyeztetés {point.maintenanceSourceName} nevében</p>}
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => onOpenCustomer(point.customer)} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél</button>
+              <button type="button" onClick={() => point.sharedMaintenance ? onOpenShared?.(point.sharedMaintenance) : onOpenCustomer(point.customer)} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">{point.sharedMaintenance ? "Egyeztetés" : "Ügyfél"}</button>
               {routeTarget(point) ? <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(routeTarget(point))}`} target="_blank" rel="noreferrer" className="rounded-2xl bg-emerald-400 px-4 py-3 text-center text-sm font-black text-slate-950">Térkép</a> : <span className="rounded-2xl bg-slate-500/20 px-4 py-3 text-center text-sm font-black text-slate-400">Nincs cím</span>}
             </div>
           </article>)}

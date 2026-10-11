@@ -152,7 +152,11 @@ import {
   workReportSignatureState,
   workReportTitle,
 } from "@/lib/alinflow/work-report";
-import { parsePrivacyNoticeSnapshot, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
+import { parsePrivacyNoticeSnapshot, privacyNoticeMatchesWorkReportSignature, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
+import { useSharedMaintenance } from "@/components/alinflow/useSharedMaintenance";
+import { SharedMaintenanceDialog } from "@/components/alinflow/SharedMaintenanceDialog";
+import { applySharedMaintenanceResults, mergeSharedMaintenancePoints, sharedMaintenanceMapPoint, type SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
+import { acceptMaintenanceOrder } from "@/lib/alinflow/shared-maintenance-client";
 import { resolvePrivacyPartner } from "@/lib/alinflow/privacy-partner-client";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
@@ -491,6 +495,7 @@ function HomeContent() {
   const [workFocusTarget,setWorkFocusTarget] = useState<"close-actions" | null>(null);
   const [maintenanceMapGeocodingBusy,setMaintenanceMapGeocodingBusy] = useState(false);
   const [maintenanceOriginEdit,setMaintenanceOriginEdit] = useState<{ point: MaintenanceMapPoint; workspaceId: string } | null>(null);
+  const [sharedMaintenanceSelection, setSharedMaintenanceSelection] = useState<{workspaceId: string; userId: string; item: SharedMaintenanceInstallation} | null>(null);
   const [mapMode,setMapMode] = useState<"callbacks" | "maintenance">("maintenance");
   const [user,setUser] = useState<User | null>(null);
   const [authLoading,setAuthLoading] = useState(true);
@@ -867,11 +872,24 @@ function HomeContent() {
   const sortedCustomers = useMemo(() => sortCustomersByCreatedAtDesc(customers), [customers]);
   const allWorkCustomers = useMemo(() => workCustomersForScheduling(sortedCustomers, workHistoryByCustomer), [sortedCustomers, workHistoryByCustomer]);
   const mapStatusDay = todayIso();
-  const maintenanceMapPoints = useMemo(() => buildMaintenanceMapPoints(allWorkCustomers), [allWorkCustomers, mapStatusDay]);
+  const sharedMaintenance = useSharedMaintenance(activeWorkspace?.id, view === "maintenanceMap" && mapMode === "maintenance", user?.id);
+  useEffect(() => {
+    if (sharedMaintenance.loading) return;
+    setSharedMaintenanceSelection(current => {
+      if (!current || current.workspaceId !== activeWorkspace?.id || current.userId !== user?.id) return null;
+      const fresh = sharedMaintenance.received.find(item => item.grantId === current.item.grantId && item.installationId === current.item.installationId);
+      return fresh ? {...current, item: fresh} : null;
+    });
+  }, [activeWorkspace?.id, user?.id, sharedMaintenance.loading, sharedMaintenance.received]);
+  const maintenanceMapPoints = useMemo(() => {
+    const own = applySharedMaintenanceResults(buildMaintenanceMapPoints(allWorkCustomers), sharedMaintenance.results);
+    return mergeSharedMaintenancePoints(own, sharedMaintenance.received);
+  }, [allWorkCustomers, sharedMaintenance.received, sharedMaintenance.results, mapStatusDay]);
   const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
-  const calendarCustomers = sortCustomersBySchedule(allWorkCustomers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva"));
+  const calendarCustomers = sortCustomersBySchedule(allWorkCustomers.filter((customer) => Boolean(customer.date) && customer.status !== "Lemondva"
+    && !(customer.source === "Karbantartási átvétel" && customer.maintenanceOrigin === "external" && isInstallationAppointment(customer.appointmentType))));
   const workResourceEditLocked = selected.status === "Szerelés kész – admin folyamatban" || selected.status === "Lezárva";
   const canEditWorkResources = !workResourceEditLocked || allowWorkResourceEdit;
   const hasCustomerFilter = customerSearch.trim().length > 0 || customerStatusFilter !== "all";
@@ -4177,6 +4195,11 @@ function HomeContent() {
         setMessage("Karbantartás lezárása előtt készítsd el és írasd alá a karbantartási munkalapot.");
         return;
       }
+      if (workspaceSettings.documentSettings.privacyNotice?.enabled
+          && !privacyNoticeMatchesWorkReportSignature(maintenanceReport.privacyNotice, maintenanceReport)) {
+        setMessage("Karbantartás lezárása előtt az adatkezelési tájékoztatót is olvassa el és írja alá az ügyfél a munkalap mellett.");
+        return;
+      }
 
       const changedAt = new Date().toISOString();
       const updated: Customer = {
@@ -4394,13 +4417,13 @@ function HomeContent() {
     }
   }
 
-  function startMaintenanceForCustomer(customer: Customer) {
+  function startMaintenanceForCustomer(customer: Customer, explicitInstallationWorks?: Customer[]) {
     maintenanceReturnRef.current = customer.id === selected.id
       && customer.activeAppointmentId === selected.activeAppointmentId
       ? { ...customer, quoteItems: cleanQuoteItems(quoteItems), materialUsage: { materials, overrides: materialOverrides } }
       : customer;
     const changedAt = new Date().toISOString();
-    const installationWorks = customerInstallationWorks(customer);
+    const installationWorks = explicitInstallationWorks || customerInstallationWorks(customer);
     const installationIds = installationWorks.map((work) => work.activeAppointmentId).filter(Boolean) as string[];
     const installationItems = cleanQuoteItems(installationWorks.flatMap((work) => work.quoteItems || []));
     const maintenanceInstallations = installationWorks
@@ -4441,6 +4464,30 @@ function HomeContent() {
     setAllowWorkResourceEdit(false);
     setMessage("Karbantartási időpont választható ✅");
     navigateToView("schedule");
+  }
+
+  async function startSharedMaintenance(item: SharedMaintenanceInstallation, workspaceId: string) {
+    if (currentWorkspaceId() !== workspaceId || !beginAction("shared-maintenance-order")) return;
+    try {
+      const result = await acceptMaintenanceOrder(item);
+      if (currentWorkspaceId() !== workspaceId) return;
+      await loadCustomersFromDb({background: true, preserveEditing: true});
+      if (currentWorkspaceId() !== workspaceId) return;
+      const saved = lastCustomerLoadRef.current?.workspaceId === workspaceId
+        ? lastCustomerLoadRef.current.customers.find(customer => customer.id === result.customerId) : undefined;
+      if (!saved) throw new Error("A megrendelés megmaradt, de az ügyfél betöltése nem sikerült. Frissítsd az oldalt.");
+      const display = sharedMaintenanceMapPoint(item);
+      const installation: Customer = { ...saved, activeAppointmentId: result.installationId, activeQuoteId: undefined,
+        activeWorkReportId: undefined, appointmentType: "installation", date: item.installationDate,
+        time: item.installationTime, quoteItems: display.customer.quoteItems, maintenanceOrigin: "external",
+        maintenanceSourceName: item.sourceWorkspaceName, status: "Lezárva", address: item.customer.address,
+        workAddress: item.customer.address, city: item.customer.city, postalCode: item.customer.postalCode,
+        mapLatitude: item.latitude ?? undefined, mapLongitude: item.longitude ?? undefined };
+      setSharedMaintenanceSelection(null);
+      startMaintenanceForCustomer(installation, [installation]);
+    } catch (error: any) {
+      if (currentWorkspaceId() === workspaceId) setMessage(error.message || "A karbantartás előkészítése nem sikerült.", "error");
+    } finally { endAction("shared-maintenance-order"); }
   }
 
   function addExtraMaterial() { setMaterials(prev=>[...prev, { name:"Egyéb anyag", qty:"1", unit:"db", isExtra:true }]); }
@@ -4667,6 +4714,11 @@ function HomeContent() {
           ))}
         </div>
         <Back onClick={() => goBack()} />
+        {mapMode === "maintenance" ? <div className="mb-4 flex flex-wrap items-center gap-3 text-sm" role="status">
+          {sharedMaintenance.loading ? <span>Átvett karbantartások betöltése...</span> : null}
+          {sharedMaintenance.error ? <span className="text-amber-200">{sharedMaintenance.error}</span> : null}
+          <button type="button" disabled={sharedMaintenance.loading} onClick={()=>sharedMaintenance.refresh()} className="rounded-xl bg-white/10 px-3 py-2 font-bold">Megosztások frissítése</button>
+        </div> : null}
         {mapMode === "callbacks" ? (
           <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} onDeleteCustomer={(customer) => deleteCustomer(customer, { stayOnMap: true })} />
         ) : <MaintenanceMapPanel
@@ -4676,6 +4728,7 @@ function HomeContent() {
           googleMapsApiKey={googleMapsApiKey}
           geocodingBusy={maintenanceMapGeocodingBusy}
           onOpenCustomer={(customer) => openCustomer(customer, "work")}
+          onOpenShared={(item) => {if(activeWorkspace?.id && user?.id) setSharedMaintenanceSelection({workspaceId: activeWorkspace.id, userId: user.id, item});}}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
           onToggleMaintenanceOptOut={toggleMaintenanceOptOut}
           onEditMaintenanceOrigin={(point) => {
@@ -4690,6 +4743,11 @@ function HomeContent() {
           onSave={(origin, sourceName) => saveMaintenanceOrigin(maintenanceOriginEdit.point, origin, sourceName, maintenanceOriginEdit.workspaceId)}
           onClose={() => setMaintenanceOriginEdit(null)}
         /> : null}
+        {sharedMaintenanceSelection?.workspaceId === activeWorkspace?.id && sharedMaintenanceSelection?.userId === user?.id && sharedMaintenanceSelection ? <SharedMaintenanceDialog
+          key={`${sharedMaintenanceSelection.workspaceId}:${sharedMaintenanceSelection.item.grantId}:${sharedMaintenanceSelection.item.installationId}`}
+          item={sharedMaintenanceSelection.item} busy={pendingActions.includes("shared-maintenance-order")}
+          onClose={()=>setSharedMaintenanceSelection(null)}
+          onAccept={()=>startSharedMaintenance(sharedMaintenanceSelection.item,sharedMaintenanceSelection.workspaceId)} /> : null}
       </Shell>
     );
   }
@@ -5832,6 +5890,10 @@ function HomeContent() {
     }
 
     const signedAt = hasValidWorkReportSignature(workReport) ? workReport.signedAt : null;
+    if (workReport.privacyNotice && !privacyNoticeMatchesWorkReportSignature(workReport.privacyNotice, workReport)) {
+      setMessage("Az adatkezelési tájékoztató és a munkalap aláírása nem egyezik. Nyisd meg újra a dokumentumot.");
+      return;
+    }
     const reportToSave: WorkReport = {
       ...workReport,
       appointmentId: workReport.appointmentId || selected.activeAppointmentId,

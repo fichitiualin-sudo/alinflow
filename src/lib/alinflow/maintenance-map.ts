@@ -2,11 +2,14 @@ import type { Customer } from "./types";
 import { appointmentSummaryLabel, appointmentTimeRangeLabel, isInstallationAppointment, normalizeAppointmentType } from "./appointments";
 import { displayAddress } from "./format";
 import { climateSummary } from "./products";
+import type { SharedMaintenanceInstallation } from "./shared-maintenance";
 
 export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "optOut" | "unknown";
 export type MaintenanceMapVisibility = { own: boolean; external: boolean };
 
 export type MaintenanceMapPoint = {
+  sharedMaintenance?: SharedMaintenanceInstallation;
+  maintenanceProviderName?: string;
   appointmentId: string;
   customer: Customer;
   customerId: string;
@@ -159,6 +162,11 @@ function dateStatus(nextMaintenanceDue?: string): MaintenanceMapStatus {
   if (days < 0) return "overdue";
   if (days <= MAINTENANCE_DUE_SOON_DAYS) return "dueSoon";
   return "ok";
+}
+
+export function maintenanceMapSchedule(baselineDate?: string) {
+  const nextMaintenanceDue = baselineDate ? addYears(baselineDate, 1) : undefined;
+  return { nextMaintenanceDue, status: dateStatus(nextMaintenanceDue) };
 }
 
 function uniqueByAppointment(customers: Customer[]) {

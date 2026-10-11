@@ -8,7 +8,8 @@ import { randomUUID } from 'node:crypto';
 // node tests/work-report-privacy-sql.test.mjs (never contacts Supabase)
 const { PGlite } = createRequire(new URL('../.photo-test/package.json', import.meta.url))('@electric-sql/pglite');
 const db = new PGlite();
-const migration = await readFile(new URL('../docs/sql/WORK_REPORT_PRIVACY_NOTICE.sql', import.meta.url), 'utf8');
+const migration = await readFile(new URL('../docs/sql/WORK_REPORT_PRIVACY_NOTICE.sql', import.meta.url), 'utf8')
+  + '\n' + await readFile(new URL('../docs/sql/MAINTENANCE_PRIVACY_NOTICE.sql', import.meta.url), 'utf8');
 const user = randomUUID(), other = randomUUID(), workspace = randomUUID(), foreignWorkspace = randomUUID();
 const customer = randomUUID(), foreignCustomer = randomUUID(), appointment = randomUUID();
 const signature = 'data:image/png;base64,c2lnbmF0dXJl';
@@ -29,11 +30,11 @@ async function as(role, actor = '') {
   await db.exec(`reset role; set role ${role};`);
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [actor]);
 }
-async function seed(snapshot = null, scope = workspace) {
+async function seed(snapshot = null, scope = workspace, appointmentType = 'installation') {
   const id = randomUUID();
-  await db.query(`insert into work_reports(id,workspace_id,customer_id,appointment_id,signer_name,signed_at,signature_data_url,privacy_notice)
-    values($1,$2,$3,$4,$5,$6,$7,$8)`, [id, scope, scope === workspace ? customer : foreignCustomer, appointment,
-    snapshot?.signerName ?? 'Teszt ügyfél', snapshot?.signedAt ?? signedAt, snapshot?.signatureDataUrl ?? signature, snapshot]);
+  await db.query(`insert into work_reports(id,workspace_id,customer_id,appointment_id,signer_name,signed_at,signature_data_url,privacy_notice,appointment_type)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [id, scope, scope === workspace ? customer : foreignCustomer, appointment,
+    snapshot?.signerName ?? 'Teszt ügyfél', snapshot?.signedAt ?? signedAt, snapshot?.signatureDataUrl ?? signature, snapshot, appointmentType]);
   return id;
 }
 const denied = (promise, code = '23514') => assert.rejects(promise, error => error.code === code);
@@ -52,7 +53,7 @@ try {
     create table workspace_members(workspace_id uuid, user_id uuid, active boolean not null, primary key(workspace_id,user_id));
     create table customers(id uuid primary key, workspace_id uuid not null);
     create table work_reports(id uuid primary key, workspace_id uuid not null, customer_id uuid not null references customers(id) on delete cascade,
-      appointment_id uuid, signer_name text, signed_at timestamptz, signature_data_url text, notes text);
+      appointment_id uuid, appointment_type text, signer_name text, signed_at timestamptz, signature_data_url text, notes text);
     grant usage on schema public,auth to anon,authenticated;
     grant select on workspace_members to authenticated;
     alter table workspace_members enable row level security;
@@ -206,6 +207,29 @@ try {
     assert.equal(versions.length, 1); assert.equal(versions[0].operation, 'deleted');
     assert.deepEqual(versions[0].privacy_notice, freshNotice);
   });
+  await check('maintenance notices use one service provider and remain scoped to maintenance', async () => {
+    const maintenance = notice({ version: '2026-10-11.2', controllers: [notice().controllers[1]] });
+    const id = await seed(maintenance, workspace, 'maintenance');
+    assert.deepEqual((await row(id)).privacy_notice, maintenance);
+    await denied(seed(maintenance));
+    await denied(seed({ ...maintenance, controllers: [notice().controllers[0]] }, workspace, 'maintenance'));
+    await denied(seed({ ...maintenance, controllers: notice().controllers }, workspace, 'maintenance'));
+    await denied(seed({ ...notice(), controllers: [notice().controllers[1]] }, workspace, 'maintenance'));
+    await denied(db.query("update work_reports set appointment_type='installation' where id=$1", [id]));
+    await denied(db.query("update work_reports set signer_name='Másik aláíró' where id=$1", [id]));
+    await denied(db.query("update work_reports set signed_at='2026-01-01T12:00:00Z' where id=$1", [id]));
+    await denied(db.query("update work_reports set signature_data_url='data:image/png;base64,YQ==' where id=$1", [id]));
+    const prior = await seed(notice(), workspace, 'maintenance');
+    assert.deepEqual((await row(prior)).privacy_notice, notice());
+    const before = await row(id);
+    const newNotice = { ...maintenance, signedAt: '2027-10-11T12:00:00Z' };
+    const next = await seed(newNotice, workspace, 'maintenance');
+    assert.deepEqual(await row(id), before);
+    assert.deepEqual((await row(next)).privacy_notice, newNotice);
+    await denied(replace(id, { ...maintenance, consentGranted: false }));
+    await db.query('update work_reports set privacy_consent_revoked_at=now() where id=$1', [id]);
+    assert.deepEqual((await history(id))[0].privacy_notice, maintenance);
+  });
   await check('customer cascade deletion also retains former notice evidence', async () => {
     const cascade = await seed(notice());
     await as('postgres'); await db.query('delete from customers where id=$1', [customer]);
@@ -226,6 +250,12 @@ try {
     const checks = results.flatMap(result => result.rows).filter(result => 'check_name' in result);
     assert.equal(checks.length, 9);
     assert.ok(checks.every(result => result.passed), JSON.stringify(checks));
+    const maintenanceVerify = await readFile(new URL('../docs/sql/VERIFY_MAINTENANCE_PRIVACY_NOTICE.sql', import.meta.url), 'utf8');
+    const maintenanceResults = await db.exec(maintenanceVerify);
+    const maintenanceChecks = maintenanceResults.flatMap(result => result.rows).filter(result => 'check_name' in result);
+    assert.equal(maintenanceChecks.length, 3);
+    assert.ok(maintenanceChecks.every(result => result.passed), JSON.stringify(maintenanceChecks));
+    assert.equal(maintenanceResults.at(-1).rows[0].invalid_maintenance_notice_count, 0);
   });
   await check('anonymous users cannot read consent evidence', async () => {
     await as('anon'); await denied(db.query('select * from work_report_privacy_history'), '42501');
