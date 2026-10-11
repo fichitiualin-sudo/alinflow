@@ -29,6 +29,8 @@ A kitölthető szöveges, számos, dátum- és választómezők finom keretet é
 
 A Raktár gyorsnézet a jobb oldali oszlop tetejére igazodjon. Ne csússzon az Új érdeklődők aljához. A fő tartalom használja ki a széles képernyőt, de ne nyúljon olvashatatlanul szélesre.
 
+Az ügyfélkereső találati kártyáin a név, az elérhetőség és a klíma adatai a teljes szélességet használják. A státusz és a hozzá tartozó időpont külön, tördelhető sorban jelenik meg, alatta visszafogott érdeklődési dátummal. Ez az elrendezés a keskeny asztali oldalsávban is megmarad; a hosszú név vagy email nem lóghat ki a kártyából.
+
 ## Facebook-érdeklődők
 
 A Facebook-panel a Dashboard fő blokkjai után jelenik meg, asztalon a CSV-import mellett, mobilon előtte. A kapcsolat hiányát vagy a beolvasás elérhetőségét jelzi. A „Beolvasás elérhető” csak a szerverbeállítás meglétét jelenti, nem igazolt automatikus Meta-kézbesítést.
