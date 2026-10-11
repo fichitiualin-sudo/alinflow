@@ -7,6 +7,8 @@ const PAGE = { width: 595.28, height: 841.89, margin: 44, bottom: 52 };
 const INK = rgb(0.08, 0.12, 0.18);
 const MUTED = rgb(0.34, 0.39, 0.46);
 const LINE = rgb(0.76, 0.79, 0.82);
+const ACCENT = rgb(0.06, 0.46, 0.43);
+type DocumentStyle = { modern?: boolean; brandName?: string };
 let fontBytes: Promise<Uint8Array> | undefined;
 
 /** Shared by generated documents and official PDF form overlays. No remote font requests. */
@@ -36,7 +38,7 @@ export class DocumentPdf {
   private y = 0;
   private readonly width = PAGE.width - 2 * PAGE.margin;
 
-  constructor(readonly document: PDFDocument, readonly font: PDFFont, readonly title: string) {
+  constructor(readonly document: PDFDocument, readonly font: PDFFont, readonly title: string, private readonly style: DocumentStyle = {}) {
     document.setTitle(title);
     document.setCreator("AlinFlow");
     document.setProducer("AlinFlow");
@@ -47,7 +49,15 @@ export class DocumentPdf {
     if (this.document.getPageCount() >= 50) throw new Error("A dokumentum túl hosszú a PDF elkészítéséhez.");
     this.page = this.document.addPage([PAGE.width, PAGE.height]);
     this.y = PAGE.height - 48;
-    const size = this.document.getPageCount() === 1 ? 16 : 11;
+    if (this.style.modern) {
+      this.page.drawRectangle({ x: PAGE.margin, y: PAGE.height - 32, width: 34, height: 3, color: ACCENT });
+      for (const line of this.wrap(this.style.brandName || "MUNKALAP", this.width, 9)) {
+        this.page.drawText(line, { x: PAGE.margin, y: this.y, size: 9, font: this.font, color: ACCENT });
+        this.y -= 13;
+      }
+      this.y -= 9;
+    }
+    const size = this.document.getPageCount() === 1 ? (this.style.modern ? 21 : 16) : 11;
     for (const line of this.wrap(this.title, this.width, size)) {
       this.page.drawText(line, { x: PAGE.margin, y: this.y, size, font: this.font, color: INK });
       this.y -= size + 5;
@@ -91,12 +101,42 @@ export class DocumentPdf {
 
   section(title: string) {
     this.ensure(45);
+    if (this.style.modern) {
+      this.y -= 8;
+      this.page.drawText(title, { x: PAGE.margin, y: this.y, size: 10, font: this.font, color: ACCENT });
+      this.page.drawLine({ start: { x: PAGE.margin, y: this.y - 7 }, end: { x: PAGE.width - PAGE.margin, y: this.y - 7 }, color: LINE, thickness: 0.4 });
+      this.y -= 24;
+      return;
+    }
     this.y -= 9;
     this.text(title, { size: 11, gap: 6 });
   }
 
   field(label: string, value: unknown) {
     this.text(`${label}: ${printable(value) || "nincs megadva"}`, { gap: 2 });
+  }
+
+  /** Two-column metadata. Oversized fields use normal flowing text instead of clipping. */
+  details(fields: Array<[string, unknown]>) {
+    const gap = 14;
+    const columnWidth = (this.width - gap) / 2;
+    for (let index = 0; index < fields.length; index += 2) {
+      const row = fields.slice(index, index + 2).map(([label, value]) => ({ label, value: printable(value) || "Nincs megadva" }));
+      const lines = row.map((field) => this.wrap(field.value, columnWidth - 20, 9.5));
+      const height = Math.max(...lines.map((value) => value.length)) * 13 + 33;
+      if (height > 180) {
+        for (const field of row) this.field(field.label, field.value);
+        continue;
+      }
+      this.ensure(height + 8);
+      row.forEach((field, column) => {
+        const x = PAGE.margin + column * (columnWidth + gap);
+        this.page.drawRectangle({ x, y: this.y - height + 8, width: columnWidth, height, color: rgb(0.96, 0.98, 0.98) });
+        this.page.drawText(field.label, { x: x + 10, y: this.y - 6, size: 8, font: this.font, color: MUTED });
+        lines[column].forEach((line, lineIndex) => this.page.drawText(line, { x: x + 10, y: this.y - 23 - lineIndex * 13, size: 9.5, font: this.font, color: INK }));
+      });
+      this.y -= height + 8;
+    }
   }
 
   textHeight(value: unknown, size = 10) {
@@ -143,6 +183,22 @@ export class DocumentPdf {
     const signedDate = new Date(signedAt);
     if (!Number.isFinite(signedDate.getTime())) throw new Error("Hiányzik az elmentett aláírás időpontja.");
     const displayDate = signedDate.toLocaleString("hu-HU", { timeZone: "Europe/Budapest", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    if (this.style.modern && this.wrap(signerName, 230, 9).length <= 6) {
+      const names = this.wrap(signerName, 230, 9);
+      this.ensure(105 + names.length * 13 + Math.min(reserveAfter, 350));
+      const x = PAGE.width - PAGE.margin - 230;
+      const size = signature.scaleToFit(210, 50);
+      this.page.drawText("ÁTVÉTEL IGAZOLÁSA", { x: PAGE.margin, y: this.y - 10, size: 8, font: this.font, color: MUTED });
+      this.page.drawText(displayDate, { x: PAGE.margin, y: this.y - 27, size: 9, font: this.font, color: INK });
+      this.page.drawImage(signature, { x: x + (230 - size.width) / 2, y: this.y - 57, width: size.width, height: size.height });
+      this.y -= 66;
+      this.page.drawLine({ start: { x, y: this.y }, end: { x: x + 230, y: this.y }, color: LINE, thickness: 0.7 });
+      this.y -= 15;
+      names.forEach((name) => { this.page.drawText(name, { x, y: this.y, size: 9, font: this.font, color: INK }); this.y -= 13; });
+      this.page.drawText("Ügyfél aláírása", { x, y: this.y, size: 8, font: this.font, color: MUTED });
+      this.y -= 19;
+      return;
+    }
     const names = this.wrap(`Aláíró: ${signerName}`, this.width, 9);
     this.ensure(116 + names.length * 13 + Math.min(reserveAfter, 350));
     this.y -= 7;
@@ -164,7 +220,7 @@ export class DocumentPdf {
   }
 }
 
-export async function createDocumentPdf(title: string): Promise<DocumentPdf> {
+export async function createDocumentPdf(title: string, style: DocumentStyle = {}): Promise<DocumentPdf> {
   const document = await PDFDocument.create();
-  return new DocumentPdf(document, await loadPdfFont(document), title);
+  return new DocumentPdf(document, await loadPdfFont(document), title, style);
 }
