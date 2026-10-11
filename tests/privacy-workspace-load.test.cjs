@@ -8,6 +8,7 @@ const reports = h.load("src/lib/alinflow/work-report.ts");
 const appointments = h.load("src/lib/alinflow/appointments.ts");
 const scopes = h.load("src/lib/alinflow/report-scope.ts");
 const privacy = h.load("src/lib/alinflow/privacy-notice.ts");
+const declarations = h.load("src/lib/alinflow/purchase-declarations.ts");
 
 function deferred() {
   let resolve, reject;
@@ -80,20 +81,24 @@ function workReportRace(type) {
   const activeWorkspaceIdRef = { current: "old" };
   const response = deferred();
   const started = deferred();
-  const state = { report: undefined, blocked: false, reports: {}, maintenance: {}, messages: [], writes: [] };
+  const state = { report: undefined, blocked: false, reports: {}, maintenance: {}, declarations: {}, messages: [], writes: [] };
   const oldCustomer = { id: "old-customer", name: "Old Customer", date: "2026-10-11", time: "08:00", appointmentType: type, activeAppointmentId: "old-appointment" };
   const oldRow = { id: "old-report", workspace_id: "old", customer_id: oldCustomer.id, appointment_id: oldCustomer.activeAppointmentId,
     appointment_type: type, work_date: oldCustomer.date, work_time: oldCustomer.time,
     work_description: "Old work", signature_data_url: "old-signature", signed_at: "2026-10-11T08:30:00Z", signer_name: oldCustomer.name };
   const set = (key, value) => { state.writes.push(key); state[key] = typeof value === "function" ? value(state[key]) : value; };
   const f = h.functions(["currentWorkspaceId", "workspaceQuery", "loadWorkReportFor"], {
-    ...reports, ...appointments, ...scopes, activeWorkspaceIdRef, workReportLoadSequence: { current: 0 },
+    ...reports, ...appointments, ...scopes, ...declarations, activeWorkspaceIdRef, workReportLoadSequence: { current: 0 },
+    sellerCompanies: [], setWorkReportDeclaration: (value) => set("declaration", value),
+    setWorkReportDeclarationItems: (value) => set("declarationItems", value), setPurchaseDeclarationItemKeys: (value) => set("keys", value),
+    setSelectedSellerId: (value) => set("sellerId", value), setPurchaseDeclarationsByCustomer: (value) => set("declarations", value),
     scheduleDate: oldCustomer.date, scheduleTime: oldCustomer.time, shownTime: oldCustomer.time,
     setWorkReport: (value) => set("report", value), setWorkReportLoadBlocked: (value) => set("blocked", value),
     setWorkReportsByCustomer: (value) => set("reports", value), setMaintenanceReportsByCustomer: (value) => set("maintenance", value),
     compareWorkReportsDesc: () => 0,
     setMessage: (value) => { state.writes.push("message"); state.messages.push(value); },
     supabase: database((op) => {
+      if (op.table === "purchase_declarations") return { data: [], error: null };
       assert.equal(op.table, "work_reports"); assert.equal(op.method, "select");
       assert.equal(op.filters.workspace_id, "old"); assert.equal(op.filters.customer_id, oldCustomer.id);
       assert.equal(op.filters.appointment_id, oldCustomer.activeAppointmentId);

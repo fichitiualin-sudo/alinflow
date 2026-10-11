@@ -12,6 +12,7 @@ function fixture(options = {}) {
   const calls = [], rpcCalls = [], httpCalls = [];
   const admin = database(op => {
     calls.push(op);
+    if (op.table === "workspaces") { assert.equal(op.filters.id, entry.workspace_id); assert.equal(op.filters.active, true); return { data: options.inactive ? null : { id: entry.workspace_id } }; }
     assert.equal(op.filters.workspace_id, entry.workspace_id, `${op.table} must be workspace scoped`);
     if (op.table === "google_calendar_connections") return { data: op.method === "update" ? null : connection, error: null };
     if (op.table === "google_calendar_sync_queue") return { data: { ...entry, ...options.currentQueue }, error: null };
@@ -80,6 +81,13 @@ test("updates own event with If-Match and retains its stable ID", async () => {
   assert.equal(f.httpCalls[1].headers["If-Match"], '"remote-version"');
   assert.match(f.httpCalls[1].url, /\/saved-event\?sendUpdates=none$/);
   assert.equal(f.finishes()[0].p_event_id, "saved-event");
+});
+
+test("workspace deactivated after claiming a calendar job cannot mutate its Google calendar", async () => {
+  const options = { responses: [{ status: 404, after: () => { options.inactive = true; } }] };
+  const f = fixture(options); const result = await f.worker.runGoogleCalendarSync("workspace-one");
+  assert.equal(result.failed, 1); assert.equal(f.httpCalls.length, 1);
+  assert.equal(f.finishes()[0].p_success, false);
 });
 
 test("manual or other-workspace Google event is never patched or deleted", async () => {

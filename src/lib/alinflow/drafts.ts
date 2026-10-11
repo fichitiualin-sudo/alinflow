@@ -7,37 +7,60 @@ export function safeReturnView(value: unknown): View {
   return typeof value === "string" && RESTORABLE_VIEWS.includes(value as View) ? (value as View) : "work";
 }
 
-export function readReturnContext(): ReturnContext | null {
-  if (typeof window === "undefined") return null;
+export type DraftScope = { userId: string; workspaceId: string | null } | null;
+
+function storageKey(key: string, scope: DraftScope) {
+  return scope?.userId ? `${key}:${encodeURIComponent(scope.userId)}:${encodeURIComponent(scope.workspaceId || "legacy")}` : null;
+}
+
+function removeStored(key: string | null) {
+  if (typeof window === "undefined" || !key) return;
+  try { window.sessionStorage.removeItem(key); } catch { /* Optional local recovery storage. */ }
+}
+
+export function clearReturnContext(scope: DraftScope) {
+  removeStored(storageKey(RETURN_CONTEXT_KEY, scope));
+}
+
+export function writeReturnContext(context: ReturnContext, scope: DraftScope) {
+  const key = storageKey(RETURN_CONTEXT_KEY, scope);
+  if (typeof window === "undefined" || !key) return;
+  try { window.sessionStorage.setItem(key, JSON.stringify(context)); } catch { /* Optional local recovery storage. */ }
+}
+
+export function readReturnContext(scope: DraftScope): ReturnContext | null {
+  const key = storageKey(RETURN_CONTEXT_KEY, scope);
+  if (typeof window === "undefined" || !key) return null;
   try {
-    const raw = window.sessionStorage.getItem(RETURN_CONTEXT_KEY);
+    const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<ReturnContext>;
     if (!parsed.customerId) return null;
     const at = typeof parsed.at === "number" ? parsed.at : Date.now();
     const maxAgeMs = 6 * 60 * 60 * 1000;
     if (Date.now() - at > maxAgeMs) {
-      window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
+      removeStored(key);
       return null;
     }
-    return { customerId: parsed.customerId, view: safeReturnView(parsed.view), at };
+    return { customerId: parsed.customerId, appointmentId: typeof parsed.appointmentId === "string" ? parsed.appointmentId : undefined, view: safeReturnView(parsed.view), at };
   } catch {
-    window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
+    removeStored(key);
     return null;
   }
 }
 
-export function readCustomerDraft(): CustomerDraft | null {
-  if (typeof window === "undefined") return null;
+export function readCustomerDraft(scope: DraftScope): CustomerDraft | null {
+  const key = storageKey(CUSTOMER_DRAFT_KEY, scope);
+  if (typeof window === "undefined" || !key) return null;
   try {
-    const raw = window.sessionStorage.getItem(CUSTOMER_DRAFT_KEY);
+    const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CustomerDraft>;
     if (!parsed.customer?.id) return null;
     const at = typeof parsed.at === "number" ? parsed.at : Date.now();
     const maxAgeMs = 6 * 60 * 60 * 1000;
     if (Date.now() - at > maxAgeMs) {
-      window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
+      removeStored(key);
       return null;
     }
     return {
@@ -52,32 +75,34 @@ export function readCustomerDraft(): CustomerDraft | null {
       at,
     };
   } catch {
-    window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
+    removeStored(key);
     return null;
   }
 }
 
-export function writeCustomerDraft(draft: CustomerDraft) {
-  if (typeof window === "undefined" || !draft.customer?.id) return;
+export function writeCustomerDraft(draft: CustomerDraft, scope: DraftScope) {
+  const key = storageKey(CUSTOMER_DRAFT_KEY, scope);
+  if (typeof window === "undefined" || !key || !draft.customer?.id) return;
   try {
-    window.sessionStorage.setItem(CUSTOMER_DRAFT_KEY, JSON.stringify(draft));
+    window.sessionStorage.setItem(key, JSON.stringify(draft));
   } catch {
     // A sessionStorage csak kényelmi biztonsági mentés. Ha megtelik vagy tiltott, az app működjön tovább.
   }
 }
 
-export function clearCustomerDraft(customerId?: string) {
-  if (typeof window === "undefined") return;
+export function clearCustomerDraft(scope: DraftScope, customerId?: string) {
+  const key = storageKey(CUSTOMER_DRAFT_KEY, scope);
+  if (typeof window === "undefined" || !key) return;
   if (!customerId) {
-    window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
+    removeStored(key);
     return;
   }
-  const current = readCustomerDraft();
-  if (current?.customer.id === customerId) window.sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
+  const current = readCustomerDraft(scope);
+  if (current?.customer.id === customerId) removeStored(key);
 }
 
-export function draftForCustomer(customer: Customer) {
-  const draft = readCustomerDraft();
+export function draftForCustomer(customer: Customer, scope: DraftScope) {
+  const draft = readCustomerDraft(scope);
   if (!draft || draft.customer.id !== customer.id) return null;
 
   const nextQuoteItems = draft.quoteItems.length

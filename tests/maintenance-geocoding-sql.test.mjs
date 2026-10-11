@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {createRequire} from 'node:module';
+const require=createRequire(new URL('../.photo-test/package.json',import.meta.url)),{PGlite}=require('@electric-sql/pglite');
+const db=new PGlite();
+try {
+  await db.exec(await readFile('tests/fixtures/schema.sql','utf8'));
+  const prior=await readFile('docs/sql/20260723_ADD_WORKSPACE_ISOLATION.sql','utf8');
+  await db.exec(prior.match(/create or replace function public.save_appointment_with_job_mirror[\s\S]*?\$\$;/)[0]);
+  await db.exec(await readFile('docs/sql/20260906_AUDIT_DATA_SAFETY.sql','utf8'));
+  await db.exec(await readFile('docs/sql/20260724_ADD_MAINTENANCE_MAP_COORDINATES.sql','utf8'));
+  const workspace='10000000-0000-0000-0000-000000000001',user='90000000-0000-0000-0000-000000000001';
+  const customer='20000000-0000-0000-0000-000000000001',appointment='40000000-0000-0000-0000-000000000001',quote='30000000-0000-0000-0000-000000000001';
+
+  await db.exec('alter table customers add column address text,add column city text,add column postal_code text');
+  await db.query("update customers set address='Fallback street',city='Test City',postal_code='1234' where id=$1",[customer]);
+  await db.query("update appointments set address='Old street',latitude=47,longitude=19,geocode_status='ok',geocoded_at=now() where id=$1",[appointment]);
+  const migration=await readFile('docs/sql/20261012_MAINTENANCE_GEOCODE_SAFETY.sql','utf8');
+  const row=async(id=appointment)=>(await db.query('select * from appointments where id=$1',[id])).rows[0];
+  const before=await row();const reportBefore=(await db.query('select * from work_reports')).rows;
+  await db.exec(migration);await db.exec(migration);assert.deepEqual(await row(),before);
+  console.log('PASS idempotent migration preserves every historical row and coordinate');
+  await db.exec('set role authenticated');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user]);
+  const save=(version,address='New street',lat=48,lng=20,status='ok',work=appointment,ws=workspace)=>db.query('select save_maintenance_geocode($1,$2,$3,$4,$5,$6,$7,$8) saved',[ws,work,version,address,lat,lng,status,'Synthetic no result']);
+  const rejects=(promise,code)=>assert.rejects(promise,e=>e.code===code);
+  await db.query('select * from save_appointment_with_resources($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',[
+    appointment,customer,quote,'Synthetic customer','2026-10-12','08:00','installation','Időpont foglalva','New street',null,user,workspace,null]);
+  let fresh=await row();
+  assert.equal(fresh.latitude,null);assert.equal(fresh.longitude,null);assert.equal(fresh.geocode_status,null);
+  assert.notEqual(fresh.updated_at,before.updated_at);
+  await rejects(save(before.updated_at,'Old street'),'40001');assert.equal((await row()).latitude,null);
+  console.log('PASS normal appointment save invalidates old coordinates and rejects an in-flight old-address result');
+  const saved=(await save(fresh.updated_at)).rows[0].saved;
+  assert.equal(saved.latitude,48);assert.equal(saved.longitude,20);assert.equal(saved.geocodeStatus,'ok');
+  assert.equal(new Date((await row()).updated_at).toISOString(),new Date(saved.updatedAt).toISOString());
+  await rejects(save(fresh.updated_at),'40001');
+  console.log('PASS acknowledged geocode saves version once; stale/duplicate responses cannot overwrite newer coordinates');
+  const invalidatedBy=async(field,value)=>{
+    fresh=await row();await db.query(`update customers set ${field}=$2 where id=$1`,[customer,value]);
+    const invalid=await row();assert.equal(invalid.latitude,null);assert.notEqual(invalid.updated_at,fresh.updated_at);
+    await rejects(save(fresh.updated_at),'40001');
+    await save(invalid.updated_at);
+  };
+  await invalidatedBy('city','Other City');await invalidatedBy('postal_code','4321');
+  console.log('PASS customer location changes invalidate installation pins even if caller omits updated_at');
+  fresh=await row();await db.query("update customers set address='Different fallback' where id=$1",[customer]);
+  assert.equal((await row()).latitude,48);assert.deepEqual((await row()).updated_at,fresh.updated_at,'explicit work address remains independent of customer fallback');
+  await db.query('update appointments set address=null where id=$1',[appointment]);fresh=await row();
+  await save(fresh.updated_at,'Different fallback');fresh=await row();
+  await db.query("update customers set address='New fallback' where id=$1",[customer]);assert.equal((await row()).latitude,null);
+  await rejects(save(fresh.updated_at,'Different fallback'),'40001');
+  console.log('PASS fallback changes invalidate only appointments depending on the changed fallback');
+  fresh=await row();
+  for(const coords of [[null,19],[47,null],[91,19],[47,181],[NaN,19],[Infinity,19]])await rejects(save(fresh.updated_at,'New fallback',...coords),'22023');
+  await rejects(save(fresh.updated_at,'Wrong street'),'40001');
+  await rejects(save(null,'New fallback'),'40001');
+  const failed=(await save(fresh.updated_at,'New fallback',null,null,'failed')).rows[0].saved;
+  assert.equal(failed.latitude,null);assert.equal(failed.geocodeStatus,'failed');assert.equal((await row()).latitude,null);
+  console.log('PASS invalid coordinates/address/version are rejected; failed lookup never fabricates a (0,0) marker');
+  await rejects(save((await row()).updated_at,'New fallback',48,20,'ok',appointment,'10000000-0000-0000-0000-000000000002'),'42501');
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",['90000000-0000-0000-0000-000000000002']);
+  await rejects(save(failed.updatedAt,'New fallback'),'42501');
+  await db.exec('reset role;set role anon');await rejects(save(failed.updatedAt,'New fallback'),'42501');
+  await db.exec('reset role');assert.deepEqual((await db.query('select * from work_reports')).rows,reportBefore);
+  console.log('PASS foreign/anonymous access denied and existing signed reports are unchanged');
+} finally {await db.close();}

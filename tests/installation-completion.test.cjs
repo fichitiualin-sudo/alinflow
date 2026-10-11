@@ -14,6 +14,7 @@ const savedReportId = "44444444-4444-4444-8444-444444444444";
 const savedDeclarationId = "55555555-5555-4555-8555-555555555555";
 const base = { ...appointments, ...reports, ...scopes, ...declarations, ...products,
   workspaceQuery: identity, withWorkspace: identity, user: { id: "synthetic-user" },
+  currentWorkspaceId: () => "synthetic-workspace",
   setSelected: noop, promoteCustomerWork: noop, setAllowWorkResourceEdit: noop, returnToLastMenu: noop };
 
 function closeHarness(patch = {}) {
@@ -85,6 +86,7 @@ function reportHarness({ type = "installation", fail, reportGate, declarationGat
     throw Error(`Unexpected database call: ${op.table}/${op.method}`);
   });
   const context = { ...base, selected, workReport, quoteItems: customer.quoteItems, workReportBusy: false, workReportLoadBlocked: false,
+    workReportDeclaration: undefined, workReportDeclarationItems: customer.quoteItems, setWorkReportDeclaration: noop,
     pendingActionsRef: { current: new Set() }, setPendingActions: noop,
     workReportReceiptsRef: { current: new Map() }, currentWorkspaceId: () => "synthetic-workspace",
     scheduleDate: customer.date, shownTime: customer.time, scheduleTime: customer.time,

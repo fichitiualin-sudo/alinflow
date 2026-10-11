@@ -8,6 +8,7 @@ function apiHarness(failure) {
   const outgoing = [];
   const env = {
     NEXT_PUBLIC_SUPABASE_URL: "https://test.invalid", NEXT_PUBLIC_SUPABASE_ANON_KEY: "fake-public-key",
+    SUPABASE_SERVICE_ROLE_KEY: "fake-service-key",
     RESEND_API_KEY: "fake-mail-key", EMAIL_FROM: "Test <test@example.invalid>",
     SZAMLAZZ_LABOR_AGENT_KEY: "fake-invoice-key", SZAMLAZZ_WORKSPACE_ID: workspaceId,
   };
@@ -22,6 +23,10 @@ function apiHarness(failure) {
     throw Error("Unexpected query " + op.table);
   });
   db.auth = { getUser: async () => failure === "auth" ? { data: {}, error: Error("invalid") } : { data: { user: { id: "user" } } } };
+  db.rpc = async name => name === "claim_invoice_delivery"
+    ? { data: { status: "send", claim_token: "synthetic-invoice-claim" } }
+    : name === "finish_invoice_delivery" ? { data: { status: "confirmed" } }
+    : { error: { message: "Unexpected RPC" } };
   const h = harness({ process: { env }, fetch: async (url, options) => {
     outgoing.push({ url: String(url), options });
     if (String(url).includes("szamlazz.hu")) return new Response("<valasz><sikeres>true</sikeres><szamlaszam>TEST-ONLY</szamlaszam></valasz>");

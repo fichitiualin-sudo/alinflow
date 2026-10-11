@@ -103,6 +103,7 @@ function fixture({ rejectedEmail = false, rejectedDocumentWrites = 0 } = {}) {
       normalizedScheduleAppointmentType: "installation", scheduleDate: "2026-10-12", scheduleTime: "08:00",
       allWorkCustomers: [], sendAppointmentNotice: false, maintenanceReturnRef: { current: null },
       detailDataLoadedRef, detailDataLoadingRef, selectedCustomerIdRef: { current: state.selected.id },
+      authUserIdRef: { current: "synthetic-user" }, authLoadGenerationRef: { current: 0 },
       quoteIssuedAt: "", setQuoteIssuedAt: noop, setPendingActions: noop, setQuoteEmailBusy: noop,
       setMessage: (message, tone) => state.messages.push({ message, tone }),
       setSelected: setter("selected"), setCustomers: setter("customers"),

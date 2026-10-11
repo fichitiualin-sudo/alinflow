@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
+import type { Customer, PurchaseDeclaration, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
-import { formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
+import { formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle, workReportSnapshotCustomer } from "@/lib/alinflow/work-report";
 import { appointmentSummaryLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { Back } from "@/components/alinflow/LayoutPrimitives";
 import { WorkSectionToggleButton } from "@/components/alinflow/WorkSectionToggleButton";
@@ -26,6 +26,8 @@ type WorkReportPanelProps = {
   newSellerTaxNumber: string;
   newSellerRepresentative: string;
   purchaseDeclarationItemKeys: string[];
+  purchaseDeclarationItems?: QuoteItem[];
+  savedDeclaration?: PurchaseDeclaration;
   onBack: () => void;
   onSave: (sendEmail: boolean) => void;
   onUpdateWorkReportField: (field: keyof WorkReport, value: string) => void;
@@ -54,6 +56,8 @@ export function WorkReportPanel({
   newSellerTaxNumber,
   newSellerRepresentative,
   purchaseDeclarationItemKeys,
+  purchaseDeclarationItems = quoteItems,
+  savedDeclaration,
   onBack,
   onSave,
   onUpdateWorkReportField,
@@ -72,12 +76,19 @@ export function WorkReportPanel({
   const reportTitle = workReportTitle(selected.appointmentType);
   const climateLabel = isMaintenance ? "Karbantartandó klímák" : "Klíma";
   const hasValidSignature = hasValidWorkReportSignature(workReport);
+  const documentCustomer = hasValidSignature ? workReportSnapshotCustomer(selected, workReport) : selected;
+  const savedSeller = hasValidSignature && savedDeclaration ? {
+    id: savedDeclaration.sellerCompanyId || selectedSellerId, name: savedDeclaration.sellerName,
+    taxNumber: savedDeclaration.sellerTaxNumber, representative: savedDeclaration.sellerRepresentative,
+  } : undefined;
+  const editorSellers = savedSeller ? [savedSeller, ...sellerCompanies.filter((seller) => seller.id !== savedSeller.id)] : sellerCompanies;
   const [showPurchaseDeclaration, setShowPurchaseDeclaration] = useState(false);
   const [consentGranted, setConsentGranted] = useState(false);
   const [signatureError, setSignatureError] = useState("");
   const [signatureDraft, setSignatureDraft] = useState("");
   const privacy = normalizePrivacyNoticeConfig(privacyConfig);
   const privacyRevision = JSON.stringify([privacy, appointmentType]);
+  const declarationRevision = JSON.stringify([selectedSellerId, purchaseDeclarationItemKeys, purchaseDeclarationItems]);
   const privacyErrors = privacyNoticeConfigValidation(privacy, { appointmentType });
   const noticeReady = privacy.enabled && privacyErrors.length === 0;
   const partnerReady = noticeReady && privacyNoticeConfigValidation(privacy, { requirePartner: true, appointmentType }).length === 0;
@@ -100,6 +111,11 @@ export function WorkReportPanel({
     setSignatureDraft("");
   }, [privacyRevision]);
 
+  useEffect(() => {
+    setConsentGranted(false);
+    setSignatureDraft("");
+  }, [declarationRevision]);
+
   function updateField(field: keyof WorkReport, value: string) {
     if (workReport[field] !== value) {
       setConsentGranted(false);
@@ -113,6 +129,13 @@ export function WorkReportPanel({
     setSignatureError("");
     setSignatureDraft("");
     onSignatureChange("");
+  }
+
+  function updateDeclaration(action: () => void) {
+    setConsentGranted(false);
+    setSignatureDraft("");
+    setSignatureError("");
+    action();
   }
 
   function sign(value: string) {
@@ -143,10 +166,12 @@ export function WorkReportPanel({
         <Main>
           <Card title={`${reportTitle} adatai`}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Ügyfél" value={selected.name || "nincs megadva"}/>
-              <Field label={isMaintenance ? "Karbantartási cím" : "Telepítési cím"} value={fullCustomerAddress(selected)}/>
-              <Field label="Időpont" value={selected.date ? appointmentSummaryLabel(selected) : `${scheduleDate} · ${shownTime}`}/>
-              <Field label={climateLabel} value={climateSummary(quoteItems)}/>
+              <Field label="Ügyfél" value={documentCustomer.name || "nincs megadva"}/>
+              <Field label={isMaintenance ? "Karbantartási cím" : "Telepítési cím"} value={fullCustomerAddress(documentCustomer)}/>
+              <Field label="Időpont" value={hasValidSignature && workReport.workDate
+                ? `${workReport.workDate.replaceAll("-", ".")} · ${workReport.workTime || ""}`
+                : selected.date ? appointmentSummaryLabel(selected) : `${scheduleDate} · ${shownTime}`}/>
+              <Field label={climateLabel} value={hasValidSignature && workReport.documentSnapshot ? workReport.documentSnapshot.climateSummary : climateSummary(quoteItems)}/>
             </div>
             <label className="mt-5 block rounded-2xl bg-slate-900/80 p-4">
               <span className="text-sm text-slate-400">Elvégzett {appointmentWorkLabel(selected.appointmentType).toLowerCase()} leírása</span>
@@ -233,8 +258,8 @@ export function WorkReportPanel({
             <Card title="Vásárlási nyilatkozat eladója">
               <label className="block rounded-2xl bg-slate-900/80 p-4">
                 <span className="text-sm text-slate-400">Eladó / értékesítő cég</span>
-                <select className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={selectedSellerId} onChange={(event) => onSelectSeller(event.target.value)}>
-                  {sellerCompanies.map((seller) => (
+                <select className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={selectedSellerId} onChange={(event) => updateDeclaration(() => onSelectSeller(event.target.value))}>
+                  {editorSellers.map((seller) => (
                     <option key={seller.id} value={seller.id}>{seller.name} · {seller.taxNumber}</option>
                   ))}
                 </select>
@@ -253,11 +278,11 @@ export function WorkReportPanel({
               <div className="mt-4 rounded-2xl bg-slate-900/80 p-4">
                 <p className="text-sm font-black text-slate-300">A nyilatkozatban szereplő termékek</p>
                 <div className="mt-3 space-y-2">
-                  {quoteItems.map((item, index) => {
+                  {purchaseDeclarationItems.map((item, index) => {
                     const key = String(index);
                     return (
                       <label key={key} className="flex items-center gap-3 rounded-xl bg-white/5 p-3 text-sm font-bold">
-                        <input type="checkbox" checked={purchaseDeclarationItemKeys.includes(key)} onChange={() => onTogglePurchaseDeclarationItem(key)} />
+                        <input type="checkbox" checked={purchaseDeclarationItemKeys.includes(key)} onChange={() => updateDeclaration(() => onTogglePurchaseDeclarationItem(key))} />
                         <span>{climateSummary([item])}</span>
                       </label>
                     );

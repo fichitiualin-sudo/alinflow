@@ -1,6 +1,25 @@
-import type { Customer, WorkReport } from "./types";
+import type { Customer, QuoteItem, WorkReport, WorkReportSnapshot } from "./types";
 import { appointmentWorkLabel, firstAppointmentTime, normalizeAppointmentType } from "./appointments";
 import { parsePrivacyNoticeSnapshot } from "./privacy-notice";
+import { fullCustomerAddress } from "./format";
+import { climateSummary } from "./products";
+
+export function captureWorkReportSnapshot(customer: Customer, items: QuoteItem[]): WorkReportSnapshot {
+  return { customerName: customer.name || "", customerAddress: fullCustomerAddress(customer),
+    customerEmail: customer.email || "", customerPhone: customer.phone || "", climateSummary: climateSummary(items) };
+}
+
+export function workReportSnapshotCustomer(customer: Customer, report: WorkReport): Customer {
+  const snapshot = report.documentSnapshot;
+  return snapshot ? { ...customer, name: snapshot.customerName, address: snapshot.customerAddress,
+    city: "", postalCode: "", phone: snapshot.customerPhone, email: snapshot.customerEmail } : customer;
+}
+
+export function sameWorkReportSignature(left: WorkReport | undefined, right: WorkReport) {
+  return hasValidWorkReportSignature(left) && hasValidWorkReportSignature(right)
+    && left!.signatureDataUrl === right.signatureDataUrl && left!.signerName === right.signerName
+    && new Date(left!.signedAt!).getTime() === new Date(right.signedAt!).getTime();
+}
 
 export function defaultWorkDescription(appointmentType?: string | null) {
   const type = normalizeAppointmentType(appointmentType);
@@ -72,6 +91,10 @@ export function workReportFromRow(row: any): WorkReport {
     signatureDataUrl: row.signature_data_url || "",
     signerName: row.signer_name || row.customer_name || "",
     signedAt: row.signed_at || undefined,
+    documentSnapshot: ["customer_name", "customer_address", "customer_email", "customer_phone", "climate_summary"].some((key) => Object.hasOwn(row, key)) ? {
+      customerName: row.customer_name || "", customerAddress: row.customer_address || "",
+      customerEmail: row.customer_email || "", customerPhone: row.customer_phone || "", climateSummary: row.climate_summary || "",
+    } : undefined,
     privacyNotice: parsePrivacyNoticeSnapshot(row.privacy_notice),
     privacyConsentRevokedAt: row.privacy_consent_revoked_at || undefined,
     emailSentAt: row.email_sent_at || undefined,

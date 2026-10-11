@@ -21,6 +21,7 @@ function setup(options = {}) {
   const db = database(op => {
     queries.push(op);
     if (op.table === "workspace_members") return { data: options.denied ? null : { workspace_id: workspaceId } };
+    if (op.table === "workspaces") { assert.equal(op.filters.active, true); return { data: options.inactive ? null : { id: workspaceId } }; }
     throw Error("Unexpected authorized query");
   });
   db.auth = { getUser: async () => options.expired ? { data: {}, error: Error("expired") } : { data: { user: { id: "user" } } } };
@@ -29,8 +30,11 @@ function setup(options = {}) {
       const filters = {};
       let ids;
       const query = { select: () => query, eq: (key, value) => { filters[key] = value; return query; },
+        maybeSingle: () => query,
         in: (key, value) => { assert.equal(key, "lead_id"); ids = value; return query; },
-        abortSignal: () => query, then: resolve => resolve({ data: ids.filter(id => saved.has(id)).map(lead_id => ({ lead_id })) }) };
+        abortSignal: () => query, then: resolve => resolve({ data: table === "workspaces"
+          ? options.inactive ? null : { id: workspaceId }
+          : ids.filter(id => saved.has(id)).map(lead_id => ({ lead_id })) }) };
       queries.push({ table, filters });
       return query;
     },
@@ -77,6 +81,17 @@ test("webhook handshake echoes plain challenge only for the configured verify to
   assert.equal(good.status, 200); assert.equal(await good.text(), "123");
   const bad = f.route("webhook").GET(new Request("https://test.invalid?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=123"));
   assert.equal(bad.status, 403); assert.equal(f.requests.length, 0);
+});
+
+test("inactive workspace stops signed webhooks and manual sync before any Graph request", async () => {
+  for (const name of ["webhook", "sync"]) {
+    const f = setup({ inactive: true });
+    const response = await f.route(name).POST(f.request(name === "webhook" ? event() : { workspaceId }));
+    assert.equal(response.status, 403); assert.equal(f.requests.length, 0); assert.equal(f.commits.length, 0);
+  }
+  const f = setup({ inactive: true });
+  const response = await f.route("status").POST(f.request({ workspaceId }));
+  assert.equal(response.status, 403);
 });
 
 test("missing, changed, or malformed signature cannot fetch or write leads", async () => {
@@ -182,8 +197,8 @@ test("Graph response body reading obeys the fetch deadline and cancels a stalled
   let cancelled = false;
   const f = setup({ AbortSignal: { timeout: () => {
     signalNumber++;
-    // Request body, prequery, then first Graph fetch.
-    if (signalNumber === 3) { abortGraph = () => graphController.abort(); return graphController.signal; }
+    // Request body, active workspace, prequery, then first Graph fetch.
+    if (signalNumber === 4) { abortGraph = () => graphController.abort(); return graphController.signal; }
     return bodySignal;
   } }, graph: async () => {
     graphStarted(); return new Response(new ReadableStream({ cancel() { cancelled = true; } }));

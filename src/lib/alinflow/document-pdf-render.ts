@@ -19,10 +19,10 @@ function address(customer: PdfCustomer) {
 
 function reportCustomer(report: SavedPdfReport, fallback: PdfCustomer) {
   return {
-    name: report.customer_name || fallback.name || report.signer_name || "",
-    email: report.customer_email || fallback.email || "",
-    phone: report.customer_phone || fallback.phone || "",
-    address: report.customer_address || address(fallback),
+    name: Object.hasOwn(report, "customer_name") ? report.customer_name || "" : fallback.name || report.signer_name || "",
+    email: Object.hasOwn(report, "customer_email") ? report.customer_email || "" : fallback.email || "",
+    phone: Object.hasOwn(report, "customer_phone") ? report.customer_phone || "" : fallback.phone || "",
+    address: Object.hasOwn(report, "customer_address") ? report.customer_address || "" : address(fallback),
   };
 }
 

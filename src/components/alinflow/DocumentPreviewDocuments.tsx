@@ -3,7 +3,7 @@ import { PrivacyNoticeDocument } from "@/components/alinflow/PrivacyNoticeDocume
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemProductMedia, itemQuantity, itemTotal, itemUnitPrice, total } from "@/lib/alinflow/products";
-import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
+import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle, workReportSnapshotCustomer } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { DEFAULT_SELLER_COMPANY } from "@/lib/alinflow/purchase-declarations";
 import { defaultWorkspaceSettings, settingsBrandName, settingsContactLine, settingsContentLines, settingsCustomerDocumentFooterLines, settingsFooterLines, settingsPrimaryContact } from "@/lib/alinflow/workspace-settings";
@@ -71,13 +71,15 @@ function customerWithReportDate(customer: Customer, report: WorkReport): Custome
 }
 
 export function WorkReportDocument({ customer, report, quoteItems, workspaceSettings }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[]; workspaceSettings?: WorkspaceSettings }) {
+  customer = workReportSnapshotCustomer(customer, report);
   const reportCustomer = customerWithReportDate(customer, report);
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
   const settings = workspaceSettings || defaultWorkspaceSettings(null);
   const footerLines = settingsFooterLines(settings, "workReport");
   const workType = appointmentTypeLabel(reportCustomer.appointmentType);
-  const workTime = reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, items) : appointmentTimeRangeLabel(reportCustomer);
+  const workTime = report.documentSnapshot ? report.workTime || "nincs megadva"
+    : reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, items) : appointmentTimeRangeLabel(reportCustomer);
   const workTitle = workReportTitle(reportCustomer.appointmentType);
   const workNote = appointmentWorkLabel(reportCustomer.appointmentType);
   const workDate = reportCustomer.date;
@@ -123,7 +125,7 @@ export function WorkReportDocument({ customer, report, quoteItems, workspaceSett
               </tr>
             </thead>
             <tbody>
-              {shownItems.map((item, index)=><tr key={`${item.productId}-${index}`} className="break-inside-avoid">
+              {report.documentSnapshot ? <tr><td colSpan={3} className="whitespace-pre-wrap border-b border-slate-200 px-3 py-2.5">{report.documentSnapshot.climateSummary || "Nincs rögzített készülékmegnevezés."}</td></tr> : shownItems.map((item, index)=><tr key={`${item.productId}-${index}`} className="break-inside-avoid">
                 <td className="border-b border-slate-200 px-3 py-2.5 align-top">{itemName(item)}</td>
                 <td className="border-b border-slate-200 px-2 py-2.5 text-center align-top font-semibold">{itemQuantity(item)}</td>
                 <td className="border-b border-slate-200 px-3 py-2.5 align-top text-slate-600">{workNote}</td>
@@ -198,7 +200,7 @@ export function AllWorkReportsDocument({ customer, reports, quoteItems, workspac
               <div key={report.id || `${report.workDate}-${report.workTime}-${index}`} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 p-3">
                 <div>
                   <p className="font-black">{workReportTitle(reportCustomer.appointmentType)}</p>
-                  <p className="text-sm text-slate-600">{formatDocumentDate(reportCustomer.date)} · {reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, quoteItems) : "nincs idő"}</p>
+                  <p className="text-sm text-slate-600">{formatDocumentDate(reportCustomer.date)} · {report.documentSnapshot ? report.workTime || "nincs idő" : reportCustomer.time ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, quoteItems) : "nincs idő"}</p>
                 </div>
                 <p className="text-sm font-bold text-slate-600">{hasValidWorkReportSignature(report) ? `Aláírva: ${formatSignedAt(report.signedAt)}` : "aláírás nélkül"}</p>
               </div>
@@ -214,6 +216,7 @@ export function AllWorkReportsDocument({ customer, reports, quoteItems, workspac
 }
 
 export function PurchaseDeclarationDocument({ customer, report, quoteItems, seller, declaration }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[]; seller?: SellerCompany; declaration?: PurchaseDeclaration }) {
+  customer = workReportSnapshotCustomer(customer, report);
   const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
   const shownSeller = seller || DEFAULT_SELLER_COMPANY;

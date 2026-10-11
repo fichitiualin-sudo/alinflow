@@ -205,6 +205,14 @@ function serviceClient(settings: ServerSettings) {
   });
 }
 
+async function requireActiveWorkspace(settings: ServerSettings, deadline: number) {
+  const workspace = await serviceClient(settings).from("workspaces").select("id")
+    .eq("id", settings.config.workspaceId).eq("active", true)
+    .abortSignal(AbortSignal.timeout(Math.min(10000, remaining(deadline)))).maybeSingle();
+  if (workspace.error) throw new ApiError("A munkaterület ellenőrzése nem sikerült. Próbáld újra.", 503);
+  if (!workspace.data) throw new ApiError("A munkaterület nem aktív. A Facebook-beolvasás leállt.", 403);
+}
+
 async function commitLead(settings: ServerSettings, lead: FacebookGraphLead, deadline: number): Promise<ImportResult> {
   const result = await serviceClient(settings).rpc("import_facebook_lead", {
     p_workspace_id: settings.config.workspaceId, p_page_id: settings.config.pageId, p_lead_id: lead.id,
@@ -252,6 +260,7 @@ export async function receiveFacebookLeads(body: Record<string, unknown>) {
   const deadline = Date.now() + REQUEST_BUDGET_MS;
   const verifiedForms = new Set<string>();
   if (!pending.size) return { ok: true };
+  await requireActiveWorkspace(configured, deadline);
   // A partial batch can be retried after a timeout. Skip only rows already committed
   // in this configured scope, so retries progress instead of re-fetching the prefix.
   const existing = await existingLeadIds(configured, [...pending.keys()], deadline);
@@ -298,6 +307,7 @@ export async function syncFacebookLeads(workspaceId: string, body: Record<string
   if (!isFacebookId(formId) || !configured.config.formIds.includes(formId)) throw new ApiError("Ismeretlen Facebook-űrlap.", 400);
   const cursor = decodeCursor(configured, formId, body.cursor);
   const deadline = Date.now() + REQUEST_BUDGET_MS;
+  await requireActiveWorkspace(configured, deadline);
   await verifyForm(configured, formId, deadline);
   const page = await graph(configured, `${formId}/leads`, LEAD_FIELDS, deadline, {
     limit: String(MAX_BATCH), ...(cursor ? { after: cursor } : {}),

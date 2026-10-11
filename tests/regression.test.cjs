@@ -9,6 +9,8 @@ const reports = h.load("src/lib/alinflow/work-report.ts");
 const scopes = h.load("src/lib/alinflow/report-scope.ts");
 const materials = h.load("src/lib/alinflow/materials.ts");
 const base = { ...products, ...appointments, ...reports, ...scopes,
+  DEFAULT_SELLER_COMPANY: { id: "synthetic-seller" }, sellerCompanies: [],
+  setWorkReportDeclaration: noop, setWorkReportDeclarationItems: noop, setPurchaseDeclarationItemKeys: noop, setSelectedSellerId: noop,
   workspaceQuery: identity, withWorkspace: identity, workspaceOnConflict: identity,
   maintenanceReturnRef: { current: null },
   user: { id: "test-user" }, currentWorkspaceId: () => "test-workspace", normalizeStatus: identity };
@@ -335,6 +337,7 @@ test("A14: failed detail reads preserve cache and allow retry", async () => {
   const loaded = { current: {} }, loading = { current: {} };
   let queries = 0, reportWrites = 0;
   const f = h.functions(["loadCustomerDetailData"], { ...base,
+    authUserIdRef: { current: base.user.id }, authLoadGenerationRef: { current: 0 },
     detailDataLoadedRef: loaded, detailDataLoadingRef: loading,
     setDetailDataLoadingByCustomer: noop, setMessage: noop,
     setWorkReportsByCustomer: () => reportWrites++,

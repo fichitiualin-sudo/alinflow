@@ -18,6 +18,7 @@ export async function authorizeFacebookWorkspace(request: Request, workspaceId: 
   const normalized = workspaceId.toLowerCase();
   const member = await client.from("workspace_members").select("workspace_id")
     .eq("workspace_id", normalized).eq("user_id", data.user.id).eq("active", true).maybeSingle();
-  if (member.error || !member.data) throw new ApiError("Nincs hozzáférés ehhez a munkaterülethez.", 403);
+  const workspace = await client.from("workspaces").select("id").eq("id", normalized).eq("active", true).maybeSingle();
+  if (member.error || !member.data || workspace.error || !workspace.data) throw new ApiError("Nincs hozzáférés ehhez a munkaterülethez.", 403);
   return { client, workspaceId: normalized };
 }
