@@ -229,6 +229,8 @@ test("initial loading covers the workspace lookup before dashboard callbacks can
   const loading = [];
   const calls = [];
   const { requestDataLoadForUser } = harness().functions(["requestDataLoadForUser"], {
+    authUserIdRef: { current: "synthetic-user" }, authLoadGenerationRef: { current: 0 }, authLoadPromiseRef: { current: null },
+    currentWorkspaceId: () => null,
     initialDataReadyRef: { current: false },
     loadedUserIdRef: { current: null },
     setDataLoading: value => loading.push(value),

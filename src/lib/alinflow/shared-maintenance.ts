@@ -13,6 +13,7 @@ export type SharedMaintenanceInstallation = {
   installationDate: string; installationTime: string;
   climates: Array<{ productName: string; quantity: number }>;
   latitude: number | null; longitude: number | null; lastMaintenanceDate: string | null; maintenanceCount: number;
+  lastMaintenanceProviderName?: string | null;
   targetCustomerId?: string | null; targetInstallationId?: string | null;
 };
 export type SharedMaintenanceResult = { installationId: string; date: string; providerName: string; status: string };
@@ -31,6 +32,7 @@ export function sharedMaintenanceMapPoint(item: SharedMaintenanceInstallation): 
     address: [item.customer.postalCode, item.customer.city, item.customer.address].filter(Boolean).join(" "), city: item.customer.city,
     installationDate: item.installationDate, installationTime: item.installationTime, installationLabel: "Átvett telepítés",
     lastMaintenanceDate: item.lastMaintenanceDate || undefined, maintenanceCount: item.maintenanceCount,
+    maintenanceProviderName: item.lastMaintenanceProviderName || undefined,
     maintenanceOrigin: "external", maintenanceSourceName: item.sourceWorkspaceName,
     ...maintenanceMapSchedule(baseDate), latitude: item.latitude ?? undefined, longitude: item.longitude ?? undefined,
     sharedMaintenance: item };
@@ -52,7 +54,7 @@ export function mergeSharedMaintenancePoints(ownPoints: MaintenanceMapPoint[], r
     const schedule = maintenanceMapSchedule(lastMaintenanceDate || point.installationDate || source.installationDate);
     return { ...point, lastMaintenanceDate, maintenanceCount: point.maintenanceCount + source.maintenanceCount,
       ...schedule, status: point.status === "optOut" ? point.status : schedule.status,
-      maintenanceProviderName: sourceLast > ownLast ? source.sourceWorkspaceName : point.maintenanceProviderName };
+      maintenanceProviderName: sourceLast > ownLast ? source.lastMaintenanceProviderName || source.sourceWorkspaceName : point.maintenanceProviderName };
   });
   return [...merged, ...received.filter(item => !item.targetInstallationId || !ownedIds.has(item.targetInstallationId)).map(sharedMaintenanceMapPoint)];
 }

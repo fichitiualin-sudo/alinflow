@@ -2,6 +2,7 @@ import type { Customer, QuoteItem } from "@/lib/alinflow/types";
 import { authorizeCustomerRequest, apiErrorResponse, ApiError } from "@/lib/alinflow/server-auth";
 import { cleanQuoteItems, itemDeviceTotal, itemInstallTotal, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
+import { invoiceIssueDate, issueInvoiceOnce, InvoiceProviderRejection } from "@/lib/alinflow/invoice-delivery";
 
 export const runtime = "nodejs";
 
@@ -37,10 +38,6 @@ function safeText(value: unknown) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function parseAmount(value: unknown) {
@@ -281,7 +278,7 @@ function szamlazzPaymentMethodName(method: BillingPaymentMethod) {
 }
 
 function buildInvoiceXml({ kind, amount, paymentMethod = "cash", transferDueDays = 2, billingLabels, sendEmail = false, customer, quoteItems = [] }: InvoiceRequest, agentKey: string, issuer?: Omit<InvoiceIssuer, "agentKey">) {
-  const date = todayIso();
+  const date = invoiceIssueDate();
   const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
   const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`), transferDueDays);
   const buyer = buyerAddress(customer);
@@ -367,15 +364,14 @@ async function sendInvoiceXml(xml: string) {
   const form = new FormData();
   form.append("action-xmlagentxmlfile", new Blob([xml], { type: "text/xml;charset=utf-8" }), "alinflow-szamla.xml");
 
-  const response = await fetch(SZAMLAZZ_URL, { method: "POST", body: form });
+  const response = await fetch(SZAMLAZZ_URL, { method: "POST", body: form,
+    ...(typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(25_000) } : {}),
+  });
   const text = await response.text();
-  const success = xmlValue(text, "sikeres") === "true";
+  const outcome = xmlValue(text, "sikeres");
   const invoiceNumber = xmlValue(text, "szamlaszam");
-  const errorMessage = xmlValue(text, "hibauzenet") || decodeURIComponent(response.headers.get("szlahu_error") || "");
-
-  if (!response.ok || !success) {
-    throw new Error(errorMessage || "A Számlázz.hu nem hozta létre a számlát.");
-  }
+  if (outcome === "false" && !invoiceNumber) throw new InvoiceProviderRejection();
+  if (!response.ok || outcome !== "true" || !invoiceNumber) throw new Error("Unconfirmed invoice result");
 
   return {
     invoiceNumber,
@@ -387,7 +383,7 @@ async function sendInvoiceXml(xml: string) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as InvoiceRequest;
-    const { workspaceId } = await authorizeCustomerRequest(request, body);
+    const { workspaceId, userId, appointment } = await authorizeCustomerRequest(request, body);
     const kind = body.kind === "device" || body.kind === "labor" || body.kind === "maintenance" || body.kind === "combined" ? body.kind : null;
     const amount = parseAmount(body.amount);
     const customer = body.customer;
@@ -399,8 +395,10 @@ export async function POST(request: Request) {
     const issuer = resolveInvoiceIssuer(kind, workspaceId);
 
     const sendEmail = Boolean(body.sendEmail && customer.email?.trim());
-    const result = await sendInvoiceXml(buildInvoiceXml({ ...body, kind, amount, customer, sendEmail }, issuer.agentKey, issuer));
-    return Response.json({ ok: true, ...result, emailSent: sendEmail });
+    const xml = buildInvoiceXml({ ...body, kind, amount, customer, sendEmail }, issuer.agentKey, issuer);
+    const result = await issueInvoiceOnce({ workspaceId, customerId: customer.id,
+      appointmentId: appointment?.id || null, requestedBy: userId, kind, sendEmail }, () => sendInvoiceXml(xml));
+    return Response.json({ ok: true, ...result });
   } catch (error: any) {
     return apiErrorResponse(error);
   }

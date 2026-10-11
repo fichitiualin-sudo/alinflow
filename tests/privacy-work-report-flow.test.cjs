@@ -41,6 +41,7 @@ function fixture(options = {}) {
   const context = {
     ...reports, ...privacy, ...appointments, ...scope, selected, quoteItems: [], user: { id: ids.other },
     workReportLoadBlocked: false, pendingActionsRef, setPendingActions: noop,
+    workReportDeclaration: undefined,
     workReportReceiptsRef: { current: new Map() }, currentWorkspaceId: () => state.workspaceId,
     withWorkspace: (value) => ({ ...value, workspace_id: state.workspaceId }),
     workspaceQuery: (query) => query.eq("workspace_id", state.workspaceId), supabase: db,

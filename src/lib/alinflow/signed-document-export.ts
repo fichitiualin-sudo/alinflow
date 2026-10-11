@@ -3,7 +3,7 @@ import { appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, 
 import { fullCustomerAddress } from "./format";
 import { cleanQuoteItems, itemName, itemQuantity } from "./products";
 import { DEFAULT_SELLER_COMPANY } from "./purchase-declarations";
-import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "./work-report";
+import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle, workReportSnapshotCustomer } from "./work-report";
 import type { WorkspaceSettings } from "./workspace-settings";
 import { defaultWorkspaceSettings, settingsBrandName, settingsFooterLines } from "./workspace-settings";
 import { parsePrivacyNoticeSnapshot, privacyControllerLabel } from "./privacy-notice";
@@ -142,6 +142,7 @@ export function buildPrivacyNoticeHtml(snapshot: unknown, revokedAt?: string) {
 }
 
 export function buildWorkReportHtml(customer: Customer, report: WorkReport, quoteItems: QuoteItem[], workspaceSettings?: WorkspaceSettings) {
+  customer = workReportSnapshotCustomer(customer, report);
   const reportCustomer = {
     ...customer,
     appointmentType: report.appointmentType || customer.appointmentType,
@@ -150,7 +151,7 @@ export function buildWorkReportHtml(customer: Customer, report: WorkReport, quot
   };
   const items = cleanQuoteItems(customer.quoteItems?.length ? customer.quoteItems : quoteItems);
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
-  const workTime = reportCustomer.time
+  const workTime = report.documentSnapshot ? report.workTime || "nincs megadva" : reportCustomer.time
     ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, items)
     : appointmentTimeRangeLabel(reportCustomer);
   const signature = safeDataUrl(report.signatureDataUrl);
@@ -190,7 +191,7 @@ export function buildWorkReportHtml(customer: Customer, report: WorkReport, quot
       <table class="report-devices">
         <thead><tr><th>Készülék megnevezése</th><th class="quantity">Darab</th><th class="note">Megjegyzés</th></tr></thead>
         <tbody>
-          ${shownItems.map((item) => `<tr><td>${escapeHtml(itemName(item))}</td><td class="center"><strong>${itemQuantity(item)}</strong></td><td>${escapeHtml(appointmentWorkLabel(reportCustomer.appointmentType))}</td></tr>`).join("")}
+          ${report.documentSnapshot ? `<tr><td colspan="3">${escapeHtml(report.documentSnapshot.climateSummary || "Nincs rögzített készülékmegnevezés.")}</td></tr>` : shownItems.map((item) => `<tr><td>${escapeHtml(itemName(item))}</td><td class="center"><strong>${itemQuantity(item)}</strong></td><td>${escapeHtml(appointmentWorkLabel(reportCustomer.appointmentType))}</td></tr>`).join("")}
         </tbody>
       </table>
     </section>

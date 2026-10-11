@@ -9,6 +9,7 @@ const { PGlite } = process.env.PGLITE_MODULE_PATH ? require(process.env.PGLITE_M
   : createRequire(new URL('../.photo-test/package.json', import.meta.url))('@electric-sql/pglite');
 const db = new PGlite();
 const migration = await readFile(new URL('../docs/sql/20261011_SHARED_MAINTENANCE_ACCESS.sql', import.meta.url), 'utf8');
+const historyMigration = await readFile(new URL('../docs/sql/20261012_SHARED_MAINTENANCE_HISTORY.sql', import.meta.url), 'utf8');
 const source = '10000000-0000-0000-0000-000000000001', target = '10000000-0000-0000-0000-000000000002';
 const owner = '90000000-0000-0000-0000-000000000001', partner = '90000000-0000-0000-0000-000000000002';
 const stranger = randomUUID(), otherMember = randomUUID();
@@ -80,6 +81,7 @@ try {
 
   await check('migration is idempotent, creates no grant, preserves source rows and existing RLS', async () => {
     await db.exec(migration); await db.exec(migration);
+    await db.exec(historyMigration); await db.exec(historyMigration);
     assert.equal(await scalar('select count(*)::int from shared_maintenance_grants'), 0);
     assert.deepEqual(await sourceSnapshot(), before);
     assert.deepEqual((await db.query('select * from pg_policies order by tablename,policyname')).rows, policiesBefore);
@@ -220,6 +222,51 @@ try {
     assert.ok(!JSON.stringify(results).includes(signature));
     await actor(partner); await denied(rpc('list_shared_maintenance_results',[source]));
   });
+  await check('new recipient receives prior signed partner history without counting its own work twice', async () => {
+    await db.exec('reset role');
+    const third = randomUUID();
+    await db.query("insert into workspaces values($1,'Next maintenance provider',true)",[third]);
+    await db.query("insert into workspace_members values($1,$2,true,'owner')",[third,stranger]);
+    await db.query('insert into workspace_settings values($1,$2)',[third,config]);
+    const ownJob=randomUUID();
+    await db.query("insert into appointments(id,workspace_id,customer_id,scheduled_date,scheduled_time,appointment_type,status) values($1,$2,$3,current_date-20,'10:00','maintenance','Lezárva')",[ownJob,source,customer]);
+    await db.query('insert into maintenance_appointment_items(workspace_id,customer_id,installation_appointment_id,maintenance_appointment_id) values($1,$2,$3,$4)',[source,customer,installation,ownJob]);
+    const unchanged=await sourceSnapshot();
+    await actor(owner);const thirdGrant=await rpc('grant_shared_maintenance_access',[source,stranger,third,'Written processor agreement NEXT-PROVIDER']);
+    const thirdReceived=()=>rpc('list_received_maintenance_installations',[third]);
+    await actor(stranger);
+    const row=(await thirdReceived()).find(value=>value.installationId===installation);
+    assert.equal(row.maintenanceCount,2);assert.equal(row.lastMaintenanceProviderName,'Partner business');
+    assert.equal(row.lastMaintenanceDate,await scalar('select current_date::text'));
+    assert.ok(!JSON.stringify(row).includes('signatureDataUrl'));
+    await actor(partner);
+    const recipientOwn=(await received()).find(value=>value.installationId===installation);
+    assert.equal(recipientOwn.maintenanceCount,1,'recipient own completed work is merged locally exactly once');
+    assert.equal(recipientOwn.lastMaintenanceProviderName,'Source business');
+    assert.equal(recipientOwn.lastMaintenanceDate,await scalar('select (current_date-20)::text'));
+    await db.exec('reset role');assert.deepEqual(await sourceSnapshot(),unchanged);
+    const completed=(await db.query("select ma.id,wr.id report_id from appointments ma join work_reports wr on wr.appointment_id=ma.id where ma.workspace_id=$1 and ma.status='Lezárva' and ma.appointment_type='maintenance'",[target])).rows[0];
+    const notice=await scalar('select privacy_notice from work_reports where id=$1',[completed.report_id]);
+    for(const [edit,restore] of [
+      ["update appointments set scheduled_date=current_date+1 where id=$1","update appointments set scheduled_date=current_date where id=$1"],
+      ["update appointments set status='Lemondva' where id=$1","update appointments set status='Lezárva' where id=$1"],
+      ["update appointments set cancelled_at=now() where id=$1","update appointments set cancelled_at=null where id=$1"],
+    ]) {
+      await db.query(edit,[completed.id]);await actor(stranger);
+      const filtered=(await thirdReceived()).find(value=>value.installationId===installation);
+      assert.equal(filtered.maintenanceCount,1);assert.equal(filtered.lastMaintenanceProviderName,'Source business');
+      await db.exec('reset role');await db.query(restore,[completed.id]);
+    }
+    await db.query("update work_reports set privacy_notice='{}' where id=$1",[completed.report_id]);
+    await actor(stranger);assert.equal((await thirdReceived()).find(value=>value.installationId===installation).maintenanceCount,1,'unsigned partner work never advances received due dates');
+    await db.exec('reset role');await db.query('update work_reports set privacy_notice=$2 where id=$1',[completed.report_id,notice]);
+    await db.query('update work_reports set customer_id=$2 where id=$1',[completed.report_id,customer]);
+    await actor(stranger);assert.equal((await thirdReceived()).find(value=>value.installationId===installation).maintenanceCount,1,'notice must match provider customer as well as work');
+    await db.exec('reset role');await db.query('update work_reports set customer_id=$2 where id=$1',[completed.report_id,handoff.customerId]);
+    await actor(owner);await rpc('revoke_shared_maintenance_access',[thirdGrant.id]);
+    await actor(stranger);assert.deepEqual(await thirdReceived(),[],'revocation removes both contact and new history summary');
+    await db.exec('reset role');
+  });
   await check('late-link and wrong-customer/workspace bypasses fail; ordinary own maintenance stays compatible', async () => {
     await db.exec('reset role');
     const job=randomUUID(), foreignCustomer='20000000-0000-0000-0000-000000000002';
@@ -261,7 +308,7 @@ try {
     assert.equal(await scalar('select count(*)::int from customers where id=$1',[handoff.customerId]),1);
     assert.equal(await scalar('select count(*)::int from appointments where id=$1',[handoff.installationId]),1);
     await db.exec('reset role');
-    assert.equal(await scalar("select count(*)::int from shared_maintenance_events where action='revoked'"),1);
+    assert.equal(await scalar("select count(*)::int from shared_maintenance_events where action='revoked'"),2);
     assert.equal(await scalar("select count(*)::int from shared_maintenance_events where action='order_accepted'"),2);
   });
   console.log(`Completed ${passed} shared-maintenance PostgreSQL checks.`);

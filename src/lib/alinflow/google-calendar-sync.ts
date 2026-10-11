@@ -54,17 +54,18 @@ async function googleRequest(token: string, calendarId: string, eventId: string 
 }
 
 async function ensureCurrentLease(admin: Admin, entry: QueueEntry, connection: Connection) {
-  const [queue, currentConnection] = await Promise.all([
+  const [queue, currentConnection, workspace] = await Promise.all([
     admin.from("google_calendar_sync_queue").select("lease_token,lease_version,lease_expires_at,desired_version")
       .eq("workspace_id", entry.workspace_id).eq("appointment_id", entry.appointment_id).maybeSingle(),
     admin.from("google_calendar_connections").select("status,calendar_id")
       .eq("workspace_id", entry.workspace_id).maybeSingle(),
+    admin.from("workspaces").select("id").eq("id", entry.workspace_id).eq("active", true).maybeSingle(),
   ]);
-  if (queue.error || currentConnection.error) throw new CalendarSyncError("database");
+  if (queue.error || currentConnection.error || workspace.error) throw new CalendarSyncError("database");
   if (!queue.data || queue.data.lease_token !== entry.lease_token || Number(queue.data.lease_version) !== Number(entry.lease_version)
     || Number(queue.data.desired_version) !== Number(entry.lease_version)
     || new Date(queue.data.lease_expires_at).getTime() <= Date.now() + 9000
-    || currentConnection.data?.status !== "connected" || currentConnection.data.calendar_id !== connection.calendar_id) {
+    || !workspace.data || currentConnection.data?.status !== "connected" || currentConnection.data.calendar_id !== connection.calendar_id) {
     throw new CalendarSyncError("superseded");
   }
 }

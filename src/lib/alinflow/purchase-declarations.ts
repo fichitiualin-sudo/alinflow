@@ -1,5 +1,18 @@
 import type { PurchaseDeclaration, QuoteItem, SellerCompany, WorkReport } from "./types";
-import { cleanQuoteItems } from "./products";
+import { cleanQuoteItems, itemName, itemQuantity } from "./products";
+
+/** Keep saved declaration items available even if the appointment's current devices changed. */
+export function purchaseDeclarationEditorItems(items: QuoteItem[], declaration?: PurchaseDeclaration) {
+  const options = [...items];
+  const selectedKeys: string[] = [];
+  for (const saved of declaration?.quoteItems || []) {
+    let index = options.findIndex((item, i) => !selectedKeys.includes(String(i))
+      && itemName(item) === itemName(saved) && itemQuantity(item) === itemQuantity(saved));
+    if (index < 0) { index = options.length; options.push(saved); }
+    selectedKeys.push(String(index));
+  }
+  return { items: options, selectedKeys: declaration ? selectedKeys : options.map((_, index) => String(index)) };
+}
 
 export const DEFAULT_SELLER_COMPANY: SellerCompany = {
   id: "amova-4u-kft",

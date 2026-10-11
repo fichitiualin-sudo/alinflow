@@ -45,6 +45,7 @@ function routeFunctions(route) {
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const names = tree.statements.filter((node) => ts.isFunctionDeclaration(node) && node.name).map((node) => node.name.text);
   return h.functions(names, { ...products, ...appointments, ...settingsModule,
+    ...h.functions(["invoiceIssueDate"], {}, "src/lib/alinflow/invoice-delivery.ts"),
     ...h.load("src/lib/alinflow/billing.ts") }, file);
 }
 

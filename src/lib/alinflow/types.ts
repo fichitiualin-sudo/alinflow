@@ -159,6 +159,14 @@ export type Customer = {
 };
 
 
+export type WorkReportSnapshot = {
+  customerName: string;
+  customerAddress: string;
+  customerEmail: string;
+  customerPhone: string;
+  climateSummary: string;
+};
+
 export type WorkReport = {
   id?: string;
   customerId?: string;
@@ -172,6 +180,7 @@ export type WorkReport = {
   signatureDataUrl: string;
   signerName: string;
   signedAt?: string;
+  documentSnapshot?: WorkReportSnapshot;
   privacyNotice?: PrivacyNoticeSnapshot;
   privacyConsentRevokedAt?: string;
   emailSentAt?: string;
@@ -241,6 +250,7 @@ export type WorkChecklistState = Record<WorkChecklistItemKey, boolean> & {
 
 export type ReturnContext = {
   customerId: string;
+  appointmentId?: string;
   view: View;
   at: number;
 };

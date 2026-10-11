@@ -248,3 +248,15 @@ test('hidden tabs skip background polling and resume a single check on visible f
   hook.document.visibilityState='visible';hook.focus();hook.tick();assert.equal(hook.receivedCalls.length,2);
   await hook.complete(1);assert.equal(hook.render().received.length,1);
 });
+
+
+test('received history credits the actual earlier provider and schedules from its completed service',()=>{
+  const history={...item,lastMaintenanceDate:'2026-10-01',maintenanceCount:3,lastMaintenanceProviderName:'Previous independent provider'};
+  const point=shared.sharedMaintenanceMapPoint(history);
+  assert.equal(point.maintenanceProviderName,'Previous independent provider');
+  assert.equal(point.nextMaintenanceDue,'2027-10-01');
+  const local={...point,appointmentId:'target-installation',lastMaintenanceDate:'2026-08-01',maintenanceCount:1,maintenanceProviderName:undefined};
+  const merged=shared.mergeSharedMaintenancePoints([local],[{...history,targetInstallationId:'target-installation'}])[0];
+  assert.equal(merged.maintenanceCount,4);assert.equal(merged.maintenanceProviderName,'Previous independent provider');
+  assert.equal(merged.nextMaintenanceDue,'2027-10-01');
+});

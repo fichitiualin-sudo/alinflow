@@ -18,7 +18,7 @@ const customer = {
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
 
 function fixture(options = {}) {
-  const selected = { ...customer, appointmentType: options.type || "installation" };
+  const selected = { ...customer, quoteItems: customer.quoteItems.map((item) => ({ ...item })), appointmentType: options.type || "installation" };
   const state = { report: { ...reportTools.emptyWorkReport(selected),
     signatureDataUrl: "data:image/png;base64,U1lOVEhFVElD", signedAt: "2026-10-15T09:00:00Z" },
     declarations: [], reports: {}, maintenance: {}, view: "workReport", workspaceId, busy: false, emailBusy: false };
@@ -62,7 +62,8 @@ function fixture(options = {}) {
     fullCustomerAddress: (value) => value.address, climateSummary: () => "Teszt klíma",
     sellerCompanies: [{ id: "synthetic-seller", name: "Teszt eladó", taxNumber: "TEST", representative: "Teszt" }],
     selectedSellerId: "synthetic-seller", purchaseDeclarationItemKeys: ["0"],
-    savedReportFor: () => state.report.id ? state.report : undefined,
+    workReportDeclarationItems: selected.quoteItems,
+    savedReportFor: () => [...Object.values(state.reports), ...(state.maintenance[selected.id] || [])].find((report) => report.id === state.report.id),
     purchaseDeclarationsFor: () => state.declarations,
     isMissingSellerTableError: () => false, errorMentionsWorkReportType: () => false,
     errorMentionsWorkReportHistoryLink: () => false,
@@ -72,6 +73,9 @@ function fixture(options = {}) {
     setWorkReportsByCustomer: (value) => { state.reports = value(state.reports); },
     setMaintenanceReportsByCustomer: (value) => { state.maintenance = value(state.maintenance); },
     setPurchaseDeclarationsByCustomer: (value) => { state.declarations = value({ [selected.id]: state.declarations })[selected.id]; },
+    setWorkReportDeclaration: (value) => { state.editorDeclaration = value; },
+    setSelectedSellerId: (value) => { context.selectedSellerId = value; },
+    setPurchaseDeclarationItemKeys: (value) => { context.purchaseDeclarationItemKeys = value(context.purchaseDeclarationItemKeys); },
     setSelected() {}, updateWorkHistory() {}, compareWorkReportsDesc: () => 0, setWorkFocusTarget() {},
     replaceView: (value) => { state.view = value; calls.navigation.push(value); },
     logDocument: async (...args) => {
@@ -94,10 +98,13 @@ function fixture(options = {}) {
         purchaseDeclarationIds: payload.purchaseDeclarationIds });
     },
   };
-  const render = () => h.functions(["beginAction", "endAction", "workReportPayload", "saveWorkReport", "sendSavedWorkDocuments"], {
-    ...context, workReport: state.report,
+  const render = () => h.functions(["beginAction", "endAction", "workReportPayload", "saveWorkReport", "sendSavedWorkDocuments", "updateWorkReportSignature", "togglePurchaseDeclarationItem", "selectWorkReportSeller"], {
+    ...context, workReport: state.report, workReportDeclaration: state.editorDeclaration,
   });
-  return { calls, state, pendingActionsRef, workReportReceiptsRef,
+  return { calls, state, context, pendingActionsRef, workReportReceiptsRef,
+    sign: (image, signedAt) => render().updateWorkReportSignature(image, signedAt),
+    toggleDeclaration: (key) => render().togglePurchaseDeclarationItem(key),
+    chooseSeller: (id) => render().selectWorkReportSeller(id),
     switchWorkspace() {
       state.workspaceId = "10000000-1111-4000-8000-000000000002";
       state.report = { id: "new-workspace-report", notes: "New workspace" };
@@ -112,6 +119,72 @@ function fixture(options = {}) {
 }
 
 const reportWrites = (run) => run.calls.db.filter((op) => op.table === "work_reports" && op.value?.work_description);
+
+test("a committed unsigned edit replaces the signed cache even when later document logging fails", async () => {
+  const run = fixture({ logFailures: 1 });
+  const previouslySigned = { ...run.state.report, id: reportId };
+  run.state.reports["saved"] = previouslySigned;
+  run.state.report = previouslySigned;
+  run.sign("", undefined);
+  await run.save(false);
+  assert.equal(reportWrites(run).length, 1);
+  const committed = Object.values(run.state.reports).find((report) => report.id === reportId && !report.signatureDataUrl);
+  assert.ok(committed, "closure must see the committed unsigned report after a partial failure");
+  assert.equal(run.calls.send.length, 0);
+  assert.equal(run.state.view, "workReport");
+  assert.ok(run.calls.message.some((item) => item.message.includes("synthetic document log failure")));
+});
+
+test("resaving a signed report keeps its captured customer/devices and saved declaration until a fresh signature", async () => {
+  const run = fixture();
+  await run.save(false);
+  const original = reportWrites(run)[0].value;
+  const signature = run.state.report.signatureDataUrl, signedAt = run.state.report.signedAt;
+  const declarationWrites = () => run.calls.db.filter((op) => op.table === "purchase_declarations" && op.value);
+  const originalDeclaration = JSON.stringify(run.state.declarations[0]);
+  run.context.selected.name = "Changed customer";
+  run.context.selected.address = "Changed address";
+  run.context.quoteItems[0] = { isManual: true, customName: "Changed AC", quantity: 3 };
+  await run.save(false);
+  const unchanged = reportWrites(run).at(-1).value;
+  for (const key of ["customer_name", "customer_address", "climate_summary", "signature_data_url", "signed_at"]) assert.equal(unchanged[key], original[key]);
+  assert.equal(declarationWrites().length, 1);
+  assert.equal(JSON.stringify(run.state.declarations[0]), originalDeclaration);
+  run.sign(signature, "2026-10-16T10:00:00Z");
+  await run.save(false);
+  const fresh = reportWrites(run).at(-1).value;
+  assert.equal(fresh.customer_name, "Changed customer");
+  assert.match(fresh.climate_summary, /Changed AC/);
+  assert.notEqual(fresh.signed_at, signedAt);
+  assert.equal(declarationWrites().length, 2);
+});
+
+test("changing purchase items clears the old signature; only a new signature can update the declaration", async () => {
+  const run = fixture();
+  run.context.quoteItems.push({ isManual: true, customName: "Second AC", quantity: 1 });
+  await run.save(false);
+  const original = JSON.stringify(run.state.declarations[0]);
+  run.toggleDeclaration("0"); run.toggleDeclaration("1");
+  assert.equal(run.state.report.signatureDataUrl, "");
+  assert.equal(run.state.report.signedAt, undefined);
+  await run.save(false);
+  assert.equal(JSON.stringify(run.state.declarations[0]), original);
+  run.sign("data:image/png;base64,TkVX", "2026-10-16T10:00:00Z");
+  await run.save(false);
+  const saved = run.state.declarations[0];
+  assert.equal(saved.quoteItems[0].customName, "Second AC");
+  assert.equal(saved.signedAt, "2026-10-16T10:00:00Z");
+  assert.equal(saved.signatureDataUrl, "data:image/png;base64,TkVX");
+});
+
+test("changing the purchase seller clears its old signature and optional notice", async () => {
+  const run = fixture();
+  run.state.report.privacyNotice = { synthetic: true };
+  run.chooseSeller("second-seller");
+  assert.equal(run.context.selectedSellerId, "second-seller");
+  assert.equal(run.state.report.signatureDataUrl, "");
+  assert.equal(run.state.report.privacyNotice, undefined);
+});
 
 test("shared synchronous guard blocks simultaneous report saves and saved-PDF sends", async () => {
   const gate = deferred();

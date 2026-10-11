@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { readAllRows } from "@/lib/alinflow/pagination";
 import { materialAmountForWork, stockMaterialQuantities } from "@/lib/alinflow/materials";
 import { reportBelongsToWork } from "@/lib/alinflow/report-scope";
+import { maintenanceGeocodeParameters, maintenanceGeocodePatch, maintenanceGeocodeTarget, type MaintenanceGeocodeTarget } from "@/lib/alinflow/maintenance-geocoding";
 
 import type {
   AppointmentType,
@@ -34,7 +35,6 @@ import type {
 } from "@/lib/alinflow/types";
 import {
   ARCHIVED_STATUSES,
-  RETURN_CONTEXT_KEY,
   RESTORABLE_VIEWS,
   DEFAULT_INSTALL_PRICE,
   DEFAULT_INVENTORY,
@@ -132,25 +132,30 @@ import { MaintenanceOriginEditor } from "@/components/alinflow/MaintenanceOrigin
 import { notifyGoogleCalendarAppointmentsChanged, useGoogleCalendarSync } from "@/components/alinflow/GoogleCalendarSync";
 import { ActionFeedbackProvider, useActionFeedback } from "@/components/alinflow/ActionFeedback";
 import {
-  clearCustomerDraft,
-  draftForCustomer,
-  readCustomerDraft,
-  readReturnContext,
+  clearCustomerDraft as clearScopedCustomerDraft,
+  draftForCustomer as scopedDraftForCustomer,
+  readCustomerDraft as readScopedCustomerDraft,
+  readReturnContext as readScopedReturnContext,
+  clearReturnContext as clearScopedReturnContext,
+  writeReturnContext,
   safeReturnView,
-  writeCustomerDraft,
+  writeCustomerDraft as writeScopedCustomerDraft,
 } from "@/lib/alinflow/drafts";
 import {
+  captureWorkReportSnapshot,
   defaultWorkDescription,
   emptyWorkReport,
   formatSignedAt,
   hasValidWorkReportSignature,
   sameReportAppointment,
+  sameWorkReportSignature,
   sortWorkReportsByDateDesc,
   workReportFromRow,
   workReportKeyFromReport,
   workReportMapKey,
   workReportSignatureState,
   workReportTitle,
+  workReportSnapshotCustomer,
 } from "@/lib/alinflow/work-report";
 import { parsePrivacyNoticeSnapshot, privacyNoticeMatchesWorkReportSignature, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
 import { useSharedMaintenance } from "@/components/alinflow/useSharedMaintenance";
@@ -170,6 +175,7 @@ import {
   DEFAULT_SELLER_COMPANY,
   declarationFromRow,
   declarationToRow,
+  purchaseDeclarationEditorItems,
   sellerCompanyFromRow,
   sellerCompanyToRow,
   sellerSnapshot,
@@ -536,6 +542,8 @@ function HomeContent() {
   const [newSellerTaxNumber,setNewSellerTaxNumber] = useState("");
   const [newSellerRepresentative,setNewSellerRepresentative] = useState("");
   const [purchaseDeclarationItemKeys,setPurchaseDeclarationItemKeys] = useState<string[]>([]);
+  const [workReportDeclaration,setWorkReportDeclaration] = useState<PurchaseDeclaration | undefined>();
+  const [workReportDeclarationItems,setWorkReportDeclarationItems] = useState<QuoteItem[]>([]);
   const [workChecklistsByCustomer,setWorkChecklistsByCustomer] = useState<Record<string, WorkChecklistState>>({});
   const [detailDataLoadedByCustomer,setDetailDataLoadedByCustomer] = useState<Record<string, boolean>>({});
   const [detailDataLoadingByCustomer,setDetailDataLoadingByCustomer] = useState<Record<string, boolean>>({});
@@ -565,24 +573,18 @@ function HomeContent() {
 
   setActiveProducts(products);
 
-  useEffect(() => {
-    setPurchaseDeclarationItemKeys((current) => {
-      const allKeys = quoteItems.map((_, index) => String(index));
-      if (!allKeys.length) return [];
-      const kept = current.filter((key) => allKeys.includes(key));
-      return kept.length ? kept : allKeys;
-    });
-  }, [quoteItems]);
-
   const currentViewRef = useRef<View>(view);
   const selectedCustomerIdRef = useRef(selected.id);
   selectedCustomerIdRef.current = selected.id;
   const viewHistoryRef = useRef<View[]>([]);
   const maintenanceReturnRef = useRef<Customer | null>(null);
   const loadedUserIdRef = useRef<string | null>(null);
+  const authUserIdRef = useRef<string | null>(null);
+  const authLoadGenerationRef = useRef(0);
+  const authLoadPromiseRef = useRef<{ userId: string; generation: number; promise: Promise<void> } | null>(null);
   const loadCustomersPromiseRef = useRef<Promise<void> | null>(null);
   const loadCustomersWorkspaceIdRef = useRef<string | null | undefined>(undefined);
-  const lastCustomerLoadRef = useRef<{ workspaceId: string | null; customers: Customer[] } | null>(null);
+  const lastCustomerLoadRef = useRef<{ workspaceId: string | null; customers: Customer[]; workHistory?: Record<string, Customer[]> } | null>(null);
   const initialDataReadyRef = useRef(false);
   const activeWorkspaceIdRef = useRef<string | null>(null);
   const detailDataLoadedRef = useRef<Record<string, boolean>>({});
@@ -624,6 +626,7 @@ function HomeContent() {
     if (activeWorkspaceIdRef.current !== (workspace?.id || null)) {
       setMessage("");
       setMaintenanceOriginEdit(null);
+      setMaintenanceMapGeocodingBusy(false);
       quoteReceiptsRef.current.clear();
       appointmentReceiptsRef.current.clear();
       invoiceReceiptsRef.current.clear();
@@ -640,6 +643,17 @@ function HomeContent() {
   function currentWorkspaceId() {
     return activeWorkspaceIdRef.current;
   }
+
+  function customerDraftScope() {
+    return authUserIdRef.current ? { userId: authUserIdRef.current, workspaceId: currentWorkspaceId() } : null;
+  }
+
+  function readCustomerDraft() { return readScopedCustomerDraft(customerDraftScope()); }
+  function writeCustomerDraft(draft: CustomerDraft) { writeScopedCustomerDraft(draft, customerDraftScope()); }
+  function clearCustomerDraft(customerId?: string) { clearScopedCustomerDraft(customerDraftScope(), customerId); }
+  function draftForCustomer(customer: Customer) { return scopedDraftForCustomer(customer, customerDraftScope()); }
+  function readReturnContext() { return readScopedReturnContext(customerDraftScope()); }
+  function clearReturnContext() { clearScopedReturnContext(customerDraftScope()); }
 
   function workspaceQuery<T>(query: T): T {
     const workspaceId = currentWorkspaceId();
@@ -664,8 +678,9 @@ function HomeContent() {
     return currentWorkspaceId() ? scopedColumns : legacyColumns;
   }
 
-  async function loadWorkspaceSettingsFromDb(workspace: Workspace | null) {
+  async function loadWorkspaceSettingsFromDb(workspace: Workspace | null, isCurrent = () => true) {
     const fallback = defaultWorkspaceSettings(workspace);
+    if (!isCurrent()) return fallback;
     setWorkspaceSettings(fallback);
     setWorkspaceSettingsMessage("");
 
@@ -679,12 +694,12 @@ function HomeContent() {
       result = await supabase.from("workspace_settings").select("*")
         .eq("workspace_id", workspace.id).maybeSingle();
     } catch (error) {
-      if (currentWorkspaceId() !== workspace.id) return fallback;
+      if (!isCurrent() || currentWorkspaceId() !== workspace.id) return fallback;
       throw error;
     }
     const { data, error } = result;
 
-    if (currentWorkspaceId() !== workspace.id) return fallback;
+    if (!isCurrent() || currentWorkspaceId() !== workspace.id) return fallback;
 
     if (error) {
       if (isMissingWorkspaceSettingsSchemaError(error)) {
@@ -739,7 +754,7 @@ function HomeContent() {
     }
   }
 
-  async function ensureWorkspaceForUser(currentUser: User): Promise<Workspace | null> {
+  async function ensureWorkspaceForUser(currentUser: User, isCurrent = () => true): Promise<Workspace | null> {
     const memberResult = await supabase
       .from("workspace_members")
       .select("workspace_id, workspaces(id,name,slug)")
@@ -747,6 +762,7 @@ function HomeContent() {
       .eq("active", true)
       .limit(1);
 
+    if (!isCurrent()) return null;
     if (memberResult.error) {
       if (isMissingWorkspaceSchemaError(memberResult.error)) {
         setWorkspaceContext(null, false);
@@ -758,6 +774,7 @@ function HomeContent() {
     const memberRow: any = memberResult.data?.[0];
     if (memberRow?.workspace_id) {
       const workspaceRow = Array.isArray(memberRow.workspaces) ? memberRow.workspaces[0] : memberRow.workspaces;
+      if (!workspaceRow) throw new Error("Ez a munkaterület jelenleg nem érhető el.");
       const workspace = {
         id: String(memberRow.workspace_id),
         name: workspaceRow?.name || workspaceNameForUser(currentUser),
@@ -779,6 +796,7 @@ function HomeContent() {
       .select("id,name,slug")
       .single();
 
+    if (!isCurrent()) return null;
     if (workspaceResult.error) {
       if (isMissingWorkspaceSchemaError(workspaceResult.error)) {
         setWorkspaceContext(null, false);
@@ -802,6 +820,7 @@ function HomeContent() {
         active: true,
       }, { onConflict: "workspace_id,user_id" });
 
+    if (!isCurrent()) return null;
     if (membershipResult.error) throw membershipResult.error;
 
     setWorkspaceContext(workspace, true);
@@ -1048,11 +1067,8 @@ function HomeContent() {
   }
 
   function rememberExternalCustomer(customer: Customer, returnView: View = view) {
-    if (typeof window === "undefined" || !customer.id) return;
-    window.sessionStorage.setItem(
-      RETURN_CONTEXT_KEY,
-      JSON.stringify({ customerId: customer.id, view: safeReturnView(returnView), at: Date.now() })
-    );
+    if (!customer.id) return;
+    writeReturnContext({ customerId: customer.id, appointmentId: customer.activeAppointmentId, view: safeReturnView(returnView), at: Date.now() }, customerDraftScope());
   }
 
   function updateCustomerActivityInState(customerId: string, patch: Partial<Customer>) {
@@ -1079,7 +1095,8 @@ function HomeContent() {
   }
 
   useEffect(() => {
-    if (!selected.id || !RESTORABLE_VIEWS.includes(view)) return;
+    if (!initialDataReady || !user?.id || authUserIdRef.current !== user.id ||
+      (activeWorkspace?.id || null) !== currentWorkspaceId() || !selected.id || !RESTORABLE_VIEWS.includes(view)) return;
     const draft = {
       customer: { ...selected, quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || EMPTY_QUOTE_ITEMS },
       quoteItems: quoteItems.length ? quoteItems : selected.quoteItems || EMPTY_QUOTE_ITEMS,
@@ -1093,7 +1110,7 @@ function HomeContent() {
     };
     writeCustomerDraft(draft);
     setDraftNotice(draft);
-  }, [selected, quoteItems, scheduleDate, scheduleTime, scheduleAppointmentType, view, editCustomer, allowWorkResourceEdit]);
+  }, [selected, quoteItems, scheduleDate, scheduleTime, scheduleAppointmentType, view, editCustomer, allowWorkResourceEdit, initialDataReady, user?.id, activeWorkspace?.id]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1110,58 +1127,59 @@ function HomeContent() {
 
 
   async function requestDataLoadForUser(currentUser: User, force = false) {
+    if (authUserIdRef.current !== currentUser.id) return;
+    const generation = authLoadGenerationRef.current;
+    const isCurrent = () => authUserIdRef.current === currentUser.id && authLoadGenerationRef.current === generation;
+    const loadKey = `${currentUser.id}:${currentWorkspaceId() || "legacy"}`;
+    // Supabase also emits SIGNED_IN when a tab regains focus. Keep open editors intact.
+    if (!force && loadedUserIdRef.current === loadKey && initialDataReadyRef.current) return;
+    const pending = authLoadPromiseRef.current;
+    if (pending?.userId === currentUser.id && pending.generation === generation) return pending.promise;
     if (!initialDataReadyRef.current) setDataLoading(true);
-    try {
-      const workspace = await ensureWorkspaceForUser(currentUser);
-      await loadWorkspaceSettingsFromDb(workspace);
-      const loadKey = `${currentUser.id}:${workspace?.id || "legacy"}`;
-      if (!force && loadedUserIdRef.current === loadKey && initialDataReadyRef.current) return;
-      loadedUserIdRef.current = loadKey;
-      void loadCustomersFromDb({ background: initialDataReadyRef.current });
-    } catch (error: any) {
-      loadedUserIdRef.current = null;
-      initialDataReadyRef.current = false;
-      setInitialDataReady(false);
-      setDataLoading(false);
-      setCustomers([]);
-      setSelected(EMPTY_CUSTOMER);
-      setQuoteItems(EMPTY_CUSTOMER.quoteItems);
-      setMessage(`Munkater betoltesi hiba: ${error?.message || error}`);
+    const promise = (async () => {
+      try {
+        const workspace = await ensureWorkspaceForUser(currentUser, isCurrent);
+        if (!isCurrent()) return;
+        await loadWorkspaceSettingsFromDb(workspace, isCurrent);
+        if (!isCurrent()) return;
+        loadedUserIdRef.current = `${currentUser.id}:${workspace?.id || "legacy"}`;
+        await loadCustomersFromDb({ background: initialDataReadyRef.current });
+      } catch (error: any) {
+        if (!isCurrent()) return;
+        loadedUserIdRef.current = null;
+        initialDataReadyRef.current = false;
+        setInitialDataReady(false);
+        setDataLoading(false);
+        setCustomers([]);
+        setSelected(EMPTY_CUSTOMER);
+        setQuoteItems(EMPTY_CUSTOMER.quoteItems);
+        setMessage(`Munkatér betöltési hiba: ${error?.message || error}`);
+      }
+    })();
+    authLoadPromiseRef.current = { userId: currentUser.id, generation, promise };
+    try { await promise; } finally {
+      if (authLoadPromiseRef.current?.promise === promise) authLoadPromiseRef.current = null;
     }
   }
 
-  useEffect(() => {
-    let mounted = true;
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      const currentUser = data.session?.user ?? null;
-      setUser(currentUser);
-      setAuthLoading(false);
-      if (currentUser) void requestDataLoadForUser(currentUser);
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!mounted) return;
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      setAuthLoading(false);
-
-      if (currentUser) {
-        if (event === "SIGNED_IN" || event === "INITIAL_SESSION" || !loadedUserIdRef.current?.startsWith(`${currentUser.id}:`)) {
-          void requestDataLoadForUser(currentUser);
-        }
-        return;
-      }
-
+  function applyAuthenticatedUser(currentUser: User | null) {
+    if (authUserIdRef.current !== (currentUser?.id || null)) {
+      authUserIdRef.current = currentUser?.id || null;
+      authLoadGenerationRef.current += 1;
+      authLoadPromiseRef.current = null;
       loadedUserIdRef.current = null;
       setWorkspaceContext(null, false);
       initialDataReadyRef.current = false;
       setInitialDataReady(false);
-      setDataLoading(false);
+      setDataLoading(Boolean(currentUser));
       setCustomers([]);
+      setWorkHistoryByCustomer({});
+      lastCustomerLoadRef.current = null;
       setSelected(EMPTY_CUSTOMER);
       setQuoteItems(EMPTY_CUSTOMER.quoteItems);
+      setDraftNotice(null);
+      setWorkReport(emptyWorkReport());
+      workReportLoadSequence.current += 1;
       setWorkReportsByCustomer({});
       setMaintenanceReportsByCustomer({});
       setDocumentsByCustomer({});
@@ -1174,10 +1192,58 @@ function HomeContent() {
       detailDataLoadedRef.current = {};
       detailDataLoadingRef.current = {};
       setWorkChecklist(EMPTY_WORK_CHECKLIST);
+      setQuickAppointment(null);
+      setQuickAppointmentEmailPrompt(null);
+      quickAppointmentDeliveryRef.current = null;
+      setSharedMaintenanceSelection(null);
+      setInventory(DEFAULT_INVENTORY);
+      setMaterialInventory(MATERIAL_STOCK);
+      setProducts(sortProducts(PRODUCTS as any));
+      setEditCustomer(false);
+      setAllowWorkResourceEdit(false);
+      setThankYouEmailBusy(false);
+      setMaintenanceMapGeocodingBusy(false);
+      viewHistoryRef.current = [];
+      maintenanceReturnRef.current = null;
+      replaceView("dashboard");
+    }
+    setUser(currentUser);
+    setAuthLoading(false);
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    let receivedAuthEvent = false;
+    const scheduleLoad = (currentUser: User | null) => {
+      if (!currentUser) return;
+      // Leave the auth callback/lock before issuing other Supabase calls.
+      window.setTimeout(() => {
+        if (mounted) void requestDataLoadForUser(currentUser);
+      }, 0);
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted || receivedAuthEvent) return;
+      const currentUser = data.session?.user ?? null;
+      applyAuthenticatedUser(currentUser);
+      scheduleLoad(currentUser);
+    }).catch(() => {
+      if (!mounted || receivedAuthEvent) return;
+      applyAuthenticatedUser(null);
+      setLoginMessage("A bejelentkezés ellenőrzése nem sikerült. Frissítsd az oldalt, majd próbáld újra.");
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      receivedAuthEvent = true;
+      const currentUser = session?.user ?? null;
+      applyAuthenticatedUser(currentUser);
+      scheduleLoad(currentUser);
     });
 
     return () => {
       mounted = false;
+      authLoadGenerationRef.current += 1;
       listener.subscription.unsubscribe();
     };
   }, []);
@@ -1281,9 +1347,13 @@ function HomeContent() {
     replaceView(target?.view || "dashboard");
   }
 
-  function patchAppointmentMapData(appointmentId: string, patch: Partial<Customer>) {
+  function patchAppointmentMapData(appointmentId: string, patch: Partial<Customer>, expected?: MaintenanceGeocodeTarget) {
     const applyPatch = (customer: Customer) => (
-      customer.activeAppointmentId === appointmentId ? { ...customer, ...patch } : customer
+      customer.activeAppointmentId === appointmentId && (!expected ||
+        (customer.appointmentUpdatedAt === expected.appointmentUpdatedAt &&
+          (customer.address || "").trim() === expected.expectedAddress &&
+          (customer.workAddress || customer.address || "").trim() === expected.expectedAddress))
+        ? { ...customer, ...patch } : customer
     );
 
     setCustomers((prev) => prev.map(applyPatch));
@@ -1294,8 +1364,15 @@ function HomeContent() {
   }
 
   async function geocodeMissingMaintenanceMapPoints(visiblePoints: MaintenanceMapPoint[] = maintenanceMapPoints) {
+    const workspaceId = currentWorkspaceId();
+    const userId = authUserIdRef.current;
+    const generation = authLoadGenerationRef.current;
+    if (!workspaceId || !userId) return;
+    const isCurrent = () => currentWorkspaceId() === workspaceId && authUserIdRef.current === userId && authLoadGenerationRef.current === generation;
     const targets = visiblePoints
       .filter((point) => !hasMaintenanceMapCoordinates(point) && point.address)
+      .map(maintenanceGeocodeTarget)
+      .filter((point): point is MaintenanceGeocodeTarget => point !== null)
       .slice(0, 30);
 
     if (!targets.length) {
@@ -1303,14 +1380,16 @@ function HomeContent() {
       return;
     }
 
-    if (!beginAction("map-geocoding")) return;
+    const actionKey = `map-geocoding:${userId}:${workspaceId}`;
+    if (!beginAction(actionKey)) return;
     try {
       setMaintenanceMapGeocodingBusy(true);
       setMessage("Hiányzó térképes koordináták keresése...");
 
       const { data: sessionData } = await supabase.auth.getSession();
+      if (!isCurrent()) return;
       const token = sessionData.session?.access_token;
-      if (!token) throw new Error("A koordinátakereséshez jelentkezz be újra.");
+      if (!token || sessionData.session?.user.id !== userId) throw new Error("A koordinátakereséshez jelentkezz be újra.");
 
       const response = await fetch("/api/geocode-installations", {
         method: "POST",
@@ -1327,65 +1406,45 @@ function HomeContent() {
       });
 
       const payload = await response.json().catch(() => ({}));
+      if (!isCurrent()) return;
       if (!response.ok) throw new Error(payload?.error || "Nem sikerült a koordinátakeresés.");
 
       const results = Array.isArray(payload?.results) ? payload.results : [];
+      const requested = new Map(targets.map((target) => [target.appointmentId, target]));
       let savedCount = 0;
       let failedCount = 0;
+      let staleCount = 0;
 
       for (const result of results) {
+        if (!isCurrent()) return;
         const appointmentId = String(result?.appointmentId || "");
-        if (!appointmentId) continue;
-
-        const success = result?.status === "ok" && Number.isFinite(Number(result?.latitude)) && Number.isFinite(Number(result?.longitude));
-        const updatedAt = new Date().toISOString();
-        const geocodeErrorMessage = String(result?.error || "Nincs találat a címre.").slice(0, 500);
-        const dbPayload = success
-          ? {
-              latitude: Number(result.latitude),
-              longitude: Number(result.longitude),
-              geocoded_at: updatedAt,
-              geocode_status: "ok",
-              geocode_error: null,
-            }
-          : {
-              geocoded_at: updatedAt,
-              geocode_status: "failed",
-              geocode_error: geocodeErrorMessage,
-            };
-
-        const { error } = await workspaceQuery(supabase.from("appointments").update(dbPayload).eq("id", appointmentId));
+        const target = requested.get(appointmentId);
+        if (!target) continue;
+        const parameters = maintenanceGeocodeParameters(workspaceId, target, result);
+        if (!parameters) throw new Error("A koordinátakereső érvénytelen választ adott.");
+        requested.delete(appointmentId);
+        const { data, error } = await supabase.rpc("save_maintenance_geocode", parameters);
+        if (!isCurrent()) return;
         if (error) {
-          if (isMissingMaintenanceMapSchemaError(error)) {
-            throw new Error("A karbantartási térképhez előbb futtasd a docs/sql/20260724_ADD_MAINTENANCE_MAP_COORDINATES.sql migrációt.");
+          if (error.code === "40001") { staleCount += 1; continue; }
+          if (error.code === "PGRST202" || error.code === "42883" || isMissingMaintenanceMapSchemaError(error)) {
+            throw new Error("A térképes címvédelem szerverfrissítése szükséges.");
           }
           throw error;
         }
-
-        patchAppointmentMapData(appointmentId, success
-          ? {
-              mapLatitude: Number(result.latitude),
-              mapLongitude: Number(result.longitude),
-              mapGeocodedAt: updatedAt,
-              mapGeocodeStatus: "ok",
-              mapGeocodeError: undefined,
-            }
-          : {
-              mapGeocodedAt: updatedAt,
-              mapGeocodeStatus: "failed",
-              mapGeocodeError: geocodeErrorMessage,
-            });
-
-        if (success) savedCount += 1;
+        const patch = maintenanceGeocodePatch(data);
+        if (!patch) throw new Error("A koordináták mentése nem igazolható. Frissítsd a térképet.");
+        patchAppointmentMapData(appointmentId, patch, target);
+        if (patch.mapGeocodeStatus === "ok") savedCount += 1;
         else failedCount += 1;
       }
 
-      setMessage(`Koordinátakeresés kész: ${savedCount} cím mentve${failedCount ? `, ${failedCount} címhez nincs találat` : ""}.`);
+      setMessage(`Koordinátakeresés kész: ${savedCount} cím mentve${failedCount ? `, ${failedCount} címhez nincs találat` : ""}${staleCount ? `, ${staleCount} közben módosult cím kihagyva` : ""}.`);
     } catch (error: any) {
-      setMessage(`Térkép hiba: ${error.message}`);
+      if (isCurrent()) setMessage(`Térkép hiba: ${error.message}`);
     } finally {
-      setMaintenanceMapGeocodingBusy(false);
-      endAction("map-geocoding");
+      if (isCurrent()) setMaintenanceMapGeocodingBusy(false);
+      endAction(actionKey);
     }
   }
 
@@ -1962,17 +2021,23 @@ function HomeContent() {
     });
   }
 
-  function replaceLoadedDetailIds(ids: string[]) {
+  function replaceLoadedDetailIds(ids: string[], isCurrent = () => true) {
+    if (!isCurrent()) return;
     const donePatch = Object.fromEntries(ids.map((id) => [id, true]));
     const loadingPatch = Object.fromEntries(ids.map((id) => [id, false]));
     detailDataLoadedRef.current = { ...detailDataLoadedRef.current, ...donePatch };
     detailDataLoadingRef.current = { ...detailDataLoadingRef.current, ...loadingPatch };
-    setDetailDataLoadedByCustomer((prev) => ({ ...prev, ...donePatch }));
-    setDetailDataLoadingByCustomer((prev) => ({ ...prev, ...loadingPatch }));
+    setDetailDataLoadedByCustomer((prev) => isCurrent() ? { ...prev, ...donePatch } : prev);
+    setDetailDataLoadingByCustomer((prev) => isCurrent() ? { ...prev, ...loadingPatch } : prev);
   }
 
   async function loadCustomerDetailData(customerIds: string[], options: { force?: boolean } = {}) {
-    if (!user) return;
+    const userId = user?.id;
+    const workspaceId = currentWorkspaceId();
+    const generation = authLoadGenerationRef.current;
+    if (!userId || authUserIdRef.current !== userId) return;
+    const isCurrent = () => authUserIdRef.current === userId &&
+      authLoadGenerationRef.current === generation && currentWorkspaceId() === workspaceId;
 
     const uniqueIds = Array.from(new Set(customerIds.filter(Boolean)));
     const idsToLoad = options.force
@@ -1983,7 +2048,7 @@ function HomeContent() {
 
     const loadingPatch = Object.fromEntries(idsToLoad.map((id) => [id, true]));
     detailDataLoadingRef.current = { ...detailDataLoadingRef.current, ...loadingPatch };
-    setDetailDataLoadingByCustomer((prev) => ({ ...prev, ...loadingPatch }));
+    setDetailDataLoadingByCustomer((prev) => isCurrent() ? { ...prev, ...loadingPatch } : prev);
 
     try {
       const [workReportResult, documentResult, checklistResult, purchaseDeclarationResult] = await Promise.all([
@@ -1992,6 +2057,7 @@ function HomeContent() {
         readWorkspaceRows("work_checklists", (query) => query.in("customer_id", idsToLoad).order("customer_id"), "appointment_id"),
         readWorkspaceRows("purchase_declarations", (query) => query.in("customer_id", idsToLoad).order("created_at", { ascending: false })),
       ]);
+      if (!isCurrent()) return;
 
       const failed = [workReportResult, documentResult, checklistResult, purchaseDeclarationResult].find((result) => result.error);
       if (failed) throw failed.error;
@@ -2034,6 +2100,7 @@ function HomeContent() {
       });
 
       setWorkReportsByCustomer((prev) => {
+        if (!isCurrent()) return prev;
         const next = { ...prev };
         Object.keys(next).forEach((key) => {
           if (next[key]?.customerId && idSet.has(next[key].customerId as string)) delete next[key];
@@ -2042,6 +2109,7 @@ function HomeContent() {
       });
 
       setMaintenanceReportsByCustomer((prev) => {
+        if (!isCurrent()) return prev;
         const next = { ...prev };
         idsToLoad.forEach((id) => {
           next[id] = loadedMaintenanceReports[id] || [];
@@ -2050,6 +2118,7 @@ function HomeContent() {
       });
 
       setDocumentsByCustomer((prev) => {
+        if (!isCurrent()) return prev;
         const next = { ...prev };
         idsToLoad.forEach((id) => {
           next[id] = loadedDocuments[id] || [];
@@ -2058,6 +2127,7 @@ function HomeContent() {
       });
 
       setPurchaseDeclarationsByCustomer((prev) => {
+        if (!isCurrent()) return prev;
         const next = { ...prev };
         idsToLoad.forEach((id) => {
           next[id] = loadedPurchaseDeclarations[id] || [];
@@ -2066,6 +2136,7 @@ function HomeContent() {
       });
 
       setWorkChecklistsByCustomer((prev) => {
+        if (!isCurrent()) return prev;
         const next = { ...prev };
         idsToLoad.forEach((id) => {
           Object.keys(next).forEach((key) => {
@@ -2075,20 +2146,21 @@ function HomeContent() {
         return { ...next, ...loadedChecklists };
       });
 
-      setCustomers((prev) => prev.map((customer) => (
+      setCustomers((prev) => isCurrent() ? prev.map((customer) => (
         idSet.has(customer.id) ? customerWithDetailDocuments(customer, loadedDocuments[customer.id] || []) : customer
-      )));
+      )) : prev);
       setSelected((prev) => (
-        prev.id && idSet.has(prev.id) ? customerWithDetailDocuments(prev, loadedDocuments[prev.id] || []) : prev
+        isCurrent() && prev.id && idSet.has(prev.id) ? customerWithDetailDocuments(prev, loadedDocuments[prev.id] || []) : prev
       ));
 
-      replaceLoadedDetailIds(idsToLoad);
+      replaceLoadedDetailIds(idsToLoad, isCurrent);
     } catch (error: any) {
+      if (!isCurrent()) return;
       console.warn("Részletes ügyféladatok betöltési hiba", error?.message || error);
       setMessage(`Az ügyfél dokumentumai nem tölthetők be: ${error?.message || error}. Próbáld újra a frissítést.`);
       const failedPatch = Object.fromEntries(idsToLoad.map((id) => [id, false]));
       detailDataLoadingRef.current = { ...detailDataLoadingRef.current, ...failedPatch };
-      setDetailDataLoadingByCustomer((prev) => ({ ...prev, ...failedPatch }));
+      setDetailDataLoadingByCustomer((prev) => isCurrent() ? { ...prev, ...failedPatch } : prev);
     }
   }
 
@@ -2644,6 +2716,7 @@ function HomeContent() {
 
       const files: SignedDocumentExportFile[] = [];
       const indexItems: SignedDocumentIndexItem[] = [];
+      const reportsById = new Map(workReportRows.map((row) => [String(row.id), workReportFromRow(row)]));
 
       workReportRows
         .map(workReportFromRow)
@@ -2653,7 +2726,7 @@ function HomeContent() {
           const appointment = appointmentFor(report.appointmentId);
           const quote = quoteForAppointment(appointment) || quoteForCustomer(report.customerId);
           const items = quoteItemsForQuote(quote?.id);
-          const customer = exportCustomerFromRow(customerRow, appointment, items);
+          const customer = workReportSnapshotCustomer(exportCustomerFromRow(customerRow, appointment, items), report);
           const datePart = safeExportFilePart(report.workDate || report.signedAt?.slice(0, 10) || report.createdAt?.slice(0, 10));
           const namePart = safeExportFilePart(customer.name || report.signerName);
           const reportIdPart = safeExportFilePart(report.id);
@@ -2676,7 +2749,9 @@ function HomeContent() {
           const customerRow = customersById.get(String(declaration.customerId || ""));
           const appointment = appointmentFor(declaration.appointmentId);
           const items = cleanQuoteItems(declaration.quoteItems || []);
-          const customer = exportCustomerFromRow(customerRow, appointment, items);
+          const currentCustomer = exportCustomerFromRow(customerRow, appointment, items);
+          const report = reportsById.get(String(declaration.workReportId || ""));
+          const customer = report ? workReportSnapshotCustomer(currentCustomer, report) : currentCustomer;
           const datePart = safeExportFilePart(declaration.signedAt?.slice(0, 10) || declaration.createdAt?.slice(0, 10));
           const namePart = safeExportFilePart(customer.name || declaration.signerName);
           const declarationIdPart = safeExportFilePart(declaration.id);
@@ -2768,8 +2843,8 @@ function HomeContent() {
       if (customerError) {
         if (options.preserveEditing) return;
         setMessage(`Nem sikerült betölteni az ügyfeleket: ${customerError.message}`);
-        initialDataReadyRef.current = true;
-        setInitialDataReady(true);
+        initialDataReadyRef.current = false;
+        setInitialDataReady(false);
         return;
       }
 
@@ -2965,7 +3040,7 @@ function HomeContent() {
     });
 
     if (currentWorkspaceId() !== loadingWorkspaceId) return;
-    lastCustomerLoadRef.current = { workspaceId: loadingWorkspaceId, customers: loadedCustomers };
+    lastCustomerLoadRef.current = { workspaceId: loadingWorkspaceId, customers: loadedCustomers, workHistory: nextWorkHistory };
     setCustomers(loadedCustomers);
     setWorkHistoryByCustomer(nextWorkHistory);
     if (options.preserveEditing) return;
@@ -2974,7 +3049,8 @@ function HomeContent() {
     const customerDraft = readCustomerDraft();
     setDraftNotice(customerDraft);
     const selectedFromReturn = returnContext?.customerId
-      ? loadedCustomers.find((customer) => customer.id === returnContext.customerId)
+      ? (returnContext.appointmentId ? nextWorkHistory[returnContext.customerId]?.find((work) => work.activeAppointmentId === returnContext.appointmentId) : undefined)
+        || loadedCustomers.find((customer) => customer.id === returnContext.customerId)
       : undefined;
     const selectedFromDraftDb = customerDraft?.customer.id
       ? loadedCustomers.find((customer) => customer.id === customerDraft.customer.id)
@@ -2993,8 +3069,10 @@ function HomeContent() {
       ? loadedCustomers.find((customer) => customer.id === selected.id)
       : undefined;
     const unsavedSelected = selected.id ? selected : undefined;
-    const nextSelected = selectedFromReturn || selectedFromDraft || selectedFromCurrentState || unsavedSelected || loadedCustomers[0] || EMPTY_CUSTOMER;
-    const nextQuoteItems = selectedFromDraft ? (customerDraft?.quoteItems || nextSelected.quoteItems) : nextSelected.quoteItems;
+    const returnDraft = returnContext && selectedFromDraft?.id === returnContext.customerId &&
+      (!returnContext.appointmentId || selectedFromDraft.activeAppointmentId === returnContext.appointmentId) ? selectedFromDraft : undefined;
+    const nextSelected = returnDraft || selectedFromReturn || selectedFromDraft || selectedFromCurrentState || unsavedSelected || loadedCustomers[0] || EMPTY_CUSTOMER;
+    const nextQuoteItems = nextSelected.quoteItems;
 
     setSelected(nextSelected);
     setQuoteItems(nextQuoteItems);
@@ -3003,20 +3081,24 @@ function HomeContent() {
     setInitialDataReady(true);
     void loadCustomerDetailData([nextSelected.id, ...loadedCustomers.slice(0, LIST_PAGE_SIZE).map((customer) => customer.id)].filter(Boolean));
 
-    if (selectedFromReturn && returnContext) {
+    if (selectedFromReturn && returnContext && !returnDraft) {
       setScheduleDate(nextSelected.date || todayIso());
       setScheduleTime(firstAppointmentTime(nextSelected.time));
       setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
       setWorkReport(emptyWorkReport(nextSelected));
       setEditCustomer(false);
       replaceView(returnContext.view);
-      if (typeof window !== "undefined") window.sessionStorage.removeItem(RETURN_CONTEXT_KEY);
+      clearReturnContext();
     } else if (customerDraft && selectedFromDraft) {
       setScheduleDate(customerDraft.scheduleDate || nextSelected.date || todayIso());
       setScheduleTime(customerDraft.scheduleTime || firstAppointmentTime(nextSelected.time));
       setScheduleAppointmentType(normalizeAppointmentType(nextSelected.appointmentType));
       setEditCustomer(customerDraft.editCustomer);
       setAllowWorkResourceEdit(customerDraft.allowWorkResourceEdit);
+      if (returnDraft && returnContext) {
+        replaceView(returnContext.view);
+        clearReturnContext();
+      }
       // Frissítés / újratöltés után ne vigyen vissza automatikusan egy belső oldalra.
       // A folyamatban lévő szerkesztés megmarad, de a kezdőlap marad a kiindulópont.
     }
@@ -3537,13 +3619,21 @@ function HomeContent() {
 
   async function saveCustomerData() {
     if (!beginAction("customer-save")) return;
+    const savingWorkspaceId = currentWorkspaceId();
+    const generation = authLoadGenerationRef.current;
+    const isCurrent = () => savingWorkspaceId === currentWorkspaceId() && generation === authLoadGenerationRef.current;
     setMessage("Ügyféladatok mentése folyamatban...", "pending");
     const now = new Date().toISOString();
     const updated: Customer = { ...selected, updatedAt: now };
+    const previous = customerEditSnapshotRef.current;
+    const addressChanged = !previous || previous.address !== updated.address || previous.postalCode !== updated.postalCode || previous.city !== updated.city;
     try {
       const persisted = await persistCustomerToDb(updated);
+      if (!isCurrent()) return;
       const savedUpdated: Customer = {
         ...updated,
+        ...(addressChanged ? { workAddress: updated.address, mapLatitude: undefined, mapLongitude: undefined,
+          mapGeocodedAt: undefined, mapGeocodeStatus: undefined, mapGeocodeError: undefined } : {}),
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
         activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
@@ -3553,8 +3643,33 @@ function HomeContent() {
       customerEditSnapshotRef.current = null;
       clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
+      if (addressChanged) {
+        // A pre-save read may contain the old address. Wait for it, then request
+        // a new snapshot instead of joining the existing deduplicated load.
+        const pendingLoad = loadCustomersPromiseRef.current;
+        if (pendingLoad) await pendingLoad.catch(() => {});
+        if (!isCurrent()) return;
+        const previousLoad = lastCustomerLoadRef.current;
+        await loadCustomersFromDb({ background: true, preserveEditing: true });
+        if (!isCurrent()) return;
+        if (lastCustomerLoadRef.current === previousLoad) {
+          setMessage("Ügyféladatok mentve. A térképi címadatokat most nem sikerült frissíteni; nyisd meg újra az oldalt.", "warning");
+          return;
+        }
+        const freshLoad = lastCustomerLoadRef.current;
+        const refreshed = freshLoad?.workHistory?.[savedUpdated.id]?.find((work) => work.activeAppointmentId === savedUpdated.activeAppointmentId)
+          || freshLoad?.customers.find((customer) => customer.id === savedUpdated.id && customer.activeAppointmentId === savedUpdated.activeAppointmentId);
+        if (refreshed) setSelected((previous) => {
+          if (!isCurrent() || previous.id !== savedUpdated.id || previous.activeAppointmentId !== savedUpdated.activeAppointmentId
+            || previous.address !== savedUpdated.address || previous.city !== savedUpdated.city || previous.postalCode !== savedUpdated.postalCode) return previous;
+          return { ...previous, workAddress: refreshed.workAddress, appointmentUpdatedAt: refreshed.appointmentUpdatedAt,
+            mapLatitude: refreshed.mapLatitude, mapLongitude: refreshed.mapLongitude, mapGeocodedAt: refreshed.mapGeocodedAt,
+            mapGeocodeStatus: refreshed.mapGeocodeStatus, mapGeocodeError: refreshed.mapGeocodeError };
+        });
+      }
       setMessage("Ügyféladatok mentve ✅");
     } catch (error: any) {
+      if (!isCurrent()) return;
       setMessage(`Mentési hiba: ${error.message}`);
     } finally {
       endAction("customer-save");
@@ -5086,6 +5201,7 @@ function HomeContent() {
       return false;
     }
 
+    const sendingWorkspaceId = currentWorkspaceId();
     setThankYouEmailBusy(true);
     setMessage("Köszönő email küldése folyamatban...");
 
@@ -5097,6 +5213,7 @@ function HomeContent() {
       });
       const result = await response.json().catch(() => ({}));
 
+      if (currentWorkspaceId() !== sendingWorkspaceId) return false;
       if (!response.ok) {
         throw new Error(result?.error || "Nem sikerült elküldeni a köszönő emailt.");
       }
@@ -5104,6 +5221,7 @@ function HomeContent() {
       const { data: document, error: readError } = await workspaceQuery(supabase.from("documents").select("*")
         .eq("customer_id", targetCustomer.id).eq("appointment_id", targetCustomer.activeAppointmentId!)
         .eq("document_type", "thank_you_email")).maybeSingle();
+      if (currentWorkspaceId() !== sendingWorkspaceId) return false;
       if (!readError && document) {
         const saved = documentFromRow(document);
         setDocumentsByCustomer((prev) => ({ ...prev, [targetCustomer.id]: [saved, ...(prev[targetCustomer.id] || [])
@@ -5112,10 +5230,11 @@ function HomeContent() {
       setMessage(`${automatic ? "Telepítés lezárva. " : ""}${result.alreadySent ? "A köszönő emailt már elküldtük." : "Köszönő email elküldve ✅"}`);
       return true;
     } catch (error: any) {
+      if (currentWorkspaceId() !== sendingWorkspaceId) return false;
       setMessage(`${automatic ? "A telepítés lezárva. " : ""}Köszönő email küldési hiba: ${error.message} A Dokumentumoknál újrapróbálhatod.`);
       return false;
     } finally {
-      setThankYouEmailBusy(false);
+      if (currentWorkspaceId() === sendingWorkspaceId) setThankYouEmailBusy(false);
     }
   }
 
@@ -5424,7 +5543,7 @@ function HomeContent() {
   function savedReportFor(customer: Customer = selected, type: AppointmentType = normalizeAppointmentType(customer.appointmentType)) {
     if (!customer.id) return undefined;
     const candidates = [
-      ...Object.values(workReportsByCustomer), ...(maintenanceReportsByCustomer[customer.id] || []), workReport,
+      ...Object.values(workReportsByCustomer), ...(maintenanceReportsByCustomer[customer.id] || []),
     ].filter((report) => report.id && reportBelongsToWork(report, customer, type));
     const unique = Array.from(new Map(candidates.map((report) => [report.id, report])).values());
     return unique.length === 1 ? unique[0] : undefined;
@@ -5689,10 +5808,14 @@ function HomeContent() {
 
 
 
-  async function loadWorkReportFor(customer: Customer, reportId?: string) {
+  async function loadWorkReportFor(customer: Customer, reportId?: string, declarationId?: string) {
     const sequence = ++workReportLoadSequence.current;
     const workspaceId = currentWorkspaceId();
     setWorkReportLoadBlocked(true);
+    setWorkReportDeclaration(undefined);
+    setWorkReportDeclarationItems(customer.quoteItems || []);
+    setPurchaseDeclarationItemKeys((customer.quoteItems || []).map((_, index) => String(index)));
+    setSelectedSellerId((sellerCompanies.find((seller) => seller.isDefault) || sellerCompanies[0] || DEFAULT_SELLER_COMPANY).id);
     const targetType = normalizeAppointmentType(customer.appointmentType);
     const activeReportId = reportId || customer.activeWorkReportId;
     setWorkReport({ ...emptyWorkReport(customer), workDate: customer.date || scheduleDate,
@@ -5718,6 +5841,22 @@ function HomeContent() {
       if (data.length !== 1) throw new Error("Több munkalap tartozik az időponthoz. Válaszd ki a konkrét dokumentumot a naplóból.");
       const report = workReportFromRow(data[0]);
       if (!reportBelongsToWork(report, customer)) throw new Error("A munkalap másik munkához tartozik.");
+      if (targetType === "installation") {
+        const declarationsResult = await workspaceQuery(supabase.from("purchase_declarations").select("*")
+          .eq("customer_id", customer.id).eq("work_report_id", report.id!)).order("created_at", { ascending: false });
+        if (sequence !== workReportLoadSequence.current || currentWorkspaceId() !== workspaceId) return;
+        if (declarationsResult.error) throw declarationsResult.error;
+        const declarations = (declarationsResult.data || []).map(declarationFromRow);
+        const declaration = declarations.find((item) => item.id === declarationId) || declarations[0];
+        const editor = purchaseDeclarationEditorItems(customer.quoteItems || [], declaration);
+        setWorkReportDeclaration(declaration);
+        setWorkReportDeclarationItems(editor.items);
+        setPurchaseDeclarationItemKeys(editor.selectedKeys);
+        if (declaration) setSelectedSellerId(declaration.sellerCompanyId || DEFAULT_SELLER_COMPANY.id);
+        setPurchaseDeclarationsByCustomer((prev) => ({ ...prev, [customer.id]: [
+          ...declarations, ...(prev[customer.id] || []).filter((item) => item.workReportId !== report.id),
+        ] }));
+      }
       setWorkReport({ ...report, signerName: report.signerName || customer.name });
       setWorkReportLoadBlocked(false);
       if (targetType === "maintenance") {
@@ -5749,7 +5888,7 @@ function HomeContent() {
     setDocumentPreviewReportId(activeReportId);
     setSelected(scopedCustomer);
     setQuoteItems(scopedCustomer.quoteItems || []);
-    void loadWorkReportFor(scopedCustomer, activeReportId);
+    void loadWorkReportFor(scopedCustomer, activeReportId, view === "documentPreview" ? documentPreviewDeclarationId : undefined);
     navigateToView("workReport");
   }
 
@@ -5770,7 +5909,7 @@ function HomeContent() {
       setQuoteIssuedAt(new Date().toISOString());
     }
     if (type === "work_report" || type === "purchase_declaration") {
-      void loadWorkReportFor(customerForPreview, activeReportId);
+      void loadWorkReportFor(customerForPreview, activeReportId, purchaseDeclarationId);
     }
     navigateToView("documentPreview");
   }
@@ -5785,6 +5924,7 @@ function HomeContent() {
   function updateWorkReportSignature(value: string, signedAt?: string, privacyNotice?: PrivacyNoticeSnapshot) {
     setWorkReport((prev) => ({
       ...prev, signatureDataUrl: value, signedAt: value ? signedAt : undefined,
+      documentSnapshot: value ? captureWorkReportSnapshot(selected, quoteItems) : prev.documentSnapshot,
       signerName: privacyNotice?.signerName || prev.signerName,
       privacyNotice: value ? privacyNotice : undefined, privacyConsentRevokedAt: undefined,
     }));
@@ -5821,10 +5961,16 @@ function HomeContent() {
   }
 
   function togglePurchaseDeclarationItem(key: string) {
+    updateWorkReportSignature("");
     setPurchaseDeclarationItemKeys((prev) => {
       if (prev.includes(key)) return prev.filter((itemKey) => itemKey !== key);
       return [...prev, key];
     });
+  }
+
+  function selectWorkReportSeller(sellerId: string) {
+    if (sellerId !== selectedSellerId) updateWorkReportSignature("");
+    setSelectedSellerId(sellerId);
   }
 
   async function addSellerCompany() {
@@ -5848,7 +5994,7 @@ function HomeContent() {
 
     const savedSeller = sellerCompanyFromRow(result.data);
     setSellerCompanies((prev) => [...prev.filter((item) => item.id !== savedSeller.id), savedSeller].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name, "hu")));
-    setSelectedSellerId(savedSeller.id);
+    selectWorkReportSeller(savedSeller.id);
     setNewSellerName("");
     setNewSellerTaxNumber("");
     setNewSellerRepresentative("");
@@ -5901,7 +6047,12 @@ function HomeContent() {
       workTime: workReport.workTime || selected.time || shownTime || scheduleTime,
       signerName: workReport.signerName || selected.name,
       signedAt: signedAt || undefined,
+      documentSnapshot: signedAt && workReport.documentSnapshot
+        ? workReport.documentSnapshot : captureWorkReportSnapshot(selected, quoteItems),
     };
+    const preserveDeclaration = sameWorkReportSignature(savedReportFor(selected), reportToSave)
+      && workReportDeclaration?.workReportId === reportToSave.id
+      && hasValidWorkReportSignature({ signatureDataUrl: workReportDeclaration?.signatureDataUrl || "", signedAt: workReportDeclaration?.signedAt });
 
     if (!beginAction("work-report")) return;
     setWorkReportBusy(true);
@@ -5918,11 +6069,11 @@ function HomeContent() {
         appointment_type: currentAppointmentType,
         work_date: reportToSave.workDate || selected.date || scheduleDate || null,
         work_time: reportToSave.workTime || selected.time || shownTime || null,
-        customer_name: selected.name || null,
-        customer_email: selected.email || null,
-        customer_phone: selected.phone || null,
-        customer_address: fullCustomerAddress(selected) || null,
-        climate_summary: climateSummary(quoteItems),
+        customer_name: reportToSave.documentSnapshot!.customerName || null,
+        customer_email: reportToSave.documentSnapshot!.customerEmail || null,
+        customer_phone: reportToSave.documentSnapshot!.customerPhone || null,
+        customer_address: reportToSave.documentSnapshot!.customerAddress || null,
+        climate_summary: reportToSave.documentSnapshot!.climateSummary,
         work_description: reportToSave.workDescription || defaultWorkDescription(selected.appointmentType),
         notes: reportToSave.notes || null,
         signature_data_url: reportToSave.signatureDataUrl || null,
@@ -5962,7 +6113,16 @@ function HomeContent() {
       // Keep the saved identity even if a later email or checklist update fails.
       if (!data?.id) throw new Error("A munkalap mentéséről nem érkezett visszaigazolás.");
       reportSaved = true;
-      setWorkReport(workReportFromRow(data));
+      const persistedReport = workReportFromRow(data);
+      setWorkReport(persistedReport);
+      // Later declaration/email/logging failures cannot leave an older signed report in the persisted cache.
+      if (currentAppointmentType === "maintenance") {
+        setMaintenanceReportsByCustomer((prev) => ({ ...prev, [selected.id]:
+          [persistedReport, ...(prev[selected.id] || []).filter((report) => report.id !== persistedReport.id)].sort(compareWorkReportsDesc) }));
+      } else {
+        setWorkReportsByCustomer((prev) => ({ ...Object.fromEntries(Object.entries(prev).filter(([, report]) => report.id !== persistedReport.id)),
+          [workReportKeyFromReport(persistedReport, selected.id)]: persistedReport }));
+      }
 
       if (data?.id && !data.legacy_source_key) {
         const legacySourceKey = `work_reports:${data.id}`;
@@ -5980,11 +6140,11 @@ function HomeContent() {
       let emailSentAt = data?.email_sent_at || undefined;
       const hasSignedReport = hasValidWorkReportSignature(reportToSave);
       const isMaintenanceReport = currentAppointmentType === "maintenance";
-      let savedPurchaseDeclaration: PurchaseDeclaration | null = null;
-      if (!isMaintenanceReport && hasSignedReport) {
+      let savedPurchaseDeclaration: PurchaseDeclaration | null = preserveDeclaration ? workReportDeclaration! : null;
+      if (!isMaintenanceReport && hasSignedReport && !preserveDeclaration) {
         const seller = sellerSnapshot(sellerCompanies, selectedSellerId);
-        const selectedDeclarationItems = quoteItems.filter((_, index) => purchaseDeclarationItemKeys.includes(String(index)));
-        const declarationItems = selectedDeclarationItems.length ? selectedDeclarationItems : quoteItems;
+        const declarationItems = workReportDeclarationItems.filter((_, index) => purchaseDeclarationItemKeys.includes(String(index)));
+        if (!declarationItems.length) throw new Error("Válassz legalább egy készüléket a vásárlási nyilatkozathoz, majd írasd alá újra.");
         const legacySourceKey = `purchase_declarations:${selected.id}:${data.id}:${seller.id}`;
         const declarationPayload = withWorkspace(declarationToRow({
           customerId: selected.id,
@@ -6112,6 +6272,7 @@ function HomeContent() {
         setWorkReportsByCustomer((prev) => ({ ...prev, [workReportKeyFromReport(savedReportForState, selected.id)]: savedReportForState }));
       }
       if (savedPurchaseDeclaration) {
+        setWorkReportDeclaration(savedPurchaseDeclaration);
         setPurchaseDeclarationsByCustomer((prev) => {
           const current = prev[selected.id] || [];
           return { ...prev, [selected.id]: [savedPurchaseDeclaration, ...current.filter((item) => item.id !== savedPurchaseDeclaration?.id)] };
@@ -6142,9 +6303,10 @@ function HomeContent() {
 
 
   function allWorkReportsForPreview(customer: Customer = selected) {
-    const installationReport = savedReportFor({ ...customer, activeWorkReportId: undefined, appointmentType: "installation" }, "installation");
-    const reports = [installationReport, ...maintenanceReportsFor(customer)].filter(Boolean) as WorkReport[];
-    return reports.sort(compareWorkReportsDesc);
+    const reports = [...Object.values(workReportsByCustomer), ...maintenanceReportsFor(customer)]
+      .filter((report) => report.id && report.customerId === customer.id
+        && ["installation", "maintenance"].includes(normalizeAppointmentType(report.appointmentType)));
+    return Array.from(new Map(reports.map((report) => [report.id, report])).values()).sort(compareWorkReportsDesc);
   }
 
   function documentReportFor(customer: Customer = selected) {
@@ -6866,13 +7028,15 @@ function HomeContent() {
       newSellerTaxNumber={newSellerTaxNumber}
       newSellerRepresentative={newSellerRepresentative}
       purchaseDeclarationItemKeys={purchaseDeclarationItemKeys}
+      purchaseDeclarationItems={workReportDeclarationItems}
+      savedDeclaration={workReportDeclaration}
       onBack={()=>goBack("work")}
       onSave={(sendEmail)=>saveWorkReport(sendEmail)}
       onUpdateWorkReportField={updateWorkReportField}
       privacyConfig={workspaceSettings.documentSettings.privacyNotice}
       onSignatureChange={updateWorkReportSignature}
       onRevokePrivacyConsent={revokeWorkReportPrivacyConsent}
-      onSelectSeller={setSelectedSellerId}
+      onSelectSeller={selectWorkReportSeller}
       onNewSellerNameChange={setNewSellerName}
       onNewSellerTaxNumberChange={setNewSellerTaxNumber}
       onNewSellerRepresentativeChange={setNewSellerRepresentative}
@@ -6972,7 +7136,7 @@ function HomeContent() {
             <p className="mt-1 text-sm font-black text-cyan-200">{activeWorkspace.name}</p>
           ) : null}
         </div>
-        <div className="grid grid-cols-3 gap-2 [&>button]:min-w-0 [&>button]:px-2 [&>button]:py-3 [&>button]:text-center [&>button]:text-sm [&>button]:leading-tight sm:flex sm:flex-wrap sm:gap-3 sm:[&>button]:px-5 sm:[&>button]:py-4 sm:[&>button]:text-base">
+        <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 [&>button]:min-w-0 [&>button]:px-2 [&>button]:py-3 [&>button]:text-center [&>button]:text-sm [&>button]:leading-tight sm:flex sm:flex-wrap sm:gap-3 sm:[&>button]:px-5 sm:[&>button]:py-4 sm:[&>button]:text-base">
           <Btn onClick={startNewCustomer}>+ Új ügyfél</Btn>
           <Btn onClick={() => navigateToView("maintenanceMap")}>Térkép</Btn>
           <Btn color="blue" onClick={() => navigateToView("documents")}>Dokumentumok</Btn>

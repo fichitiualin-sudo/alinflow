@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {createRequire} from 'node:module';
+const {PGlite}=createRequire(new URL('../.photo-test/package.json',import.meta.url))('@electric-sql/pglite');
+const db=new PGlite();
+const a='10000000-0000-0000-0000-000000000001',b='10000000-0000-0000-0000-000000000002',c='10000000-0000-0000-0000-000000000003';
+try {
+  await db.exec(`create role authenticated;create role anon;create role service_role bypassrls;
+    create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+    create table auth.users(id uuid primary key);insert into auth.users values('${a}'),('${b}'),('${c}');
+    create table profiles(id uuid primary key references auth.users(id),email text,full_name text,role text default 'admin',created_at timestamptz default now(),updated_at timestamptz default now());
+    insert into profiles(id,email,full_name,role) values('${a}','one@example.invalid','First user','member'),('${b}','two@example.invalid','Second user','admin');
+    alter table profiles enable row level security;
+    grant usage on schema public,auth to authenticated,anon,service_role;
+    grant select,insert,update,delete on profiles to authenticated,service_role;
+    create policy "AlinFlow authenticated manage profiles" on profiles for all to authenticated using(true) with check(true);
+    create policy "Authenticated users can manage profiles" on profiles for all to authenticated using(true) with check(true);`);
+  const before=(await db.query('select * from profiles order by id')).rows;
+  const sql=await readFile(new URL('../docs/sql/20261012_PROFILE_ACCESS.sql',import.meta.url),'utf8');
+  await db.exec(sql);await db.exec(sql);assert.deepEqual((await db.query('select * from profiles order by id')).rows,before);
+  console.log('PASS migration is idempotent and does not rewrite existing profiles');
+  await db.exec('set role authenticated');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[a]);
+  assert.deepEqual((await db.query('select id from profiles')).rows,[{id:a}]);
+  assert.equal((await db.query("update profiles set full_name='Attack' where id=$1 returning id",[b])).rows.length,0);
+  assert.equal((await db.query('delete from profiles where id=$1 returning id',[b])).rows.length,0);
+  assert.equal((await db.query("update profiles set full_name='Updated self' where id=$1 returning id",[a])).rows.length,1);
+  console.log('PASS broad legacy policies no longer expose or modify another user; own ordinary edit still works');
+  for(const sql of ["update profiles set role='admin' where id=$1","update profiles set created_at=now()+interval '1 day' where id=$1"])
+    await assert.rejects(db.query(sql,[a]),e=>e.code==='42501');
+  assert.equal((await db.query('delete from profiles where id=$1 returning id',[a])).rows.length,0);
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[c]);
+  await assert.rejects(db.query('insert into profiles(id) values($1)',[c]),e=>e.code==='42501');
+  console.log('PASS self role changes and delete/reinsert with the admin default are denied');
+  await db.exec('reset role;set role service_role');
+  await db.query("insert into profiles(id,email) values($1,'new@example.invalid')",[c]);
+  await db.query("update profiles set role='member' where id=$1",[c]);
+  assert.equal((await db.query('select role from profiles where id=$1',[c])).rows[0].role,'member');
+  await db.exec('reset role;set role anon');await assert.rejects(db.query('select * from profiles'),e=>e.code==='42501');
+  console.log('PASS trusted provisioning remains available and anonymous access stays denied');
+} finally {await db.close();}
