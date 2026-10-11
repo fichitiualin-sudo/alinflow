@@ -40,4 +40,5 @@ Az alkalmazáskiadás visszaállítható. Az új nullable mező és az abba ment
 - Típusellenőrzés sikeres. A teljes helyi build fordítása és TypeScript lépése sikeres; page-data gyűjtéskor a helyi Supabase URL hiánya miatt leáll (/api/h-tariff/pdf). A kiadáshoz Vercel-build ellenőrzés szükséges.
 - 54 célzott alkalmazás/PDF/izolációs teszt és 21 PGlite integrációs ellenőrzés sikeres. Korábbi teljes tesztfutás: 765 sikeres, 5 kihagyott, 0 hibás.
 - PDF mindkét oldalának vizuális ellenőrzése, asztali és mobilos felület, többvonásos és teljes képernyős aláírás, partner nélküli döntés és visszavonás helyi, szintetikus próbája megtörtént; valódi email nem ment ki.
-- Hátralévő: céges konfiguráció aktiválása, Vercel-kiadás és éles beállítások ellenőrzése.
+- A két meglévő munkaterületen a céges konfiguráció bekapcsolva: a készülékértékesítő közös, a munkát végző EV munkaterületenként eltér. A partner üres maradt, ezért partneri hozzájárulás nem kérhető a konkrét címzett későbbi beállításáig. A mentett konfiguráció teljes egyezése, az összes többi beállítás és a 132 régi munkalap változatlansága SQL-lekérdezéssel ellenőrizve.
+- A Vercel előzetes build sikeres az 1ea456970fcdc3b688417de9c3584267225cdd95 kódverzión. Kiadás: PR #135; hátralévő az éles kiadás állapotának és az éles felületnek az ellenőrzése.
