@@ -110,6 +110,8 @@ A munkaoldal lenyíló gombjai rövid, állandó címet és egységes vonalas SV
 
 A lezárási műveletek és a számlázási gombok ugyanezt az ikoncsaládot használják: aláírás, nyilvántartás, lezárás, időpontlemondás, számla és fizetési mód. Az ikonok mellett a művelet teljes felirata megmarad. Az NKVH külön kész/nincs kész jelzése és a teljesítés dátumai továbbra is láthatók.
 
+A teljes lezárás köszönőemail-pipája a zöld gomb jobb oldalán, a nyíl helyén látszik, kis „Email” felirattal. A gomb mérete változatlan; a pipa önálló vezérlő, kapcsolása nem indítja a lezárást. A teljes magyarázat és az elérhetőség/letiltás oka a pipa akadálymentes nevében és súgójában olvasható.
+
 A karbantartási napló legyen minimális:
 
 - dátum;
