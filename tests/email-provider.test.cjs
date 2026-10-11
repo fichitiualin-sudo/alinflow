@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { harness } = require("./helpers.cjs");
+const { harness, database } = require("./helpers.cjs");
 
 const routes = ["quote", "appointment", "work-report"];
 
@@ -26,7 +26,7 @@ function fixture(reply) {
     ...auth,
     async authorizeCustomerRequest(_request, body) {
       body.customer = { ...body.customer, id: "saved-customer", email: "saved@example.invalid" };
-      return { client: {}, workspaceId: "workspace", appointment: { id: "appointment" } };
+      return { client: database(op => ({ data: op.table === "workspaces" ? { id: "workspace", name: "Test", slug: "test" } : null })), workspaceId: "workspace", appointment: { id: "appointment" } };
     },
   };
   const post = kind => h.load(`src/app/api/send-${kind}/route.ts`).POST(new Request("https://test.invalid/api", {

@@ -1,9 +1,9 @@
 import { authorizeCustomerRequest, apiErrorResponse, ApiError } from "@/lib/alinflow/server-auth";
 import { sendInstallationThankYouOnce } from "@/lib/alinflow/thank-you-delivery";
+import { loadWorkspaceEmailSettings, workspaceEmailIdentity } from "@/lib/alinflow/email-identity";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import {
   defaultWorkspaceSettings,
-  normalizeWorkspaceSettings,
   settingsBrandName,
   settingsFooterLines,
 } from "@/lib/alinflow/workspace-settings";
@@ -174,17 +174,14 @@ export async function POST(request: Request) {
       throw new ApiError("Köszönő email csak a teljesen lezárt telepítéshez küldhető.", 409);
     }
     const apiKey = process.env.RESEND_API_KEY;
-    const configuredFrom = process.env.EMAIL_FROM;
-    const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
 
     if (!apiKey) return Response.json({ error: "Hiányzik a RESEND_API_KEY környezeti változó." }, { status: 500 });
 
     const customer: Customer = body.customer || {};
     const items: QuoteItem[] = Array.isArray(body.items) ? body.items : [];
-    const workspaceSettings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
+    const workspaceSettings = await loadWorkspaceEmailSettings(client, workspaceId);
     const brandName = settingsBrandName(workspaceSettings);
-    const from = configuredFrom || `${brandName} <info@alinflow.hu>`;
-    const replyTo = workspaceSettings.companyProfile.email || configuredReplyTo;
+    const { from, replyTo } = workspaceEmailIdentity(workspaceSettings);
     const to = safeText(customer.email);
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });

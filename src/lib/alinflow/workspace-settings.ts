@@ -172,7 +172,7 @@ const KLIMALIN_SETTINGS: WorkspaceSettings = {
     thankYouTitle: "Köszönjük, hogy minket választottak!",
     thankYouIntro: "Örülünk, hogy ránk bízták a klíma telepítését. Használják egészséggel, sok kellemesen hűvös napot kívánunk!",
     googleReviewUrl: "https://g.page/r/CaTB2608T1bZEBM/review",
-    facebookReviewUrl: "https://www.facebook.com/100094506956317/reviews/",
+    facebookReviewUrl: "https://www.facebook.com/profile.php?id=100094506956317&sk=reviews",
     customReviewUrl: "",
     customReviewLabel: "Értékelés",
   },
@@ -206,6 +206,11 @@ function optionalText(value: unknown, fallback = "") {
   return text || fallback;
 }
 
+function reviewUrl(value: unknown, fallback: string) {
+  // Clearing a review field is intentional; only an absent field inherits.
+  return value === undefined ? fallback : String(value ?? "").trim();
+}
+
 export function normalizeManualCalendarEmail(value: unknown) {
   if (typeof value !== "string") return "";
   const email = value.trim().toLowerCase();
@@ -227,7 +232,7 @@ function normalizedBillingInvoiceMode(value: unknown, fallback: BillingInvoiceMo
 }
 
 function workspaceUsesLegacyKlimalinDefaults(workspace: WorkspaceLike) {
-  return !workspace?.slug || workspace.slug === "alinflow-existing";
+  return !workspace || workspace.slug === "alinflow-existing";
 }
 
 export function defaultWorkspaceSettings(workspace?: WorkspaceLike): WorkspaceSettings {
@@ -273,9 +278,9 @@ export function normalizeWorkspaceSettings(value: unknown, fallback = defaultWor
       appointmentHeaderText: normalizedText(source.emailSettings?.appointmentHeaderText, fallback.emailSettings.appointmentHeaderText),
       thankYouTitle: normalizedText(source.emailSettings?.thankYouTitle, fallback.emailSettings.thankYouTitle),
       thankYouIntro: normalizedText(source.emailSettings?.thankYouIntro, fallback.emailSettings.thankYouIntro),
-      googleReviewUrl: optionalText(source.emailSettings?.googleReviewUrl, fallback.emailSettings.googleReviewUrl),
-      facebookReviewUrl: optionalText(source.emailSettings?.facebookReviewUrl, fallback.emailSettings.facebookReviewUrl),
-      customReviewUrl: optionalText(source.emailSettings?.customReviewUrl, fallback.emailSettings.customReviewUrl),
+      googleReviewUrl: reviewUrl(source.emailSettings?.googleReviewUrl, fallback.emailSettings.googleReviewUrl),
+      facebookReviewUrl: reviewUrl(source.emailSettings?.facebookReviewUrl, fallback.emailSettings.facebookReviewUrl),
+      customReviewUrl: reviewUrl(source.emailSettings?.customReviewUrl, fallback.emailSettings.customReviewUrl),
       customReviewLabel: normalizedText(source.emailSettings?.customReviewLabel, fallback.emailSettings.customReviewLabel),
     },
     billingSettings: {

@@ -238,6 +238,8 @@ type QuickAppointmentDraft = {
   quantity: number | "";
   price: number | "";
   maintenanceInstallationIds: string[];
+  sendQuoteEmail: boolean;
+  sendAppointmentEmail: boolean;
 };
 
 function customerInquiryLabel(customer: Customer) {
@@ -3179,6 +3181,8 @@ function HomeContent() {
       quantity: 1,
       price: "",
       maintenanceInstallationIds: [],
+      sendQuoteEmail: true,
+      sendAppointmentEmail: true,
     });
     setMessage("");
   }
@@ -3383,6 +3387,10 @@ function HomeContent() {
     };
 
     const workspaceId = currentWorkspaceId();
+    const emailSelection = Object.freeze({
+      quote: appointmentType === "installation" && quickAppointment.sendQuoteEmail,
+      appointment: quickAppointment.sendAppointmentEmail,
+    });
     quickAppointmentSavingRef.current = true;
     setQuickAppointmentSaving(true);
     let appointmentSaved = false;
@@ -3403,6 +3411,7 @@ function HomeContent() {
       setScheduleDate(savedCustomer.date || quickAppointment.date);
       setScheduleTime(firstAppointmentTime(savedCustomer.time));
       setScheduleAppointmentType(appointmentType);
+      let saveWarning = "";
       try {
         if (appointmentType !== "maintenance") {
           await logDocument(savedCustomer, appointmentBookedDocumentType(appointmentType), `${appointmentTypeLabel(appointmentType)} időpont rögzítése`, "Rögzítve", now);
@@ -3410,13 +3419,15 @@ function HomeContent() {
           await saveMaintenanceAppointmentLinks(savedCustomer, quickAppointment.maintenanceInstallationIds);
         }
       } catch (error: any) {
-        setQuickAppointmentSaveWarning(`Az időpont mentve, de a ${appointmentType === "maintenance" ? "kapcsolódó telepítések mentése" : "rögzítés naplózása"} nem sikerült: ${error.message}`);
+        saveWarning = `Az időpont mentve, de a ${appointmentType === "maintenance" ? "kapcsolódó telepítések mentése" : "rögzítés naplózása"} nem sikerült: ${error.message}`;
+        setQuickAppointmentSaveWarning(saveWarning);
       }
-      const delivery = createCalendarEmailDelivery(savedCustomer, quotePayload(savedCustomer, savedCustomer.quoteItems, now), workspaceId || "");
+      const delivery = createCalendarEmailDelivery(savedCustomer, quotePayload(savedCustomer, savedCustomer.quoteItems, now), workspaceId || "", emailSelection);
       quickAppointmentDeliveryRef.current = delivery;
       setQuickAppointmentEmailPrompt(delivery);
       if (savedCustomer.id) void loadCustomerDetailData([savedCustomer.id]);
-      await sendQuickAppointmentEmail(delivery);
+      if (delivery) await sendQuickAppointmentEmail(delivery);
+      else setMessage(saveWarning || "Időpont mentve emailküldés nélkül ✅", saveWarning ? "warning" : "success");
     } catch (error: any) {
       setMessage(`${appointmentSaved ? "Az időpont mentve, de az emailküldés nem indult el" : "Mentési hiba"}: ${error.message}`);
     } finally {
@@ -4134,7 +4145,7 @@ function HomeContent() {
     }
   }
 
-  async function closeWork() {
+  async function closeWork(sendThankYouEmail: boolean) {
     const isInstallation = isInstallationAppointment(selected.appointmentType);
     const error = isInstallation ? stockErrorMessage() : "";
     if (error) {
@@ -4168,7 +4179,7 @@ function HomeContent() {
         promoteCustomerWork(updated);
       }
       setAllowWorkResourceEdit(false);
-      setMessage("Munka teljesen lezárva ✅ A naptárban sötétzöld lezárt munkaként megmarad.");
+      setMessage(`Munka teljesen lezárva ✅ A naptárban sötétzöld lezárt munkaként megmarad.${isInstallation && !sendThankYouEmail ? " Köszönő email nem indult." : ""}`);
       returnToLastMenu();
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
@@ -4176,7 +4187,7 @@ function HomeContent() {
     }
     // Email failure cannot roll back or be confused with a successful closure.
     // The server persists one delivery per installation, including safe retries.
-    if (completedInstallation) await sendThankYouEmailFor(completedInstallation, true);
+    if (completedInstallation && sendThankYouEmail) await sendThankYouEmailFor(completedInstallation, true);
   }
 
   async function cancelAppointment() {
@@ -4885,8 +4896,10 @@ function HomeContent() {
     if (currentWorkspaceId() !== delivery.workspaceId) return;
     const allSent = delivery.steps.every((step) => step.sentAt);
     const allLogged = delivery.steps.every((step) => step.logged);
+    const sentDescription = delivery.steps.length === 2 ? "az ajánlat és az időpont-visszaigazolás is"
+      : delivery.steps[0]?.kind === "quote" ? "az ajánlat" : "az időpont-visszaigazolás";
     setMessage(allSent && allLogged
-      ? `Időpont mentve, ${delivery.steps.length === 2 ? "az ajánlat és az időpont-visszaigazolás is" : "az időpont-visszaigazolás"} elküldve ✅`
+      ? `Időpont mentve, ${sentDescription} elküldve ✅`
       : "Az időpont mentve. Az emailküldés eredményét lent ellenőrizheted.");
   }
 
@@ -6018,12 +6031,13 @@ function HomeContent() {
     const canSend = Boolean(customer.email?.trim());
     const type = normalizeAppointmentType(customer.appointmentType);
     const complete = delivery.steps.every((step) => step.sentAt && step.logged);
+    const multipleEmails = delivery.steps.length > 1;
 
     return (
       <div role="dialog" aria-modal="true" aria-label="Időpont emailküldésének eredménye" className="fixed inset-0 z-[85] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur">
         <div className="mx-auto my-8 max-w-2xl rounded-[2rem] border border-white/10 bg-slate-900 p-5 shadow-2xl md:p-6">
           <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-200">Időpont mentve</p>
-          <h2 className="mt-2 text-2xl font-black">{delivery.busy ? "Emailek küldése…" : complete ? "Emailek elküldve" : "Emailküldés eredménye"}</h2>
+          <h2 className="mt-2 text-2xl font-black">{delivery.busy ? (multipleEmails ? "Emailek küldése…" : "Email küldése…") : complete ? (multipleEmails ? "Emailek elküldve" : "Email elküldve") : "Emailküldés eredménye"}</h2>
           <p className="mt-2 text-sm font-bold text-slate-400">
             {customer.name || "Névtelen ügyfél"} · {appointmentTypeLabel(type)} · {appointmentSummaryLabel(customer)}
           </p>
@@ -6072,6 +6086,7 @@ function HomeContent() {
     const isInstallation = appointmentType === "installation";
     const isSurvey = appointmentType === "survey";
     const isMaintenance = appointmentType === "maintenance";
+    const hasSelectedEmail = quickAppointment.sendAppointmentEmail || (isInstallation && quickAppointment.sendQuoteEmail);
     const isExistingMode = quickAppointment.customerMode === "existing";
     const selectedQuickCustomer = quickAppointmentSelectedCustomer(quickAppointment);
     const maintenanceInstallationWorks = selectedQuickCustomer ? customerInstallationWorks(selectedQuickCustomer) : [];
@@ -6222,12 +6237,23 @@ function HomeContent() {
                 </div>
               ) : null}
 
-              <p className="text-sm font-bold text-slate-300">{isInstallation
-                ? "Mentéskor két emailt küldünk: az árajánlatot és az időpont-visszaigazolást."
-                : "Mentéskor elküldjük az időpont-visszaigazolást."}</p>
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                <p className="mb-3 text-sm font-black text-slate-300">Emailküldés mentéskor</p>
+                <div className="space-y-3">
+                  {isInstallation ? <label className="flex cursor-pointer items-center gap-3 rounded-2xl bg-slate-950/60 p-3 font-bold">
+                    <input type="checkbox" className="h-5 w-5 shrink-0 accent-emerald-400" checked={quickAppointment.sendQuoteEmail} onChange={(event) => updateQuickAppointment({ sendQuoteEmail: event.target.checked })} />
+                    <span>Árajánlat küldése</span>
+                  </label> : null}
+                  <label className="flex cursor-pointer items-center gap-3 rounded-2xl bg-slate-950/60 p-3 font-bold">
+                    <input type="checkbox" className="h-5 w-5 shrink-0 accent-emerald-400" checked={quickAppointment.sendAppointmentEmail} onChange={(event) => updateQuickAppointment({ sendAppointmentEmail: event.target.checked })} />
+                    <span>Időpont-visszaigazolás küldése</span>
+                  </label>
+                </div>
+                {!hasSelectedEmail ? <p className="mt-3 text-sm font-bold text-slate-400">Az időpontot emailküldés nélkül mentjük.</p> : null}
+              </div>
               <div className="flex flex-col gap-3 md:flex-row md:justify-end">
                 <button type="button" onClick={() => setQuickAppointment(null)} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-slate-100">Mégse</button>
-                <button type="button" onClick={() => void saveQuickAppointment()} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:opacity-50">{quickAppointmentSaving ? "Mentés és emailküldés…" : "Időpont mentése"}</button>
+                <button type="button" onClick={() => void saveQuickAppointment()} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:opacity-50">{quickAppointmentSaving ? (hasSelectedEmail ? "Mentés és emailküldés…" : "Mentés…") : "Időpont mentése"}</button>
               </div>
             </div>
           ) : null}
@@ -6677,7 +6703,7 @@ function HomeContent() {
         workHistory={workHistoryByCustomer[selected.id] || []}
         workspaceSettings={workspaceSettings}
         onBack={()=>goBack()}
-        onCloseWork={() => runGuardedAction("work-close", closeWork)}
+        onCloseWork={(sendThankYouEmail) => runGuardedAction("work-close", () => closeWork(sendThankYouEmail))}
         onRememberExternalCustomer={rememberExternalCustomer}
         onRecordCustomerPhoneCall={recordCustomerPhoneCall}
         onSaveCustomerData={saveCustomerData}

@@ -7,6 +7,7 @@ import { fullCustomerAddress } from "@/lib/alinflow/format";
 import { formatSignedAt, hasValidWorkReportSignature, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentSummaryLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { Back } from "@/components/alinflow/LayoutPrimitives";
+import { WorkSectionToggleButton } from "@/components/alinflow/WorkSectionToggleButton";
 
 type WorkReportPanelProps = {
   selected: Customer;
@@ -65,6 +66,11 @@ export function WorkReportPanel({
   const reportTitle = workReportTitle(selected.appointmentType);
   const climateLabel = isMaintenance ? "Karbantartandó klímák" : "Klíma";
   const hasValidSignature = hasValidWorkReportSignature(workReport);
+  const [showPurchaseDeclaration, setShowPurchaseDeclaration] = useState(false);
+
+  useEffect(() => {
+    setShowPurchaseDeclaration(false);
+  }, [selected.id, selected.activeAppointmentId, selected.activeWorkReportId]);
 
   return (
     <Shell>
@@ -111,6 +117,14 @@ export function WorkReportPanel({
             )}
           </Card>
           {!isMaintenance ? (
+            <>
+              <WorkSectionToggleButton
+                label="Vásárlási nyilatkozat"
+                icon="documents"
+                open={showPurchaseDeclaration}
+                onClick={() => setShowPurchaseDeclaration((open) => !open)}
+              />
+              {showPurchaseDeclaration ? (
             <Card title="Vásárlási nyilatkozat eladója">
               <label className="block rounded-2xl bg-slate-900/80 p-4">
                 <span className="text-sm text-slate-400">Eladó / értékesítő cég</span>
@@ -146,6 +160,8 @@ export function WorkReportPanel({
                 </div>
               </div>
             </Card>
+              ) : null}
+            </>
           ) : null}
         </Main>
         <Side>

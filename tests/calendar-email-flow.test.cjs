@@ -28,6 +28,7 @@ function fixture(options = {}) {
     customerMode: existing ? "existing" : "new", name: "Synthetic calendar customer", phone: "",
     email: "calendar@example.invalid", city: "Synthetic city", postalCode: "0000", address: "Synthetic street",
     notes: "Synthetic appointment note", productId: "synthetic-ac", quantity: 2, price: 310000,
+    sendQuoteEmail: true, sendAppointmentEmail: true,
     maintenanceInstallationIds: existing ? [oldAppointmentId] : [], ...options.draft,
   };
   const unrelated = {
@@ -339,6 +340,75 @@ test("manual appointment send failure preserves provider details and the already
   assert.equal(f.appointmentReceiptsRef.current.size, 0);
   assert.equal(f.pendingActionsRef.current.size, 0);
   assert.deepEqual(f.state.appointmentBusy, [true, false]);
+});
+
+for (const sendQuoteEmail of [false, true]) for (const sendAppointmentEmail of [false, true]) {
+  test(`calendar installation honors quote=${sendQuoteEmail}, appointment=${sendAppointmentEmail} without false sent documents`, async () => {
+    const f = fixture({ draft: { sendQuoteEmail, sendAppointmentEmail } });
+    await f.saveQuickAppointment();
+    assert.equal(f.state.persist.length, 1);
+    const expected = [...(sendQuoteEmail ? ["quote"] : []), ...(sendAppointmentEmail ? ["appointment"] : [])];
+    assert.deepEqual(f.state.requests.map(request => request.url), expected.map(kind => `/api/send-${kind}`));
+    assert.deepEqual(f.state.logs.filter(([, , , status]) => status === "Elküldve").map(([, type]) => type), [
+      ...(sendQuoteEmail ? ["quote_email"] : []),
+      ...(sendAppointmentEmail ? [f.documents.appointmentEmailDocumentType("installation")] : []),
+    ]);
+    if (!expected.length) {
+      assert.equal(f.deliveryRef.current, null);
+      assert.deepEqual(f.state.prompts, [null]);
+      assert.match(f.state.messages.at(-1), /emailküldés nélkül/);
+      assert.doesNotMatch(f.state.messages.at(-1), /elküldve/);
+    } else if (sendQuoteEmail && !sendAppointmentEmail) {
+      assert.match(f.state.messages.at(-1), /az ajánlat elküldve/);
+      assert.doesNotMatch(f.state.messages.at(-1), /időpont-visszaigazolás/);
+    } else if (!sendQuoteEmail && sendAppointmentEmail) {
+      assert.match(f.state.messages.at(-1), /az időpont-visszaigazolás elküldve/);
+      assert.doesNotMatch(f.state.messages.at(-1), /ajánlat/);
+    }
+  });
+}
+
+for (const appointmentType of ["survey", "maintenance"]) {
+  test(`calendar ${appointmentType} with emails turned off saves without hidden quote delivery`, async () => {
+    const f = fixture({ existing: existingCustomer(), draft: { appointmentType, sendAppointmentEmail: false } });
+    await f.saveQuickAppointment();
+    assert.equal(f.state.persist.length, 1);
+    assert.equal(f.state.requests.length, 0);
+    assert.equal(f.deliveryRef.current, null);
+    assert.equal(f.state.logs.filter(([, , , status]) => status === "Elküldve").length, 0);
+    assert.match(f.state.messages.at(-1), /emailküldés nélkül/);
+  });
+}
+
+test("turning off calendar emails does not require an email address or hide a booking log failure", async () => {
+  const f = fixture({ draft: { email: "", sendQuoteEmail: false, sendAppointmentEmail: false },
+    log: async () => { throw Error("Synthetic booking log failure"); } });
+  await f.saveQuickAppointment();
+  assert.equal(f.state.persist.length, 1);
+  assert.equal(f.state.requests.length, 0);
+  assert.equal(f.deliveryRef.current, null);
+  assert.match(f.state.messages.at(-1), /időpont mentve.*Synthetic booking log failure/);
+  assert.equal(f.state.tones.at(-1), "warning");
+});
+
+test("calendar email choice is captured before persistence and cannot change during save or retry", async () => {
+  const gate = deferred();
+  let rejectQuote = true;
+  const f = fixture({ draft: { sendQuoteEmail: true, sendAppointmentEmail: false },
+    persist: async () => { await gate.promise; return { appointmentId, quoteId }; },
+    send: async () => rejectQuote ? Response.json({ error: "Synthetic send failure" }, { status: 502 }) : Response.json({ ok: true }),
+  });
+  const save = f.saveQuickAppointment();
+  f.draft.sendQuoteEmail = false;
+  f.draft.sendAppointmentEmail = true;
+  gate.resolve();
+  await save;
+  assert.deepEqual(f.state.requests.map(request => request.url), ["/api/send-quote"]);
+  rejectQuote = false;
+  await f.sendQuickAppointmentEmail();
+  assert.deepEqual(f.state.requests.map(request => request.url), ["/api/send-quote", "/api/send-quote"]);
+  assert.deepEqual(plain(f.deliveryRef.current.selection), { quote: true, appointment: false });
+  assert.equal(f.state.persist.length, 1);
 });
 
 test("manual appointment logging retry preserves the accepted customer snapshot after later edits", async () => {

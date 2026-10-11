@@ -4,6 +4,8 @@ import type { Customer } from "./types";
 
 export type CalendarEmailKind = "quote" | "appointment";
 
+export type CalendarEmailSelection = Readonly<Record<CalendarEmailKind, boolean>>;
+
 export type CalendarEmailDeliveryStep = {
   kind: CalendarEmailKind;
   sentAt?: string;
@@ -17,6 +19,7 @@ export type CalendarEmailDelivery = {
   readonly workspaceId: string;
   readonly customer: Customer;
   readonly payload: Record<string, unknown>;
+  readonly selection: CalendarEmailSelection;
   steps: CalendarEmailDeliveryStep[];
   busy: boolean;
 };
@@ -48,7 +51,14 @@ export function createCalendarEmailDelivery(
   customer: Customer,
   payload: Record<string, unknown>,
   workspaceId: string,
-): CalendarEmailDelivery {
+  selection: CalendarEmailSelection = { quote: true, appointment: true },
+): CalendarEmailDelivery | null {
+  const includeQuote = selection.quote
+    && normalizeAppointmentType(customer.appointmentType) === "installation"
+    && (customer.quoteItems || []).some(isQuoteItemFilled);
+  const includeAppointment = selection.appointment;
+  if (!includeQuote && !includeAppointment) return null;
+
   if (!UUID.test(workspaceId || "")) {
     throw new Error("Az emailküldéshez előbb válassz munkaterületet.");
   }
@@ -59,18 +69,17 @@ export function createCalendarEmailDelivery(
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
   const customerSnapshot = snapshot(customer);
-  const includeQuote = normalizeAppointmentType(customerSnapshot.appointmentType) === "installation"
-    && (customerSnapshot.quoteItems || []).some(isQuoteItemFilled);
 
   return {
     id,
     createdAt,
     workspaceId,
     customer: customerSnapshot,
+    selection: snapshot({ quote: includeQuote, appointment: includeAppointment }),
     payload: snapshot({ ...payload, workspaceId, calendarEmailDelivery: { id, createdAt } }),
     steps: [
       ...(includeQuote ? [{ kind: "quote" as const, logged: false }] : []),
-      { kind: "appointment", logged: false },
+      ...(includeAppointment ? [{ kind: "appointment" as const, logged: false }] : []),
     ],
     busy: false,
   };

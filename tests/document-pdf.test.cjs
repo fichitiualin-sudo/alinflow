@@ -98,7 +98,8 @@ test("email route attaches selected saved PDFs to the authorized recipient; igno
   let renderedBundle;
   const auth = { ...realAuth, async authorizeCustomerRequest(_request, body) {
     body.customer = { id: ids.customer, name: "Saved <customer>", email: "saved@example.invalid" };
-    return { client: backend(), workspaceId: ids.workspace, appointment: { id: ids.appointment } };
+    return { client: backend({ work_reports: [report()], purchase_declarations: [declaration()],
+      workspaces: [{ id: ids.workspace, active: true, name: "Test", slug: "test" }] }), workspaceId: ids.workspace, appointment: { id: ids.appointment } };
   } };
   const route = loadTypeScript("src/app/api/send-work-report/route.ts", {
     "@/lib/alinflow/server-auth": auth, "./server-auth": auth,
@@ -131,7 +132,8 @@ test("email route never sends when the saved signature cannot be rendered", asyn
   const realAuth = loadTypeScript("src/lib/alinflow/server-auth.ts");
   const auth = { ...realAuth, async authorizeCustomerRequest(_request, body) {
     body.customer = { id: ids.customer, email: "synthetic@example.invalid" };
-    return { client: backend({ work_reports: [report({ signature_data_url: "data:image/png;base64,YmFk" })] }), workspaceId: ids.workspace, appointment: { id: ids.appointment } };
+    return { client: backend({ work_reports: [report({ signature_data_url: "data:image/png;base64,YmFk" })],
+      workspaces: [{ id: ids.workspace, active: true, name: "Test", slug: "test" }] }), workspaceId: ids.workspace, appointment: { id: ids.appointment } };
   } };
   const route = loadTypeScript("src/app/api/send-work-report/route.ts", { "@/lib/alinflow/server-auth": auth, "./server-auth": auth });
   const previousFetch = global.fetch; let sends = 0;
