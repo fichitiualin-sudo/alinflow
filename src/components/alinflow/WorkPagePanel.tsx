@@ -844,24 +844,19 @@ export function WorkPagePanel({
                 />
               )}
               {isInstallation ? (
-                <div className="space-y-3">
-                  <label className={`flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm font-bold ${canSendThankYouEmailOnClose ? "cursor-pointer text-slate-200" : "text-slate-500"}`}>
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-500"
-                      checked={canSendThankYouEmailOnClose && sendThankYouEmailOnClose}
-                      disabled={!canSendThankYouEmailOnClose}
-                      onChange={(event) => setSendThankYouEmailOnClose(event.target.checked)}
-                    />
-                    <span className="min-w-0">
-                      <span className="block font-black">Köszönő email küldése lezáráskor</span>
-                      <span className="mt-1 block break-words text-xs">
-                        {thankYouEmailSent ? "Már elküldve." : !selected.email?.trim() ? "Nincs email-cím megadva." : selected.status === "Lezárva" ? "A Dokumentumok között küldhető el." : selected.email}
-                      </span>
-                    </span>
-                  </label>
-                  <ActionButton color="green" icon="complete" onClick={() => onCloseWork(canSendThankYouEmailOnClose && sendThankYouEmailOnClose)} label="Teljes lezárás" doneAt={actionDates.fullClose} />
-                </div>
+                <ActionButton
+                  color="green"
+                  icon="complete"
+                  onClick={() => onCloseWork(canSendThankYouEmailOnClose && sendThankYouEmailOnClose)}
+                  label="Teljes lezárás"
+                  doneAt={actionDates.fullClose}
+                  emailOption={{
+                    checked: canSendThankYouEmailOnClose && sendThankYouEmailOnClose,
+                    disabled: !canSendThankYouEmailOnClose,
+                    description: thankYouEmailSent ? "Már elküldve." : !selected.email?.trim() ? "Nincs email-cím megadva." : selected.status === "Lezárva" ? "A Dokumentumok között küldhető el." : selected.email,
+                    onChange: setSendThankYouEmailOnClose,
+                  }}
+                />
               ) : null}
               {selected.status !== "Lezárva" ? <ActionButton color="red" icon="cancel" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} indicator="×" /> : null}
               </div>
@@ -1290,6 +1285,7 @@ function ActionButton({
   indicator = "→",
   pressed,
   onClick,
+  emailOption,
 }: {
   label: string;
   doneAt?: string;
@@ -1298,6 +1294,12 @@ function ActionButton({
   indicator?: string;
   pressed?: boolean;
   onClick?: () => void;
+  emailOption?: {
+    checked: boolean;
+    disabled: boolean;
+    description: string;
+    onChange: (checked: boolean) => void;
+  };
 }) {
   const colorClass = {
     cyan: "from-cyan-300 to-sky-400 text-slate-950 shadow-cyan-500/20",
@@ -1307,12 +1309,12 @@ function ActionButton({
     red: "from-red-500 to-rose-500 text-white shadow-red-500/20",
   }[color];
 
-  return (
+  const button = (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={pressed}
-      className={`group flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:cursor-wait disabled:opacity-60`}
+      className={`group flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black shadow-xl transition ${emailOption ? "" : "hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]"} disabled:cursor-wait disabled:opacity-60`}
     >
       <span className="flex min-w-0 items-center gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-black/5">
@@ -1323,8 +1325,30 @@ function ActionButton({
           {doneAt ? <span className="mt-1 block text-xs font-black opacity-75">{formatDoneAt(doneAt)}</span> : null}
         </span>
       </span>
-      <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 text-sm transition group-hover:translate-x-1">{indicator}</span>
+      <span aria-hidden="true" className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 text-sm transition group-hover:translate-x-1 ${emailOption ? "invisible" : ""}`}>{indicator}</span>
     </button>
+  );
+
+  if (!emailOption) return button;
+
+  return (
+    <div className="relative transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]">
+      {button}
+      <label
+        title={`Köszönő email küldése lezáráskor. ${emailOption.description}`}
+        className={`absolute inset-y-0 right-4 flex w-11 flex-col items-center justify-center gap-0.5 text-slate-950 ${emailOption.disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+      >
+        <input
+          type="checkbox"
+          aria-label={`Köszönő email küldése lezáráskor. ${emailOption.description}`}
+          checked={emailOption.checked}
+          disabled={emailOption.disabled}
+          onChange={(event) => emailOption.onChange(event.target.checked)}
+          className="h-5 w-5 cursor-inherit accent-emerald-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950"
+        />
+        <span aria-hidden="true" className="text-[10px] font-black leading-3">Email</span>
+      </label>
+    </div>
   );
 }
 
