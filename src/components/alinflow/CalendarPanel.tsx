@@ -116,11 +116,6 @@ export function Calendar({
             : "Új időpontok: automatikus Google Naptár-mentés."}
         </p>
       ) : null}
-      {!selectable && mode === "week" && manualCalendarEmail ? (
-        <p className="mb-4 break-words text-sm text-slate-300">
-          Kézi naptármentés: <span className="font-bold">{manualCalendarEmail}</span>. A Google Naptárban ezzel a fiókkal lépj be, és ellenőrizd a naptárt a Mentés előtt.
-        </p>
-      ) : null}
       <div className="mb-5 flex flex-col gap-4">
         <div className="flex justify-end gap-2">
           <button onClick={() => onMode("week")} className={mode === "week" ? "tab-active" : "tab"}>Heti</button>
