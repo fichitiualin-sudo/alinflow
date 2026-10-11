@@ -29,7 +29,7 @@ function closeHarness(patch = {}) {
 }
 
 test("successful installation closure sends once with the committed customer returned by completion", async () => {
-  const run = closeHarness(); await run.closeWork();
+  const run = closeHarness(); await run.closeWork(true);
   assert.deepEqual(run.events.map((event) => event[0]), ["complete", "return", "email"]);
   assert.equal(run.sent.length, 1); assert.equal(run.sent[0].target, run.completed); assert.equal(run.sent[0].automatic, true);
   assert.equal(run.events[0][1], "Lezárva");
@@ -40,10 +40,10 @@ test("failed closure, missing checklist and stock shortage never send a thank-yo
     closeHarness({ checklistReady: false, missingChecklist: ["Aláírás"] }),
     closeHarness({ stockErrorMessage: () => "synthetic shortage" }),
   ];
-  for (const run of runs) { await run.closeWork(); assert.equal(run.sent.length, 0); assert.ok(run.messages.length); }
+  for (const run of runs) { await run.closeWork(true); assert.equal(run.sent.length, 0); assert.ok(run.messages.length); }
 });
 test("maintenance closure keeps its own persistence path and never sends installation thanks", async () => {
-  const run = closeHarness({ selected: { ...customer, appointmentType: "maintenance" } }); await run.closeWork();
+  const run = closeHarness({ selected: { ...customer, appointmentType: "maintenance" } }); await run.closeWork(true);
   assert.deepEqual(run.events.map((event) => event[0]), ["persist", "log", "return"]);
   assert.equal(run.sent.length, 0);
 });

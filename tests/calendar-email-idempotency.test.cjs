@@ -10,11 +10,13 @@ const createdAt = "2026-10-07T10:00:00.000Z";
 const initialNow = Date.parse(createdAt);
 
 function fixture({ type = "installation", workspace = workspaceId, appointment = appointmentId, denied = false } = {}) {
-  const state = { now: initialNow, name: "Stored <customer>", email: "stored@example.invalid" };
+  const state = { now: initialNow, name: "Stored <customer>", email: "stored@example.invalid", settings: null };
   const outgoing = [];
   const accepted = new Map();
   const db = database(op => {
+    if (!denied && op.table === "workspaces" && op.filters.id === workspace) return { data: { id: workspace, name: "Test", slug: "test" } };
     if (denied || op.filters.workspace_id !== workspace) return { data: null };
+    if (op.table === "workspace_settings") return { data: state.settings };
     if (op.table === "workspace_members") return { data: { workspace_id: workspace } };
     if (op.table === "customers" && op.filters.id === customerId) return { data: {
       id: customerId, name: state.name, email: state.email, phone: "06000000000",
@@ -165,4 +167,15 @@ for (const kind of ["quote", "appointment"]) test(`ordinary ${kind} emails retai
   assert.ok(f.outgoing.every(item => !Object.hasOwn(item.options.headers, "Idempotency-Key")));
   assert.match(payloads[0].headers["X-Entity-Ref-ID"], new RegExp(`^alinflow-${kind}-`));
   assert.notEqual(payloads[0].headers["X-Entity-Ref-ID"], payloads[1].headers["X-Entity-Ref-ID"]);
+});
+
+for (const kind of ["quote", "appointment"]) test(`calendar ${kind} never resends changed saved branding with a fresh key`, async () => {
+  const f = fixture();
+  assert.equal((await f.post(kind)).status, 200);
+  f.state.settings = { workspace_id: workspaceId, email_settings: { senderName: "New saved name" } };
+  const retry = await f.post(kind);
+  assert.equal(retry.status, 409);
+  assert.match((await retry.json()).error, /korábbi naptáras emailküldés/);
+  assert.equal(f.outgoing.length, 2);
+  assert.equal(f.outgoing[0].options.headers["Idempotency-Key"], f.outgoing[1].options.headers["Idempotency-Key"]);
 });

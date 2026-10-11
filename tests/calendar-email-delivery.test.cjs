@@ -17,14 +17,14 @@ function customer(overrides = {}) {
   };
 }
 
-function fixture(person = customer(), payload = { items: [{ name: "Teszt klíma", quantity: 1 }] }) {
+function fixture(person = customer(), payload = { items: [{ name: "Teszt klíma", quantity: 1 }] }, selection) {
   let now = start;
   class Clock extends Date {
     constructor(...args) { super(...(args.length ? args : [now])); }
     static now() { return now; }
   }
   const api = harness({ Date: Clock }).load("src/lib/alinflow/calendar-email-delivery.ts");
-  const job = api.createCalendarEmailDelivery(person, payload, workspaceId);
+  const job = api.createCalendarEmailDelivery(person, payload, workspaceId, selection);
   return { ...api, job, advance(ms) { now += ms; } };
 }
 
@@ -77,6 +77,56 @@ test("survey, maintenance and installations without a filled quote need only the
   assert.deepEqual(kinds(fixture(customer({ appointmentType: undefined })).job), ["quote", "appointment"]);
   assert.deepEqual(kinds(fixture(customer({ quoteItems: [{ productId: "old", productName: "Mentett klíma", quantity: 1 }] })).job), ["quote", "appointment"]);
 });
+
+for (const quote of [false, true]) for (const appointment of [false, true]) {
+  test(`installation selection quote=${quote}, appointment=${appointment} creates only selected delivery steps`, async () => {
+    const selection = { quote, appointment };
+    const f = fixture(customer(), {}, selection);
+    if (!quote && !appointment) {
+      assert.equal(f.job, null, "no email delivery exists when both choices are off");
+      return;
+    }
+    const expected = [...(quote ? ["quote"] : []), ...(appointment ? ["appointment"] : [])];
+    assert.deepEqual(kinds(f.job), expected);
+    assert.equal(Object.isFrozen(f.job.selection), true);
+    selection.quote = !quote;
+    selection.appointment = !appointment;
+    assert.deepEqual(JSON.parse(JSON.stringify(f.job.selection)), { quote, appointment });
+    const calls = [];
+    await f.runCalendarEmailDelivery(f.job, {
+      async send(kind) { calls.push(`send:${kind}`); },
+      async record(kind) { calls.push(`record:${kind}`); },
+    });
+    assert.deepEqual(calls, expected.flatMap(kind => [`send:${kind}`, `record:${kind}`]));
+  });
+}
+
+for (const appointmentType of ["survey", "maintenance"]) {
+  test(`${appointmentType} ignores the hidden quote choice and creates no job when appointment email is off`, () => {
+    const f = fixture(customer({ appointmentType }), {}, { quote: true, appointment: false });
+    assert.equal(f.job, null);
+  });
+}
+
+for (const kind of ["quote", "appointment"]) {
+  test(`single selected ${kind} retry preserves the selection and never enables the other email`, async () => {
+    const selection = { quote: kind === "quote", appointment: kind === "appointment" };
+    const f = fixture(customer(), {}, selection);
+    const calls = [];
+    let failed = true;
+    const actions = {
+      async send(currentKind) { calls.push(`send:${currentKind}`); if (failed) throw Error("Synthetic provider failure"); },
+      async record(currentKind) { calls.push(`record:${currentKind}`); },
+    };
+    await f.runCalendarEmailDelivery(f.job, actions);
+    selection.quote = true;
+    selection.appointment = true;
+    failed = false;
+    await f.runCalendarEmailDelivery(f.job, actions);
+    assert.deepEqual(calls, [`send:${kind}`, `send:${kind}`, `record:${kind}`]);
+    assert.deepEqual(kinds(f.job), [kind]);
+  });
+}
 
 test("both successful emails are sent and recorded in order, with acceptance saved before logging", async () => {
   const f = fixture();

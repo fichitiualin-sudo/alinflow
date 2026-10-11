@@ -39,7 +39,7 @@ function workPage(appointmentType = "installation") {
     "@/components/alinflow/PostalCodeCityFields": { PostalCodeCityFields: "test-postal-code" },
     "@/components/alinflow/WorkPhotosPanel": { WorkPhotosPanel: "test-work-photos" },
     "@/components/alinflow/AppointmentDevicesPanel": { AppointmentDevicesPanel: "test-appointment-devices" },
-    "@/components/alinflow/HTariffPanel": { HTariffPanel: "test-h-tariff" },
+    "@/components/alinflow/WorkSectionToggleButton": { WorkSectionToggleButton: "test-section-toggle" },
     "@/components/alinflow/WorkSectionIcon": { WorkSectionIcon: "test-section-icon" },
     "@/components/alinflow/DocumentCards": { DocumentActionButtons: "test-document-actions" },
   });

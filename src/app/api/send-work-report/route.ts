@@ -1,11 +1,10 @@
 import { ApiError, authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
 import { sendEmailThroughProvider } from "@/lib/alinflow/email-provider";
+import { loadWorkspaceEmailSettings, workspaceEmailIdentity } from "@/lib/alinflow/email-identity";
 import { appointmentTypeLabel } from "@/lib/alinflow/appointments";
 import { loadSavedPdfBundle } from "@/lib/alinflow/document-pdf-data";
 import { createSavedPdfAttachments } from "@/lib/alinflow/document-pdf-render";
 import {
-  defaultWorkspaceSettings,
-  normalizeWorkspaceSettings,
   settingsBrandName,
   settingsFooterLines,
 } from "@/lib/alinflow/workspace-settings";
@@ -33,7 +32,7 @@ export async function POST(request: Request) {
       purchaseDeclarationIds: body.purchaseDeclarationIds,
       documents: body.documents,
     });
-    const settings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
+    const settings = await loadWorkspaceEmailSettings(client, workspaceId);
     let attachments;
     try { attachments = await createSavedPdfAttachments(bundle, customer, settings); }
     catch (error) { throw new ApiError(error instanceof Error ? error.message : "A mentett dokumentumok PDF-je nem készíthető el.", 409); }
@@ -41,6 +40,7 @@ export async function POST(request: Request) {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) throw new ApiError("Hiányzik a RESEND_API_KEY környezeti változó.", 500);
     const brandName = settingsBrandName(settings);
+    const { from, replyTo } = workspaceEmailIdentity(settings);
     const documentLabel = bundle.includeWorkReport
       ? `${appointmentTypeLabel(bundle.report.appointment_type)} munkalap${bundle.declarations.length ? " és vásárlási nyilatkozat" : ""}`
       : "Vásárlási nyilatkozat";
@@ -57,9 +57,9 @@ export async function POST(request: Request) {
     const result = await sendEmailThroughProvider({
       apiKey,
       payload: {
-        from: process.env.EMAIL_FROM || `${brandName} <info@alinflow.hu>`,
+        from,
         to: [to],
-        reply_to: settings.companyProfile.email || process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com",
+        reply_to: replyTo,
         subject: `${documentLabel} – ${brandName}`,
         headers: { "X-Entity-Ref-ID": `alinflow-work-report-${crypto.randomUUID()}` },
         html,

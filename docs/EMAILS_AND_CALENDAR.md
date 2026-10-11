@@ -4,14 +4,16 @@
 
 - magyar nyelv;
 - magázódó, udvarias hangnem;
-- KLIMAlin arculat;
+- a hitelesített munkaterület saját arculata és mentett feladóneve (KLIMAlin vagy Urbán Klíma);
 - az előnézet és a ténylegesen elküldött email lényegi tartalma egyezzen;
 - ne jelenjen meg belső költségbontás;
 - ne ismétlődjön ugyanaz a figyelmeztetés több helyen;
-- a céges lábléc tartalmazza:
+- a céges lábléc a munkaterület saját adatait tartalmazza; a KLIMAlin esetén:
   - `klimalin.hu`
   - `legkondikalkulator.hu`
   - `06 30 700 4908`
+
+A szerver a munkaterület mentett beállításait tölti be; a böngészőből küldött céges beállítás nem írhatja ezeket felül. A közös, hitelesített küldőcím megmarad, az email megjelenő feladóneve a munkaterület saját neve. A válaszcím a saját céges email-cím, ennek hiányában a hitelesített küldőcím. Üres értékelési mező nem kaphat másik vállalkozástól alapértéket.
 
 ## Árajánlat email
 
@@ -41,7 +43,7 @@ A típus, dátum, kezdési idő és helyszín legyen egyértelmű. A karbantart�
 
 ### Naptárból indított gyors rögzítés
 
-Szerelés sikeres mentése után automatikusan két külön email indul: az adott időponthoz rögzített klímák árajánlata, majd az időpont-visszaigazolás. Felmérésnél és karbantartásnál csak a megfelelő időpontlevél megy ki. Email-cím hiányában az időpont megmarad, a felület jelzi az elmaradt küldést.
+Szerelés mentése előtt két külön, alapból bekapcsolt pipa választja ki az adott időponthoz rögzített klímák árajánlatát és az időpont-visszaigazolást. Bármelyik vagy mindkettő kikapcsolható. Felmérésnél és karbantartásnál csak a megfelelő időpontlevél választható. Minden pipa kikapcsolásakor a mentés sikeres, emailfolyamat és elküldött dokumentumbejegyzés nem keletkezik. Kiválasztott küldésnél email-cím hiányában az időpont megmarad, a felület jelzi az elmaradt küldést.
 
 A mentés előtt látszik, milyen levelek indulnak; utána mindegyiknek külön eredménye van. Részleges hiba esetén az újrapróbálás csak a hiányzó levelet küldi. Már elfogadott levél naplózási hibája csak a dokumentumnapló írását próbálja újra. A művelet rögzített ügyfél/időpont/tartalom pillanatképet használ; az ügyfél „Időpont foglalva” státuszát nem lépteti vissza. Az időpontlevél önmagában nem jelölheti elküldöttnek az árajánlatot.
 
@@ -56,7 +58,7 @@ Az adott nyitott küldési folyamat stabil Resend-idempotenciakulcsot használ l
 
 ## Köszönő email
 
-Az új telepítés teljes lezárásának sikeres mentése után automatikusan indul, ha az ügyfélnek van mentett email-címe. A „Szerelés kész – admin folyamatban” állapot, a karbantartás lezárása, a lap betöltése és a korábban lezárt munkák nem indítanak automatikus küldést. A kézi gomb a teljesen lezárt telepítés küldését indítja vagy próbálja újra; már elküldött emailt nem dupláz.
+Az új telepítés teljes lezárásának sikeres mentése után akkor indul, ha a „Köszönő email küldése lezáráskor” pipa be van kapcsolva és az ügyfélnek van mentett email-címe. A pipa új munkánál alapból bekapcsolt, kikapcsolva a teljes lezárás email nélkül történik. A „Szerelés kész – admin folyamatban” állapot, a karbantartás lezárása, a lap betöltése és a korábban lezárt munkák nem indítanak automatikus küldést. A kézi gomb a teljesen lezárt telepítés küldését indítja vagy próbálja újra; már elküldött emailt nem dupláz.
 
 A szerver a mentett munkaterülethez, ügyfélhez és telepítési időponthoz ellenőrzi a jogosultságot és a „Lezárva” állapotot. Az `INSTALLATION_THANK_YOU.sql` migráció tartós, időpontonként egy küldési naplót vezet. Sikeres szolgáltatói elfogadás után a szerver ugyanabban az adatbázis-tranzakcióban jelöli elküldöttnek a naplót és az adott időpont `thank_you_email` dokumentumát. Emailhiba nem vonja vissza a munka lezárását.
 
@@ -81,10 +83,10 @@ https://g.page/r/CaTB2608T1bZEBM/review
 A linkeket a munkaterület mentett emailbeállításai adják. A KLIMAlin Facebook értékelési URL-je:
 
 ```text
-https://www.facebook.com/100094506956317/reviews/
+https://www.facebook.com/profile.php?id=100094506956317&sk=reviews
 ```
 
-2026-09-14-én az élő AlinFlow beállításában ez a cím szerepelt; a Facebookon a KLIMAlin értékelési nézete nyílt meg. A `profile.php?id=100094506956317&sk=reviews` változat ugyanoda vezetett. Az ellenőrzött alaplinket megtartjuk. A Facebook az értékeléshez saját bejelentkezést kérhet; ezt a levél röviden jelzi.
+2026-10-11-én a Facebook saját „Továbbiak → Vélemények” menüpontja a fenti címre navigált; a KLIMAlin értékelési nézete és 6 vélemény megjelent. Az élő KLIMAlin-beállításba is ezt mentettük. A korábbi számazonosítós `/reviews/` cím asztali böngészőben szintén működött; a felhasználó által jelzett mobil/email-hiba így nem volt közvetlenül reprodukálható. A Facebook az értékeléshez saját bejelentkezést kérhet; ezt a levél röviden jelzi. Az Urbán Klíma üres értékelési mezői mellett nincsenek értékelőgombok, saját link megadásáig nem jelenhetnek meg KLIMAlin-linkek.
 
 ## Google Naptár
 

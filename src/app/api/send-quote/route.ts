@@ -1,10 +1,10 @@
 import { authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
 import { sendEmailThroughProvider } from "@/lib/alinflow/email-provider";
+import { loadWorkspaceEmailSettings, workspaceEmailIdentity } from "@/lib/alinflow/email-identity";
 import { calendarEmailDeliveryForRequest, CALENDAR_EMAIL_CONFLICT_MESSAGE } from "@/lib/alinflow/calendar-email-idempotency";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import {
   defaultWorkspaceSettings,
-  normalizeWorkspaceSettings,
   settingsBrandName,
   settingsContactLine,
   settingsContentLines,
@@ -244,8 +244,6 @@ export async function POST(request: Request) {
     const authorization = await authorizeCustomerRequest(request, body);
     const calendarDelivery = calendarEmailDeliveryForRequest(body, authorization, "quote");
     const apiKey = process.env.RESEND_API_KEY;
-    const configuredFrom = process.env.EMAIL_FROM;
-    const configuredReplyTo = process.env.EMAIL_REPLY_TO || "klima.alin@gmail.com";
 
     if (!apiKey) return Response.json({ error: "Hiányzik a RESEND_API_KEY környezeti változó." }, { status: 500 });
 
@@ -254,10 +252,9 @@ export async function POST(request: Request) {
     const totalAmount = Number(body.totalAmount || 0);
     const pricingMode: QuotePricingMode = body.pricingMode === "alternatives" ? "alternatives" : "bundle";
     const quoteIssuedAt = safeText(body.quoteIssuedAt) || calendarDelivery?.createdAt || new Date().toISOString();
-    const workspaceSettings = normalizeWorkspaceSettings(body.settings, defaultWorkspaceSettings(null));
+    const workspaceSettings = await loadWorkspaceEmailSettings(authorization.client, authorization.workspaceId);
     const brandName = settingsBrandName(workspaceSettings);
-    const from = configuredFrom || `${brandName} <info@alinflow.hu>`;
-    const replyTo = workspaceSettings.companyProfile.email || configuredReplyTo;
+    const { from, replyTo } = workspaceEmailIdentity(workspaceSettings);
     const to = safeText(customer.email);
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });

@@ -14,6 +14,8 @@ function apiHarness(failure) {
   const db = database(op => {
     if (op.table === failure) return { data: null, error: null };
     if (op.table === "workspace_members") return { data: { workspace_id: workspaceId } };
+    if (op.table === "workspaces") return { data: { id: workspaceId, name: "Test", slug: "test" } };
+    if (op.table === "workspace_settings") return { data: null };
     if (op.table === "customers") return { data: { id: customerId, name: "Stored Customer",
       email: "stored@example.invalid", phone: "06000000000", city: "Test", postal_code: "0000", address: "Stored street" } };
     if (op.table === "appointments") return { data: { id: "appointment", customer_id: customerId, appointment_type: "maintenance" } };

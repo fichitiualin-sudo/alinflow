@@ -6,8 +6,8 @@ import { Back, Btn, Card, Field, Gradient, Layout } from "@/components/alinflow/
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { WorkPhotosPanel } from "@/components/alinflow/WorkPhotosPanel";
 import { AppointmentDevicesPanel } from "@/components/alinflow/AppointmentDevicesPanel";
-import { HTariffPanel } from "@/components/alinflow/HTariffPanel";
 import { WorkSectionIcon, type WorkSectionIconName } from "@/components/alinflow/WorkSectionIcon";
+import { WorkSectionToggleButton } from "@/components/alinflow/WorkSectionToggleButton";
 import { DocumentActionButtons, documentStatusClass, type SendPdfDocuments } from "@/components/alinflow/DocumentCards";
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
@@ -49,43 +49,6 @@ type WorkActionDates = {
   fullClose?: string;
   cancelled?: string;
 };
-
-function WorkSectionToggleButton({
-  label,
-  icon,
-  open,
-  onClick,
-  color = "cyan",
-}: {
-  label: string;
-  icon: WorkSectionIconName;
-  open: boolean;
-  onClick: () => void;
-  color?: "cyan" | "orange";
-}) {
-  const colorClass = color === "orange"
-    ? "from-orange-300 to-orange-500 shadow-orange-500/20"
-    : "from-cyan-300 to-sky-400 shadow-cyan-500/20";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-expanded={open}
-      className={`group flex min-h-[72px] w-full items-center justify-between gap-3 rounded-3xl bg-gradient-to-br ${colorClass} px-5 py-4 text-left font-black text-slate-950 shadow-xl transition hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99]`}
-    >
-      <span className="flex min-w-0 items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-black/5">
-          <WorkSectionIcon name={icon} />
-        </span>
-        <span className="min-w-0 leading-tight">{label}</span>
-      </span>
-      <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 text-lg font-black text-slate-950 transition group-hover:translate-x-1">
-        {open ? "-" : "+"}
-      </span>
-    </button>
-  );
-}
 
 function workIdentity(work: Customer) {
   return work.activeAppointmentId || `${work.id}:${work.appointmentType || "work"}:${work.date || ""}:${work.time || ""}`;
@@ -241,7 +204,7 @@ type WorkPagePanelProps = {
   workHistory: Customer[];
   workspaceSettings: WorkspaceSettings;
   onBack: () => void;
-  onCloseWork: () => void;
+  onCloseWork: (sendThankYouEmail: boolean) => void;
   onRememberExternalCustomer: (customer: Customer, returnView?: View) => void;
   onRecordCustomerPhoneCall: (customer: Customer, returnView?: View) => void;
   onSaveCustomerData: () => void;
@@ -360,6 +323,9 @@ export function WorkPagePanel({
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
   const [showWorkItems, setShowWorkItems] = useState(isSurvey);
+  const [sendThankYouEmailOnClose, setSendThankYouEmailOnClose] = useState(true);
+  const thankYouEmailSent = documentRows.some((row) => row.action === "KoszonoEmail" && row.status.startsWith("Elküldve"));
+  const canSendThankYouEmailOnClose = Boolean(selected.email?.trim()) && selected.status !== "Lezárva" && !thankYouEmailSent;
   const defaultLaborAmount = quoteInstallTotal(quoteItems);
   const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
   const defaultCombinedAmount = total(quoteItems);
@@ -408,6 +374,7 @@ export function WorkPagePanel({
   useEffect(() => {
     setShowMaintenance(false);
     setShowWorkItems(isSurvey);
+    setSendThankYouEmailOnClose(true);
   }, [workspaceId, selected.id, selected.activeAppointmentId, isSurvey]);
 
   useEffect(() => {
@@ -778,10 +745,6 @@ export function WorkPagePanel({
           />
 
           {showDocuments ? <Card title="Dokumentumok">
-            {isInstallation ? <HTariffPanel
-              key={`${workspaceId || ""}:${selected.id}:${selected.activeAppointmentId || ""}`}
-              customer={selected} workspaceId={workspaceId || null} workspaceSettings={workspaceSettings}
-            /> : null}
             <div className="space-y-3">
               {documentRows.map((row) => (
                 <DocumentRowCard
@@ -880,7 +843,26 @@ export function WorkPagePanel({
                   customerEmail={selected.email}
                 />
               )}
-              {isInstallation ? <ActionButton color="green" icon="complete" onClick={onCloseWork} label="Teljes lezárás" doneAt={actionDates.fullClose} /> : null}
+              {isInstallation ? (
+                <div className="space-y-3">
+                  <label className={`flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm font-bold ${canSendThankYouEmailOnClose ? "cursor-pointer text-slate-200" : "text-slate-500"}`}>
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-500"
+                      checked={canSendThankYouEmailOnClose && sendThankYouEmailOnClose}
+                      disabled={!canSendThankYouEmailOnClose}
+                      onChange={(event) => setSendThankYouEmailOnClose(event.target.checked)}
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-black">Köszönő email küldése lezáráskor</span>
+                      <span className="mt-1 block break-words text-xs">
+                        {thankYouEmailSent ? "Már elküldve." : !selected.email?.trim() ? "Nincs email-cím megadva." : selected.status === "Lezárva" ? "A Dokumentumok között küldhető el." : selected.email}
+                      </span>
+                    </span>
+                  </label>
+                  <ActionButton color="green" icon="complete" onClick={() => onCloseWork(canSendThankYouEmailOnClose && sendThankYouEmailOnClose)} label="Teljes lezárás" doneAt={actionDates.fullClose} />
+                </div>
+              ) : null}
               {selected.status !== "Lezárva" ? <ActionButton color="red" icon="cancel" onClick={onCancelAppointment} label={isMaintenance ? "Karbantartási időpont lemondása" : "Időpont törlése / lemondva"} doneAt={actionDates.cancelled} indicator="×" /> : null}
               </div>
             </Card>

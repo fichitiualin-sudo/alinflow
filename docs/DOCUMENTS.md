@@ -1,12 +1,12 @@
 # Dokumentumok és lezárási adminisztráció
 
-## PDF-küldés és H tarifa (2026-09-14)
+## PDF-küldés és dokumentumfelület
 
 A munkalap mentési képernyőjén a **Mentés és PDF-ek küldése** előbb elmenti a munkalapot és a hozzá tartozó vásárlási nyilatkozatot, majd ezek azonosítóival hívja a szervert. A szerver az adott munkaterület, ügyfél és időpont mentett, aláírt rekordjaiból készít valódi PDF-mellékleteket. Karbantartásnál csak a karbantartási munkalapot küldi. A Dokumentumok gombjaival a mentett példányok ismét elküldhetők, szerkesztés nélkül is.
 
 A PDF megőrzi a dokumentum saját aláírását, magyar ékezeteit és a mentett adatpillanatképet. Hiányzó vagy más időponthoz tartozó dokumentumot nem helyettesít a legutóbbi ügyféldokumentummal. A PDF-ek a küldéskor készülnek, nem foglalnak külön Supabase Storage tárhelyet.
 
-A munka Dokumentumok részében külön lenyitható **H tarifás nyomtatvány** található. Az ellenőrzött hivatalos E.ON/ELMŰ, MVM Démász és MVM Émász űrlap a telepítés összes aktuális készülékének mentett adatait használja. A hiányzó adatok kitölthetők, a nyomtatvány PDF-ben letölthető. Aláírást nem másol át. Részletes források és szabályok: [H_TARIFF_FORMS.md](H_TARIFF_FORMS.md).
+2026-10-11-től a felhasználó kérésére a H tarifás nyomtatvány nem jelenik meg a Dokumentumok felületén. A korábban mentett adatokat a felület eltávolítása nem törli.
 
 ## Alapelv
 
@@ -39,6 +39,7 @@ A dokumentumtár egy ügyfél teljes történetét őrzi. Új dokumentum mindig 
 - szereléshez tartozik;
 - csak aláírás után kész;
 - karbantartásnál nem készül új vásárlási nyilatkozat.
+- a munkalap szerkesztőjén az eladó és a nyilatkozati tételek „Vásárlási nyilatkozat” lenyitható részbe kerülnek, amely alapból csukott; a korábbi aláírt dokumentumok előnézete és küldése megmarad.
 
 ### Karbantartási munkalap
 

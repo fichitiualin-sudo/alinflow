@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { harness } = require("./helpers.cjs");
+const { harness, database } = require("./helpers.cjs");
 
 const scope = { workspaceId: "10000000-0000-4000-8000-000000000001", customerId: "20000000-0000-4000-8000-000000000001", appointmentId: "30000000-0000-4000-8000-000000000001" };
 const stamp = "2026-09-14T12:00:00Z";
@@ -156,7 +156,7 @@ test("route passes the authorized saved identity and deterministic entity ref to
   const route = harness({ process: { env: { RESEND_API_KEY: "test", EMAIL_FROM: "sender@example.test" } } }, {
     "@/lib/alinflow/server-auth": { ApiError, authorizeCustomerRequest: async (_request, body) => {
       body.customer = { id: scope.customerId, email: "saved@example.test", name: "Saved customer" };
-      return { client: {}, workspaceId: scope.workspaceId, appointment: { id: scope.appointmentId, appointment_type: "installation", status: "Lezárva" } };
+      return { client: database(op => ({ data: op.table === "workspaces" ? { id: scope.workspaceId, name: "Test", slug: "test" } : null })), workspaceId: scope.workspaceId, appointment: { id: scope.appointmentId, appointment_type: "installation", status: "Lezárva" } };
     }, apiErrorResponse: error => { throw error; } },
     "@/lib/alinflow/thank-you-delivery": { sendInstallationThankYouOnce: async options => {
       received = options; return { ok: true, id: "id", alreadySent: false, sentAt: stamp };
