@@ -1,5 +1,5 @@
 import { createDocumentPdf } from "./document-pdf";
-import { parsePrivacyNoticeSnapshot } from "./privacy-notice";
+import { parsePrivacyNoticeSnapshot, privacyControllerLabel } from "./privacy-notice";
 
 /** No current workspace fields or unrelated customer fields enter a saved notice. */
 export async function createPrivacyNoticePdf(snapshot: unknown, revokedAt?: string): Promise<Uint8Array> {
@@ -8,7 +8,7 @@ export async function createPrivacyNoticePdf(snapshot: unknown, revokedAt?: stri
   const pdf = await createDocumentPdf("Adatkezelési tájékoztató");
   pdf.text(`Verzió: ${notice.version}`, { size: 9, muted: true });
   for (const { role, party } of notice.controllers) {
-    pdf.section(role === "device_seller" ? "Adatkezelő - készülék értékesítője" : "Adatkezelő - szerelési / karbantartási szolgáltató");
+    pdf.section(`Adatkezelő - ${privacyControllerLabel(role, notice.version)}`);
     pdf.text([party.legalName, party.address, party.taxNumber ? `Adószám: ${party.taxNumber}` : "", [party.email, party.phone].filter(Boolean).join(" · ")].filter(Boolean).join("\n"), { size: 9.5, gap: 2 });
   }
   pdf.section("Ügyfél adatai");

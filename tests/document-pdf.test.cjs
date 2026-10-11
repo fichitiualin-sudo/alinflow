@@ -172,6 +172,31 @@ test("privacy PDF projects its saved fields, decision and original signature wit
   assert.match(content.join("\n"), /privacy@example.invalid/);
 });
 
+test("maintenance PDF has its own signed notice and no purchase declaration or device seller", async () => {
+  const privacy = loadTypeScript("src/lib/alinflow/privacy-notice.ts");
+  const saved = privacyNotice({ version: privacy.MAINTENANCE_PRIVACY_NOTICE_VERSION, controllers: [privacyNotice().controllers[1]] });
+  const db = backend({ work_reports: [report({ appointment_type: "maintenance", privacy_notice: saved,
+    signature_data_url: saved.signatureDataUrl, signer_name: saved.signerName, signed_at: saved.signedAt })], purchase_declarations: [declaration()] });
+  const bundle = await loadSavedPdfBundle(db, input({ documents: "work_report" }));
+  const attachments = await createSavedPdfAttachments(bundle, {}, settings);
+  assert.equal(attachments.length, 2);
+  assert.equal(attachments.some(value => value.filename.startsWith("vasarlasi-nyilatkozat-")), false);
+  const noticeAttachment = attachments.find(value => value.filename.startsWith("adatkezelesi-tajekoztato-"));
+  const pdf = await PDFDocument.load(Buffer.from(noticeAttachment.content, "base64"));
+  assert.ok(pdf.getPageCount() > 0);
+  assert.equal(embeddedImages(pdf).length, 1);
+  const content = [];
+  const { createPrivacyNoticePdf } = loadTypeScript("src/lib/alinflow/privacy-notice-pdf.ts", {
+    "./document-pdf": { async createDocumentPdf() { return {
+      text: value => content.push(String(value)), section: value => content.push(value), signature: async () => {}, save: async () => new Uint8Array([1]),
+    }; } },
+  });
+  await createPrivacyNoticePdf(saved);
+  assert.match(content.join("\n"), /Karbantartást végző vállalkozás/);
+  assert.match(content.join("\n"), /TESZT szolgáltató EV/);
+  assert.doesNotMatch(content.join("\n"), /TESZT készülékértékesítő|Készülék értékesítője/);
+});
+
 test("email route never sends when the saved signature cannot be rendered", async () => {
   const realAuth = loadTypeScript("src/lib/alinflow/server-auth.ts");
   const auth = { ...realAuth, async authorizeCustomerRequest(_request, body) {

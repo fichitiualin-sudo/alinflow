@@ -38,13 +38,14 @@ export function PrivacyNoticeSettings({ value, workspaceId, disabled, onChange }
         <span>Adatkezelési tájékoztató</span><span aria-hidden="true">{open ? "−" : "+"}</span>
       </button>
       {open ? <>
-        <p className="text-sm text-slate-300">A munkalap mellé a készülékértékesítő és a munkát végző vállalkozás adataival készül. Az ügyfél a megjelölt karbantartó partnernek külön, önkéntesen adhat hozzájárulást.</p>
+        <p className="text-sm text-slate-300">Minden új aláírt munkalap saját tájékoztatót kap. Karbantartásnál a munkát végző vállalkozás szerepel benne; telepítésnél a készülékértékesítő is. Az ügyfél a megjelölt karbantartó partnernek külön, önkéntesen adhat hozzájárulást.</p>
         <label className="flex items-start gap-3 rounded-2xl bg-slate-950/60 p-4 font-bold">
           <input type="checkbox" checked={config.enabled} onChange={(event) => update("enabled", event.target.checked)} className="mt-1 h-5 w-5 shrink-0 accent-cyan-300" />
           <span>Adatkezelési tájékoztató használata a munkalapnál<span className="mt-1 block text-sm font-normal text-slate-300">Bekapcsolás előtt ellenőrizd a vállalkozásokat és a tényleges adatkezelés leírását.</span></span>
         </label>
         <PartyFields title="Munkát végző vállalkozás (EV)" value={config.serviceProvider} onChange={(next) => update("serviceProvider", next)} />
-        <PartyFields title="Készülékértékesítő vállalkozás" value={config.deviceSeller} onChange={(next) => update("deviceSeller", next)} />
+        <PartyFields title="Készülékértékesítő vállalkozás – telepítéshez" value={config.deviceSeller} onChange={(next) => update("deviceSeller", next)} />
+        <p className="text-sm text-slate-400">Ha csak karbantartást végzel, a készülékértékesítő mezői üresen maradhatnak.</p>
         <PrivacyPartnerPicker key={workspaceId || "no-workspace"} workspaceId={workspaceId} disabled={disabled} value={config.partner} partnerUserId={config.partnerUserId} partnerWorkspaceId={config.partnerWorkspaceId}
           onSelect={(candidate) => onChange({ ...config, partner: candidate ? { ...candidate.party } : normalizePrivacyParty(undefined), partnerUserId: candidate?.userId, partnerWorkspaceId: candidate?.workspaceId })} />
         {([

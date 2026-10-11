@@ -49,6 +49,19 @@ test("HTML export keeps saved notice content escaped and leaves old reports with
   assert.match(buildPrivacyNoticeHtml(saved, "2026-10-12T12:00:00Z"), /később visszavonták/);
 });
 
+test("maintenance notice preview and export show only its saved maintenance provider", () => {
+  const privacy = h.load("src/lib/alinflow/privacy-notice.ts");
+  const { PrivacyNoticeDocument } = h.load("src/components/alinflow/PrivacyNoticeDocument.tsx");
+  const saved = privacyNotice({ version: privacy.MAINTENANCE_PRIVACY_NOTICE_VERSION, controllers: [privacyNotice().controllers[1]] });
+  for (const html of [renderToStaticMarkup(PrivacyNoticeDocument({ notice: saved })), buildPrivacyNoticeHtml(saved)]) {
+    assert.match(html, /Karbantartást végző vállalkozás/);
+    assert.match(html, /TESZT szolgáltató EV/);
+    assert.doesNotMatch(html, /TESZT készülékértékesítő|Készülék értékesítője/);
+    assert.match(html, /Adatkezelő<\//);
+    assert.ok(html.includes(saved.signatureDataUrl));
+  }
+});
+
 test("an unsigned saved declaration does not borrow another report signature or date", () => {
   const html = renderToStaticMarkup(PurchaseDeclarationDocument({ customer, report, declaration: { ...declaration, signatureDataUrl: "", signedAt: undefined, createdAt: "2026-10-09T22:30:00Z" }, quoteItems: declaration.quoteItems }));
   assert.doesNotMatch(html, /<img|V09SSw==|2026\. 09\. 15\./);

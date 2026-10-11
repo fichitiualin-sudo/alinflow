@@ -33,9 +33,50 @@ test("both issuer identities and factual policy fields survive settings row roun
 test("activation requires real controller contacts and the three factual policy fields", () => {
   assert.equal(privacy.privacyNoticeConfigValidation(privacy.defaultPrivacyNoticeConfig()).length, 0);
   const missing = { ...privacy.defaultPrivacyNoticeConfig(), enabled: true };
-  assert.equal(privacy.privacyNoticeConfigValidation(missing).length, 9);
+  assert.equal(privacy.privacyNoticeConfigValidation(missing).length, 6);
+  assert.equal(privacy.privacyNoticeConfigValidation(missing, { appointmentType: "installation" }).length, 9);
   assert.equal(privacy.privacyNoticeConfigValidation(config()).length, 0);
   assert.throws(() => privacy.buildPrivacyNoticeSnapshot(snapshotInput({ config: { ...config(), enabled: false } })), /nincs bekapcsolva/);
+});
+
+test("maintenance uses the current service provider only, even when a seller is configured", () => {
+  const input = snapshotInput({ appointmentType: "maintenance", config: { ...config(), partner: party("Teszt Partner EV") }, consentGranted: true });
+  const snapshot = privacy.buildPrivacyNoticeSnapshot(input);
+  assert.equal(snapshot.version, privacy.MAINTENANCE_PRIVACY_NOTICE_VERSION);
+  assert.equal(snapshot.controllers.length, 1);
+  assert.equal(snapshot.controllers[0].role, "service_provider");
+  assert.equal(snapshot.controllers[0].party.legalName, input.config.serviceProvider.legalName);
+  assert.doesNotMatch(JSON.stringify(snapshot), /Teszt Készülék Kft\./);
+  assert.match(snapshot.sections[0].text, /adott karbantartási munkalaphoz/);
+  assert.match(snapshot.sections[1].text, /elutasítása nem érinti a karbantartást/);
+  assert.equal(JSON.stringify(privacy.parsePrivacyNoticeSnapshot(clone(snapshot))), JSON.stringify(snapshot));
+  assert.throws(() => privacy.parsePrivacyNoticeSnapshot({ ...clone(snapshot), controllers: [{ role: "device_seller", party: input.config.deviceSeller }] }), /hiányos vagy sérült/);
+  const oldSnapshot = privacy.buildPrivacyNoticeSnapshot(snapshotInput());
+  assert.throws(() => privacy.parsePrivacyNoticeSnapshot({ ...clone(snapshot), controllers: oldSnapshot.controllers }), /hiányos vagy sérült/);
+  assert.equal(JSON.stringify(privacy.parsePrivacyNoticeSnapshot(clone(oldSnapshot))), JSON.stringify(oldSnapshot));
+});
+
+test("maintenance-only settings can omit a seller; installation still requires one", () => {
+  const maintenanceConfig = { ...config(), deviceSeller: privacy.normalizePrivacyParty(undefined) };
+  assert.equal(privacy.privacyNoticeConfigValidation(maintenanceConfig).length, 0);
+  assert.equal(privacy.privacyNoticeConfigValidation(maintenanceConfig, { appointmentType: "maintenance" }).length, 0);
+  assert.equal(privacy.privacyNoticeConfigValidation(maintenanceConfig, { appointmentType: "installation" }).length, 3);
+  assert.equal(privacy.buildPrivacyNoticeSnapshot(snapshotInput({ config: maintenanceConfig, appointmentType: "maintenance" })).controllers.length, 1);
+  assert.throws(() => privacy.buildPrivacyNoticeSnapshot(snapshotInput({ config: maintenanceConfig })), /Készülékértékesítő/);
+  const partiallyFilled = { ...maintenanceConfig, deviceSeller: { ...maintenanceConfig.deviceSeller, legalName: "Incomplete seller" } };
+  assert.ok(privacy.privacyNoticeConfigValidation(partiallyFilled).length > 0);
+  assert.equal(privacy.privacyNoticeConfigValidation(partiallyFilled, { appointmentType: "maintenance" }).length, 0);
+});
+
+test("notice validity requires the freshly captured report signature, signer and time", () => {
+  const input = snapshotInput({ appointmentType: "maintenance" });
+  const snapshot = privacy.buildPrivacyNoticeSnapshot(input);
+  assert.equal(privacy.privacyNoticeMatchesWorkReportSignature(snapshot, input), true);
+  for (const patch of [{ signatureDataUrl: "other-image" }, { signerName: "Más aláíró" }, { signedAt: "2025-10-11T12:00:00Z" }, { signedAt: undefined }]) {
+    assert.equal(privacy.privacyNoticeMatchesWorkReportSignature(snapshot, { ...input, ...patch }), false);
+  }
+  assert.equal(privacy.privacyNoticeMatchesWorkReportSignature(undefined, input), false);
+  assert.equal(privacy.privacyNoticeMatchesWorkReportSignature(snapshot, { ...input, signedAt: "2026-10-11T14:00:00+02:00" }), true);
 });
 
 test("optional refusal works without a partner, while granted consent requires a complete named partner", () => {

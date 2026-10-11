@@ -6,7 +6,7 @@ import { DEFAULT_SELLER_COMPANY } from "./purchase-declarations";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "./work-report";
 import type { WorkspaceSettings } from "./workspace-settings";
 import { defaultWorkspaceSettings, settingsBrandName, settingsFooterLines } from "./workspace-settings";
-import { parsePrivacyNoticeSnapshot } from "./privacy-notice";
+import { parsePrivacyNoticeSnapshot, privacyControllerLabel } from "./privacy-notice";
 
 export type SignedDocumentExportFile = {
   path: string;
@@ -124,8 +124,8 @@ function privacyNoticeBody(snapshot: unknown, revokedAt?: string) {
   const party = (value: (typeof notice.controllers)[number]["party"]) => `<strong>${escapeHtml(value.legalName)}</strong><br>${[value.address, value.taxNumber ? `Adószám: ${value.taxNumber}` : "", value.email, value.phone].filter(Boolean).map(escapeHtml).join(" · ")}`;
   return `<article class="page privacy-notice">
     <h1>Adatkezelési tájékoztató</h1><p class="notice-meta">Verzió: ${escapeHtml(notice.version)}</p>
-    <h2>Adatkezelők</h2>
-    ${notice.controllers.map(({ role, party: controller }) => `<p>${role === "device_seller" ? "Készülék értékesítője" : "Szerelési / karbantartási szolgáltató"}<br>${party(controller)}</p>`).join("")}
+    <h2>${notice.controllers.length === 1 ? "Adatkezelő" : "Adatkezelők"}</h2>
+    ${notice.controllers.map(({ role, party: controller }) => `<p>${privacyControllerLabel(role, notice.version)}<br>${party(controller)}</p>`).join("")}
     <h2>Ügyfél adatai</h2>
     <p>Név: ${escapeHtml(notice.customer.name)}<br>Cím: ${escapeHtml(notice.customer.address)}<br>Telefonszám: ${escapeHtml(notice.customer.phone || "Nincs megadva")}<br>Email: ${escapeHtml(notice.customer.email || "Nincs megadva")}</p>
     ${notice.sections.map((section) => `<h2>${escapeHtml(section.title)}</h2><p>${escapeHtml(section.text)}</p>`).join("")}

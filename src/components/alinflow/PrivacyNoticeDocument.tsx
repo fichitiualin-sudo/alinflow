@@ -1,4 +1,4 @@
-import type { PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
+import { privacyControllerLabel, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
 import { formatSignedAt } from "@/lib/alinflow/work-report";
 
 /** Render the version shown when this signature was made, never today's settings. */
@@ -13,9 +13,9 @@ export function PrivacyNoticeDocument({ notice, revokedAt }: { notice: PrivacyNo
       <p className="mt-1 text-[10px] text-slate-500">Verzió: {notice.version}</p>
     </header>
     <section className="mt-4">
-      <h3 className="font-bold text-teal-800">Adatkezelők</h3>
+      <h3 className="font-bold text-teal-800">{notice.controllers.length === 1 ? "Adatkezelő" : "Adatkezelők"}</h3>
       {notice.controllers.map(({ role, party: controller }) => <p key={role} className="mt-2">
-        <span className="text-[10px] text-slate-500">{role === "device_seller" ? "Készülék értékesítője" : "Szerelési / karbantartási szolgáltató"}</span><br />{party(controller)}
+        <span className="text-[10px] text-slate-500">{privacyControllerLabel(role, notice.version)}</span><br />{party(controller)}
       </p>)}
     </section>
     <section className="mt-4 rounded-xl bg-slate-50 p-3">

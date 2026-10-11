@@ -8,7 +8,7 @@ import { formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workRe
 import { appointmentSummaryLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { Back } from "@/components/alinflow/LayoutPrimitives";
 import { WorkSectionToggleButton } from "@/components/alinflow/WorkSectionToggleButton";
-import { buildPrivacyNoticeContent, buildPrivacyNoticeSnapshot, normalizePrivacyNoticeConfig, partnerConsentText, privacyNoticeConfigValidation, type PrivacyNoticeConfig, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
+import { buildPrivacyNoticeContent, buildPrivacyNoticeSnapshot, normalizePrivacyNoticeConfig, partnerConsentText, privacyNoticeConfigValidation, privacyNoticeControllers, privacyControllerLabel, MAINTENANCE_PRIVACY_NOTICE_VERSION, type PrivacyNoticeConfig, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
 import { PrivacyNoticeDocument } from "@/components/alinflow/PrivacyNoticeDocument";
 
 type WorkReportPanelProps = {
@@ -77,10 +77,12 @@ export function WorkReportPanel({
   const [signatureError, setSignatureError] = useState("");
   const [signatureDraft, setSignatureDraft] = useState("");
   const privacy = normalizePrivacyNoticeConfig(privacyConfig);
-  const privacyRevision = JSON.stringify(privacy);
-  const privacyErrors = privacyNoticeConfigValidation(privacy);
+  const privacyRevision = JSON.stringify([privacy, appointmentType]);
+  const privacyErrors = privacyNoticeConfigValidation(privacy, { appointmentType });
   const noticeReady = privacy.enabled && privacyErrors.length === 0;
-  const partnerReady = noticeReady && privacyNoticeConfigValidation(privacy, { requirePartner: true }).length === 0;
+  const partnerReady = noticeReady && privacyNoticeConfigValidation(privacy, { requirePartner: true, appointmentType }).length === 0;
+  const noticeControllers = privacyNoticeControllers(privacy, appointmentType);
+  const controllerLabel = (role: PrivacyNoticeSnapshot["controllers"][number]["role"]) => privacyControllerLabel(role, isMaintenance ? MAINTENANCE_PRIVACY_NOTICE_VERSION : undefined);
 
   useEffect(() => {
     setShowPurchaseDeclaration(false);
@@ -117,8 +119,10 @@ export function WorkReportPanel({
     if (!value) { startNewSignature(); return; }
     const signedAt = new Date().toISOString();
     try {
+      if (privacy.enabled && !noticeReady) throw new Error(`Az adatkezelési tájékoztatóhoz szükséges adatok hiányosak. ${privacyErrors.join(" ")}`);
       const notice = noticeReady ? buildPrivacyNoticeSnapshot({
         config: privacy,
+        appointmentType,
         customer: { name: selected.name, address: fullCustomerAddress(selected), phone: selected.phone || "", email: selected.email || "" },
         signerName: workReport.signerName || selected.name,
         signatureDataUrl: value, signedAt, consentGranted: partnerReady && consentGranted,
@@ -140,7 +144,7 @@ export function WorkReportPanel({
           <Card title={`${reportTitle} adatai`}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Ügyfél" value={selected.name || "nincs megadva"}/>
-              <Field label="Telepítési cím" value={fullCustomerAddress(selected)}/>
+              <Field label={isMaintenance ? "Karbantartási cím" : "Telepítési cím"} value={fullCustomerAddress(selected)}/>
               <Field label="Időpont" value={selected.date ? appointmentSummaryLabel(selected) : `${scheduleDate} · ${shownTime}`}/>
               <Field label={climateLabel} value={climateSummary(quoteItems)}/>
             </div>
@@ -177,22 +181,22 @@ export function WorkReportPanel({
           ) : privacy.enabled ? (
             <Card title="Adatkezelési tájékoztató">
               {noticeReady ? <>
-                <p className="text-sm leading-relaxed"><b>{privacy.deviceSeller.legalName}</b> – készülékértékesítés<br/><b>{privacy.serviceProvider.legalName}</b> – telepítés és karbantartás</p>
+                <div className="space-y-1 text-sm leading-relaxed">{noticeControllers.map(({ role, party }) => <p key={role}><b>{party.legalName}</b> – {controllerLabel(role)}</p>)}</div>
                 <details className="mt-3 rounded-2xl border border-slate-400/30 p-4">
                   <summary className="cursor-pointer font-bold">A teljes tájékoztató elolvasása</summary>
                   <div className="mt-4 space-y-4 text-sm leading-relaxed">
-                    {[privacy.deviceSeller, privacy.serviceProvider].map((party, index) => <p key={index}><b>{party.legalName}</b><br/>{party.address}<br/>{party.email}{party.phone ? ` · ${party.phone}` : ""}{party.taxNumber ? <><br/>Adószám: {party.taxNumber}</> : null}</p>)}
-                    {buildPrivacyNoticeContent(privacy).map((section) => <div key={section.title}><h3 className="font-bold">{section.title}</h3><p className="mt-1 whitespace-pre-line">{section.text}</p></div>)}
+                    {noticeControllers.map(({ role, party }) => <p key={role}><b>{party.legalName}</b><br/>{party.address}<br/>{party.email}{party.phone ? ` · ${party.phone}` : ""}{party.taxNumber ? <><br/>Adószám: {party.taxNumber}</> : null}</p>)}
+                    {buildPrivacyNoticeContent(privacy, appointmentType).map((section) => <div key={section.title}><h3 className="font-bold">{section.title}</h3><p className="mt-1 whitespace-pre-line">{section.text}</p></div>)}
                   </div>
                 </details>
                 {hasValidSignature ? <p className="mt-3 text-sm">Ehhez a korábbi aláíráshoz nem tartozik tájékoztató. Az új tájékoztató rögzítéséhez az ügyfélnek ismét alá kell írnia.</p> : <>
                   {partnerReady ? <label className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-400/30 p-4">
                     <input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-emerald-500" checked={consentGranted} onChange={(event) => { setConsentGranted(event.target.checked); setSignatureDraft(""); }}/>
-                    <span className="text-sm leading-relaxed"><b>Karbantartó partner – önkéntes</b><br/>{partnerConsentText(privacy)}<br/><span className="mt-2 block">{privacy.partner.address} · {privacy.partner.email}{privacy.partner.phone ? ` · ${privacy.partner.phone}` : ""}</span></span>
+                    <span className="text-sm leading-relaxed"><b>Karbantartó partner – önkéntes</b><br/>{partnerConsentText(privacy, appointmentType)}<br/><span className="mt-2 block">{privacy.partner.address} · {privacy.partner.email}{privacy.partner.phone ? ` · ${privacy.partner.phone}` : ""}</span></span>
                   </label> : <p className="mt-3 text-sm">Karbantartó partner még nincs megadva; partneri adatátadáshoz nem kérünk hozzájárulást.</p>}
                   <p className="mt-3 text-sm">Az aláírás a tájékoztató átvételét is rögzíti.{partnerReady ? " A partneri adatátadás csak a külön pipa kijelölésével engedélyezett." : ""}</p>
                 </>}
-              </> : <p className="text-sm text-amber-700">A tájékoztató cégadatai még hiányosak. A Beállításokban egészítsd ki őket; addig partneri hozzájárulás nem rögzíthető.</p>}
+              </> : <p className="text-sm text-amber-700">A tájékoztató adatai még hiányosak. A Beállításokban egészítsd ki őket a munkalap aláírása előtt.</p>}
             </Card>
           ) : null}
           <Card title="Egyszerű ügyfél aláírás">
