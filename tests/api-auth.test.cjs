@@ -116,7 +116,8 @@ async function assertInvoiceKey(fixture, response, expectedKey) {
   assert.equal(/<szamlaagentkulcs>([^<]+)<\/szamlaagentkulcs>/.exec(xml)?.[1], expectedKey);
   const result = await response.json();
   assert.equal(result.ok, true);
-  assert.doesNotMatch(JSON.stringify(result), /synthetic-(?:device|labor|combined)-key/);
+  assert.doesNotMatch(JSON.stringify(result), /synthetic-(?:device|labor|combined|split-labor)-key/);
+  return xml;
 }
 
 for (const [kind, expected] of [["device", "device"], ["labor", "labor"], ["maintenance", "labor"], ["combined", "combined"]]) {
@@ -196,4 +197,130 @@ test("billing workspace: combined issuer allowlist does not bypass workspace or 
     assert.equal((await postInvoice(fixture, "combined")).status, 403);
     assert.equal(fixture.outgoing.length, 0);
   }
+});
+
+function splitInvoiceHarness(config = {}, failure) {
+  return invoiceHarness({
+    SZAMLAZZ_WORKSPACE_ID: otherInvoiceWorkspace,
+    SZAMLAZZ_SPLIT_WORKSPACE_ID: `  ${workspaceId}  `,
+    SZAMLAZZ_DEVICE_VAT_KEY: "27",
+    SZAMLAZZ_DEVICE_INVOICE_PREFIX: "DEVICE",
+    SZAMLAZZ_LABOR_VAT_KEY: "18",
+    SZAMLAZZ_LABOR_INVOICE_PREFIX: "PRIMARY-EV",
+    SZAMLAZZ_LABOR_COMMENT: "PRIMARY-PRIVATE-LABOR-COMMENT",
+    SZAMLAZZ_MAINTENANCE_COMMENT: "PRIMARY-PRIVATE-MAINTENANCE-COMMENT",
+    SZAMLAZZ_SPLIT_LABOR_AGENT_KEY: "synthetic-split-labor-key",
+    SZAMLAZZ_SPLIT_LABOR_VAT_KEY: " AAM ",
+    SZAMLAZZ_SPLIT_LABOR_INVOICE_PREFIX: " OWN-EV ",
+    ...config,
+  }, failure);
+}
+
+for (const kind of ["device", "labor", "maintenance"]) {
+  test(`split billing: ${kind} selects its own issuer key, VAT and prefix as one configuration`, async () => {
+    const fixture = splitInvoiceHarness();
+    const isDevice = kind === "device";
+    const xml = await assertInvoiceKey(fixture, await postInvoice(fixture, kind),
+      isDevice ? "synthetic-device-key" : "synthetic-split-labor-key");
+    assert.match(xml, isDevice ? /<afakulcs>27<\/afakulcs>/ : /<afakulcs>AAM<\/afakulcs>/);
+    assert.match(xml, isDevice ? /<szamlaszamElotag>DEVICE<\/szamlaszamElotag>/
+      : /<szamlaszamElotag>OWN-EV<\/szamlaszamElotag>/);
+    assert.match(xml, /<bruttoErtek>12000<\/bruttoErtek>/);
+    assert.match(xml, isDevice ? /<afaErtek>2551<\/afaErtek>/ : /<afaErtek>0<\/afaErtek>/);
+    assert.doesNotMatch(xml, /synthetic-(?:labor|combined)-key|PRIMARY-EV|PRIMARY-PRIVATE/);
+  });
+}
+
+for (const kind of ["labor", "maintenance"]) {
+  test(`split billing: unset own ${kind} prefix is omitted instead of inheriting the primary issuer prefix`, async () => {
+    for (const prefix of [undefined, "", "   "]) {
+      const fixture = splitInvoiceHarness({ SZAMLAZZ_SPLIT_LABOR_INVOICE_PREFIX: prefix });
+      const xml = await assertInvoiceKey(fixture, await postInvoice(fixture, kind), "synthetic-split-labor-key");
+      assert.doesNotMatch(xml, /szamlaszamElotag|PRIMARY-EV|PRIMARY-PRIVATE/);
+    }
+  });
+}
+
+for (const field of ["SZAMLAZZ_SPLIT_LABOR_AGENT_KEY", "SZAMLAZZ_SPLIT_LABOR_VAT_KEY"]) {
+  test(`split billing: missing ${field} stops labor and maintenance before contacting any issuer`, async () => {
+    for (const missing of [undefined, "", "   "]) {
+      for (const kind of ["labor", "maintenance"]) {
+        const fixture = splitInvoiceHarness({ [field]: missing });
+        const response = await postInvoice(fixture, kind);
+        assert.equal(response.status, 500);
+        const result = await response.json();
+        assert.equal(result.ok, false);
+        assert.doesNotMatch(JSON.stringify(result), /synthetic-(?:device|labor|combined|split-labor)-key/);
+        assert.equal(fixture.outgoing.length, 0);
+      }
+    }
+  });
+}
+
+test("split billing: device never falls back to either labor issuer when its key is missing", async () => {
+  const fixture = splitInvoiceHarness({ SZAMLAZZ_DEVICE_AGENT_KEY: "" });
+  assert.equal((await postInvoice(fixture, "device")).status, 500);
+  assert.equal(fixture.outgoing.length, 0);
+});
+
+test("split billing: combined invoices are denied even if the previous combined allowlist still contains the workspace", async () => {
+  const fixture = splitInvoiceHarness({ SZAMLAZZ_COMBINED_WORKSPACE_IDS: workspaceId });
+  assert.equal((await postInvoice(fixture, "combined")).status, 403);
+  assert.equal(fixture.outgoing.length, 0);
+});
+
+test("split billing: configured access requires one exact workspace ID", async () => {
+  for (const configured of [undefined, "", "   ", otherInvoiceWorkspace, "*", `${workspaceId}*`,
+    `prefix-${workspaceId}`, `${workspaceId},${otherInvoiceWorkspace}`]) {
+    for (const kind of ["device", "labor", "maintenance", "combined"]) {
+      const fixture = splitInvoiceHarness({ SZAMLAZZ_SPLIT_WORKSPACE_ID: configured });
+      assert.equal((await postInvoice(fixture, kind)).status, 403, `${kind} must reject ${configured}`);
+      assert.equal(fixture.outgoing.length, 0);
+    }
+  }
+});
+
+test("split billing: conflicting primary and split bindings fail closed for every invoice type", async () => {
+  for (const kind of ["device", "labor", "maintenance", "combined"]) {
+    const fixture = splitInvoiceHarness({ SZAMLAZZ_WORKSPACE_ID: workspaceId,
+      SZAMLAZZ_COMBINED_WORKSPACE_IDS: workspaceId });
+    assert.equal((await postInvoice(fixture, kind)).status, 403);
+    assert.equal(fixture.outgoing.length, 0);
+  }
+});
+
+test("split billing: existing primary workspace keeps all four original issuer settings", async () => {
+  for (const [kind, key, vat, prefix] of [["device", "device", "27", "DEVICE"],
+    ["labor", "labor", "18", "PRIMARY-EV"], ["maintenance", "labor", "18", "PRIMARY-EV"],
+    ["combined", "combined", "5", "COMBINED"]]) {
+    const fixture = splitInvoiceHarness({ SZAMLAZZ_WORKSPACE_ID: workspaceId,
+      SZAMLAZZ_SPLIT_WORKSPACE_ID: otherInvoiceWorkspace,
+      SZAMLAZZ_COMBINED_VAT_KEY: "5", SZAMLAZZ_COMBINED_INVOICE_PREFIX: "COMBINED" });
+    const xml = await assertInvoiceKey(fixture, await postInvoice(fixture, kind), `synthetic-${key}-key`);
+    assert.ok(xml.includes(`<afakulcs>${vat}</afakulcs>`));
+    assert.ok(xml.includes(`<szamlaszamElotag>${prefix}</szamlaszamElotag>`));
+    assert.doesNotMatch(xml, /synthetic-split-labor-key|OWN-EV/);
+  }
+});
+
+test("split billing: workspace membership, saved customer and appointment authorization remain required", async () => {
+  for (const [failure, status] of [["auth", 401], ["workspace_members", 403], ["customers", 403], ["appointments", 403]]) {
+    for (const kind of ["device", "labor", "maintenance"]) {
+      const fixture = splitInvoiceHarness({}, failure);
+      assert.equal((await postInvoice(fixture, kind)).status, status);
+      assert.equal(fixture.outgoing.length, 0);
+    }
+  }
+});
+
+test("split billing: request-supplied issuer credentials and VAT cannot override the server binding", async () => {
+  const fixture = splitInvoiceHarness();
+  const response = await fixture.h.load("src/app/api/create-invoice/route.ts").POST(fixture.request("test-token", {
+    kind: "labor", agentKey: "untrusted-agent-key", vatKey: "27", invoicePrefix: "UNTRUSTED",
+    issuerConfig: { agentKey: "untrusted-agent-key", vatKey: "27", invoicePrefix: "UNTRUSTED" },
+  }));
+  const xml = await assertInvoiceKey(fixture, response, "synthetic-split-labor-key");
+  assert.match(xml, /<afakulcs>AAM<\/afakulcs>/);
+  assert.match(xml, /<szamlaszamElotag>OWN-EV<\/szamlaszamElotag>/);
+  assert.doesNotMatch(xml, /untrusted-agent-key|UNTRUSTED/);
 });

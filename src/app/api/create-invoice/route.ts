@@ -21,6 +21,13 @@ type InvoiceRequest = {
   quoteItems?: QuoteItem[];
 };
 
+type InvoiceIssuer = {
+  agentKey: string;
+  vatKey: string;
+  invoicePrefix: string;
+  comment: string;
+};
+
 const SZAMLAZZ_URL = "https://www.szamlazz.hu/szamla/";
 
 function safeText(value: unknown) {
@@ -67,19 +74,50 @@ function agentKeyEnvName(kind: BillingInvoiceKind) {
   return kind === "device" ? "SZAMLAZZ_DEVICE_AGENT_KEY" : "SZAMLAZZ_LABOR_AGENT_KEY";
 }
 
-function getAgentKey(kind: BillingInvoiceKind, workspaceId: string) {
+function resolveInvoiceIssuer(kind: BillingInvoiceKind, workspaceId: string): InvoiceIssuer {
   const primaryWorkspaceId = readEnv("SZAMLAZZ_WORKSPACE_ID").trim();
-  // Extra workspaces may use the combined issuer only, never the separate labor issuer.
-  const combinedWorkspaceAllowed = kind === "combined" && readEnv("SZAMLAZZ_COMBINED_WORKSPACE_IDS")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean)
-    .includes(workspaceId);
-  if (!(primaryWorkspaceId && primaryWorkspaceId === workspaceId) && !combinedWorkspaceAllowed) {
-    throw new ApiError("Ehhez a munkaterülethez ez a számlatípus még nincs beállítva. A számlázási kapcsolat beállítása szükséges.", 403);
+  const splitWorkspaceId = readEnv("SZAMLAZZ_SPLIT_WORKSPACE_ID").trim();
+  if (splitWorkspaceId && splitWorkspaceId === primaryWorkspaceId && workspaceId === splitWorkspaceId) {
+    throw new ApiError("A munkaterület számlázási beállításai ütköznek. A számlázási kapcsolat ellenőrzése szükséges.", 403);
   }
-  if (kind === "combined") return readEnv("SZAMLAZZ_COMBINED_AGENT_KEY") || readEnv("SZAMLAZZ_DEVICE_AGENT_KEY");
-  return readEnv(agentKeyEnvName(kind));
+
+  if (splitWorkspaceId && workspaceId === splitWorkspaceId) {
+    // A split issuer binding takes precedence over any older combined allowlist entry.
+    if (kind === "combined") {
+      throw new ApiError("Ezen a munkaterületen a készüléket és a munkadíjat külön kell számlázni.", 403);
+    }
+    if (kind === "labor" || kind === "maintenance") {
+      const agentKey = readEnv("SZAMLAZZ_SPLIT_LABOR_AGENT_KEY").trim();
+      const vatKey = readEnv("SZAMLAZZ_SPLIT_LABOR_VAT_KEY").trim();
+      if (!agentKey) throw new ApiError("Hiányzik a munkaterület saját munkadíj-számlázási kapcsolata.", 500);
+      if (!vatKey) throw new ApiError("Hiányzik a munkaterület saját munkadíj-számlázási áfabeállítása.", 500);
+      return {
+        agentKey,
+        vatKey,
+        invoicePrefix: readEnv("SZAMLAZZ_SPLIT_LABOR_INVOICE_PREFIX").trim(),
+        comment: kind === "maintenance" ? "Légkondicionáló karbantartás számlája." : "Klímaszerelési munkadíj számlája.",
+      };
+    }
+    // Only device invoices share the existing device issuer and its tax/prefix settings.
+  } else {
+    const combinedWorkspaceAllowed = kind === "combined" && readEnv("SZAMLAZZ_COMBINED_WORKSPACE_IDS")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .includes(workspaceId);
+    if (!(primaryWorkspaceId && primaryWorkspaceId === workspaceId) && !combinedWorkspaceAllowed) {
+      throw new ApiError("Ehhez a munkaterülethez ez a számlatípus még nincs beállítva. A számlázási kapcsolat beállítása szükséges.", 403);
+    }
+  }
+
+  const agentKey = kind === "combined"
+    ? readEnv("SZAMLAZZ_COMBINED_AGENT_KEY") || readEnv("SZAMLAZZ_DEVICE_AGENT_KEY")
+    : readEnv(agentKeyEnvName(kind));
+  if (!agentKey.trim()) {
+    const envName = kind === "combined" ? "SZAMLAZZ_COMBINED_AGENT_KEY vagy SZAMLAZZ_DEVICE_AGENT_KEY" : agentKeyEnvName(kind);
+    throw new ApiError(`Hiányzik a ${envName} környezeti változó.`, 500);
+  }
+  return { agentKey, vatKey: invoiceVatKey(kind), invoicePrefix: invoicePrefix(kind), comment: invoiceComment(kind) };
 }
 
 function configuredLabel(value: unknown, fallback: string) {
@@ -112,8 +150,8 @@ function invoicePrefix(kind: BillingInvoiceKind) {
   return kind === "device" ? readEnv("SZAMLAZZ_DEVICE_INVOICE_PREFIX") : readEnv("SZAMLAZZ_LABOR_INVOICE_PREFIX");
 }
 
-function invoicePrefixXml(kind: BillingInvoiceKind) {
-  const prefix = invoicePrefix(kind).trim();
+function invoicePrefixXml(kind: BillingInvoiceKind, configuredPrefix = invoicePrefix(kind)) {
+  const prefix = configuredPrefix.trim();
   return prefix ? `    <szamlaszamElotag>${safeText(prefix)}</szamlaszamElotag>` : "";
 }
 
@@ -134,8 +172,7 @@ function maintenanceInvoiceLineName(labels?: InvoiceRequest["billingLabels"]) {
   return invoiceLineName("maintenance", labels);
 }
 
-function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: number, note = "") {
-  const vatKey = invoiceVatKey(kind);
+function invoiceLineFromGross(kind: BillingInvoiceKind, name: string, gross: number, note = "", vatKey = invoiceVatKey(kind)) {
   const amounts = amountsFromGross(gross, vatKey);
   return {
     name,
@@ -167,22 +204,22 @@ function distributeGross(totalGross: number, weights: number[]) {
   });
 }
 
-function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[], labels?: InvoiceRequest["billingLabels"]) {
+function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[], labels?: InvoiceRequest["billingLabels"], vatKey = invoiceVatKey(kind)) {
   const cleanItems = cleanQuoteItems(items);
 
   if (kind === "maintenance") {
     const quantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
-    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(quantity)}${maintenanceInvoiceLineName(labels)}`, amount, "")];
+    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(quantity)}${maintenanceInvoiceLineName(labels)}`, amount, "", vatKey)];
   }
 
   if (kind === "labor") {
     const quantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
 
     if (!quantity) {
-      return [invoiceLineFromGross(kind, laborInvoiceLineName(labels), amount, "")];
+      return [invoiceLineFromGross(kind, laborInvoiceLineName(labels), amount, "", vatKey)];
     }
 
-    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(quantity)}${laborInvoiceLineName(labels)}`, amount, "")];
+    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(quantity)}${laborInvoiceLineName(labels)}`, amount, "", vatKey)];
   }
 
   if (kind === "combined") {
@@ -206,12 +243,12 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
     ].filter(Boolean) as Array<{ name: string; weight: number }>;
 
     if (!combinedLines.length) {
-      return [invoiceLineFromGross(kind, invoiceLineName("combined", labels), amount, "")];
+      return [invoiceLineFromGross(kind, invoiceLineName("combined", labels), amount, "", vatKey)];
     }
 
     const grossValues = distributeGross(amount, combinedLines.map((line) => line.weight));
     return combinedLines
-      .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], ""))
+      .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], "", vatKey))
       .filter((line) => line.gross > 0);
   }
 
@@ -226,12 +263,12 @@ function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem
     .filter((line) => line.name && line.weight > 0);
 
   if (!itemLines.length) {
-    return [invoiceLineFromGross(kind, `${invoiceLineName("device", labels)} + szerelési anyagok`, amount, "")];
+    return [invoiceLineFromGross(kind, `${invoiceLineName("device", labels)} + szerelési anyagok`, amount, "", vatKey)];
   }
 
   const grossValues = distributeGross(amount, itemLines.map((line) => line.weight));
   return itemLines
-    .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], ""))
+    .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], "", vatKey))
     .filter((line) => line.gross > 0);
 }
 
@@ -243,14 +280,14 @@ function szamlazzPaymentMethodName(method: BillingPaymentMethod) {
   return method === "cash" ? "Készpénz" : "Átutalás";
 }
 
-function buildInvoiceXml({ kind, amount, paymentMethod = "cash", transferDueDays = 2, billingLabels, sendEmail = false, customer, quoteItems = [] }: InvoiceRequest, agentKey: string) {
+function buildInvoiceXml({ kind, amount, paymentMethod = "cash", transferDueDays = 2, billingLabels, sendEmail = false, customer, quoteItems = [] }: InvoiceRequest, agentKey: string, issuer?: Omit<InvoiceIssuer, "agentKey">) {
   const date = todayIso();
   const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
   const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`), transferDueDays);
   const buyer = buyerAddress(customer);
-  const lines = invoiceLines(kind, amount, quoteItems, billingLabels);
+  const lines = invoiceLines(kind, amount, quoteItems, billingLabels, issuer?.vatKey);
   const externalId = `alinflow-${kind}-${customer.activeAppointmentId || customer.id}`;
-  const comment = invoiceComment(kind);
+  const comment = issuer?.comment ?? invoiceComment(kind);
   const paymentLabel = szamlazzPaymentMethodName(normalizedPaymentMethod);
   const shouldSendEmail = Boolean(sendEmail && customer.email?.trim());
 
@@ -281,7 +318,7 @@ function buildInvoiceXml({ kind, amount, paymentMethod = "cash", transferDueDays
     <helyesbitoszamla>false</helyesbitoszamla>
     <helyesbitettSzamlaszam></helyesbitettSzamlaszam>
     <dijbekero>false</dijbekero>
-${invoicePrefixXml(kind)}
+${invoicePrefixXml(kind, issuer?.invoicePrefix)}
   </fejlec>
   <elado>
     <bank></bank>
@@ -359,14 +396,10 @@ export async function POST(request: Request) {
     if (!amount) return Response.json({ ok: false, error: "Hiányzik az érvényes számlaösszeg." }, { status: 400 });
     if (!customer?.id) return Response.json({ ok: false, error: "Hiányzik az ügyfél." }, { status: 400 });
 
-    const agentKey = getAgentKey(kind, workspaceId);
-    if (!agentKey) {
-      const envName = kind === "combined" ? "SZAMLAZZ_COMBINED_AGENT_KEY vagy SZAMLAZZ_DEVICE_AGENT_KEY" : agentKeyEnvName(kind);
-      return Response.json({ ok: false, error: `Hiányzik a ${envName} környezeti változó.` }, { status: 500 });
-    }
+    const issuer = resolveInvoiceIssuer(kind, workspaceId);
 
     const sendEmail = Boolean(body.sendEmail && customer.email?.trim());
-    const result = await sendInvoiceXml(buildInvoiceXml({ ...body, kind, amount, customer, sendEmail }, agentKey));
+    const result = await sendInvoiceXml(buildInvoiceXml({ ...body, kind, amount, customer, sendEmail }, issuer.agentKey, issuer));
     return Response.json({ ok: true, ...result, emailSent: sendEmail });
   } catch (error: any) {
     return apiErrorResponse(error);
