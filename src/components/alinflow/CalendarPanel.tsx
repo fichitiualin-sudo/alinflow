@@ -21,6 +21,7 @@ type CalendarProps = {
   onCreate?: (date: string) => void;
   googleCalendar?: GoogleCalendarStatus | null;
   googleCalendarError?: string;
+  manualCalendarEmail?: string;
   managedCalendarAppointmentIds?: ReadonlySet<string>;
 };
 
@@ -79,6 +80,7 @@ export function Calendar({
   onCreate,
   googleCalendar,
   googleCalendarError,
+  manualCalendarEmail,
   managedCalendarAppointmentIds,
 }: CalendarProps) {
   const start = weekStart(date);
@@ -112,6 +114,11 @@ export function Calendar({
             : googleCalendar.status === "reauth_required" ? "Google Naptár: engedélyezd újra a kapcsolatot a Beállításokban."
             : googleCalendar.pending > 0 ? `Google Naptár: ${googleCalendar.pending} frissítés várakozik.`
             : "Új időpontok: automatikus Google Naptár-mentés."}
+        </p>
+      ) : null}
+      {!selectable && mode === "week" && manualCalendarEmail ? (
+        <p className="mb-4 break-words text-sm text-slate-300">
+          Kézi naptármentés: <span className="font-bold">{manualCalendarEmail}</span>. A Google Naptárban ezzel a fiókkal lépj be, és ellenőrizd a naptárt a Mentés előtt.
         </p>
       ) : null}
       <div className="mb-5 flex flex-col gap-4">
@@ -178,12 +185,12 @@ export function Calendar({
                       <p className="mt-2 text-[10px] font-bold opacity-80">Google Naptár-szinkron</p>
                     ) : mode === "week" && !selectable ? (
                       <a
-                        href={googleCalendarHref(job)}
+                        href={googleCalendarHref(job, manualCalendarEmail)}
                         target="_blank"
                         rel="noreferrer"
                         onClick={(event) => event.stopPropagation()}
                         className="calendar-add-link mt-2 inline-flex items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2.5 py-1 text-[10px] font-black text-amber-100 transition hover:bg-amber-300/25"
-                        title="Hozzáadás Google Naptárhoz"
+                        title={manualCalendarEmail ? `Hozzáadás Google Naptárhoz · ${manualCalendarEmail}` : "Hozzáadás Google Naptárhoz"}
                       >
                         + Naptár
                       </a>

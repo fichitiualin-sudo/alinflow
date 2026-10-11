@@ -2,6 +2,7 @@ import type { CalendarMode, Customer } from "./types";
 import { pad, todayIso } from "./format";
 import { appointmentDurationMinutes, firstAppointmentTime } from "./appointments";
 import { googleCalendarDetails } from "./google-calendar-event";
+import { normalizeManualCalendarEmail } from "./workspace-settings";
 
 export function weekStart(d: Date) {
   const x = new Date(d);
@@ -32,7 +33,7 @@ function parseCalendarTime(value?: string) {
   return { hour: Number.isFinite(hour) ? hour : 8, minute: Number.isFinite(minute) ? minute : 0 };
 }
 
-export function googleCalendarHref(customer: Customer) {
+export function googleCalendarHref(customer: Customer, targetEmail?: string) {
   const dateIso = customer.date || todayIso();
   const { hour, minute } = parseCalendarTime(customer.time);
   const start = new Date(`${dateIso}T00:00:00`);
@@ -51,6 +52,12 @@ export function googleCalendarHref(customer: Customer) {
     details: details.description,
     location: details.location,
   });
+
+  const calendarEmail = normalizeManualCalendarEmail(targetEmail);
+  if (calendarEmail) {
+    params.set("authuser", calendarEmail);
+    params.set("src", calendarEmail);
+  }
 
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
