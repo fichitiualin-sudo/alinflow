@@ -22,21 +22,21 @@ test("saved declaration preview uses its own signature and Budapest signing date
   assert.match(html, /Declaration signer/);
   assert.match(html, /data:image\/png;base64,REVDTA==/);
   assert.doesNotMatch(html, /Different work-report signer|V09SSw==|2026\. 09\. 15\./);
-  assert.equal((html.match(/2026\. 10\. 11\./g) || []).length, 2);
+  assert.equal((html.match(/2026\. 10\. 11\./g) || []).length, 1);
 });
 
 test("an unsigned saved declaration does not borrow another report signature or date", () => {
   const html = renderToStaticMarkup(PurchaseDeclarationDocument({ customer, report, declaration: { ...declaration, signatureDataUrl: "", signedAt: undefined, createdAt: "2026-10-09T22:30:00Z" }, quoteItems: declaration.quoteItems }));
   assert.doesNotMatch(html, /<img|V09SSw==|2026\. 09\. 15\./);
-  assert.equal((html.match(/2026\. 10\. 10\./g) || []).length, 2);
+  assert.equal((html.match(/2026\. 10\. 10\./g) || []).length, 1);
 });
 
-test("declaration archive preserves both copies, original clauses, escaped data and saved date", () => {
+test("declaration archive preserves one copy, original clauses, escaped data and saved date", () => {
   const html = buildPurchaseDeclarationHtml(customer, { ...declaration, sellerName: "Saved seller <&>" });
-  assert.match(html, /I\. példány/);
-  assert.match(html, /II\. példány/);
-  assert.equal((html.match(/2026\. 10\. 11\./g) || []).length, 2);
-  assert.equal((html.match(/Saved seller &lt;&amp;&gt;/g) || []).length, 2);
+  assert.equal((html.match(/<article /g) || []).length, 1);
+  assert.doesNotMatch(html, /I\. példány|II\. példány/);
+  assert.equal((html.match(/2026\. 10\. 11\./g) || []).length, 1);
+  assert.equal((html.match(/Saved seller &lt;&amp;&gt;/g) || []).length, 1);
   assert.match(html, /2024\/573/);
   assert.match(html, /Több berendezés típus vásárlása/);
   assert.match(html, /Nyilatkozata megtételével egyidejűleg hozzájárul/);

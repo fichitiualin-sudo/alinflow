@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument, StandardFonts, type PDFFont, type PDFPage, rgb } from "pdf-lib";
+import { PDFDocument, type PDFFont, type PDFPage, rgb } from "pdf-lib";
 import { decodePdfSignature, DocumentPdf, loadPdfFont } from "./document-pdf";
 import type { SavedPdfDeclaration } from "./document-pdf-data";
 
@@ -38,8 +38,7 @@ function wrap(font: PDFFont, value: string, width: number, size: number): string
 type Field = { label: string; value: string; x: number; top: number; width: number };
 type FittedField = Field & { text: string; size: number };
 
-/** Fill the unchanged, blank 2025-04-16 form. Both copies use the first source
- * page because the original second page has an inconsistent footnote marker. */
+/** Fill one copy of the blank 2025-04-16 form using its first source page. */
 export async function renderPurchaseDeclarationPdf(
   declaration: SavedPdfDeclaration,
   customer: { name?: string; address?: string },
@@ -58,7 +57,6 @@ export async function renderPurchaseDeclarationPdf(
   const signatureSource = decodePdfSignature(declaration.signature_data_url || "");
   const document = await PDFDocument.create();
   const font = await loadPdfFont(document);
-  const labelFont = await document.embedFont(StandardFonts.TimesRoman);
   let signature;
   try {
     signature = signatureSource.format === "png"
@@ -69,7 +67,7 @@ export async function renderPurchaseDeclarationPdf(
   }
   templateBytes ||= readFile(path.join(process.cwd(), "public/forms/purchase-declaration/vasarlasi-nyilatkozat-0416.pdf"));
   const original = await PDFDocument.load(await templateBytes);
-  const pages = await document.copyPages(original, [0, 0]);
+  const pages = await document.copyPages(original, [0]);
   const fields: Field[] = [
     { label: "Értékesítő neve", value: printable(declaration.seller_name), x: 136, top: 154.65, width: 386 },
     { label: "Értékesítő adószáma", value: printable(declaration.seller_tax_number), x: 160, top: 170.49, width: 362 },
@@ -107,12 +105,9 @@ export async function renderPurchaseDeclarationPdf(
   const drawText = (page: PDFPage, text: string, x: number, top: number, size: number) => {
     page.drawText(text, { x, y: page.getHeight() - top - size, font, size, color: BLACK });
   };
-  pages.forEach((page, copy) => {
+  pages.forEach((page) => {
     document.addPage(page);
     page.drawRectangle({ x: 400, y: page.getHeight() - 55.5, width: 183, height: 40, color: WHITE });
-    page.drawText(copy === 0 ? "I. példány" : "II. példány", {
-      x: 426, y: page.getHeight() - 39, size: 16, font: labelFont, color: rgb(0.62, 0.62, 0.62),
-    });
     for (const field of fittedFields) {
       if (!field.text) continue;
       page.drawRectangle({ x: field.x - 1, y: page.getHeight() - field.top - 13, width: field.width + 2, height: 15, color: WHITE });
@@ -146,7 +141,7 @@ export async function renderPurchaseDeclarationPdf(
   });
   if (hasAppendix) {
     const appendix = new DocumentPdf(document, font, "Vásárlási nyilatkozat - melléklet");
-    appendix.text("Az I. és II. példányhoz tartozó teljes adatok.", { size: 9 });
+    appendix.text("A vásárlási nyilatkozathoz tartozó teljes adatok.", { size: 9 });
     appendix.field("Nyilatkozat azonosítója", declaration.id);
     overflowFields.forEach((field, index) => {
       appendix.section(`[${index + 1}] ${field.label}`);

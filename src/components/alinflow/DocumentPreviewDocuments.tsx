@@ -223,7 +223,6 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems, sell
       <style>{`
         .purchase-original { position: relative; box-sizing: border-box; width: 100%; max-width: 210mm; min-height: 297mm; margin: 0 auto 24px; padding: 19mm 25mm 18mm; background: white; color: black; font-family: "Times New Roman", Times, serif; font-size: 16px; line-height: 1.2; box-shadow: 0 12px 32px #0f172a18; overflow-wrap: anywhere; }
         .purchase-original p, .purchase-original h2, .purchase-original h3 { margin: 0; }
-        .purchase-original .purchase-copy { position: absolute; top: 8mm; right: 29mm; color: #999; font-size: 20px; }
         .purchase-original h2 { text-align: center; font-size: 18.67px; line-height: 1.15; font-weight: bold; }
         .purchase-original .purchase-subtitle { font-size: 13.33px; line-height: 1.15; }
         .purchase-original section { margin-top: 18px; }
@@ -249,11 +248,10 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems, sell
         .purchase-original .purchase-signature-line { border-top: .7px solid black; font-style: italic; }
         .purchase-original .purchase-footnote { margin-top: 20px; font-size: 13.33px; line-height: 1.15; break-inside: avoid; }
         .purchase-original .purchase-footnote::before { display: block; width: 50mm; border-top: .7px solid black; content: ""; margin-bottom: 7px; }
-        @media screen and (max-width: 600px) { .purchase-original { padding: 55px 20px 28px; min-height: 0; } .purchase-original .purchase-copy { top: 16px; right: 20px; } .purchase-original .purchase-seller, .purchase-original .purchase-buyer, .purchase-original .purchase-buyer-fields { margin-left: 12px; } .purchase-original .purchase-signatures { flex-wrap: wrap; } .purchase-original .purchase-date { flex-basis: 100%; } .purchase-original .purchase-signature { margin-left: auto; max-width: 80%; } }
+        @media screen and (max-width: 600px) { .purchase-original { padding: 55px 20px 28px; min-height: 0; } .purchase-original .purchase-seller, .purchase-original .purchase-buyer, .purchase-original .purchase-buyer-fields { margin-left: 12px; } .purchase-original .purchase-signatures { flex-wrap: wrap; } .purchase-original .purchase-date { flex-basis: 100%; } .purchase-original .purchase-signature { margin-left: auto; max-width: 80%; } }
         @media print { .purchase-original { width: 210mm; max-width: 210mm; min-height: 297mm; height: auto; overflow: visible; margin: 0; line-height: 1.15; box-shadow: none; break-after: page; } .purchase-original:last-child { break-after: auto; } .purchase-original thead { display: table-header-group; } }
       `}</style>
-      {["I.", "II."].map((copy) => <article key={copy} className="doc-print-page purchase-doc purchase-original">
-        <p className="purchase-copy">{copy} példány</p>
+      <article className="doc-print-page purchase-doc purchase-original">
         <header>
           <h2>VÁSÁRLÁSI<br />NYILATKOZAT</h2>
           <p className="purchase-subtitle">a klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló <strong>458/2024. (XII. 30.) Korm. rendelet</strong><br />28. § (5) bekezdése alapján</p>
@@ -298,7 +296,7 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems, sell
           </div>
         </section>
         <footer className="purchase-footnote"><sup>1</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</footer>
-      </article>)}
+      </article>
     </>
   );
 }
