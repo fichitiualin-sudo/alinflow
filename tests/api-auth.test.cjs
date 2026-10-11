@@ -95,3 +95,105 @@ test("A01: client helper attaches workspace and bearer token to every protected 
   assert.equal(sent.init.headers.get("Authorization"), "Bearer fake-token");
   assert.equal(JSON.parse(sent.init.body).workspaceId, workspaceId);
 });
+
+const otherInvoiceWorkspace = "10000000-0000-0000-0000-000000000002";
+function invoiceHarness(config = {}, failure) {
+  const fixture = apiHarness(failure);
+  Object.assign(fixture.env, {
+    SZAMLAZZ_DEVICE_AGENT_KEY: "synthetic-device-key",
+    SZAMLAZZ_LABOR_AGENT_KEY: "synthetic-labor-key",
+    SZAMLAZZ_COMBINED_AGENT_KEY: "synthetic-combined-key",
+    ...config,
+  });
+  return fixture;
+}
+const postInvoice = (fixture, kind) => fixture.h.load("src/app/api/create-invoice/route.ts")
+  .POST(fixture.request("test-token", { kind }));
+async function assertInvoiceKey(fixture, response, expectedKey) {
+  assert.equal(response.status, 200);
+  assert.equal(fixture.outgoing.length, 1);
+  const xml = await fixture.outgoing[0].options.body.get("action-xmlagentxmlfile").text();
+  assert.equal(/<szamlaagentkulcs>([^<]+)<\/szamlaagentkulcs>/.exec(xml)?.[1], expectedKey);
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.doesNotMatch(JSON.stringify(result), /synthetic-(?:device|labor|combined)-key/);
+}
+
+for (const [kind, expected] of [["device", "device"], ["labor", "labor"], ["maintenance", "labor"], ["combined", "combined"]]) {
+  test(`billing workspace: legacy workspace retains ${kind} invoice access and issuer`, async () => {
+    const fixture = invoiceHarness({ SZAMLAZZ_WORKSPACE_ID: `  ${workspaceId}  `,
+      SZAMLAZZ_COMBINED_WORKSPACE_IDS: otherInvoiceWorkspace });
+    await assertInvoiceKey(fixture, await postInvoice(fixture, kind), `synthetic-${expected}-key`);
+  });
+}
+
+for (const dedicated of [true, false]) {
+  test(`billing workspace: exact extra workspace permits combined with ${dedicated ? "dedicated" : "device fallback"} issuer`, async () => {
+    const fixture = invoiceHarness({ SZAMLAZZ_WORKSPACE_ID: otherInvoiceWorkspace,
+      SZAMLAZZ_COMBINED_WORKSPACE_IDS: ` , ${otherInvoiceWorkspace},\n ${workspaceId} , `,
+      SZAMLAZZ_COMBINED_AGENT_KEY: dedicated ? "synthetic-combined-key" : "" });
+    await assertInvoiceKey(fixture, await postInvoice(fixture, "combined"), `synthetic-${dedicated ? "combined" : "device"}-key`);
+  });
+}
+
+for (const kind of ["device", "labor", "maintenance"]) {
+  test(`billing workspace: combined allowlist does not authorize ${kind} invoices`, async () => {
+    const fixture = invoiceHarness({ SZAMLAZZ_WORKSPACE_ID: otherInvoiceWorkspace,
+      SZAMLAZZ_COMBINED_WORKSPACE_IDS: workspaceId });
+    assert.equal((await postInvoice(fixture, kind)).status, 403);
+    assert.equal(fixture.outgoing.length, 0);
+  });
+}
+
+test("billing workspace: combined invoice never falls back to the labor issuer", async () => {
+  const fixture = invoiceHarness({ SZAMLAZZ_WORKSPACE_ID: otherInvoiceWorkspace,
+    SZAMLAZZ_COMBINED_WORKSPACE_IDS: workspaceId,
+    SZAMLAZZ_COMBINED_AGENT_KEY: "", SZAMLAZZ_DEVICE_AGENT_KEY: "" });
+  const response = await postInvoice(fixture, "combined");
+  assert.equal(response.status, 500);
+  assert.equal((await response.json()).ok, false);
+  assert.equal(fixture.outgoing.length, 0);
+});
+
+test("billing workspace: missing legacy binding permits only explicitly listed combined invoices", async () => {
+  for (const kind of ["device", "labor", "maintenance", "combined"]) {
+    const fixture = invoiceHarness({ SZAMLAZZ_WORKSPACE_ID: undefined,
+      SZAMLAZZ_COMBINED_WORKSPACE_IDS: workspaceId });
+    const response = await postInvoice(fixture, kind);
+    if (kind === "combined") await assertInvoiceKey(fixture, response, "synthetic-combined-key");
+    else {
+      assert.equal(response.status, 403);
+      assert.equal(fixture.outgoing.length, 0);
+    }
+  }
+});
+
+test("billing workspace: absent or blank configuration grants no workspace access", async () => {
+  for (const empty of [undefined, "", " , , "]) {
+    for (const kind of ["device", "labor", "maintenance", "combined"]) {
+      const fixture = invoiceHarness({ SZAMLAZZ_WORKSPACE_ID: undefined,
+        SZAMLAZZ_COMBINED_WORKSPACE_IDS: empty });
+      assert.equal((await postInvoice(fixture, kind)).status, 403);
+      assert.equal(fixture.outgoing.length, 0);
+    }
+  }
+});
+
+test("billing workspace: allowlist requires exact entries, never wildcard or substring matches", async () => {
+  for (const allowed of [otherInvoiceWorkspace, "*", `${workspaceId}*`, workspaceId.slice(0, -1),
+    `prefix-${workspaceId}`, `${workspaceId}-suffix`, `${otherInvoiceWorkspace};${workspaceId}`]) {
+    const fixture = invoiceHarness({ SZAMLAZZ_WORKSPACE_ID: otherInvoiceWorkspace,
+      SZAMLAZZ_COMBINED_WORKSPACE_IDS: allowed });
+    assert.equal((await postInvoice(fixture, "combined")).status, 403, `must reject ${allowed}`);
+    assert.equal(fixture.outgoing.length, 0);
+  }
+});
+
+test("billing workspace: combined issuer allowlist does not bypass workspace or customer authorization", async () => {
+  for (const failure of ["workspace_members", "customers", "appointments"]) {
+    const fixture = invoiceHarness({ SZAMLAZZ_WORKSPACE_ID: otherInvoiceWorkspace,
+      SZAMLAZZ_COMBINED_WORKSPACE_IDS: workspaceId }, failure);
+    assert.equal((await postInvoice(fixture, "combined")).status, 403);
+    assert.equal(fixture.outgoing.length, 0);
+  }
+});
