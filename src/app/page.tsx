@@ -153,6 +153,7 @@ import {
   workReportTitle,
 } from "@/lib/alinflow/work-report";
 import { parsePrivacyNoticeSnapshot, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
+import { resolvePrivacyPartner } from "@/lib/alinflow/privacy-partner-client";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
@@ -705,7 +706,16 @@ function HomeContent() {
     setWorkspaceSettingsMessage("");
     setMessage("Beállítások mentése folyamatban...", "pending");
     try {
-      const payload = workspaceSettingsToRow(nextSettings, workspace.id, user?.id || null);
+      const notice = nextSettings.documentSettings.privacyNotice;
+      let settingsToSave = nextSettings;
+      if (notice?.partnerUserId || notice?.partnerWorkspaceId) {
+        if (!notice.partnerUserId || !notice.partnerWorkspaceId) throw new Error("Válaszd ki újra a karbantartó AlinFlow-felhasználót.");
+        const partner = await resolvePrivacyPartner(workspace.id, notice.partnerUserId, notice.partnerWorkspaceId);
+        if (currentWorkspaceId() !== workspace.id) return;
+        settingsToSave = { ...nextSettings, documentSettings: { ...nextSettings.documentSettings,
+          privacyNotice: { ...notice, partner: partner.party } } };
+      }
+      const payload = workspaceSettingsToRow(settingsToSave, workspace.id, user?.id || null);
       const { data, error } = await supabase.from("workspace_settings")
         .upsert(payload, { onConflict: "workspace_id" }).select("*").single();
       if (error) throw error;

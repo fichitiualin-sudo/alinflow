@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { normalizePrivacyNoticeConfig, privacyNoticeConfigValidation, type PrivacyNoticeConfig, type PrivacyParty } from "@/lib/alinflow/privacy-notice";
+import { normalizePrivacyNoticeConfig, normalizePrivacyParty, privacyNoticeConfigValidation, type PrivacyNoticeConfig, type PrivacyParty } from "@/lib/alinflow/privacy-notice";
+import { PrivacyPartnerPicker } from "./PrivacyPartnerPicker";
 
 const inputClass = "mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 font-bold text-slate-50 outline-none transition focus:border-cyan-300";
 
@@ -26,7 +27,7 @@ function PartyFields({ title, value, onChange }: { title: string; value: Privacy
   );
 }
 
-export function PrivacyNoticeSettings({ value, onChange }: { value?: PrivacyNoticeConfig; onChange: (value: PrivacyNoticeConfig) => void }) {
+export function PrivacyNoticeSettings({ value, workspaceId, disabled, onChange }: { value?: PrivacyNoticeConfig; workspaceId?: string; disabled?: boolean; onChange: (value: PrivacyNoticeConfig) => void }) {
   const config = value || normalizePrivacyNoticeConfig(undefined);
   const errors = privacyNoticeConfigValidation(config);
   const [open, setOpen] = useState(config.enabled);
@@ -44,8 +45,8 @@ export function PrivacyNoticeSettings({ value, onChange }: { value?: PrivacyNoti
         </label>
         <PartyFields title="Munkát végző vállalkozás (EV)" value={config.serviceProvider} onChange={(next) => update("serviceProvider", next)} />
         <PartyFields title="Készülékértékesítő vállalkozás" value={config.deviceSeller} onChange={(next) => update("deviceSeller", next)} />
-        <PartyFields title="Karbantartó partner – opcionális" value={config.partner} onChange={(next) => update("partner", next)} />
-        <p className="text-sm text-slate-300">Ha még nincs kijelölt partner, annak mezőit hagyd üresen. Ez a beállítás önmagában nem ad hozzáférést az ügyfelekhez.</p>
+        <PrivacyPartnerPicker key={workspaceId || "no-workspace"} workspaceId={workspaceId} disabled={disabled} value={config.partner} partnerUserId={config.partnerUserId} partnerWorkspaceId={config.partnerWorkspaceId}
+          onSelect={(candidate) => onChange({ ...config, partner: candidate ? { ...candidate.party } : normalizePrivacyParty(undefined), partnerUserId: candidate?.userId, partnerWorkspaceId: candidate?.workspaceId })} />
         {([
           ["retentionText", "Adatmegőrzés ideje vagy meghatározásának szempontjai", "Külön írd le a munkadokumentumok, számlázási adatok és partneri hozzájárulás megőrzését."],
           ["recipientsText", "Igénybe vett szolgáltatók és egyéb címzettek", "Tárhely, email, számlázás, könyvelés; az igénybe vett szolgáltatók és feladataik."],

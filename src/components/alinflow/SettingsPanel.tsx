@@ -185,7 +185,7 @@ export function SettingsPanel({
                 </div>
               </section>
 
-              <PrivacyNoticeSettings value={draft.documentSettings.privacyNotice} onChange={(value) => updateSection("documentSettings", "privacyNotice", value)} />
+              <PrivacyNoticeSettings key={activeWorkspace?.id || "no-workspace"} workspaceId={activeWorkspace?.id} disabled={saving} value={draft.documentSettings.privacyNotice} onChange={(value) => updateSection("documentSettings", "privacyNotice", value)} />
 
               <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4">
                 <h3 className="text-xl font-black">Számlázás</h3>

@@ -180,18 +180,8 @@ export function MaintenanceMapPanel({
 
   return (
     <section className="min-w-0 space-y-4" aria-label="Telepített klímák térképe és karbantartásai">
-      <fieldset className="grid min-w-0 gap-2 sm:grid-cols-2">
-        <legend className="sr-only">Megjelenített klímák</legend>
-        {([
-          ["own", "Saját telepítéseim"],
-          ["external", "Karbantartásra átvett klímák"],
-        ] as const).map(([origin, label]) => <label key={origin} className={`flex min-w-0 cursor-pointer items-center gap-3 rounded-2xl border p-3 text-sm font-black ${visibility[origin] ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 bg-slate-900/80 text-slate-400"}`}>
-          <input type="checkbox" role="switch" className="h-5 w-5 shrink-0 accent-cyan-300" checked={visibility[origin]} onChange={(event) => changeVisibility(origin, event.target.checked)} />
-          <span className="min-w-0 break-words">{label}</span>
-        </label>)}
-      </fieldset>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2" aria-label="Karbantartási állapot szűrése">
+        <div className="flex min-w-0 flex-wrap gap-2" role="group" aria-label="Karbantartási állapot és telepítések szűrése">
           {FILTERS.map((filter) => <button
             key={filter.value}
             type="button"
@@ -199,6 +189,13 @@ export function MaintenanceMapPanel({
             onClick={() => { setStatusFilter(filter.value); selectGroup(""); }}
             className={`rounded-2xl px-4 py-3 text-sm font-black transition ${statusFilter === filter.value ? "bg-cyan-300 text-slate-950" : "border border-white/10 bg-slate-900/80 text-cyan-100 hover:bg-white/10"}`}
           >{filter.value !== "all" ? <span aria-hidden="true" className="mr-2 inline-block h-3 w-3 rounded-full border border-white/60 align-middle" style={{ backgroundColor: maintenanceMapStatusColor(filter.value) }} /> : null}{filter.label} ({counts[filter.value]})</button>)}
+          {([
+            ["own", "Saját telepítés"],
+            ["external", "Karbantartásra átvett"],
+          ] as const).map(([origin, label]) => <label key={origin} className={`flex min-w-0 cursor-pointer items-center gap-2 rounded-2xl px-4 py-3 text-sm font-black transition focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-cyan-300 ${visibility[origin] ? "bg-cyan-300 text-slate-950" : "border border-white/10 bg-slate-900/80 text-cyan-100 hover:bg-white/10"}`}>
+            <input type="checkbox" className="h-4 w-4 shrink-0 accent-slate-950" checked={visibility[origin]} onChange={(event) => changeVisibility(origin, event.target.checked)} />
+            <span className="min-w-0 break-words">{label}</span>
+          </label>)}
         </div>
         <button type="button" onClick={() => onGeocodeMissing(filteredPoints)} disabled={geocodingBusy || missingCoordinateCount === 0} className="rounded-2xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
           {geocodingBusy ? "Koordináták keresése..." : `Hiányzó koordináták (${missingCoordinateCount})`}
