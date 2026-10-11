@@ -4,14 +4,18 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { Customer } from "@/lib/alinflow/types";
 import { paginateItems } from "@/lib/alinflow/customers";
 import {
+  filterMaintenanceMapPoints,
   formatMapDate,
   groupMaintenanceMapPoints,
   hasMaintenanceMapCoordinates,
+  maintenanceMapOriginLabel,
   maintenanceMapStatusClass,
   maintenanceMapStatusColor,
   maintenanceMapStatusLabel,
+  normalizeMaintenanceMapVisibility,
   type MaintenanceMapPoint,
   type MaintenanceMapStatus,
+  type MaintenanceMapVisibility,
 } from "@/lib/alinflow/maintenance-map";
 import { GoogleMapCanvas, type MapCanvasMarker } from "./GoogleMapCanvas";
 import type { MapMarkerSegment } from "@/lib/alinflow/map-marker-style";
@@ -21,9 +25,11 @@ type MaintenanceMapPanelProps = {
   points: MaintenanceMapPoint[];
   googleMapsApiKey: string;
   geocodingBusy: boolean;
+  preferenceKey?: string;
   onOpenCustomer: (customer: Customer) => void;
-  onGeocodeMissing: () => void;
+  onGeocodeMissing: (points: MaintenanceMapPoint[]) => void;
   onToggleMaintenanceOptOut: (point: MaintenanceMapPoint, checked: boolean) => void;
+  onEditMaintenanceOrigin?: (point: MaintenanceMapPoint) => void;
 };
 
 const FILTERS: Array<{ value: MaintenanceMapStatus | "all"; label: string }> = [
@@ -37,15 +43,6 @@ const FILTERS: Array<{ value: MaintenanceMapStatus | "all"; label: string }> = [
 
 const secondaryButton = "rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40";
 
-function normalizeSearch(value?: string | null) {
-  return String(value || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function routeTarget(point: MaintenanceMapPoint) {
   return hasMaintenanceMapCoordinates(point) ? `${point.latitude},${point.longitude}` : point.address;
 }
@@ -58,34 +55,36 @@ export function MaintenanceMapPanel({
   points,
   googleMapsApiKey,
   geocodingBusy,
+  preferenceKey,
   onOpenCustomer,
   onGeocodeMissing,
   onToggleMaintenanceOptOut,
+  onEditMaintenanceOrigin,
 }: MaintenanceMapPanelProps) {
   const searchId = useId();
   const [statusFilter, setStatusFilter] = useState<MaintenanceMapStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [page, setPage] = useState(1);
+  const [savedVisibility, setSavedVisibility] = useState<{ key?: string; value: MaintenanceMapVisibility }>(() => ({
+    key: preferenceKey, value: normalizeMaintenanceMapVisibility(undefined),
+  }));
+  const visibility = useMemo(() => savedVisibility.key === preferenceKey
+    ? savedVisibility.value : normalizeMaintenanceMapVisibility(undefined), [preferenceKey, savedVisibility]);
 
-  const filteredPoints = useMemo(() => {
-    const normalizedSearch = normalizeSearch(search);
-    return points.filter((point) => {
-      if (statusFilter !== "all" && point.status !== statusFilter) return false;
-      return !normalizedSearch || normalizeSearch([point.customerName, point.climateSummary, point.address, point.city].join(" ")).includes(normalizedSearch);
-    });
-  }, [points, search, statusFilter]);
+  const visiblePoints = useMemo(() => filterMaintenanceMapPoints(points, { visibility, search }), [points, search, visibility]);
+  const filteredPoints = useMemo(() => visiblePoints.filter((point) => statusFilter === "all" || point.status === statusFilter), [visiblePoints, statusFilter]);
   const groups = useMemo(() => groupMaintenanceMapPoints(filteredPoints), [filteredPoints]);
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
   const list = selectedGroup?.points || filteredPoints;
   const pagination = paginateItems(list, page);
   const locatedCount = groups.reduce((sum, group) => sum + group.points.length, 0);
-  const missingCoordinateCount = points.filter((point) => !hasMaintenanceMapCoordinates(point) && point.address).length;
-  const counts = useMemo(() => points.reduce<Record<MaintenanceMapStatus | "all", number>>((result, point) => {
+  const missingCoordinateCount = filteredPoints.filter((point) => !hasMaintenanceMapCoordinates(point) && point.address).length;
+  const counts = useMemo(() => visiblePoints.reduce<Record<MaintenanceMapStatus | "all", number>>((result, point) => {
     result.all += 1;
     result[point.status] += 1;
     return result;
-  }, { all: 0, overdue: 0, dueSoon: 0, ok: 0, optOut: 0, unknown: 0 }), [points]);
+  }, { all: 0, overdue: 0, dueSoon: 0, ok: 0, optOut: 0, unknown: 0 }), [visiblePoints]);
   const markers = useMemo<MapCanvasMarker[]>(() => groups.map((group) => ({
     id: group.id,
     latitude: group.latitude,
@@ -106,6 +105,32 @@ export function MaintenanceMapPanel({
     setSelectedGroupId(id);
     setPage(1);
   }, []);
+
+  useEffect(() => {
+    let next = normalizeMaintenanceMapVisibility(undefined);
+    if (preferenceKey) {
+      try {
+        next = normalizeMaintenanceMapVisibility(JSON.parse(window.localStorage.getItem(preferenceKey) || "null"));
+      } catch {
+        // The map remains usable when local preferences are unavailable or malformed.
+      }
+    }
+    setSavedVisibility({ key: preferenceKey, value: next });
+    selectGroup("");
+  }, [preferenceKey, selectGroup]);
+
+  function changeVisibility(origin: keyof MaintenanceMapVisibility, checked: boolean) {
+    const next = { ...visibility, [origin]: checked };
+    setSavedVisibility({ key: preferenceKey, value: next });
+    selectGroup("");
+    if (preferenceKey) {
+      try {
+        window.localStorage.setItem(preferenceKey, JSON.stringify(next));
+      } catch {
+        // Filtering still works without browser storage.
+      }
+    }
+  }
 
   useEffect(() => {
     if (selectedGroupId && !selectedGroup) selectGroup("");
@@ -134,6 +159,7 @@ export function MaintenanceMapPanel({
       };
       appendLine(point.customerName, "font-size:14px;font-weight:900");
       appendLine(point.climateSummary, "font-size:13px;font-weight:800;color:#0f766e");
+      appendLine(maintenanceMapOriginLabel(point), "font-size:12px;font-weight:800;color:#475569");
       appendLine(point.address || point.city || "Nincs cím megadva", "font-size:12px");
       appendLine(maintenanceMapStatusLabel(point.status), "font-size:12px;font-weight:800");
       appendLine(`Szerelés: ${installationDateLabel(point)}`, "font-size:12px;color:#475569");
@@ -154,6 +180,16 @@ export function MaintenanceMapPanel({
 
   return (
     <section className="min-w-0 space-y-4" aria-label="Telepített klímák térképe és karbantartásai">
+      <fieldset className="grid min-w-0 gap-2 sm:grid-cols-2">
+        <legend className="sr-only">Megjelenített klímák</legend>
+        {([
+          ["own", "Saját telepítéseim"],
+          ["external", "Karbantartásra átvett klímák"],
+        ] as const).map(([origin, label]) => <label key={origin} className={`flex min-w-0 cursor-pointer items-center gap-3 rounded-2xl border p-3 text-sm font-black ${visibility[origin] ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 bg-slate-900/80 text-slate-400"}`}>
+          <input type="checkbox" role="switch" className="h-5 w-5 shrink-0 accent-cyan-300" checked={visibility[origin]} onChange={(event) => changeVisibility(origin, event.target.checked)} />
+          <span className="min-w-0 break-words">{label}</span>
+        </label>)}
+      </fieldset>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2" aria-label="Karbantartási állapot szűrése">
           {FILTERS.map((filter) => <button
@@ -164,12 +200,12 @@ export function MaintenanceMapPanel({
             className={`rounded-2xl px-4 py-3 text-sm font-black transition ${statusFilter === filter.value ? "bg-cyan-300 text-slate-950" : "border border-white/10 bg-slate-900/80 text-cyan-100 hover:bg-white/10"}`}
           >{filter.value !== "all" ? <span aria-hidden="true" className="mr-2 inline-block h-3 w-3 rounded-full border border-white/60 align-middle" style={{ backgroundColor: maintenanceMapStatusColor(filter.value) }} /> : null}{filter.label} ({counts[filter.value]})</button>)}
         </div>
-        <button type="button" onClick={onGeocodeMissing} disabled={geocodingBusy || missingCoordinateCount === 0} className="rounded-2xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" onClick={() => onGeocodeMissing(filteredPoints)} disabled={geocodingBusy || missingCoordinateCount === 0} className="rounded-2xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
           {geocodingBusy ? "Koordináták keresése..." : `Hiányzó koordináták (${missingCoordinateCount})`}
         </button>
       </div>
       <div className="min-w-0">
-        <label htmlFor={searchId} className="mb-2 block text-sm font-bold text-slate-300">Ügyfél, cím, település vagy klíma</label>
+        <label htmlFor={searchId} className="mb-2 block text-sm font-bold text-slate-300">Ügyfél, cím, település, klíma vagy átadó</label>
         <input id={searchId} type="search" className="input min-w-0" value={search} placeholder="Keresés..." onChange={(event) => { setSearch(event.target.value); selectGroup(""); }} />
       </div>
       <p className="text-sm font-bold text-slate-400" role="status">{filteredPoints.length} telepítés · {locatedCount} a térképen · {filteredPoints.length - locatedCount} nem jelölhető</p>
@@ -187,7 +223,7 @@ export function MaintenanceMapPanel({
             <span className="text-sm font-bold text-slate-400">{list.length} telepítés</span>
           </div>
           {selectedGroup ? <button type="button" className={secondaryButton} onClick={() => selectGroup("")}>Összes helyszín</button> : null}
-          {!list.length ? <p className="rounded-2xl bg-white/5 p-4 text-sm text-slate-300">Nincs találat erre a szűrésre.</p> : null}
+          {!list.length ? <p className="rounded-2xl bg-white/5 p-4 text-sm text-slate-300">{!visibility.own && !visibility.external ? "Kapcsold be legalább az egyik klímacsoportot." : "Nincs találat erre a szűrésre."}</p> : null}
           {pagination.items.map((point) => <article key={point.appointmentId} className="min-w-0 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -195,6 +231,10 @@ export function MaintenanceMapPanel({
                 <p className="mt-1 break-words text-sm font-black text-cyan-200">{point.climateSummary}</p>
               </div>
               <span className={`max-w-full rounded-full border px-3 py-1 text-xs font-black ${maintenanceMapStatusClass(point.status)}`}>{maintenanceMapStatusLabel(point.status)}</span>
+            </div>
+            <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className={`min-w-0 max-w-full break-words rounded-xl px-3 py-2 text-xs font-black ${point.maintenanceOrigin === "external" ? "bg-violet-400/15 text-violet-200" : "bg-white/5 text-slate-300"}`}>{maintenanceMapOriginLabel(point)}</span>
+              {onEditMaintenanceOrigin ? <button type="button" onClick={() => onEditMaintenanceOrigin(point)} aria-label={`Besorolás módosítása: ${point.customerName}`} className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-black text-cyan-100">Besorolás</button> : null}
             </div>
             <div className="mt-3 space-y-1 break-words text-sm font-bold text-slate-300">
               <p>{point.address || point.city || "Nincs cím megadva"}</p>
