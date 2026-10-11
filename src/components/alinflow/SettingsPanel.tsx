@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Workspace } from "@/lib/alinflow/types";
 import type { BillingInvoiceMode, PaymentMethod, WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
+import { normalizeManualCalendarEmail } from "@/lib/alinflow/workspace-settings";
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { GoogleCalendarSettingsPanel } from "@/components/alinflow/GoogleCalendarSettingsPanel";
 import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
@@ -88,6 +89,7 @@ export function SettingsPanel({
   onSave,
 }: SettingsPanelProps) {
   const [draft, setDraft] = useState(settings);
+  const invalidManualCalendarEmail = Boolean(draft.companyProfile.manualCalendarEmail.trim() && !normalizeManualCalendarEmail(draft.companyProfile.manualCalendarEmail));
 
   useEffect(() => {
     setDraft(settings);
@@ -118,6 +120,14 @@ export function SettingsPanel({
                 <p className="text-base font-black">{activeWorkspace?.name || "Aktuális munkaterület"}</p>
                 <p className="mt-1 text-cyan-100/80">Ezek a beállítások csak ehhez a munkaterülethez tartoznak. Zoli adatai nem keverednek Alin adataival.</p>
               </div>
+
+              <section className="space-y-3 rounded-3xl border border-white/10 bg-white/5 p-4">
+                <h3 className="text-xl font-black">Kézi Google Naptár-áttöltés</h3>
+                <TextField label="Google-fiók a kézi áttöltéshez" type="email" value={draft.companyProfile.manualCalendarEmail} onChange={(value) => updateSection("companyProfile", "manualCalendarEmail", value)} />
+                <p className="text-sm text-slate-300">A + Naptár gomb ehhez a fiókhoz készíti elő az időpontot. A Google Naptárban lépj be ezzel a címmel, ellenőrizd a kiválasztott naptárt, majd válaszd a Mentést.</p>
+                <p className="text-sm text-slate-400">Nem szükséges automatikus összekapcsolás. Üresen hagyva a böngészőben aktív Google-fiók nyílik meg.</p>
+                {invalidManualCalendarEmail ? <p role="alert" className="text-sm font-bold text-red-300">Adj meg egy érvényes email-címet.</p> : null}
+              </section>
 
               {activeWorkspace?.id && userId ? (
                 <GoogleCalendarSettingsPanel key={`${activeWorkspace.id}:${userId}`} workspaceId={activeWorkspace.id} userId={userId} {...googleCalendar} />
@@ -220,7 +230,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
-                  disabled={saving || !schemaAvailable}
+                  disabled={saving || !schemaAvailable || invalidManualCalendarEmail}
                   onClick={() => void onSave(draft)}
                   className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
                 >

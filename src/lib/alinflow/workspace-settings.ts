@@ -7,6 +7,7 @@ export type WorkspaceSettings = {
     legalName: string;
     phone: string;
     email: string;
+    manualCalendarEmail: string;
     address: string;
     website: string;
     secondaryWebsite: string;
@@ -93,6 +94,7 @@ const GENERIC_SETTINGS: WorkspaceSettings = {
     legalName: "",
     phone: "",
     email: "",
+    manualCalendarEmail: "",
     address: "",
     website: "",
     secondaryWebsite: "",
@@ -144,6 +146,7 @@ const KLIMALIN_SETTINGS: WorkspaceSettings = {
     legalName: "Adorján Alin E.V.",
     phone: "06 30 700 4908",
     email: "klima.alin@gmail.com",
+    manualCalendarEmail: "",
     address: "",
     website: "klimalin.hu",
     secondaryWebsite: "legkondikalkulator.hu",
@@ -203,6 +206,12 @@ function optionalText(value: unknown, fallback = "") {
   return text || fallback;
 }
 
+export function normalizeManualCalendarEmail(value: unknown) {
+  if (typeof value !== "string") return "";
+  const email = value.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
 function normalizedDays(value: unknown, fallback: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 1) return fallback;
@@ -239,6 +248,7 @@ export function normalizeWorkspaceSettings(value: unknown, fallback = defaultWor
       legalName: optionalText(source.companyProfile?.legalName, fallback.companyProfile.legalName),
       phone: optionalText(source.companyProfile?.phone, fallback.companyProfile.phone),
       email: optionalText(source.companyProfile?.email, fallback.companyProfile.email),
+      manualCalendarEmail: normalizeManualCalendarEmail(source.companyProfile?.manualCalendarEmail ?? fallback.companyProfile.manualCalendarEmail),
       address: optionalText(source.companyProfile?.address, fallback.companyProfile.address),
       website: optionalText(source.companyProfile?.website, fallback.companyProfile.website),
       secondaryWebsite: optionalText(source.companyProfile?.secondaryWebsite, fallback.companyProfile.secondaryWebsite),
