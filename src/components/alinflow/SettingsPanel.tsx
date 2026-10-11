@@ -7,6 +7,8 @@ import { normalizeManualCalendarEmail } from "@/lib/alinflow/workspace-settings"
 import { Back, Btn, Card, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
 import { GoogleCalendarSettingsPanel } from "@/components/alinflow/GoogleCalendarSettingsPanel";
 import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
+import { PrivacyNoticeSettings } from "@/components/alinflow/PrivacyNoticeSettings";
+import { normalizePrivacyNoticeConfig, privacyNoticeConfigValidation } from "@/lib/alinflow/privacy-notice";
 
 type SettingsPanelProps = {
   activeWorkspace: Workspace | null;
@@ -90,6 +92,7 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [draft, setDraft] = useState(settings);
   const invalidManualCalendarEmail = Boolean(draft.companyProfile.manualCalendarEmail.trim() && !normalizeManualCalendarEmail(draft.companyProfile.manualCalendarEmail));
+  const invalidPrivacyNotice = privacyNoticeConfigValidation(normalizePrivacyNoticeConfig(draft.documentSettings.privacyNotice)).length > 0;
 
   useEffect(() => {
     setDraft(settings);
@@ -182,6 +185,8 @@ export function SettingsPanel({
                 </div>
               </section>
 
+              <PrivacyNoticeSettings value={draft.documentSettings.privacyNotice} onChange={(value) => updateSection("documentSettings", "privacyNotice", value)} />
+
               <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4">
                 <h3 className="text-xl font-black">Számlázás</h3>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -230,7 +235,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
-                  disabled={saving || !schemaAvailable || invalidManualCalendarEmail}
+                  disabled={saving || !schemaAvailable || invalidManualCalendarEmail || invalidPrivacyNotice}
                   onClick={() => void onSave(draft)}
                   className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
                 >

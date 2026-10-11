@@ -2,7 +2,7 @@
 
 ## PDF-küldés és dokumentumfelület
 
-A munkalap mentési képernyőjén a **Mentés és PDF-ek küldése** előbb elmenti a munkalapot és a hozzá tartozó vásárlási nyilatkozatot, majd ezek azonosítóival hívja a szervert. A szerver az adott munkaterület, ügyfél és időpont mentett, aláírt rekordjaiból készít valódi PDF-mellékleteket. Karbantartásnál csak a karbantartási munkalapot küldi. A Dokumentumok gombjaival a mentett példányok ismét elküldhetők, szerkesztés nélkül is.
+A munkalap mentési képernyőjén a **Mentés és PDF-ek küldése** előbb elmenti a munkalapot és a hozzá tartozó vásárlási nyilatkozatot, majd ezek azonosítóival hívja a szervert. A szerver az adott munkaterület, ügyfél és időpont mentett, aláírt rekordjaiból készít valódi PDF-mellékleteket. Karbantartásnál nem készül vásárlási nyilatkozat. Ha a munkalaphoz aláírt adatkezelési tájékoztató is tartozik, az külön PDF-mellékletként kerül a csomagba. A Dokumentumok gombjaival a mentett példányok ismét elküldhetők, szerkesztés nélkül is.
 
 A PDF megőrzi a dokumentum saját aláírását, magyar ékezeteit és a mentett adatpillanatképet. Hiányzó vagy más időponthoz tartozó dokumentumot nem helyettesít a legutóbbi ügyféldokumentummal. A PDF-ek a küldéskor készülnek, nem foglalnak külön Supabase Storage tárhelyet.
 
@@ -52,6 +52,18 @@ A dokumentumtár egy ügyfél teljes történetét őrzi. Új dokumentum mindig 
 - dátum szerint listázva;
 - korlátlan számú alkalom;
 - garancia vagy hiba esetén az összes munkalap visszakereshető.
+
+### Adatkezelési tájékoztató és partneri hozzájárulás
+
+A munkaterület saját dokumentumbeállításában külön szerepel a készülékértékesítő és a munkát végző vállalkozás: például AMOVA és az adott telepítő EV-je. A tájékoztató a kitöltött vállalkozási adatok, megőrzési idők, címzettek és nemzetközi adattovábbítási feltételek ellenőrzése után kapcsolható be. Az aktiválás nem állít ki számlát és nem változtat számlázási jogosultságot.
+
+Az ügyfél az aláírás előtt elolvashatja a tájékoztatót. A partneri adatátadáshoz külön, alapból üres pipa tartozik; a partner vállalkozásneve és elérhetősége előre látható. A pipa kizárólag név, karbantartási cím, telefon és email karbantartási célú átadásáról szól. Partner nélkül nincs megadható partneri hozzájárulás, az elutasítás nem akadályozza a munkalap aláírását. Ez a funkció önmagában nem ad más munkaterületnek hozzáférést ügyféladatokhoz.
+
+A rendszer az aláíráskor a tájékoztató teljes szövegét, verzióját, a két vállalkozást, a megnevezett partnert, az ügyféladatokat, a pipa állapotát és az aláírást együtt menti. Az előnézet és a PDF ebből a pillanatképből készül; későbbi cégbeállítások nem írják át a már aláírt dokumentumot. Régi munkalap aláírásából nem készül utólag nyilatkozat: új tájékoztatóhoz új aláírás szükséges.
+
+A partneri hozzájárulás visszavonása külön művelet. A visszavonás szerveroldali időpontja megmarad, az eredeti aláírt szöveg nem változik, a későbbi előnézet és PDF jelzi a visszavonást. Új nyilatkozat, piszkozatként kiürítés vagy munkalaptörlés esetén az előző pillanatkép és visszavonási állapota védett előzménybe kerül. Az előzmény ügyféltörléskor sem tűnik el automatikusan; megőrzését és az érintetti törlési kérelem elbírálását a vállalkozás megőrzési szabályai szerint kell kezelni.
+
+Aktiválás előtt adatbázismentés, a [`WORK_REPORT_PRIVACY_NOTICE.sql`](sql/WORK_REPORT_PRIVACY_NOTICE.sql) additív migrációja, majd az [`ellenőrző SQL`](sql/VERIFY_WORK_REPORT_PRIVACY_NOTICE.sql) szükséges. A vállalkozási és adatkezelési tényeket munkaterületenként kell jóváhagyni; hiányos beállításból nem készül ügyfél által aláírható tájékoztató. A munkalap melletti példány nem helyettesíti az adatbekéréskor szükséges tájékoztatást.
 
 ### Számlák és admin elemek
 

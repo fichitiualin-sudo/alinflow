@@ -1,3 +1,5 @@
+import type { PrivacyNoticeSnapshot } from "./privacy-notice";
+
 export type View =
   | "dashboard"
   | "lead"
@@ -167,6 +169,8 @@ export type WorkReport = {
   signatureDataUrl: string;
   signerName: string;
   signedAt?: string;
+  privacyNotice?: PrivacyNoticeSnapshot;
+  privacyConsentRevokedAt?: string;
   emailSentAt?: string;
   createdAt?: string;
   updatedAt?: string;

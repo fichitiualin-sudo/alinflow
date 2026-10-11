@@ -1,3 +1,5 @@
+import { normalizePrivacyNoticeConfig, type PrivacyNoticeConfig } from "./privacy-notice";
+
 export type PaymentMethod = "cash" | "transfer";
 export type BillingInvoiceMode = "split" | "single";
 
@@ -50,6 +52,7 @@ export type WorkspaceSettings = {
   documentSettings: {
     workReportFooterText: string;
     quoteFooterText: string;
+    privacyNotice?: PrivacyNoticeConfig;
   };
 };
 
@@ -296,6 +299,7 @@ export function normalizeWorkspaceSettings(value: unknown, fallback = defaultWor
     documentSettings: {
       workReportFooterText: optionalText(source.documentSettings?.workReportFooterText, fallback.documentSettings.workReportFooterText),
       quoteFooterText: optionalText(source.documentSettings?.quoteFooterText, fallback.documentSettings.quoteFooterText),
+      privacyNotice: normalizePrivacyNoticeConfig(source.documentSettings?.privacyNotice ?? fallback.documentSettings.privacyNotice),
     },
   };
 }

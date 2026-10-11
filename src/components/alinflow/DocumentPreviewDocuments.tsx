@@ -1,4 +1,5 @@
 import type { Customer, PurchaseDeclaration, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
+import { PrivacyNoticeDocument } from "@/components/alinflow/PrivacyNoticeDocument";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
 import { isQuoteAlternatives, itemName, itemProductMedia, itemQuantity, itemTotal, itemUnitPrice, total } from "@/lib/alinflow/products";
@@ -81,6 +82,7 @@ export function WorkReportDocument({ customer, report, quoteItems, workspaceSett
   const workNote = appointmentWorkLabel(reportCustomer.appointmentType);
   const workDate = reportCustomer.date;
   return (
+    <>
     <article className="doc-print-page work-report-doc mx-auto max-w-[210mm] rounded-2xl bg-white p-5 font-sans text-[13px] leading-relaxed text-slate-900 shadow-xl [overflow-wrap:anywhere] sm:p-8 print:m-0 print:min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:overflow-visible print:rounded-none print:border-0 print:p-[14mm] print:text-[11.5px] print:shadow-none">
       <header className="border-b-2 border-teal-700 pb-5 print:pb-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-teal-700 print:text-[9px]">{settingsBrandName(settings)}</p>
@@ -162,6 +164,8 @@ export function WorkReportDocument({ customer, report, quoteItems, workspaceSett
         </footer>
       </div>
     </article>
+    {report.privacyNotice ? <PrivacyNoticeDocument notice={report.privacyNotice} revokedAt={report.privacyConsentRevokedAt} /> : null}
+    </>
   );
 }
 
@@ -297,6 +301,7 @@ export function PurchaseDeclarationDocument({ customer, report, quoteItems, sell
         </section>
         <footer className="purchase-footnote"><sup>1</sup> A klímagázokkal kapcsolatos tevékenységek végzésének feltételeiről szóló 458/2024. (XII. 30.) Korm. rendelet 28. § (7)-(10) bekezdései alapján</footer>
       </article>
+      {report.privacyNotice ? <PrivacyNoticeDocument notice={report.privacyNotice} revokedAt={report.privacyConsentRevokedAt} /> : null}
     </>
   );
 }

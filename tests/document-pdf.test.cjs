@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { PDFDocument, PDFDict, PDFName, PDFRawStream } = require("pdf-lib");
-const { loadTypeScript, ids, report, declaration, input, backend } = require("./document-pdf-fixtures.cjs");
+const { loadTypeScript, ids, report, declaration, input, backend, privacyNotice } = require("./document-pdf-fixtures.cjs");
 const { loadSavedPdfBundle } = loadTypeScript("src/lib/alinflow/document-pdf-data.ts");
 const { createSavedPdfAttachments, createWorkReportPdf, createPurchaseDeclarationPdf } = loadTypeScript("src/lib/alinflow/document-pdf-render.ts");
 const { defaultWorkspaceSettings } = loadTypeScript("src/lib/alinflow/workspace-settings.ts");
@@ -116,17 +116,60 @@ test("email route attaches selected saved PDFs to the authorized recipient; igno
   try {
     const response = await route.POST(new Request("https://example.invalid/api/send-work-report", { method: "POST", body: JSON.stringify({
       ...input(), customer: { id: ids.customer, email: "wrong@example.invalid" }, report: { workDescription: "INJECTED BODY" },
+      privacy_notice: privacyNotice({ signerName: "INJECTED BODY NOTICE" }),
     }) }));
     assert.equal(response.status, 200);
     assert.equal(requests.length, 1);
     assert.deepEqual(requests[0].body.to, ["saved@example.invalid"]);
     assert.equal(requests[0].body.attachments.length, 2);
+    assert.equal(renderedBundle.report.privacy_notice, undefined);
     assert.ok(requests[0].body.attachments.every((attachment) => Buffer.from(attachment.content, "base64").subarray(0, 5).toString() === "%PDF-"));
     assert.equal(renderedBundle.report.work_description, report().work_description);
     assert.ok(!requests[0].body.html.includes("<customer>"));
     assert.match(requests[0].body.html, /&lt;customer&gt;/);
     assert.deepEqual((await response.json()).purchaseDeclarationIds, [ids.declaration]);
   } finally { global.fetch = previousFetch; if (previousKey === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = previousKey; }
+});
+
+test("saved privacy notice is attached exactly once for each selection and uses its own signature", async () => {
+  const saved = privacyNotice();
+  const db = backend({ work_reports: [report({ privacy_notice: saved })], purchase_declarations: [declaration()] });
+  for (const mode of ["both", "work_report", "purchase_declaration"]) {
+    const bundle = await loadSavedPdfBundle(db, input({ documents: mode }));
+    const attachments = await createSavedPdfAttachments(bundle, { name: "WRONG CURRENT CUSTOMER" }, settings);
+    const privacyAttachments = attachments.filter((attachment) => attachment.filename.startsWith("adatkezelesi-tajekoztato-"));
+    assert.equal(privacyAttachments.length, 1);
+    assert.equal(attachments.length, mode === "both" ? 3 : 2);
+    const pdf = await PDFDocument.load(Buffer.from(privacyAttachments[0].content, "base64"));
+    assert.equal(embeddedImages(pdf).length, 1);
+    const reportPdf = await PDFDocument.load(await createWorkReportPdf(report(), {}, settings));
+    assert.notDeepEqual(embeddedImages(pdf)[0][1].contents, embeddedImages(reportPdf)[0][1].contents);
+  }
+});
+
+test("legacy null notices do not create retroactive statements; corrupt and injected saved notices stop sending", async () => {
+  const legacy = { report: report({ privacy_notice: null }), declarations: [], includeWorkReport: true };
+  assert.equal((await createSavedPdfAttachments(legacy, {}, settings)).length, 1);
+  for (const saved of [{}, privacyNotice({ customer: { ...privacyNotice().customer, internalPurchasePrice: 987654 } }), privacyNotice({ signatureDataUrl: "data:image/png;base64,YmFk" })]) {
+    await assert.rejects(createSavedPdfAttachments({ ...legacy, report: report({ privacy_notice: saved }) }, {}, settings), /adatkezelési|aláírás/);
+  }
+});
+
+test("privacy PDF projects its saved fields, decision and original signature without report fallbacks", async () => {
+  const content = [], signatures = [];
+  const { createPrivacyNoticePdf } = loadTypeScript("src/lib/alinflow/privacy-notice-pdf.ts", {
+    "./document-pdf": { async createDocumentPdf() { return {
+      text: (value) => content.push(String(value)), section: (value) => content.push(value),
+      signature: async (...args) => signatures.push(args), save: async () => new Uint8Array([1]),
+    }; } },
+  });
+  const saved = privacyNotice({ consentGranted: true });
+  await createPrivacyNoticePdf(saved, "2026-10-12T12:00:00Z");
+  assert.deepEqual(signatures, [[saved.signatureDataUrl, saved.signerName, saved.signedAt]]);
+  assert.match(content.join("\n"), /TESZT készülékértékesítő|TESZT szolgáltató EV/);
+  assert.match(content.join("\n"), /\[X\] Hozzájárultam/);
+  assert.match(content.join("\n"), /később visszavonták/);
+  assert.match(content.join("\n"), /privacy@example.invalid/);
 });
 
 test("email route never sends when the saved signature cannot be rendered", async () => {

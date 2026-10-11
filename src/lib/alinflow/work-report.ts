@@ -1,5 +1,6 @@
 import type { Customer, WorkReport } from "./types";
 import { appointmentWorkLabel, firstAppointmentTime, normalizeAppointmentType } from "./appointments";
+import { parsePrivacyNoticeSnapshot } from "./privacy-notice";
 
 export function defaultWorkDescription(appointmentType?: string | null) {
   const type = normalizeAppointmentType(appointmentType);
@@ -71,6 +72,8 @@ export function workReportFromRow(row: any): WorkReport {
     signatureDataUrl: row.signature_data_url || "",
     signerName: row.signer_name || row.customer_name || "",
     signedAt: row.signed_at || undefined,
+    privacyNotice: parsePrivacyNoticeSnapshot(row.privacy_notice),
+    privacyConsentRevokedAt: row.privacy_consent_revoked_at || undefined,
     emailSentAt: row.email_sent_at || undefined,
     createdAt: row.created_at || undefined,
     updatedAt: row.updated_at || undefined,

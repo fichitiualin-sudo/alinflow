@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import type { Customer, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
-import { formatSignedAt, hasValidWorkReportSignature, workReportTitle } from "@/lib/alinflow/work-report";
+import { formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle } from "@/lib/alinflow/work-report";
 import { appointmentSummaryLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { Back } from "@/components/alinflow/LayoutPrimitives";
 import { WorkSectionToggleButton } from "@/components/alinflow/WorkSectionToggleButton";
+import { buildPrivacyNoticeContent, buildPrivacyNoticeSnapshot, normalizePrivacyNoticeConfig, partnerConsentText, privacyNoticeConfigValidation, type PrivacyNoticeConfig, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
+import { PrivacyNoticeDocument } from "@/components/alinflow/PrivacyNoticeDocument";
 
 type WorkReportPanelProps = {
   selected: Customer;
@@ -27,7 +29,9 @@ type WorkReportPanelProps = {
   onBack: () => void;
   onSave: (sendEmail: boolean) => void;
   onUpdateWorkReportField: (field: keyof WorkReport, value: string) => void;
-  onSignatureChange: (value: string) => void;
+  privacyConfig?: PrivacyNoticeConfig;
+  onSignatureChange: (value: string, signedAt?: string, notice?: PrivacyNoticeSnapshot) => void;
+  onRevokePrivacyConsent?: () => void;
   onSelectSeller: (value: string) => void;
   onNewSellerNameChange: (value: string) => void;
   onNewSellerTaxNumberChange: (value: string) => void;
@@ -54,6 +58,8 @@ export function WorkReportPanel({
   onSave,
   onUpdateWorkReportField,
   onSignatureChange,
+  privacyConfig,
+  onRevokePrivacyConsent,
   onSelectSeller,
   onNewSellerNameChange,
   onNewSellerTaxNumberChange,
@@ -67,10 +73,63 @@ export function WorkReportPanel({
   const climateLabel = isMaintenance ? "Karbantartandó klímák" : "Klíma";
   const hasValidSignature = hasValidWorkReportSignature(workReport);
   const [showPurchaseDeclaration, setShowPurchaseDeclaration] = useState(false);
+  const [consentGranted, setConsentGranted] = useState(false);
+  const [signatureError, setSignatureError] = useState("");
+  const [signatureDraft, setSignatureDraft] = useState("");
+  const privacy = normalizePrivacyNoticeConfig(privacyConfig);
+  const privacyRevision = JSON.stringify(privacy);
+  const privacyErrors = privacyNoticeConfigValidation(privacy);
+  const noticeReady = privacy.enabled && privacyErrors.length === 0;
+  const partnerReady = noticeReady && privacyNoticeConfigValidation(privacy, { requirePartner: true }).length === 0;
 
   useEffect(() => {
     setShowPurchaseDeclaration(false);
+    setConsentGranted(false);
+    setSignatureError("");
+    setSignatureDraft("");
   }, [selected.id, selected.activeAppointmentId, selected.activeWorkReportId]);
+
+  useEffect(() => {
+    if (!workReport.signatureDataUrl) setConsentGranted(false);
+  }, [workReport.signatureDataUrl]);
+
+  useEffect(() => {
+    setConsentGranted(false);
+    setSignatureDraft("");
+  }, [privacyRevision]);
+
+  function updateField(field: keyof WorkReport, value: string) {
+    if (workReport[field] !== value) {
+      setConsentGranted(false);
+      setSignatureDraft("");
+    }
+    onUpdateWorkReportField(field, value);
+  }
+
+  function startNewSignature() {
+    setConsentGranted(false);
+    setSignatureError("");
+    setSignatureDraft("");
+    onSignatureChange("");
+  }
+
+  function sign(value: string) {
+    if (!value) { startNewSignature(); return; }
+    const signedAt = new Date().toISOString();
+    try {
+      const notice = noticeReady ? buildPrivacyNoticeSnapshot({
+        config: privacy,
+        customer: { name: selected.name, address: fullCustomerAddress(selected), phone: selected.phone || "", email: selected.email || "" },
+        signerName: workReport.signerName || selected.name,
+        signatureDataUrl: value, signedAt, consentGranted: partnerReady && consentGranted,
+      }) : undefined;
+      onSignatureChange(value, signedAt, notice);
+      setSignatureDraft("");
+      setSignatureError("");
+    } catch (error) {
+      setSignatureError(error instanceof Error ? error.message : "Az aláírás nem rögzíthető.");
+    }
+  }
 
   return (
     <Shell>
@@ -90,7 +149,7 @@ export function WorkReportPanel({
               <textarea
                 className="mt-2 min-h-32 w-full bg-transparent text-base font-bold leading-relaxed outline-none"
                 value={workReport.workDescription}
-                onChange={(event)=>onUpdateWorkReportField("workDescription", event.target.value)}
+                onChange={(event)=>updateField("workDescription", event.target.value)}
               />
             </label>
             <label className="mt-4 block rounded-2xl bg-slate-900/80 p-4">
@@ -98,18 +157,60 @@ export function WorkReportPanel({
               <textarea
                 className="mt-2 min-h-28 w-full bg-transparent text-base font-bold leading-relaxed outline-none"
                 value={workReport.notes}
-                onChange={(event)=>onUpdateWorkReportField("notes", event.target.value)}
+                onChange={(event)=>updateField("notes", event.target.value)}
                 placeholder="Például: ügyfél tájékoztatva, rendben átadva, egyedi megjegyzés..."
               />
             </label>
           </Card>
+          {workReport.privacyNotice ? (
+            <Card title="Adatkezelési tájékoztató">
+              <p className="text-sm leading-relaxed">Az aláíráskor rögzített tájékoztató a munkalaphoz tartozik.</p>
+              <details className="mt-3 rounded-2xl border border-slate-400/30 p-3">
+                <summary className="cursor-pointer font-bold">Aláírt tájékoztató</summary>
+                <div className="mt-4 overflow-hidden rounded-xl bg-white text-slate-900"><PrivacyNoticeDocument notice={workReport.privacyNotice} revokedAt={workReport.privacyConsentRevokedAt}/></div>
+              </details>
+              <p className="mt-3 text-sm font-bold">{workReport.privacyConsentRevokedAt ? `Partneri hozzájárulás visszavonva: ${formatSignedAt(workReport.privacyConsentRevokedAt)}` : workReport.privacyNotice.consentGranted ? `Partneri hozzájárulás: ${workReport.privacyNotice.partner?.legalName}` : "Partneri adatátadáshoz nincs hozzájárulás."}</p>
+              {workReport.id && workReport.privacyNotice.consentGranted && !workReport.privacyConsentRevokedAt && onRevokePrivacyConsent ? (
+                <button type="button" onClick={onRevokePrivacyConsent} className="mt-3 rounded-xl border border-slate-400/40 px-4 py-3 text-sm font-bold">Hozzájárulás visszavonásának rögzítése</button>
+              ) : null}
+            </Card>
+          ) : privacy.enabled ? (
+            <Card title="Adatkezelési tájékoztató">
+              {noticeReady ? <>
+                <p className="text-sm leading-relaxed"><b>{privacy.deviceSeller.legalName}</b> – készülékértékesítés<br/><b>{privacy.serviceProvider.legalName}</b> – telepítés és karbantartás</p>
+                <details className="mt-3 rounded-2xl border border-slate-400/30 p-4">
+                  <summary className="cursor-pointer font-bold">A teljes tájékoztató elolvasása</summary>
+                  <div className="mt-4 space-y-4 text-sm leading-relaxed">
+                    {[privacy.deviceSeller, privacy.serviceProvider].map((party, index) => <p key={index}><b>{party.legalName}</b><br/>{party.address}<br/>{party.email}{party.phone ? ` · ${party.phone}` : ""}{party.taxNumber ? <><br/>Adószám: {party.taxNumber}</> : null}</p>)}
+                    {buildPrivacyNoticeContent(privacy).map((section) => <div key={section.title}><h3 className="font-bold">{section.title}</h3><p className="mt-1 whitespace-pre-line">{section.text}</p></div>)}
+                  </div>
+                </details>
+                {hasValidSignature ? <p className="mt-3 text-sm">Ehhez a korábbi aláíráshoz nem tartozik tájékoztató. Az új tájékoztató rögzítéséhez az ügyfélnek ismét alá kell írnia.</p> : <>
+                  {partnerReady ? <label className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-400/30 p-4">
+                    <input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-emerald-500" checked={consentGranted} onChange={(event) => { setConsentGranted(event.target.checked); setSignatureDraft(""); }}/>
+                    <span className="text-sm leading-relaxed"><b>Karbantartó partner – önkéntes</b><br/>{partnerConsentText(privacy)}<br/><span className="mt-2 block">{privacy.partner.address} · {privacy.partner.email}{privacy.partner.phone ? ` · ${privacy.partner.phone}` : ""}</span></span>
+                  </label> : <p className="mt-3 text-sm">Karbantartó partner még nincs megadva; partneri adatátadáshoz nem kérünk hozzájárulást.</p>}
+                  <p className="mt-3 text-sm">Az aláírás a tájékoztató átvételét is rögzíti.{partnerReady ? " A partneri adatátadás csak a külön pipa kijelölésével engedélyezett." : ""}</p>
+                </>}
+              </> : <p className="text-sm text-amber-700">A tájékoztató cégadatai még hiányosak. A Beállításokban egészítsd ki őket; addig partneri hozzájárulás nem rögzíthető.</p>}
+            </Card>
+          ) : null}
           <Card title="Egyszerű ügyfél aláírás">
+            <p className="mb-4 text-sm leading-relaxed">{workAcceptanceText(selected.appointmentType)}</p>
             <EditField
               label="Aláíró neve"
               value={workReport.signerName || selected.name || ""}
-              onChange={(value)=>onUpdateWorkReportField("signerName", value)}
+              onChange={(value)=>updateField("signerName", value)}
             />
-            <SignaturePad value={workReport.signatureDataUrl} onChange={onSignatureChange}/>
+            {hasValidSignature ? <div className="mt-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={workReport.signatureDataUrl} alt="Az ügyfél rögzített aláírása" className="h-40 w-full rounded-2xl bg-white object-contain"/>
+              <button type="button" onClick={startNewSignature} className="mt-3 rounded-xl border border-slate-400/40 px-4 py-3 text-sm font-bold">Aláírás megismétlése</button>
+            </div> : <>
+              <SignaturePad value={signatureDraft} onChange={setSignatureDraft}/>
+              <button type="button" disabled={!signatureDraft} onClick={() => sign(signatureDraft)} className="mt-3 w-full rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:opacity-40">Aláírás rögzítése</button>
+            </>}
+            {signatureError ? <p role="alert" className="mt-3 text-sm font-bold text-red-600">{signatureError}</p> : null}
             {hasValidSignature ? (
               <p className="mt-3 text-sm font-bold text-emerald-200">Aláírva: {formatSignedAt(workReport.signedAt)}</p>
             ) : (
@@ -168,8 +269,9 @@ export function WorkReportPanel({
           <Gradient title="Munkalap státusz" value={hasValidSignature ? "Aláírva" : "Aláírásra vár"}/>
           <Card title="Műveletek">
             <div className="grid grid-cols-1 gap-3">
-              <StepButton color="green" disabled={workReportBusy || workReportEmailBusy} onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>
-              <StepButton color="blue" disabled={workReportBusy || workReportEmailBusy} onClick={()=>onSave(true)}>{workReportEmailBusy ? "PDF-ek küldése..." : workReportBusy ? "Mentés..." : isMaintenance ? "Munkalap küldése PDF-ben" : "Mentés és PDF-ek küldése"}</StepButton>
+              <StepButton color="green" disabled={workReportBusy || workReportEmailBusy || Boolean(signatureDraft)} onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>
+              <StepButton color="blue" disabled={workReportBusy || workReportEmailBusy || Boolean(signatureDraft)} onClick={()=>onSave(true)}>{workReportEmailBusy ? "PDF-ek küldése..." : workReportBusy ? "Mentés..." : isMaintenance ? "Munkalap küldése PDF-ben" : "Mentés és PDF-ek küldése"}</StepButton>
+              {signatureDraft ? <p className="text-sm">Mentés előtt nyomd meg az Aláírás rögzítése gombot.</p> : null}
             </div>
           </Card>
           <Card title="Email állapot">

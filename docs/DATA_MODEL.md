@@ -58,6 +58,8 @@ Fontos mezők:
 - `signatureDataUrl`
 - `signerName`
 - `signedAt`
+- `privacyNotice`
+- `privacyConsentRevokedAt`
 - `emailSentAt`
 - `createdAt`
 - `updatedAt`
@@ -80,6 +82,18 @@ A `WorkReport` több rekordot enged ugyanahhoz az ügyfélhez. A szerelési és 
 ```
 
 ## Supabase fő táblák
+
+### Aláírt adatkezelési tájékoztatók (2026-10-11)
+
+A `work_reports.privacy_notice` nullable JSON-pillanatkép; TypeScript-mezője `WorkReport.privacyNotice`. Tartalmazza a verziót, a készülékértékesítő és a munkát végző vállalkozás adatait (`controllers`), a név szerint megjelölt partnert vagy `null` értéket, az ügyfél négy adatát, a teljes tájékoztató és hozzájárulás szövegét, a pipa állapotát, az aláíró nevét, aláírásképét és az aláírás időpontját. A szerver ellenőrzi a megengedett mezőket és méreteket, valamint az egyezést a munkalap mentett aláírásával. Régi, hiányos aláírási időpontú munkalapok tájékoztató nélkül továbbra is menthetők; a migráció nem tölti visszamenőleg a mezőt.
+
+A `privacy_consent_revoked_at` nullable timestamptz (`WorkReport.privacyConsentRevokedAt`) csak megadott partneri hozzájárulás mellett használható. Első visszavonáskor az adatbázis írja a szerveridőt; a régi kliensállapot nem törölheti vagy módosíthatja ezt. Új, újra aláírt pillanatkép vagy a pillanatkép piszkozatként törlése külön állapotot kezd, ezért a trigger az élő visszavonási mezőt kiüríti, az előző állapotot pedig megőrzi.
+
+A `work_report_privacy_history` hozzáfűzött előzményt tárol: eredeti munkaterület-, ügyfél-, munkalap- és időpontazonosító, előző `privacy_notice`, előző visszavonási idő, művelet (`replaced`, `cleared`, `revoked`, `deleted`), szerveroldali `recorded_at` és `recorded_by`. Visszavonáskor a naplósor a változás **előtti** állapotot tartalmazza, ezért annak visszavonási mezője még `null`; maga a visszavonási esemény a `revoked` művelettel és a szerveridős `recorded_at` mezővel bizonyítható, az aktuális pontos időpont az élő munkalapon van. Későbbi módosítás/törlés ezt az időpontot is archiválja. A naplóban nincs munkalap-/ügyfél-FK, így a törlési cascade nem törli a bizonyítékot. Az eredeti munkaterület aktív tagjai olvashatják; közvetlen kliensoldali írás, átírás, törlés és anonim hozzáférés nincs.
+
+A munkaterületi dokumentumbeállítás `privacyNotice` objektuma a két vállalkozás, az opcionális partner és a tényleges adatkezelési feltételek kitöltetlenül nem aktiválható konfigurációja. Sem a beállítás, sem a hozzájárulás nem hoz létre partneri hozzáférést vagy munkaterületek közötti adatmegosztást. A számlázási kapcsolatokat nem módosítja.
+
+Migráció: [`sql/WORK_REPORT_PRIVACY_NOTICE.sql`](sql/WORK_REPORT_PRIVACY_NOTICE.sql). Mentés után, a workspace- és munkalap-hatókör migrációit követően alkalmazandó. A [`sql/VERIFY_WORK_REPORT_PRIVACY_NOTICE.sql`](sql/VERIFY_WORK_REPORT_PRIVACY_NOTICE.sql) PRE eredményei az eredeti munkalapok darabszámával/ujjlenyomatával és RLS-szabályaival, a POST ellenőrzések az új oszlopokkal, jogosultságokkal és aláírásegyezéssel igazolják az additív aktiválást. Ismételt futtatás nem ír át meglévő nyilatkozatot vagy előzményt.
 
 ### Facebook-jelentkezések (2026-10-06)
 

@@ -1,5 +1,6 @@
 import { createDocumentPdf } from "./document-pdf";
 import { renderPurchaseDeclarationPdf } from "./purchase-declaration-pdf";
+import { createPrivacyNoticePdf } from "./privacy-notice-pdf";
 import type { SavedPdfBundle, SavedPdfDeclaration, SavedPdfReport } from "./document-pdf-data";
 import { workAcceptanceText, workReportTitle } from "./work-report";
 import { appointmentTypeLabel } from "./appointments";
@@ -81,6 +82,9 @@ export async function createSavedPdfAttachments(bundle: SavedPdfBundle, customer
   if (bundle.includeWorkReport) add(`munkalap-${bundle.report.id}.pdf`, await createWorkReportPdf(bundle.report, customer, settings));
   for (const declaration of bundle.declarations) {
     add(`vasarlasi-nyilatkozat-${declaration.id}.pdf`, await createPurchaseDeclarationPdf(declaration, bundle.report, customer));
+  }
+  if (bundle.report.privacy_notice != null) {
+    add(`adatkezelesi-tajekoztato-${bundle.report.id}.pdf`, await createPrivacyNoticePdf(bundle.report.privacy_notice, bundle.report.privacy_consent_revoked_at));
   }
   return attachments;
 }

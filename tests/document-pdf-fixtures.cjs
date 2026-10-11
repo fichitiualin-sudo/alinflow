@@ -67,4 +67,17 @@ function backend(rows = { work_reports: [report()], purchase_declarations: [decl
     } }; return query;
   } };
 }
-module.exports = { loadTypeScript, signature, ids, report, declaration, input, backend };
+const privacyNotice = (overrides = {}) => ({
+  version: "2026-10-11.1",
+  controllers: [
+    { role: "device_seller", party: { legalName: "TESZT készülékértékesítő", address: "1111 Tesztváros, Teszt út 1.", email: "seller@example.invalid", phone: "teszt", taxNumber: "TESZT" } },
+    { role: "service_provider", party: { legalName: "TESZT szolgáltató EV", address: "2222 Tesztváros, Teszt út 2.", email: "service@example.invalid", phone: "teszt", taxNumber: "TESZT" } },
+  ],
+  partner: { legalName: "TESZT karbantartó EV", address: "3333 Tesztváros, Teszt út 3.", email: "partner@example.invalid", phone: "teszt", taxNumber: "TESZT" },
+  customer: { name: "Adatkezelés TESZT ügyfél", address: "4444 Tesztváros, Ősz út 4.", phone: "teszt-telefon", email: "privacy@example.invalid" },
+  sections: [{ title: "Mentett tájékoztatás", text: "Mesterséges tesztszöveg. Nem valódi ügyféladat." }],
+  consentText: "Mesterséges önkéntes hozzájárulási tesztszöveg.", consentGranted: false,
+  signerName: "Adatkezelés TESZT aláíró", signatureDataUrl: signature([30, 130, 30]), signedAt: "2026-10-11T09:00:00Z",
+  ...overrides,
+});
+module.exports = { loadTypeScript, signature, ids, report, declaration, input, backend, privacyNotice };

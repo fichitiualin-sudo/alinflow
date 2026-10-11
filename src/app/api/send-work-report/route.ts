@@ -41,9 +41,10 @@ export async function POST(request: Request) {
     if (!apiKey) throw new ApiError("Hiányzik a RESEND_API_KEY környezeti változó.", 500);
     const brandName = settingsBrandName(settings);
     const { from, replyTo } = workspaceEmailIdentity(settings);
-    const documentLabel = bundle.includeWorkReport
+    const workDocumentLabel = bundle.includeWorkReport
       ? `${appointmentTypeLabel(bundle.report.appointment_type)} munkalap${bundle.declarations.length ? " és vásárlási nyilatkozat" : ""}`
       : "Vásárlási nyilatkozat";
+    const documentLabel = `${workDocumentLabel}${bundle.report.privacy_notice != null ? " és adatkezelési tájékoztató" : ""}`;
     const footer = settingsFooterLines(settings, "workReport").map(escapeHtml).join("<br>");
     const html = `<!doctype html><html lang="hu"><head><meta charset="utf-8"></head>
       <body style="font-family:Arial,sans-serif;color:#172033;line-height:1.6;padding:20px">
