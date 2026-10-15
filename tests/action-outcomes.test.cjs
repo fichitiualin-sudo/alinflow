@@ -272,6 +272,8 @@ function scheduleFixture(options = {}) {
   let linkFailures = options.linkFailures || 0;
   const context = {
     pendingActionsRef, maintenanceReturnRef, setPendingActions() {},
+    ...h.load("src/lib/alinflow/maintenance-selection.ts"),
+    appointmentAliasesRef: { current: null }, currentWorkspaceId: () => workspaceId,
     normalizeAppointmentType, normalizeAppointmentTimeInput, appointmentTypeLabel,
     cleanQuoteItems, EMPTY_QUOTE_ITEMS: [], normalizedScheduleAppointmentType: type,
     scheduleDate: "2026-10-15", scheduleTime: "08:00", allWorkCustomers: [],
@@ -312,7 +314,7 @@ function scheduleFixture(options = {}) {
   return {
     state, calls, pendingActionsRef,
     // Each click gets the latest React state; refs stay stable across renders.
-    saveSchedule: () => h.functions(["beginAction", "endAction", "saveSchedule"], {
+    saveSchedule: () => h.functions(["beginAction", "endAction", "saveSchedule", "currentAppointmentAliases", "canonicalMaintenanceIds", "maintenanceSelectionIsAvailable"], {
       ...context, selected: state.selected, quoteItems: state.selected.quoteItems,
     }).saveSchedule(),
   };

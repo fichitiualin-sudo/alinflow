@@ -46,13 +46,14 @@ function fixture(options = {}) {
   const appointmentReceiptsRef = { current: new Map() };
   const context = {
     ...products, ...appointments, ...documents, ...delivery,
+    ...h.load("src/lib/alinflow/maintenance-selection.ts"),
+    appointmentAliasesRef: { current: { workspaceId, ids: options.aliases || new Map() } },
     quickAppointment: draft, quickAppointmentSavingRef: savingRef, quickAppointmentDeliveryRef: deliveryRef,
     pendingActionsRef, appointmentReceiptsRef,
     selected: unrelated, quoteItems: unrelated.quoteItems, quoteIssuedAt: "", workspaceSettings: settings,
     allWorkCustomers: [], EMPTY_QUOTE_ITEMS: [], currentWorkspaceId: () => state.workspaceId,
     quickAppointmentSelectedCustomer: () => existing,
     customerInstallationWorks: () => existing ? [existing] : [],
-    maintenanceInstallationSummariesForIds: () => [],
     appointmentTimeAvailable: () => true,
     persistCustomerToDb: async customer => {
       state.persist.push(plain(customer));
@@ -67,7 +68,10 @@ function fixture(options = {}) {
       state.requests.push(request);
       return options.send ? options.send(request, state) : Response.json({ ok: true, id: "synthetic-only" });
     },
-    saveMaintenanceAppointmentLinks: async (customer, ids) => state.links.push({ customer, ids }),
+    saveMaintenanceAppointmentLinks: async (customer, ids) => {
+      state.links.push({ customer, ids });
+      if (options.linkError) throw Error(options.linkError);
+    },
     setQuickAppointment: value => state.dialogs.push(value),
     setQuickAppointmentSaving: value => state.saving.push(value),
     setQuickAppointmentSaveWarning: value => state.warnings.push(value),
@@ -83,6 +87,7 @@ function fixture(options = {}) {
     "saveQuickAppointment", "quickAppointmentQuoteItems", "sendQuickAppointmentEmail",
     "skipQuickAppointmentEmail", "quotePayload", "brandedAppointmentDocumentTitle", "sendAppointmentEmailFor",
     "beginAction", "endAction",
+    "currentAppointmentAliases", "canonicalMaintenanceIds", "maintenanceSelectionIsAvailable", "maintenanceInstallationSummariesForIds",
   ], context);
   return { ...f, h, products, appointments, documents, delivery, state, draft, unrelated, settings, savingRef, deliveryRef,
     pendingActionsRef, appointmentReceiptsRef };
@@ -97,6 +102,42 @@ function existingCustomer(overrides = {}) {
     quoteItems: [{ customName: "Previously installed AC", quantity: 1, customPrice: 250000 }], ...overrides,
   };
 }
+
+test("calendar maintenance aliases save a single real installation and a single climate", async () => {
+  const f = fixture({ existing: existingCustomer(), aliases: new Map([["synthetic-mirror-job", oldAppointmentId]]),
+    draft: { appointmentType: "maintenance", maintenanceInstallationIds: [oldAppointmentId, "synthetic-mirror-job"],
+      sendQuoteEmail: false, sendAppointmentEmail: false } });
+  await f.saveQuickAppointment();
+  assert.equal(f.state.persist.length, 1);
+  assert.deepEqual(f.state.persist[0].maintenanceInstallationIds, [oldAppointmentId]);
+  assert.equal(f.state.persist[0].maintenanceInstallations.length, 1);
+  assert.equal(f.state.persist[0].quoteItems.reduce((sum, item) => sum + item.quantity, 0), 1);
+  assert.equal(f.state.links.length, 1);
+  assert.equal(f.state.requests.length, 0);
+});
+
+for (const ids of [["unknown-installation"], []]) {
+  test(`calendar rejects invalid maintenance selection ${JSON.stringify(ids)} before saving`, async () => {
+    const f = fixture({ existing: existingCustomer(), draft: { appointmentType: "maintenance", maintenanceInstallationIds: ids } });
+    await f.saveQuickAppointment();
+    assert.equal(f.state.persist.length, 0);
+    assert.equal(f.state.links.length, 0);
+    assert.equal(f.state.requests.length, 0);
+    assert.equal(f.state.messages.length, 1);
+  });
+}
+
+test("calendar link failure closes creation but retains the saved work for correction", async () => {
+  const f = fixture({ existing: existingCustomer(), linkError: "Synthetic link failure",
+    draft: { appointmentType: "maintenance", sendQuoteEmail: false, sendAppointmentEmail: false } });
+  await f.saveQuickAppointment();
+  assert.equal(f.state.persist.length, 1);
+  assert.equal(f.state.selected.at(-1).activeAppointmentId, appointmentId);
+  assert.deepEqual(f.state.dialogs, [null]);
+  assert.match(f.state.messages.at(-1), /időpont mentve.*kapcsolódó telepítések mentése.*nem sikerült/i);
+  assert.equal(f.state.requests.length, 0);
+  assert.equal(f.savingRef.current, false);
+});
 
 test("calendar installation saves once and automatically sends two emails for the saved work", async () => {
   const f = fixture({ send: async (request, state) => {

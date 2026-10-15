@@ -132,6 +132,7 @@ function restoreFixture(returnContext, error = null) {
   const context = {
     ...h.load("src/lib/alinflow/appointments.ts"), ...h.load("src/lib/alinflow/products.ts"),
     ...h.load("src/lib/alinflow/maintenance-origin.ts"), ...h.load("src/lib/alinflow/appointment-records.ts"),
+    ...h.load("src/lib/alinflow/maintenance-selection.ts"), appointmentAliasesRef: { current: null },
     loadCustomersPromiseRef: { current: null }, loadCustomersWorkspaceIdRef: { current: null },
     lastCustomerLoadRef: { current: null }, initialDataReadyRef: { current: false },
     currentWorkspaceId: () => "workspace", selected: {}, products: [], documentsByCustomer: {}, EMPTY_QUOTE_ITEMS: [], LIST_PAGE_SIZE: 10,
