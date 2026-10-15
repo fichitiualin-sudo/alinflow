@@ -51,7 +51,7 @@ export function GoogleCalendarSettingsPanel({ workspaceId, userId, status, loadi
   const notice = message || returnMessage;
   return (
     <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4" aria-labelledby="google-calendar-title">
-      <h3 id="google-calendar-title" className="text-xl font-black">Google Naptár</h3>
+      <h4 id="google-calendar-title" className="font-black">Automatikus naptármentés</h4>
       {loading ? <p className="text-sm text-slate-300">Naptárkapcsolat ellenőrzése…</p> : null}
       {status && !status.configured ? <p className="text-sm text-slate-300">Az automatikus Google Naptár-kapcsolat előkészítése még folyamatban van.</p> : null}
       {status?.configured ? (
