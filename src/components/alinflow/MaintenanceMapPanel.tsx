@@ -21,6 +21,7 @@ import {
 import { GoogleMapCanvas, type MapCanvasMarker } from "./GoogleMapCanvas";
 import type { MapMarkerSegment } from "@/lib/alinflow/map-marker-style";
 import { createMapPopupActions, createMapPopupList } from "@/lib/alinflow/map-popup-actions";
+import { maintenanceGeocodeTarget } from "@/lib/alinflow/maintenance-geocoding";
 
 type MaintenanceMapPanelProps = {
   points: MaintenanceMapPoint[];
@@ -82,7 +83,7 @@ export function MaintenanceMapPanel({
   const list = selectedGroup?.points || filteredPoints;
   const pagination = paginateItems(list, page);
   const locatedCount = groups.reduce((sum, group) => sum + group.points.length, 0);
-  const missingCoordinateCount = filteredPoints.filter((point) => !point.sharedMaintenance && !hasMaintenanceMapCoordinates(point) && point.address).length;
+  const missingCoordinateCount = filteredPoints.filter((point) => !hasMaintenanceMapCoordinates(point) && maintenanceGeocodeTarget(point)).length;
   const counts = useMemo(() => visiblePoints.reduce<Record<MaintenanceMapStatus | "all", number>>((result, point) => {
     result.all += 1;
     result[point.status] += 1;

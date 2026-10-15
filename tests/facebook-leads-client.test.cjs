@@ -103,6 +103,8 @@ function customerLoader(overrides = {}) {
   const mustNotTouchEditing = () => { throw new Error("Unsaved editing state was changed"); };
   const { loadCustomersFromDb } = harness().functions(["loadCustomersFromDb", "quoteReceiptScopeFromRows", "restoreCustomerMaintenanceOrigin"], {
     ...harness().load("src/lib/alinflow/maintenance-origin.ts"),
+    ...harness().load("src/lib/alinflow/maintenance-selection.ts"),
+    appointmentIdAliases: () => new Map(), appointmentAliasesRef: { current: null },
     loadCustomersPromiseRef: loadRef,
     loadCustomersWorkspaceIdRef: scopeRef,
     lastCustomerLoadRef: lastLoadRef,

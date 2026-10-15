@@ -88,6 +88,7 @@ test("an address save must refresh after an already running pre-save customer lo
   const appointments = h.load("src/lib/alinflow/appointments.ts"), products = h.load("src/lib/alinflow/products.ts");
   const context = { ...run.context, ...appointments, ...products,
     ...h.load("src/lib/alinflow/maintenance-origin.ts"), ...h.load("src/lib/alinflow/appointment-records.ts"),
+    ...h.load("src/lib/alinflow/maintenance-selection.ts"), appointmentAliasesRef: { current: null },
     products: [], documentsByCustomer: {}, EMPTY_QUOTE_ITEMS: [],
     loadCustomersPromiseRef: { current: null }, loadCustomersWorkspaceIdRef: { current: null },
     setDataLoading: noop, loadProductsFromDb: async () => [], loadSellerCompaniesFromDb: async () => [], loadInventoryFromDb: async () => {},
