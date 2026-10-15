@@ -129,6 +129,7 @@ import { QuotePreviewPanel } from "@/components/alinflow/QuotePreviewPanel";
 import { SchedulePanel } from "@/components/alinflow/SchedulePanel";
 import { SettingsPanel } from "@/components/alinflow/SettingsPanel";
 import { MaintenanceOriginEditor } from "@/components/alinflow/MaintenanceOriginEditor";
+import { useGoogleContactsReturn } from "@/components/alinflow/GoogleContactsSync";
 import { notifyGoogleCalendarAppointmentsChanged, useGoogleCalendarSync } from "@/components/alinflow/GoogleCalendarSync";
 import { ActionFeedbackProvider, useActionFeedback } from "@/components/alinflow/ActionFeedback";
 import {
@@ -522,6 +523,7 @@ function HomeContent() {
     enabled: initialDataReady && !authLoading,
     onReturn: () => setView("settings"),
   });
+  const googleContactsReturnMessage = useGoogleContactsReturn(initialDataReady && !authLoading, activeWorkspace?.id, () => setView("settings"));
   const managedCalendarAppointmentIds = useMemo(() => new Set(googleCalendar.status?.managedAppointmentIds || []), [googleCalendar.status?.managedAppointmentIds]);
   const [loginEmail,setLoginEmail] = useState("");
   const [loginPassword,setLoginPassword] = useState("");
@@ -4970,6 +4972,7 @@ function HomeContent() {
         activeWorkspace={activeWorkspace}
         userId={user.id}
         googleCalendar={googleCalendar}
+        googleContactsReturnMessage={googleContactsReturnMessage}
         settings={workspaceSettings}
         schemaAvailable={workspaceSettingsSchemaAvailable}
         saving={workspaceSettingsBusy}

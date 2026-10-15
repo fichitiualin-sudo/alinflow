@@ -24,6 +24,7 @@ export default function GoogleCalendarPrivacyPage() {
           <p className="mb-3 text-sm font-bold uppercase tracking-wide text-cyan-200">AlinFlow</p>
           <h1 className="text-3xl font-black leading-tight text-white sm:text-4xl">Google Naptár adatkezelési tájékoztató</h1>
           <p className="mt-5">Ez a tájékoztató az AlinFlow opcionális Google Naptár-kapcsolatának működését és az ehhez használt adatokat írja le.</p>
+          <p className="mt-3">A telefonkönyv összekapcsolásáról a <a href="/adatvedelem/google-nevjegyek" className={linkClass}>Google Névjegyek külön tájékoztatója</a> szól.</p>
         </header>
 
         <div className="space-y-9">

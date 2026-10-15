@@ -75,11 +75,13 @@ function settingsUI(initialSettings = settingsFixture()) {
     },
   };
   function GoogleCalendarSettingsPanel() { return jsx("div", { "data-test": "calendar" }); }
+  function GoogleContactsSettingsPanel() { return jsx("div", { "data-test": "contacts" }); }
   function MaintenanceAccessSettings() { return jsx("div", { "data-test": "access" }); }
   function PrivacyPartnerPicker() { return jsx("div", { "data-test": "partner-picker" }); }
   const { SettingsPanel } = harness({}, {
     react, "react/jsx-runtime": require("react/jsx-runtime"),
     "@/components/alinflow/GoogleCalendarSettingsPanel": { GoogleCalendarSettingsPanel },
+    "@/components/alinflow/GoogleContactsSettingsPanel": { GoogleContactsSettingsPanel },
     "@/components/alinflow/MaintenanceAccessSettings": { MaintenanceAccessSettings },
     "./PrivacyPartnerPicker": { PrivacyPartnerPicker },
   }).load("src/components/alinflow/SettingsPanel.tsx");
@@ -143,10 +145,11 @@ function settingsUI(initialSettings = settingsFixture()) {
 
 test("settings keeps one editor/calendar/access instance and every existing editable value inside collapsed sections", () => {
   const settings = settingsFixture(), ui = settingsUI(settings);
-  for (const name of ["PrivacyNoticeSettings", "PrivacyPartnerPicker", "GoogleCalendarSettingsPanel", "MaintenanceAccessSettings"]) {
+  for (const name of ["PrivacyNoticeSettings", "PrivacyPartnerPicker", "GoogleCalendarSettingsPanel", "GoogleContactsSettingsPanel", "MaintenanceAccessSettings"]) {
     assert.equal(ui.component(name).length, 1, name);
   }
   assert.equal(ui.component("PartyFields").length, 2, "Provider and seller remain separate editable identities");
+  assert.equal(ui.nodes(element => element.type === "button" && element.props["aria-controls"]).length, 7, "All seven settings sections remain present once");
   const values = ui.nodes(element => ["input", "textarea", "select"].includes(element.type)).map(element => element.props.value);
   for (const [section, fields] of Object.entries(settings)) {
     for (const [key, value] of Object.entries(fields)) {
@@ -160,7 +163,7 @@ test("settings keeps one editor/calendar/access instance and every existing edit
   for (const key of ["retentionText", "recipientsText", "internationalTransfersText"]) assert.equal(values.filter(value => value === settings.documentSettings.privacyNotice[key]).length, 1);
   assert.equal(ui.nodes(element => element.type === "input" && element.props.type === "checkbox").length, 2);
   assert.equal(ui.save().props.disabled, false);
-  for (const title of ["Google Naptár", "Árajánlat", "Emailek és dokumentumok", "Számlázás", "Adatkezelés és karbantartók"]) {
+  for (const title of ["Google Naptár", "Google Névjegyek", "Árajánlat", "Emailek és dokumentumok", "Számlázás", "Adatkezelés és karbantartók"]) {
     assert.equal(ui.section(title).props["aria-expanded"], false);
     ui.section(title).props.onClick(); ui.render();
     ui.section(title).props.onClick(); ui.render();
@@ -219,4 +222,14 @@ test("invalid values open their sections and disable saving without removing hid
   assert.ok(ui.nodes(element => element.props?.role === "alert" && text(element).includes("Munkát végző vállalkozás")).length);
   assert.equal(ui.component("PartyFields").length, 2);
   assert.equal(ui.saves.length, 0);
+});
+
+
+test("Contacts OAuth cannot navigate away from an unsaved settings draft", () => {
+  const ui=settingsUI();
+  assert.equal(ui.component("GoogleContactsSettingsPanel")[0].props.canConnect,true);
+  ui.field("Vállalkozás hivatalos neve").props.onChange({ target:{ value:"Új szintetikus cégnév" } }); ui.render();
+  assert.equal(ui.component("GoogleContactsSettingsPanel")[0].props.canConnect,false);
+  ui.save().props.onClick(); ui.render({ settings:ui.saves[0] });
+  assert.equal(ui.component("GoogleContactsSettingsPanel")[0].props.canConnect,true);
 });

@@ -6,6 +6,7 @@ import type { BillingInvoiceMode, PaymentMethod, WorkspaceSettings } from "@/lib
 import { normalizeManualCalendarEmail } from "@/lib/alinflow/workspace-settings";
 import { Back, Shell } from "@/components/alinflow/LayoutPrimitives";
 import { WorkSectionIcon, type WorkSectionIconName } from "@/components/alinflow/WorkSectionIcon";
+import { GoogleContactsSettingsPanel } from "@/components/alinflow/GoogleContactsSettingsPanel";
 import { GoogleCalendarSettingsPanel } from "@/components/alinflow/GoogleCalendarSettingsPanel";
 import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
 import { PrivacyNoticeSettings } from "@/components/alinflow/PrivacyNoticeSettings";
@@ -16,6 +17,7 @@ type SettingsPanelProps = {
   activeWorkspace: Workspace | null;
   userId?: string;
   googleCalendar: { status: GoogleCalendarStatus | null; loading: boolean; error: string; returnMessage: string };
+  googleContactsReturnMessage?: string;
   settings: WorkspaceSettings;
   schemaAvailable: boolean;
   saving: boolean;
@@ -105,6 +107,7 @@ export function SettingsPanel({
   activeWorkspace,
   userId,
   googleCalendar,
+  googleContactsReturnMessage,
   settings,
   schemaAvailable,
   saving,
@@ -173,6 +176,9 @@ export function SettingsPanel({
               </div>
               {activeWorkspace?.id && userId ? <GoogleCalendarSettingsPanel key={`${activeWorkspace.id}:${userId}`} workspaceId={activeWorkspace.id} userId={userId} {...googleCalendar} /> : null}
             </SettingsSection>
+            {activeWorkspace?.id && userId ? <SettingsSection key={`contacts:${activeWorkspace.id}:${userId}`} title="Google Névjegyek" summary="Ügyfelek a telefonkönyvben · egyezések és frissítés" icon="registry" attention={Boolean(googleContactsReturnMessage)}>
+              <GoogleContactsSettingsPanel key={`${activeWorkspace.id}:${userId}`} workspaceId={activeWorkspace.id} userId={userId} returnMessage={googleContactsReturnMessage} canConnect={!hasChanges} />
+            </SettingsSection> : null}
             <SettingsSection key={`quote:${activeWorkspace?.id}`} title="Árajánlat" summary="Érvényesség, ajánlati szövegek és alapszerelés" icon="documents">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <TextField label="Ajánlat címe" value={draft.quoteSettings.title} onChange={(value) => updateSection("quoteSettings", "title", value)} />
