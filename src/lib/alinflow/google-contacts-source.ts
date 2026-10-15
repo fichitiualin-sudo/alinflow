@@ -77,7 +77,7 @@ export function projectGoogleContactSources(rows: ContactSourceRows, workspaceId
   }
   return [...byCustomer].map(([customerId, works]) => {
     const customer = customers.get(customerId)!;
-    const notes: string[] = ["Saját telepítések"];
+    const notes: string[] = [];
     for (const work of works) {
       const workId = value(work.id), workDate = date(work.scheduled_date), address = fullAddress(customer, work);
       notes.push("", `Telepítés: ${workDate.replace(/-/g, ".")}${address ? ` – ${address}` : ""}`);
@@ -101,7 +101,7 @@ export function projectGoogleContactSources(rows: ContactSourceRows, workspaceId
     }
     const result = {
       customerId, name: value(customer.name), phone: value(customer.phone), email: value(customer.email),
-      address: fullAddress(customer), notes: notes.join("\n"),
+      address: fullAddress(customer), notes: notes.join("\n").trim(),
     };
     if (result.notes.length > 40000) throw new Error("Egy ügyfél telepítési adatai túl hosszúak a névjegyhez; külön ellenőrzés szükséges.");
     return { ...result, sourceHash: createHash("sha256").update(JSON.stringify(result)).digest("hex") };

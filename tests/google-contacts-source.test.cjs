@@ -25,7 +25,7 @@ test("only actual past own installations are exported; future, survey, canceled 
   assert.equal(actual.length, 1);
   assert.equal(actual[0].notes.split("Telepítés:").length - 1, 1);
   assert.equal(actual[0].address, "1111 Budapest, Példa utca 1.");
-  assert.match(actual[0].notes, /2 db Teszt klíma/);
+  assert.equal(actual[0].notes, "Telepítés: 2026.01.02 – 1111 Budapest, Példa utca 1.\n2 db Teszt klíma");
   assert.doesNotMatch(JSON.stringify(actual), /Titkos|999999|unit_price|notes.*belső/);
 });
 

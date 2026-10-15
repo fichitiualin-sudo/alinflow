@@ -5,7 +5,7 @@ const model = harness().load("src/lib/alinflow/google-contacts-model.ts");
 const { normalizeContactPhone: phone, normalizeContactEmail: email, findContactCandidates: candidates,
   buildContactCreate: create, mergeContactUpdate: merge } = model;
 const source = (extra = {}) => ({ customerId: "customer-one", name: "Teszt Ügyfél", phone: "06301234567", email: "test@example.invalid",
-  address: "1111 Budapest, Példa utca 1.", notes: "Saját telepítések\nTelepítés: 2026.01.02\n1 db Teszt klíma", sourceHash: "hash", ...extra });
+  address: "1111 Budapest, Példa utca 1.", notes: "Telepítés: 2026.01.02\n1 db Teszt klíma", sourceHash: "hash", ...extra });
 const remote = (extra = {}) => ({ resourceName: "people/example", metadata: { sources: [{ type: "CONTACT", id: "example", etag: "version-one" }] }, ...extra });
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const marker = "workspace-one:customer-one";
@@ -47,7 +47,7 @@ test("create carries stable marker, full unsplit name and managed note only", ()
   const result = create(source(), marker);
   assert.deepEqual(plain(result.body.names), [{ unstructuredName: "Teszt Ügyfél" }]);
   assert.deepEqual(plain(model.googleContactMarkers(result.body)), [marker]);
-  assert.match(result.body.biographies[0].value, /1 db Teszt klíma/);
+  assert.equal(result.body.biographies[0].value, source().notes);
   assert.equal(result.managed.marker, marker);
   assert.equal(result.body.resourceName, undefined);
 });
@@ -66,7 +66,7 @@ test("linking keeps personal name, fields and free notes and claims only added v
   assert.equal(result.managed.phone, null);
   assert.equal(result.managed.name, null);
   assert.deepEqual(plain(result.body.emailAddresses), [{ value: "private@example.invalid", type: "home" }, { value: source().email, type: "other" }]);
-  assert.ok(result.body.biographies[0].value.startsWith("Személyes\nmegjegyzés\n\n--- AlinFlow ---"));
+  assert.equal(result.body.biographies[0].value, `Személyes\nmegjegyzés\n\n${source().notes}`);
   assert.deepEqual(plain(result.body.userDefined[0]), { key: "Születésnap", value: "május" });
 });
 
@@ -87,7 +87,7 @@ test("managed values change while manual second phone and note edits stay intact
   const result = merge(next, person, created.managed, marker);
   assert.equal(result.ok, true);
   assert.deepEqual(plain(result.body.phoneNumbers), [{ value: next.phone, type: "other" }, { value: "+3612223333", type: "work" }]);
-  assert.match(result.body.biographies[0].value, /^Személyes előtte\n--- AlinFlow ---\nÚj telepítési adatok\n--- AlinFlow vége ---\nSzemélyes utána$/);
+  assert.equal(result.body.biographies[0].value, "Személyes előtte\nÚj telepítési adatok\nSzemélyes utána");
   assert.equal(result.body.metadata.sources[0].etag, "version-one");
   assert.equal(result.body.names, undefined);
 });
@@ -205,4 +205,36 @@ test("read-only and preferred-field metadata never triggers an otherwise unchang
   const updated=merge(source({notes:"Új telepítési adatok"}),person,created.managed,marker);
   assert.equal(updated.ok,true);
   assert.deepEqual(plain(updated.body.biographies[0].metadata),{sourcePrimary:true});
+});
+
+
+test("legacy note wrappers migrate once while personal notes and all installation details survive", () => {
+  const created = create(source(), marker);
+  const legacyBlock = `--- AlinFlow ---\nSaját telepítések\n\n${source().notes}\n--- AlinFlow vége ---`;
+  const previous = { ...created.managed, noteBlock: legacyBlock };
+  const person = roundtrip(created.body, {
+    biographies: [{ value: `Személyes előtte\n\n${legacyBlock}\nSzemélyes utána`, contentType: "TEXT_PLAIN" }],
+  });
+  const migrated = merge(source(), person, previous, marker);
+  assert.equal(migrated.ok, true);
+  assert.equal(migrated.updatePersonFields, "biographies");
+  assert.equal(migrated.body.biographies[0].value, `Személyes előtte\n\n${source().notes}\nSzemélyes utána`);
+  const confirmed = roundtrip({ ...person, ...migrated.body });
+  assert.equal(model.contactMatchesManagedSnapshot(confirmed, migrated.managed, migrated), true);
+  assert.equal(model.contactMatchesManagedSnapshot(person, migrated.managed, migrated), false);
+  assert.equal(merge(source(), confirmed, migrated.managed, marker).updatePersonFields, "");
+  const manuallyEdited = roundtrip(person, { biographies: [{ value: person.biographies[0].value.replace("Teszt klíma", "Kézzel javított klíma") }] });
+  assert.equal(merge(source(), manuallyEdited, previous, marker).ok, false);
+});
+
+test("empty managed notes cannot become an ambiguous update target", () => {
+  assert.throws(() => create(source({ notes: "  \n " }), marker));
+});
+
+test("removing legacy wrappers never adopts an identical personal note as managed text", () => {
+  const created = create(source(), marker);
+  const legacyBlock = `--- AlinFlow ---\nSaját telepítések\n\n${source().notes}\n--- AlinFlow vége ---`;
+  const person = roundtrip(created.body, { biographies: [{ value: `${source().notes}\n\n${legacyBlock}` }] });
+  const result = merge(source(), person, { ...created.managed, noteBlock: legacyBlock }, marker);
+  assert.equal(result.ok, false);
 });

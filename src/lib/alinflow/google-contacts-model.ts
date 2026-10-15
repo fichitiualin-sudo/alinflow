@@ -87,10 +87,10 @@ export function findContactCandidates(source: ContactSource, contacts: GoogleCon
   return { candidates, conflict: candidates.length > 1 };
 }
 function noteBlock(source: ContactSource) {
-  if (source.notes.includes(NOTE_START) || source.notes.includes(NOTE_END) || source.notes.length > 40000) {
+  if (!source.notes.trim() || source.notes.includes(NOTE_START) || source.notes.includes(NOTE_END) || source.notes.length > 40000) {
     throw new Error("A névjegyhez tartozó AlinFlow-adatok külön ellenőrzést igényelnek.");
   }
-  return `${NOTE_START}\n${source.notes.trim()}\n${NOTE_END}`;
+  return source.notes.trim();
 }
 function desiredFields(source: ContactSource) {
   return {
@@ -178,6 +178,11 @@ export function mergeContactUpdate(source: ContactSource, remote: GoogleContact,
   } else if (oldNote.includes(NOTE_START) || oldNote.includes(NOTE_END)) {
     return { ok: false, reason: "A Google-névjegyben már van AlinFlow-megjegyzés; ellenőrzés szükséges." };
   } else nextNote = oldNote ? `${oldNote}\n\n${block}` : block;
+  // The saved text remains the ownership boundary even without visible labels.
+  const nextPosition = nextNote.indexOf(block);
+  if (nextNote.indexOf(block, nextPosition + 1) >= 0) {
+    return { ok: false, reason: "A telepítési megjegyzés többször szerepelne a Google-névjegyben; ellenőrzés szükséges." };
+  }
   if (nextNote !== oldNote) { body.biographies = [{ value: nextNote, contentType: "TEXT_PLAIN", ...(biographies[0]?.metadata ? { metadata: biographies[0].metadata } : {}) }]; masks.push("biographies"); }
   if (!markers.length) { body.userDefined = [...fields(remote, "userDefined"), { key: MARKER_KEY, value: marker }]; masks.push("userDefined"); }
   return { ok: true, body, updatePersonFields: masks.join(","), managed };
