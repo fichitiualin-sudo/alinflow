@@ -4,7 +4,7 @@ const { harness, database, identity } = require("./helpers.cjs");
 
 const h = harness();
 const { normalizeStatus } = h.load("src/lib/alinflow/constants.ts");
-const { cleanQuoteItems } = h.load("src/lib/alinflow/products.ts");
+const { cleanQuoteItems, climateQuoteItems } = h.load("src/lib/alinflow/products.ts");
 const { normalizeAppointmentType, normalizeAppointmentTimeInput, appointmentTypeLabel } = h.load("src/lib/alinflow/appointments.ts");
 const workspaceId = "10000000-1111-4000-8000-000000000001";
 const customerId = "20000000-1111-4000-8000-000000000001";
@@ -275,7 +275,7 @@ function scheduleFixture(options = {}) {
     ...h.load("src/lib/alinflow/maintenance-selection.ts"),
     appointmentAliasesRef: { current: null }, currentWorkspaceId: () => workspaceId,
     normalizeAppointmentType, normalizeAppointmentTimeInput, appointmentTypeLabel,
-    cleanQuoteItems, EMPTY_QUOTE_ITEMS: [], normalizedScheduleAppointmentType: type,
+    cleanQuoteItems, climateQuoteItems, EMPTY_QUOTE_ITEMS: [], normalizedScheduleAppointmentType: type,
     scheduleDate: "2026-10-15", scheduleTime: "08:00", allWorkCustomers: [],
     appointmentTimeAvailable: () => true,
     customerInstallationWorks: () => [{ activeAppointmentId: "synthetic-installation-id", quoteItems: [item] }],

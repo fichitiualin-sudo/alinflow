@@ -5,7 +5,7 @@ import type { CalendarMode, Customer } from "@/lib/alinflow/types";
 import { cleanQuoteItems, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { iso } from "@/lib/alinflow/format";
 import { calLabel, googleCalendarHref, weekStart } from "@/lib/alinflow/calendar";
-import { appointmentTimeRangeLabel, appointmentTypeLabel, isInstallationAppointment } from "@/lib/alinflow/appointments";
+import { appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkSummary, isInstallationAppointment } from "@/lib/alinflow/appointments";
 import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
 
 type CalendarProps = {
@@ -55,7 +55,7 @@ function calendarJobSummaryLines(job: Customer) {
       ? items.map((item) => `${itemQuantity(item)} db ${itemName(item)}`)
       : ["Nincs klíma megadva"];
   }
-  return [appointmentTypeLabel(job.appointmentType)];
+  return [appointmentWorkSummary(job)];
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -104,22 +104,23 @@ export function Calendar({
       return { d: day, current: day.getMonth() === date.getMonth() };
     });
   }, [mode, date, start]);
+  const calendarNotice = googleCalendarError || googleCalendar?.lastError
+    ? "A Google Naptár frissítése várakozik. Részletek a Beállításokban."
+    : googleCalendar?.status === "paused" ? "Google Naptár: a szinkronizálás szünetel."
+    : googleCalendar?.status === "reauth_required" ? "Google Naptár: engedélyezd újra a kapcsolatot a Beállításokban."
+    : googleCalendar?.connected && googleCalendar.pending > 0 ? `Google Naptár: ${googleCalendar.pending} frissítés várakozik.`
+    : "";
 
   return (
     <Card title={selectable ? "Válassz napot a naptárból" : mode === "week" ? "Heti naptár" : "Havi naptár"}>
-      {!selectable && (googleCalendar?.connected || googleCalendar?.status === "paused" || googleCalendar?.status === "reauth_required") ? (
-        <p className={`mb-4 text-sm font-bold ${googleCalendarError || googleCalendar.lastError || !googleCalendar.connected ? "text-amber-200" : "text-emerald-200"}`}>
-          {googleCalendarError || googleCalendar.lastError ? "A Google Naptár frissítése várakozik. Részletek a Beállításokban."
-            : googleCalendar.status === "paused" ? "Google Naptár: a szinkronizálás szünetel."
-            : googleCalendar.status === "reauth_required" ? "Google Naptár: engedélyezd újra a kapcsolatot a Beállításokban."
-            : googleCalendar.pending > 0 ? `Google Naptár: ${googleCalendar.pending} frissítés várakozik.`
-            : "Új időpontok: automatikus Google Naptár-mentés."}
-        </p>
-      ) : null}
+      {!selectable && calendarNotice ? <p role="status" className="mb-3 text-sm font-bold text-amber-200">{calendarNotice}</p> : null}
       <div className="mb-5 flex flex-col gap-4">
-        <div className="flex justify-end gap-2">
-          <button onClick={() => onMode("week")} className={mode === "week" ? "tab-active" : "tab"}>Heti</button>
-          <button onClick={() => onMode("month")} className={mode === "month" ? "tab-active" : "tab"}>Havi</button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {!selectable && googleCalendar?.connected && !calendarNotice ? <span className="mr-auto inline-flex items-center gap-1 text-xs font-bold text-emerald-200" title="Új időpontok automatikus mentése a Google Naptárba" aria-label="Új időpontok automatikus mentése a Google Naptárba"><span aria-hidden="true">✓</span> Google Naptár</span> : null}
+          <div className="flex gap-2">
+            <button onClick={() => onMode("week")} className={mode === "week" ? "tab-active" : "tab"}>Heti</button>
+            <button onClick={() => onMode("month")} className={mode === "month" ? "tab-active" : "tab"}>Havi</button>
+          </div>
         </div>
         <div className="grid grid-cols-[46px_minmax(0,1fr)_46px] items-center gap-2 sm:grid-cols-[52px_minmax(0,1fr)_52px] sm:gap-3">
           <button onClick={() => onStep(-1)} className="arrow">‹</button>

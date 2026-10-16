@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, MaintenanceInstallationSummary, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
 import { Back, Btn, Card, Field, Gradient, Layout } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
+import { AppointmentItemsEditor } from "@/components/alinflow/AppointmentItemsEditor";
 import { WorkPhotosPanel } from "@/components/alinflow/WorkPhotosPanel";
 import { AppointmentDevicesPanel } from "@/components/alinflow/AppointmentDevicesPanel";
 import { WorkSectionIcon, type WorkSectionIconName } from "@/components/alinflow/WorkSectionIcon";
@@ -12,7 +13,9 @@ import { DocumentActionButtons, documentStatusClass, type SendPdfDocuments } fro
 import { displayAddress, ft, mapsHref, telHref, todayIso } from "@/lib/alinflow/format";
 import {
   cleanQuoteItems,
+  climateQuoteItems,
   climateSummary,
+  isExtraQuoteItem,
   isCustomQuoteItem,
   itemName,
   itemQuantity,
@@ -28,7 +31,7 @@ import {
 } from "@/lib/alinflow/products";
 import type { View } from "@/lib/alinflow/types";
 import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
-import { billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
+import { billingAmountsForAppointment, billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { normalizeStatus } from "@/lib/alinflow/constants";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 
@@ -80,7 +83,7 @@ function isCancelledWork(work: Customer) {
 }
 
 function hasInstalledClimateItems(work: Customer) {
-  return cleanQuoteItems(work.quoteItems).length > 0;
+  return climateQuoteItems(work.quoteItems).length > 0;
 }
 
 function isInstalledClimateWork(work: Customer) {
@@ -218,6 +221,8 @@ type WorkPagePanelProps = {
   onUpdateQuoteProduct: (index: number, productId: string) => void;
   onRemoveQuoteItem: (index: number) => void;
   onAddQuoteItem: () => void;
+  onAddExtraQuoteItem: () => void;
+  onChangeQuoteItems: (items: QuoteItem[]) => void;
   onSetAllowWorkResourceEdit: (value: boolean) => void;
   onSaveWorkChanges: () => void;
   onAddExtraMaterial: () => void;
@@ -284,6 +289,8 @@ export function WorkPagePanel({
   onUpdateQuoteProduct,
   onRemoveQuoteItem,
   onAddQuoteItem,
+  onAddExtraQuoteItem,
+  onChangeQuoteItems,
   onSetAllowWorkResourceEdit,
   onSaveWorkChanges,
   onAddExtraMaterial,
@@ -314,6 +321,8 @@ export function WorkPagePanel({
   const isInstallation = isInstallationAppointment(currentAppointmentType);
   const isSurvey = currentAppointmentType === "survey";
   const isMaintenance = currentAppointmentType === "maintenance";
+  const isOther = currentAppointmentType === "other";
+  const [showServiceBilling, setShowServiceBilling] = useState(false);
   const installationFinished = isInstallation && (selected.status === "Szerelés kész – admin folyamatban" || selected.status === "Lezárva");
   const maintenanceFinished = isMaintenance && selected.status === "Lezárva";
   const canStartMaintenance = installationFinished || maintenanceFinished;
@@ -326,9 +335,7 @@ export function WorkPagePanel({
   const [sendThankYouEmailOnClose, setSendThankYouEmailOnClose] = useState(true);
   const thankYouEmailSent = documentRows.some((row) => row.action === "KoszonoEmail" && row.status.startsWith("Elküldve"));
   const canSendThankYouEmailOnClose = Boolean(selected.email?.trim()) && selected.status !== "Lezárva" && !thankYouEmailSent;
-  const defaultLaborAmount = quoteInstallTotal(quoteItems);
-  const defaultDeviceAmount = Math.max(0, total(quoteItems) - defaultLaborAmount);
-  const defaultCombinedAmount = total(quoteItems);
+  const { labor: defaultLaborAmount, device: defaultDeviceAmount, combined: defaultCombinedAmount } = billingAmountsForAppointment(quoteItems, currentAppointmentType);
   const [laborInvoiceAmount, setLaborInvoiceAmount] = useState(String(defaultLaborAmount));
   const [deviceInvoiceAmount, setDeviceInvoiceAmount] = useState(String(defaultDeviceAmount));
   const [combinedInvoiceAmount, setCombinedInvoiceAmount] = useState(String(defaultCombinedAmount));
@@ -361,18 +368,20 @@ export function WorkPagePanel({
     .filter((work) => !selected.date || !work.date || work.date !== selected.date)
     .sort(compareWorkByDateDesc);
   const selectedMaintenanceInstallations = isMaintenance ? selected.maintenanceInstallations || [] : [];
-  const hasMaintenanceClimateDetails = selectedMaintenanceInstallations.length > 0 || quoteItems.length > 0;
+  const maintenanceClimateItems = climateQuoteItems(quoteItems);
+  const hasMaintenanceClimateDetails = selectedMaintenanceInstallations.length > 0 || maintenanceClimateItems.length > 0;
   const hasMaintenanceSection = installationWorksForMaintenance.length > 0 || maintenanceRows.length > 0 || canStartMaintenance;
   const workItemsTitle = isSurvey
     ? "Felmérési időpont"
     : isMaintenance
     ? "Karbantartott klímák"
-    : "Időponthoz tartozó klímák";
+    : isOther ? "Munka tételei" : "Időponthoz tartozó klímák";
   const workStatusValue = selected.status === "Szerelés kész – admin folyamatban" ? `${appointmentTypeLabel(selected.appointmentType)} kész – admin folyamatban` : selected.status || "Folyamatban";
   const maintenanceBillingDone = Boolean(currentWorkChecklist.alinInvoice);
 
   useEffect(() => {
     setShowMaintenance(false);
+    setShowServiceBilling(false);
     setShowWorkItems(isSurvey);
     setSendThankYouEmailOnClose(true);
   }, [workspaceId, selected.id, selected.activeAppointmentId, isSurvey]);
@@ -584,9 +593,9 @@ export function WorkPagePanel({
                   );
                 })}
               </div>
-            ) : isMaintenance && quoteItems.length ? (
+            ) : isMaintenance && maintenanceClimateItems.length ? (
               <div className="space-y-3">
-                {quoteItems.map((it, i) => (
+                {maintenanceClimateItems.map((it, i) => (
                   <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                     <p className="font-black">{isCustomQuoteItem(it) ? it.customName || "Egyedi klíma" : prod(it.productId).name || "Klíma"}</p>
                     {workAddressLabel(selected) ? <p className="mt-1 text-sm font-bold text-slate-300">Cím: {workAddressLabel(selected)}</p> : null}
@@ -595,14 +604,15 @@ export function WorkPagePanel({
                 ))}
               </div>
             ) : null}
+            {isOther ? <fieldset disabled={!canEditWorkResources || selected.status === "Lemondva"}><AppointmentItemsEditor extraOnly items={quoteItems} products={products} onChange={onChangeQuoteItems} /></fieldset> : null}
             {isInstallation ? <div className="space-y-3">
               {quoteItems.map((it, i) => (
                 <div key={i} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(220px,1.4fr)_90px_130px_120px_150px_44px] xl:items-end">
                     {isCustomQuoteItem(it) ? (
                       <label className="block">
-                        <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Klíma</span>
-                        <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={(event) => onUpdateQuoteItem(i, "customName", event.target.value)} placeholder="Klíma megnevezése" />
+                        <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">{isExtraQuoteItem(it) ? "Egyéb tétel" : "Egyedi klíma"}</span>
+                        <input className="input disabled:cursor-not-allowed disabled:opacity-60" disabled={!canEditWorkResources} value={it.customName || ""} onChange={(event) => onUpdateQuoteItem(i, "customName", event.target.value)} placeholder={isExtraQuoteItem(it) ? "Tétel megnevezése" : "Klíma megnevezése"} />
                       </label>
                     ) : (
                       <label className="block">
@@ -615,7 +625,7 @@ export function WorkPagePanel({
                       <input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} value={it.quantity} disabled={!canEditWorkResources} onChange={(event) => onUpdateQuoteItem(i, "quantity", numericInputValue(event.target.value))} />
                     </label>
                     <label className="block">
-                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Készülék ár</span>
+                      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">{isExtraQuoteItem(it) ? "Tétel ára" : "Készülék ár"}</span>
                       <input
                         className="input disabled:cursor-not-allowed disabled:opacity-60"
                         type="number"
@@ -655,10 +665,11 @@ export function WorkPagePanel({
                 </div>
               </div>
             </div> : null}
-            {isInstallation ? <div className="mt-4 flex flex-col gap-3 md:flex-row">
-              <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddQuoteItem}>+ Klíma hozzáadása</button>
+            {isInstallation || (isOther && selected.status !== "Lemondva") ? <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap">
+              {isInstallation ? <button className="rounded-2xl bg-cyan-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddQuoteItem}>+ Klíma hozzáadása</button> : null}
+              {isInstallation ? <button type="button" className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEditWorkResources} onClick={onAddExtraQuoteItem}>+ Egyéb tétel</button> : null}
               {workResourceEditLocked && !allowWorkResourceEdit ? <button className="rounded-2xl bg-amber-300 px-5 py-4 font-black text-slate-950" onClick={() => onSetAllowWorkResourceEdit(true)}>Módosítás engedélyezése</button> : null}
-              {canEditWorkResources && isInstallation ? <button disabled={saving} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60" onClick={onSaveWorkChanges}>{saving ? "Mentés..." : "Módosítás mentése az időpontra"}</button> : null}
+              {canEditWorkResources ? <button disabled={saving} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:cursor-wait disabled:opacity-60" onClick={onSaveWorkChanges}>{saving ? "Mentés..." : "Módosítás mentése az időpontra"}</button> : null}
             </div> : null}
           </Card> : null}
 
@@ -812,6 +823,22 @@ export function WorkPagePanel({
                     customerEmail={selected.email}
                   />
                   {selected.status !== "Lezárva" ? <ActionButton color="green" icon="complete" onClick={onMarkInstallationDone} label="Karbantartás lezárása" doneAt={actionDates.maintenanceDone} /> : null}
+                </>
+              ) : isOther ? (
+                <>
+                  <WorkSectionToggleButton label="Számlázás" icon="billing" color="orange" open={showServiceBilling} onClick={() => setShowServiceBilling(value => !value)} />
+                  {showServiceBilling ? <InvoicePrepCard
+                    title={billingConfig.laborTitle}
+                    invoiceLineNames={cleanQuoteItems(quoteItems).map(itemName)}
+                    amount={laborInvoiceAmount} parsedAmount={parseAmount(laborInvoiceAmount)}
+                    done={Boolean(currentWorkChecklist.alinInvoice)} doneAt={checklistDates.alinInvoice}
+                    paymentMethod={laborPaymentMethod} sendEmail={laborInvoiceSendEmail}
+                    dueDate={billingDueDateIso(laborPaymentMethod, new Date(), billingConfig.transferDueDays)}
+                    onAmountChange={setLaborInvoiceAmount} onPaymentMethodChange={setLaborPaymentMethod} onSendEmailChange={setLaborInvoiceSendEmail}
+                    onCreateInvoice={() => onCreateInvoice("labor", laborInvoiceAmount, laborPaymentMethod, laborInvoiceSendEmail)}
+                    onManualComplete={() => onMarkManualInvoice("labor")} invoiceBusy={invoiceBusy === "labor"} customerEmail={selected.email}
+                  /> : null}
+                  {selected.status !== "Lezárva" && selected.status !== "Lemondva" ? <ActionButton color="green" icon="complete" onClick={onMarkInstallationDone} label="Munka lezárása" /> : null}
                 </>
               ) : (
                 <BillingPreparationPanel
@@ -1235,12 +1262,12 @@ function invoiceQuantityPrefix(quantity: number) {
 
 function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], config: ReturnType<typeof billingUiConfig>) {
   if (kind === "maintenance") {
-    const quantity = cleanQuoteItems(items).reduce((sum, item) => sum + itemQuantity(item), 0);
+    const quantity = qty(items);
     return [`${invoiceQuantityPrefix(quantity)}${config.maintenanceLineName}`];
   }
 
   if (kind === "labor") {
-    const quantity = cleanQuoteItems(items).reduce((sum, item) => sum + itemQuantity(item), 0);
+    const quantity = qty(items);
     return [`${invoiceQuantityPrefix(quantity)}${config.laborLineName}`];
   }
 
@@ -1248,17 +1275,17 @@ function invoicePreviewLines(kind: BillingInvoiceKind, items: QuoteItem[], confi
     const cleanItems = cleanQuoteItems(items);
     const deviceLines = cleanItems.map((item) => {
       const quantity = itemQuantity(item);
-      return `${invoiceQuantityPrefix(quantity)}${itemName(item)} + szerelési anyagok`;
+      return `${invoiceQuantityPrefix(quantity)}${itemName(item)}${isExtraQuoteItem(item) ? "" : " + szerelési anyagok"}`;
     });
-    const laborQuantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
-    const laborLine = laborQuantity ? `${invoiceQuantityPrefix(laborQuantity)}${config.laborLineName}` : "";
+    const laborQuantity = qty(cleanItems);
+    const laborLine = quoteInstallTotal(cleanItems) > 0 ? `${invoiceQuantityPrefix(laborQuantity)}${config.laborLineName}` : "";
     const lines = [...deviceLines, laborLine].filter(Boolean);
     return lines.length ? lines : [config.combinedLineName];
   }
 
   const lines = cleanQuoteItems(items).map((item) => {
     const quantity = itemQuantity(item);
-    return `${invoiceQuantityPrefix(quantity)}${itemName(item)} + szerelési anyagok`;
+    return `${invoiceQuantityPrefix(quantity)}${itemName(item)}${isExtraQuoteItem(item) ? "" : " + szerelési anyagok"}`;
   });
   return lines.length ? lines : [`${config.deviceLineName} + szerelési anyagok`];
 }

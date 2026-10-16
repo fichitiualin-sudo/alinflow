@@ -96,7 +96,7 @@ function creationFixture(patch = {}) {
     ...appointments, ...products,
     ...h.load("src/lib/alinflow/maintenance-selection.ts"), appointmentAliasesRef: { current: null },
     selected: state.selected, quoteItems: [item], allWorkCustomers: [], EMPTY_QUOTE_ITEMS: [],
-    quickAppointment: { appointmentType: "installation", customerMode: "existing", date: "2027-01-01", time: "10:00", notes: "", productId: "new-ac", sendQuoteEmail: false, sendAppointmentEmail: false },
+    quickAppointment: { appointmentType: "installation", customerMode: "existing", date: "2027-01-01", time: "10:00", notes: "", quoteItems: [item], sendQuoteEmail: false, sendAppointmentEmail: false },
     quickAppointmentSavingRef: { current: false }, quickAppointmentDeliveryRef: { current: null },
     quickAppointmentSelectedCustomer: () => state.selected, quickAppointmentQuoteItems: () => [item],
     appointmentTimeAvailable: () => true, currentWorkspaceId: () => "workspace",

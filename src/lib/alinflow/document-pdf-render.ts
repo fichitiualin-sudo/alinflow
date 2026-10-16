@@ -3,7 +3,7 @@ import { renderPurchaseDeclarationPdf } from "./purchase-declaration-pdf";
 import { createPrivacyNoticePdf } from "./privacy-notice-pdf";
 import type { SavedPdfBundle, SavedPdfDeclaration, SavedPdfReport } from "./document-pdf-data";
 import { workAcceptanceText, workReportTitle } from "./work-report";
-import { appointmentTypeLabel } from "./appointments";
+import { appointmentTypeLabel, normalizeAppointmentType } from "./appointments";
 import type { WorkspaceSettings } from "./workspace-settings";
 import { settingsBrandName, settingsFooterLines } from "./workspace-settings";
 
@@ -34,8 +34,9 @@ export async function createWorkReportPdf(report: SavedPdfReport, fallback: PdfC
   pdf.details([["Ügyfél", customer.name], ["Munkavégzés helye", customer.address], ["Telefonszám", customer.phone], ["Email", customer.email]]);
   pdf.section("Munka adatai");
   pdf.details([["Dátum és időpont", [report.work_date?.replaceAll("-", "."), report.work_time].filter(Boolean).join(" · ")], ["Munka típusa", appointmentTypeLabel(report.appointment_type)]]);
-  pdf.section("Készülékek");
-  pdf.text(report.climate_summary || "Nincs rögzített készülékmegnevezés.");
+  const isOther = normalizeAppointmentType(report.appointment_type) === "other";
+  pdf.section(isOther ? "Munka tételei" : "Készülékek");
+  pdf.text(report.climate_summary || (isOther ? "Nincs rögzített munkatétel." : "Nincs rögzített készülékmegnevezés."));
   pdf.section("Elvégzett munka");
   pdf.text(report.work_description || "Nincs rögzített munkaleírás.");
   if (report.notes) { pdf.section("Megjegyzés"); pdf.text(report.notes); }
@@ -52,6 +53,7 @@ export async function createWorkReportPdf(report: SavedPdfReport, fallback: PdfC
 }
 
 export async function createPurchaseDeclarationPdf(declaration: SavedPdfDeclaration, report: SavedPdfReport, fallback: PdfCustomer): Promise<Uint8Array> {
+  if (report.appointment_type !== "installation") throw new Error("Vásárlási nyilatkozat csak telepítési munkához készíthető.");
   const customer = reportCustomer(report, fallback);
   return renderPurchaseDeclarationPdf({
     id: declaration.id,
@@ -62,7 +64,7 @@ export async function createPurchaseDeclarationPdf(declaration: SavedPdfDeclarat
     seller_name: declaration.seller_name,
     seller_tax_number: declaration.seller_tax_number,
     seller_representative: declaration.seller_representative,
-    quote_items: Array.isArray(declaration.quote_items) ? declaration.quote_items.map((item) => ({
+    quote_items: Array.isArray(declaration.quote_items) ? declaration.quote_items.filter((item) => !("itemType" in item) || item.itemType !== "extra").map((item) => ({
       productName: item.productName, customName: item.customName, name: item.name, quantity: item.quantity,
     })) : undefined,
     signature_data_url: declaration.signature_data_url,

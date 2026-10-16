@@ -19,7 +19,7 @@ export type View =
 export type CalendarMode = "week" | "month";
 export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document" | "all_work_reports";
 export type QuotePricingMode = "bundle" | "alternatives";
-export type AppointmentType = "installation" | "survey" | "maintenance";
+export type AppointmentType = "installation" | "survey" | "maintenance" | "other";
 export type MaintenanceOrigin = "own" | "external";
 export type CustomerTimelineTone = "emerald" | "cyan" | "violet" | "blue" | "amber" | "slate";
 
@@ -49,6 +49,8 @@ export type CustomerTimelineState = {
 };
 
 export type QuoteItem = {
+  /** Omitted on legacy rows, which remain climate items. */
+  itemType?: "climate" | "extra";
   productId: string;
   productName?: string;
   quantity: number | "";

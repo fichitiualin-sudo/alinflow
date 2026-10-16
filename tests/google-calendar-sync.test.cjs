@@ -212,3 +212,17 @@ test("a worker invocation claims a bounded eight jobs", async () => {
   assert.equal(result.processed, 8);
   assert.equal(result.synced, 8);
 });
+
+
+test("other customer work reuses the durable Google queue with its own service label and one-hour duration", async () => {
+  const f = fixture({ appointment: { appointment_type: "other" } });
+  const result = await f.worker.runGoogleCalendarSync("workspace-one");
+  assert.equal(result.synced, 1);
+  const event = f.httpCalls.find(call => call.method === "POST").body;
+  assert.equal(event.summary, "Egyéb munka – Synthetic Customer");
+  assert.match(event.description, /Munka: 2 × Saved equipment/);
+  assert.doesNotMatch(event.description, /szereléssel együtt|Klíma:|Ft/);
+  assert.equal(Date.parse(event.end.dateTime) - Date.parse(event.start.dateTime), 3600000);
+  assert.equal(event.extendedProperties.private.alinflow_appointment_id, "appointment-one");
+  assert.equal(f.finishes()[0].p_success, true);
+});

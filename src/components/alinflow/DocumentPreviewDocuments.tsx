@@ -2,7 +2,7 @@ import type { Customer, PurchaseDeclaration, QuoteItem, SellerCompany, WorkRepor
 import { PrivacyNoticeDocument } from "@/components/alinflow/PrivacyNoticeDocument";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import { ft, fullCustomerAddress } from "@/lib/alinflow/format";
-import { isQuoteAlternatives, itemName, itemProductMedia, itemQuantity, itemTotal, itemUnitPrice, total } from "@/lib/alinflow/products";
+import { cleanQuoteItems, climateQuoteItems, isExtraQuoteItem, isQuoteAlternatives, itemName, itemProductMedia, itemQuantity, itemTotal, itemUnitPrice, total } from "@/lib/alinflow/products";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle, workReportSnapshotCustomer } from "@/lib/alinflow/work-report";
 import { appointmentDocumentTitle, appointmentEmailIntro, appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { DEFAULT_SELLER_COMPANY } from "@/lib/alinflow/purchase-declarations";
@@ -54,6 +54,10 @@ function appointmentDocumentNotes(type?: string) {
       "Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.",
     ];
   }
+  if (normalized === "other") return [
+    "Kérjük, hogy az egyeztetett munkaterület legyen hozzáférhető.",
+    "Amennyiben az időponttal kapcsolatban bármi változna, kérjük, jelezze telefonon.",
+  ];
   return [
     "Kérjük, hogy a szerelési helyszín legyen megközelíthető.",
     "A beltéri és kültéri egység tervezett helye legyen hozzáférhető.",
@@ -73,8 +77,11 @@ function customerWithReportDate(customer: Customer, report: WorkReport): Custome
 export function WorkReportDocument({ customer, report, quoteItems, workspaceSettings }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[]; workspaceSettings?: WorkspaceSettings }) {
   customer = workReportSnapshotCustomer(customer, report);
   const reportCustomer = customerWithReportDate(customer, report);
-  const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
-  const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
+  const items = cleanQuoteItems(customer.quoteItems?.length ? customer.quoteItems : quoteItems);
+  const isOther = normalizeAppointmentType(reportCustomer.appointmentType) === "other";
+  const reportItems = isOther ? items : climateQuoteItems(items);
+  const extraItems = isOther || report.documentSnapshot ? [] : items.filter(isExtraQuoteItem);
+  const shownItems = reportItems.length ? reportItems : [{ productId: "", quantity: 1, customName: isOther ? "Nincs munkatétel megadva" : "Nincs klíma megadva", isManual: true }];
   const settings = workspaceSettings || defaultWorkspaceSettings(null);
   const footerLines = settingsFooterLines(settings, "workReport");
   const workType = appointmentTypeLabel(reportCustomer.appointmentType);
@@ -115,17 +122,17 @@ export function WorkReportDocument({ customer, report, quoteItems, workspaceSett
         </div>
 
         <section>
-          <h3 className="mb-3 break-after-avoid text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700 print:text-[9.5px]">Készülékek</h3>
+          <h3 className="mb-3 break-after-avoid text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700 print:text-[9.5px]">{isOther ? "Munka tételei" : "Készülékek"}</h3>
           <table className="w-full table-fixed border-collapse text-[11px] print:text-[10px]">
             <thead className="bg-slate-50">
               <tr>
-                <th className="border-y border-slate-200 px-3 py-2 text-left font-semibold">Készülék megnevezése</th>
-                <th className="w-14 border-y border-slate-200 px-2 py-2 text-center font-semibold">Darab</th>
+                <th className="border-y border-slate-200 px-3 py-2 text-left font-semibold">{isOther ? "Tétel megnevezése" : "Készülék megnevezése"}</th>
+                <th className="w-14 border-y border-slate-200 px-2 py-2 text-center font-semibold">{isOther ? "Mennyiség" : "Darab"}</th>
                 <th className="w-[30%] border-y border-slate-200 px-3 py-2 text-left font-semibold">Megjegyzés</th>
               </tr>
             </thead>
             <tbody>
-              {report.documentSnapshot ? <tr><td colSpan={3} className="whitespace-pre-wrap border-b border-slate-200 px-3 py-2.5">{report.documentSnapshot.climateSummary || "Nincs rögzített készülékmegnevezés."}</td></tr> : shownItems.map((item, index)=><tr key={`${item.productId}-${index}`} className="break-inside-avoid">
+              {report.documentSnapshot ? <tr><td colSpan={3} className="whitespace-pre-wrap border-b border-slate-200 px-3 py-2.5">{report.documentSnapshot.climateSummary || (isOther ? "Nincs rögzített munkatétel." : "Nincs rögzített készülékmegnevezés.")}</td></tr> : shownItems.map((item, index)=><tr key={`${item.productId}-${index}`} className="break-inside-avoid">
                 <td className="border-b border-slate-200 px-3 py-2.5 align-top">{itemName(item)}</td>
                 <td className="border-b border-slate-200 px-2 py-2.5 text-center align-top font-semibold">{itemQuantity(item)}</td>
                 <td className="border-b border-slate-200 px-3 py-2.5 align-top text-slate-600">{workNote}</td>
@@ -133,6 +140,8 @@ export function WorkReportDocument({ customer, report, quoteItems, workspaceSett
             </tbody>
           </table>
         </section>
+
+        {extraItems.length ? <section><h3 className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700">Egyéb tételek</h3><ul className="space-y-1">{extraItems.map((item, index) => <li key={index}>{itemQuantity(item)} × {itemName(item)}</li>)}</ul></section> : null}
 
         <section>
           <h3 className="mb-2 break-after-avoid text-[11px] font-bold uppercase tracking-[0.1em] text-teal-700 print:text-[9.5px]">Elvégzett munka</h3>
@@ -217,7 +226,8 @@ export function AllWorkReportsDocument({ customer, reports, quoteItems, workspac
 
 export function PurchaseDeclarationDocument({ customer, report, quoteItems, seller, declaration }: { customer: Customer; report: WorkReport; quoteItems: QuoteItem[]; seller?: SellerCompany; declaration?: PurchaseDeclaration }) {
   customer = workReportSnapshotCustomer(customer, report);
-  const items = customer.quoteItems?.length ? customer.quoteItems : quoteItems;
+  if (!declaration && normalizeAppointmentType(report.appointmentType || customer.appointmentType) !== "installation") return null;
+  const items = climateQuoteItems(declaration?.quoteItems || (customer.quoteItems?.length ? customer.quoteItems : quoteItems));
   const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
   const shownSeller = seller || DEFAULT_SELLER_COMPANY;
   const signature = declaration ? declaration.signatureDataUrl : report.signatureDataUrl;
@@ -320,7 +330,8 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
   const footerLines = settingsCustomerDocumentFooterLines(settings, "quote");
   const contactLine = settingsContactLine(settings);
   const primaryContact = settingsPrimaryContact(settings);
-  const quoteTitle = quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
+  const isOther = normalizeAppointmentType(customer.appointmentType) === "other";
+  const quoteTitle = isOther ? `${company.displayName || "AlinFlow"} szolgáltatási ajánlat` : quote.title || `${company.displayName || "AlinFlow"} árajánlat`;
   const installationLines = settingsContentLines(quote.installationSectionContent);
   const qualityLines = settingsContentLines(quote.qualitySectionContent);
 
@@ -330,7 +341,7 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
         {company.logoUrl ? <img src={company.logoUrl} alt={`${company.displayName || "AlinFlow"} logo`} className="h-16 w-auto object-contain" /> : null}
         <div>
           <h2 className="text-3xl font-black">{quoteTitle}</h2>
-          <p className="mt-2 text-sm text-slate-600">{quote.subtitle}</p>
+          <p className="mt-2 text-sm text-slate-600">{isOther ? "Egyeztetett szolgáltatások" : quote.subtitle}</p>
         </div>
       </div>
       <div className="text-sm text-slate-600 md:text-right">
@@ -356,7 +367,7 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
         <p className="mt-1 text-sm text-slate-600">A tételek külön-külön értendők, nem összeadandóak.</p>
       </> : <>
         <p className="mt-1 text-3xl font-black">{ft(sum)}</p>
-        <p className="mt-1 text-sm text-slate-600">Bruttó végösszeg alapszereléssel</p>
+        <p className="mt-1 text-sm text-slate-600">{isOther ? "Bruttó végösszeg" : "Bruttó végösszeg alapszereléssel"}</p>
       </>}
     </div>
 
@@ -370,7 +381,7 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
             <div>
             {quoteIsAlternatives ? <span className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-700">{index + 1}. lehetőség</span> : null}
             <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
-            <p className="mt-1 text-sm text-slate-600">{ft(itemUnitPrice(item))} / db · telepítéssel együtt</p>
+            <p className="mt-1 text-sm text-slate-600">{ft(itemUnitPrice(item))} / db{!isOther && !isExtraQuoteItem(item) ? " · telepítéssel együtt" : ""}</p>
             {media.productUrl ? <a href={media.productUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-black text-cyan-700 underline">Termék megtekintése a KLIMAlin oldalon</a> : null}
             </div>
           </div>
@@ -380,19 +391,19 @@ export function QuoteDocument({ customer, quoteItems, quoteIssuedAt, workspaceSe
       })}
     </div>
 
-    <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
+    {!isOther ? <div className="mt-6 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
       <h3 className="text-lg font-black">{quote.installationSectionTitle}</h3>
       <ul className="mt-3 list-disc space-y-2 pl-5">
         {installationLines.map((line) => <li key={line}>{line}</li>)}
       </ul>
-    </div>
+    </div> : null}
 
-    <div className="mt-4 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
+    {!isOther ? <div className="mt-4 rounded-2xl bg-slate-100 p-5 text-sm leading-relaxed">
       <h3 className="text-lg font-black">{quote.qualitySectionTitle}</h3>
       <ul className="mt-3 list-disc space-y-2 pl-5">
         {qualityLines.map((line) => <li key={line}>{line}</li>)}
       </ul>
-    </div>
+    </div> : null}
 
     <div className="mt-8 text-sm text-slate-700">
       <p>Üdvözlettel,</p>
@@ -416,6 +427,7 @@ export function AppointmentConfirmationDocument({ customer, quoteItems, workspac
   const appointmentTime = appointmentTimeRangeLabel(customer);
   const workLabel = appointmentWorkLabel(customer.appointmentType);
   const isInstallationAppointment = normalizeAppointmentType(customer.appointmentType) === "installation";
+  const isOther = normalizeAppointmentType(customer.appointmentType) === "other";
   return <article className="mx-auto max-w-[760px] rounded-3xl bg-white p-6 text-slate-950 shadow-2xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
     <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
       <div className="flex items-start gap-4">
@@ -457,10 +469,10 @@ export function AppointmentConfirmationDocument({ customer, quoteItems, workspac
     </div>
 
     <div className="mt-6 space-y-3">
-      {isInstallationAppointment && items.length ? items.map((item, i)=><div key={`${item.productId}-${i}`} className="rounded-2xl border border-slate-200 p-4">
+      {(isInstallationAppointment || isOther) && items.length ? items.map((item, i)=><div key={`${item.productId}-${i}`} className="rounded-2xl border border-slate-200 p-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-lg font-black">{itemQuantity(item)} db · {itemName(item)}</p>
-          <p className="text-sm text-slate-600">szereléssel együtt</p>
+          {!isOther && !isExtraQuoteItem(item) ? <p className="text-sm text-slate-600">szereléssel együtt</p> : null}
         </div>
       </div>) : <div className="rounded-2xl border border-slate-200 p-4"><p className="text-lg font-black">{workLabel}</p></div>}
     </div>

@@ -8,7 +8,7 @@ const appointments = h.load("src/lib/alinflow/appointments.ts");
 const reports = h.load("src/lib/alinflow/work-report.ts");
 const scopes = h.load("src/lib/alinflow/report-scope.ts");
 const materials = h.load("src/lib/alinflow/materials.ts");
-const base = { ...products, ...appointments, ...reports, ...scopes,
+const base = { ...products, ...appointments, ...reports, ...scopes, ...h.load("src/lib/alinflow/purchase-declarations.ts"),
   DEFAULT_SELLER_COMPANY: { id: "synthetic-seller" }, sellerCompanies: [],
   setWorkReportDeclaration: noop, setWorkReportDeclarationItems: noop, setPurchaseDeclarationItemKeys: noop, setSelectedSellerId: noop,
   workspaceQuery: identity, withWorkspace: identity, workspaceOnConflict: identity,
@@ -293,7 +293,7 @@ test("A10: persisted materials are isolated per work and default for new work", 
   assert.equal(materials.materialAmountForWork("Pipe", [{ customName: "AC", quantity: 3 }],
     { ...usage, overrides: {} }), 9);
   assert.equal(materials.materialAmountForWork("Pipe", [{ customName: "AC", quantity: 1 }]), 0);
-  assert.match(declarations.get("saveWorkChanges"), /materialUsage: \{ materials, overrides: materialOverrides \}/);
+  assert.match(declarations.get("saveWorkChanges"), /materialUsage: isService \? selected\.materialUsage : \{ materials, overrides: materialOverrides \}/);
   assert.match(source, /\[selected.id, selected.activeAppointmentId\]/);
 });
 

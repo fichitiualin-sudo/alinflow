@@ -122,6 +122,11 @@ function importantNotesHtml(appointmentType?: string) {
         "Kérjük, a karbantartandó beltéri és kültéri egység legyen hozzáférhető.",
         "Amennyiben bármi változna, kérjük, jelezze válasz emailben vagy telefonon.",
       ]
+    : type === "other"
+    ? [
+        "Kérjük, az egyeztetett munkavégzés helye és az érintett berendezés legyen hozzáférhető.",
+        "Amennyiben bármi változna, kérjük, jelezze válasz emailben vagy telefonon.",
+      ]
     : [
         "Kérjük, az időpont előtt legyen hozzáférhető a beltéri és kültéri egység tervezett helye.",
         "Az ajánlatban szereplő klíma szereléssel együtt értendő, az előzetesen egyeztetett feltételek szerint.",

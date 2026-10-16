@@ -1,7 +1,16 @@
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
+import type { QuoteItem } from "./types";
+import { normalizeAppointmentType } from "./appointments";
+import { quoteInstallTotal, total } from "./products";
 
 export type BillingInvoiceKind = "device" | "labor" | "maintenance" | "combined";
 export type BillingPaymentMethod = "cash" | "transfer";
+
+export function billingAmountsForAppointment(items: QuoteItem[], appointmentType?: string | null) {
+  const combined = total(items);
+  const labor = normalizeAppointmentType(appointmentType) === "other" ? combined : quoteInstallTotal(items);
+  return { device: Math.max(0, combined - labor), labor, combined };
+}
 
 export type BillingUiConfig = {
   invoiceMode: "split" | "single";

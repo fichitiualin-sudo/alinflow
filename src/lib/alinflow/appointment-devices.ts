@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { cleanQuoteItems, itemName, itemQuantity } from "./products";
+import { climateQuoteItems, itemName, itemQuantity } from "./products";
 import type { QuoteItem, WorkPhotoContext } from "./types";
 
 export const DEVICE_DATA_FIELDS = [
@@ -21,7 +21,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function deviceSlots(items: QuoteItem[]): DeviceSlot[] {
   const counters = new Map<string, number>();
-  return cleanQuoteItems(items).flatMap((item) => {
+  return climateQuoteItems(items).flatMap((item) => {
     const name = itemName(item);
     const productKey = item.productId && !item.isManual ? `product:${item.productId}` : `manual:${name.trim().toLocaleLowerCase("hu-HU")}`;
     const quantity = itemQuantity(item);

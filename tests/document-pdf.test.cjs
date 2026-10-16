@@ -51,6 +51,29 @@ test("maintenance defaults to only its report and cannot include installation de
   assert.equal(bundle.declarations.length, 0);
   await assert.rejects(loadSavedPdfBundle(db, input()), (error) => error.status === 400);
 });
+
+test("other and survey work only send their saved report and cannot render a purchase declaration", async () => {
+  for (const appointment_type of ["other", "survey"]) {
+    const saved = report({ appointment_type });
+    const db = backend({ work_reports: [saved] });
+    const bundle = await loadSavedPdfBundle(db, input({ documents: undefined }));
+    assert.equal(bundle.includeWorkReport, true); assert.equal(bundle.declarations.length, 0);
+    await assert.rejects(loadSavedPdfBundle(db, input()), error => error.status === 400);
+    await assert.rejects(createPurchaseDeclarationPdf(declaration(), saved, {}), /csak telepítési/);
+  }
+});
+
+test("service PDF labels and saved source remain service-specific", async () => {
+  const writes = [];
+  const record = (...values) => writes.push(values);
+  const render = loadTypeScript("src/lib/alinflow/document-pdf-render.ts", { "./document-pdf": { async createDocumentPdf(title) {
+    record(title); return { text: record, section: record, details: record, textHeight() { return 20; }, keepTogether() {}, signature: record, async save() { return new Uint8Array(); } };
+  } } });
+  await render.createWorkReportPdf(report({ appointment_type: "other", climate_summary: "2 × Mentett javítás", work_description: "Az egyeztetett javítás elkészült." }), { name: "CURRENT NAME MUST NOT LEAK" }, settings);
+  const output = JSON.stringify(writes);
+  assert.match(output, /Szervizmunkalap/); assert.match(output, /Munka tételei/); assert.match(output, /2 × Mentett javítás/);
+  assert.doesNotMatch(output, /Készülékek|Klímaszerelési|CURRENT NAME MUST NOT LEAK|beüzemelés/);
+});
 test("declaration selection is bounded, deduplicated and never inferred", async () => {
   for (const purchaseDeclarationIds of [undefined, [], Array(11).fill(ids.declaration), ["invalid"]]) {
     await assert.rejects(loadSavedPdfBundle(backend(), input({ purchaseDeclarationIds })), (error) => error.status === 400);

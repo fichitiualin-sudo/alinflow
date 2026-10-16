@@ -91,25 +91,34 @@ export function isKnownProductId(productId?: string) {
   return Boolean(productId && ACTIVE_PRODUCTS.some((product: any) => product.id === productId));
 }
 
+export function isExtraQuoteItem(item: QuoteItem) {
+  return item.itemType === "extra";
+}
+
 export function isCustomQuoteItem(item: QuoteItem) {
-  return Boolean(item.isManual || item.customName?.trim() || (item.productId && !isKnownProductId(item.productId) && !item.productName));
+  return Boolean(isExtraQuoteItem(item) || item.isManual || item.customName?.trim() || (item.productId && !isKnownProductId(item.productId) && !item.productName));
 }
 
 export function isQuoteItemFilled(item: QuoteItem) {
-  return Boolean(item.customName?.trim() || item.productName?.trim() || isKnownProductId(item.productId));
+  return Boolean(item.customName?.trim() || item.productName?.trim() || !isExtraQuoteItem(item) && isKnownProductId(item.productId));
 }
 
-export function cleanQuoteItems(items?: QuoteItem[]) {
+export function cleanQuoteItems(items?: QuoteItem[]): QuoteItem[] {
   // Customer documents may persist these objects; never copy unknown internal fields.
   return (items || []).filter(isQuoteItemFilled).map((item) => ({
     quantity: itemQuantity(item),
-    productId: item.productId || "",
-    productName: item.productName || (isKnownProductId(item.productId) ? prod(item.productId).name : undefined),
+    productId: isExtraQuoteItem(item) ? "" : item.productId || "",
+    productName: item.productName || (!isExtraQuoteItem(item) && isKnownProductId(item.productId) ? prod(item.productId).name : undefined),
     customName: item.customName?.trim() || undefined,
     customPrice: item.customPrice === "" ? undefined : item.customPrice,
     customInstallPrice: item.customInstallPrice === "" ? undefined : item.customInstallPrice,
-    isManual: item.isManual || !item.productId,
+    isManual: isExtraQuoteItem(item) || item.isManual || !item.productId,
+    ...(item.itemType === "climate" || item.itemType === "extra" ? { itemType: item.itemType } : {}),
   }));
+}
+
+export function climateQuoteItems(items?: QuoteItem[]) {
+  return cleanQuoteItems(items).filter((item) => !isExtraQuoteItem(item));
 }
 
 export function prod(id: string) {
@@ -117,6 +126,7 @@ export function prod(id: string) {
 }
 
 export function itemProductMedia(item: QuoteItem) {
+  if (isExtraQuoteItem(item)) return {};
   const product = isKnownProductId(item.productId) ? prod(item.productId) : undefined;
   if (!item.isManual && product && (product.imageUrl || product.productUrl)) {
     return {
@@ -142,7 +152,7 @@ export function itemProductMedia(item: QuoteItem) {
 }
 
 export function qty(items: QuoteItem[]) {
-  return cleanQuoteItems(items).reduce((s, i) => s + itemQuantity(i), 0);
+  return climateQuoteItems(items).reduce((s, i) => s + itemQuantity(i), 0);
 }
 
 export function itemName(item: QuoteItem) {
@@ -150,7 +160,7 @@ export function itemName(item: QuoteItem) {
   if (custom) return custom;
   if (item.productName) return item.productName;
   if (isKnownProductId(item.productId)) return prod(item.productId).name;
-  return item.isManual ? "Egyedi klíma" : "Válassz klímát";
+  return isExtraQuoteItem(item) ? "Egyéb tétel" : item.isManual ? "Egyedi klíma" : "Válassz klímát";
 }
 
 export function itemQuantity(item: QuoteItem) {
@@ -160,7 +170,7 @@ export function itemQuantity(item: QuoteItem) {
 
 export function itemUnitPrice(item: QuoteItem) {
   const customPrice = Number(item.customPrice);
-  return item.customPrice !== undefined && item.customPrice !== "" && Number.isFinite(customPrice) ? customPrice : prod(item.productId).price;
+  return item.customPrice !== undefined && item.customPrice !== "" && Number.isFinite(customPrice) ? customPrice : isExtraQuoteItem(item) ? 0 : prod(item.productId).price;
 }
 
 export function itemInstallPrice(item: QuoteItem) {
@@ -169,6 +179,7 @@ export function itemInstallPrice(item: QuoteItem) {
   if (item.customInstallPrice !== undefined && item.customInstallPrice !== "" && Number.isFinite(customInstallPrice)) {
     return Math.max(0, Math.min(customInstallPrice, itemUnitPrice(item)));
   }
+  if (isExtraQuoteItem(item)) return 0;
   if (isCustomQuoteItem(item)) return Math.min(DEFAULT_INSTALL_PRICE, itemUnitPrice(item));
   return Math.min(prod(item.productId).installPrice || DEFAULT_INSTALL_PRICE, itemUnitPrice(item));
 }
@@ -195,13 +206,14 @@ export function quoteInstallTotal(items: QuoteItem[]) {
 }
 
 export function itemPriceLine(item: QuoteItem) {
-  if (!isQuoteItemFilled(item)) return "Nincs klíma kiválasztva";
+  if (!isQuoteItemFilled(item)) return isExtraQuoteItem(item) ? "Add meg a tétel megnevezését" : "Nincs klíma kiválasztva";
+  if (isExtraQuoteItem(item)) return "Egyéb tétel";
   if (isCustomQuoteItem(item)) return "Egyedi klíma / tétel";
   return `${ft(itemUnitPrice(item))} / db (telepítéssel együtt)`;
 }
 
 export function hasCustomProductPrice(item: QuoteItem) {
-  if (!isKnownProductId(item.productId) || item.isManual) return false;
+  if (isExtraQuoteItem(item) || !isKnownProductId(item.productId) || item.isManual) return false;
   const product = prod(item.productId);
   return itemUnitPrice(item) !== product.price || itemInstallPrice(item) !== product.installPrice;
 }
@@ -221,16 +233,18 @@ export function quoteItemFromRow(row: any): QuoteItem {
   const description = parseQuoteItemDescription(row.description);
   const productById = ACTIVE_PRODUCTS.find((product) => product.id === description.productId);
   const productByName = ACTIVE_PRODUCTS.find((product) => product.name === row.product_name);
-  const matchedProduct = productById || productByName;
+  const extra = description.itemType === "extra";
+  const matchedProduct = extra ? undefined : productById || productByName;
 
   return {
-    productId: description.productId || matchedProduct?.id || "",
+    productId: extra ? "" : description.productId || matchedProduct?.id || "",
     productName: row.product_name || matchedProduct?.name,
     quantity: Number(row.quantity || 1),
     customPrice: Number(row.unit_price ?? matchedProduct?.price ?? 0),
     customInstallPrice: description.installPrice,
-    customName: description.productId || matchedProduct ? undefined : row.product_name,
-    isManual: !description.productId && !matchedProduct,
+    customName: !extra && (description.productId || matchedProduct) ? undefined : row.product_name,
+    isManual: extra || !description.productId && !matchedProduct,
+    ...(description.itemType ? { itemType: description.itemType } : {}),
   };
 }
 
@@ -242,13 +256,15 @@ function parseQuoteItemDescription(value: unknown) {
   return {
     productId,
     installPrice: Number.isFinite(installPrice) ? installPrice : undefined,
+    itemType: parts.includes("item_type=extra") ? "extra" as const : parts.includes("item_type=climate") ? "climate" as const : undefined,
   };
 }
 
 function quoteItemDescription(item: QuoteItem) {
-  const productId = item.productId || "";
+  const productId = isExtraQuoteItem(item) ? "" : item.productId || "";
   const installPrice = itemInstallPrice(item);
-  return `${productId}|install_price=${installPrice}`;
+  const itemType = item.itemType === "extra" || item.itemType === "climate" ? `|item_type=${item.itemType}` : "";
+  return `${productId}|install_price=${installPrice}${itemType}`;
 }
 
 export function quoteItemToRow(item: QuoteItem, quoteId: string) {
@@ -263,7 +279,7 @@ export function quoteItemToRow(item: QuoteItem, quoteId: string) {
 }
 
 export function climateSummary(items?: QuoteItem[]) {
-  const activeItems = cleanQuoteItems(items).filter((item) => itemQuantity(item) > 0);
+  const activeItems = climateQuoteItems(items).filter((item) => itemQuantity(item) > 0);
   if (!activeItems.length) return "Nincs klíma megadva";
   return activeItems.map((item) => `${itemQuantity(item)} db ${itemName(item)}`).join(" + ");
 }

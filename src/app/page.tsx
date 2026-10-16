@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AppointmentItemsEditor } from "@/components/alinflow/AppointmentItemsEditor";
 import dynamic from "next/dynamic";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -52,6 +53,7 @@ import {
 } from "@/lib/alinflow/constants";
 import {
   cleanQuoteItems,
+  climateQuoteItems,
   climateSummary,
   hasCustomProductPrice,
   isCustomQuoteItem,
@@ -251,9 +253,7 @@ type QuickAppointmentDraft = {
   city: string;
   address: string;
   notes: string;
-  productId: string;
-  quantity: number | "";
-  price: number | "";
+  quoteItems: QuoteItem[];
   maintenanceInstallationIds: string[];
   sendQuoteEmail: boolean;
   sendAppointmentEmail: boolean;
@@ -3030,7 +3030,7 @@ function HomeContent() {
         quoteItems: effectiveQuoteItems.length ? effectiveQuoteItems : EMPTY_QUOTE_ITEMS,
         productId: effectiveQuoteItems[0]?.productId,
         quotePricingMode: quotePricingModeFromNotes(quote?.notes),
-        stockDeducted: appointment?.id
+        stockDeducted: loadedAppointmentType === "other" ? false : appointment?.id
           ? Boolean(appointment.stock_deducted_at) || stockDeductedFromWorkStatus(appointment.status)
           : Boolean(row.stock_deducted) || stockDeductedFromWorkStatus(row.status),
         stockDeductedAt: appointment?.stock_deducted_at || undefined,
@@ -3342,7 +3342,7 @@ function HomeContent() {
   function maintenanceQuoteItemsForInstallationIds(customer: Customer, installationIds: string[]) {
     const selectedIds = new Set(canonicalMaintenanceIds(installationIds));
     const installationWorks = customerInstallationWorks(customer);
-    return cleanQuoteItems(installationWorks
+    return climateQuoteItems(installationWorks
       .filter((work) => work.activeAppointmentId && selectedIds.has(work.activeAppointmentId))
       .flatMap((work) => work.quoteItems || []));
   }
@@ -3356,7 +3356,7 @@ function HomeContent() {
         date: work.date,
         time: work.time,
         address: work.address,
-        quoteItems: cleanQuoteItems(work.quoteItems || []),
+        quoteItems: climateQuoteItems(work.quoteItems || []),
       }));
   }
 
@@ -3393,9 +3393,7 @@ function HomeContent() {
       city: "",
       address: "",
       notes: "",
-      productId: "",
-      quantity: 1,
-      price: "",
+      quoteItems: [{ productId: "", quantity: 1 }],
       maintenanceInstallationIds: [],
       sendQuoteEmail: true,
       sendAppointmentEmail: true,
@@ -3432,9 +3430,7 @@ function HomeContent() {
       customerMode: nextType === "maintenance" ? "existing" : prev.customerMode,
       selectedCustomerId: undefined,
       search: "",
-      productId: "",
-      quantity: 1,
-      price: "",
+      quoteItems: nextType === "other" ? [{ productId: "", customName: "", quantity: 1, customPrice: 0, customInstallPrice: 0, isManual: true, itemType: "extra" }] : [{ productId: "", quantity: 1 }],
       maintenanceInstallationIds: [],
     } : prev);
   }
@@ -3449,10 +3445,6 @@ function HomeContent() {
     } : prev);
   }
 
-  function updateQuickAppointmentProduct(productId: string) {
-    const product = products.find((item) => item.id === productId);
-    updateQuickAppointment({ productId, price: product ? product.price : "" });
-  }
 
   function quickAppointmentSelectedCustomer(draft: QuickAppointmentDraft | null = quickAppointment) {
     if (!draft?.selectedCustomerId) return undefined;
@@ -3476,15 +3468,10 @@ function HomeContent() {
       const selectedIds = new Set(canonicalMaintenanceIds(draft.maintenanceInstallationIds || []));
       const selectedWorks = customerInstallationWorks(existingCustomer)
         .filter((work) => selectedIds.size === 0 || (work.activeAppointmentId && selectedIds.has(work.activeAppointmentId)));
-      return cleanQuoteItems(selectedWorks.flatMap((work) => work.quoteItems || []));
+      return climateQuoteItems(selectedWorks.flatMap((work) => work.quoteItems || []));
     }
     if (type === "survey") return existingCustomer ? cleanQuoteItems(existingCustomer.quoteItems || []) : EMPTY_QUOTE_ITEMS;
-    if (!draft.productId) return EMPTY_QUOTE_ITEMS;
-    return cleanQuoteItems([{
-      productId: draft.productId,
-      quantity: draft.quantity || 1,
-      customPrice: draft.price,
-    }]);
+    return cleanQuoteItems(draft.quoteItems);
   }
 
   async function saveMaintenanceAppointmentLinks(maintenanceCustomer: Customer, installationAppointmentIds: string[]) {
@@ -3526,11 +3513,17 @@ function HomeContent() {
       return;
     }
 
-    if (appointmentType === "installation" && !quickAppointment.productId) {
+    if (appointmentType === "installation" && !quickAppointment.quoteItems.some(item => isQuoteItemFilled(item) && item.itemType !== "extra")) {
       setMessage("Szereléshez válassz klímát.");
       return;
     }
 
+    if ((appointmentType === "installation" || appointmentType === "other") && (!quickAppointment.quoteItems.length || quickAppointment.quoteItems.some(item => !isQuoteItemFilled(item)
+      || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 1
+      || (item.customPrice !== undefined && (item.customPrice === "" || !Number.isFinite(Number(item.customPrice)) || Number(item.customPrice) < 0))))) {
+      setMessage("Töltsd ki minden tétel nevét, mennyiségét és árát, vagy távolítsd el az üres sort.", "warning");
+      return;
+    }
     const maintenanceIds = canonicalMaintenanceIds(quickAppointment.maintenanceInstallationIds || []);
     if (appointmentType === "maintenance" && existingCustomer
       && customerInstallationWorks(existingCustomer).length && !maintenanceIds.length) {
@@ -3597,6 +3590,7 @@ function HomeContent() {
       stockDeductedAt: undefined,
       materialUsage: undefined,
       quoteItems: quoteItemsForAppointment,
+      quotePricingMode: "bundle",
       productId: quoteItemsForAppointment[0]?.productId || undefined,
       maintenanceInstallationIds: appointmentType === "maintenance" ? maintenanceIds : undefined,
       maintenanceInstallations: appointmentType === "maintenance"
@@ -4064,6 +4058,7 @@ function HomeContent() {
     setCalDate(n);
   }
   function addQuoteItem() { setQuoteItems(prev=>[...prev, { productId: "", quantity: 1 }]); }
+  function addExtraQuoteItem() { setQuoteItems(prev=>[...prev, { productId: "", customName: "", customPrice: 0, customInstallPrice: 0, quantity: 1, isManual: true, itemType: "extra" }]); }
   function addManualQuoteItem() { setQuoteItems(prev=>[...prev, { productId: "", customName: "", customPrice: 0, quantity: 1, isManual: true }]); }
   function updateQuoteItem(i:number, key:keyof QuoteItem, value:string|number|boolean) {
     setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {...it, [key]: value} : it));
@@ -4108,8 +4103,12 @@ function HomeContent() {
       ? maintenanceQuoteItemsForInstallationIds(selected, maintenanceInstallationIds)
       : EMPTY_QUOTE_ITEMS;
     const scheduledQuoteItems = selectedMaintenanceQuoteItems.length ? selectedMaintenanceQuoteItems : cleanQuoteItems(quoteItems);
-    if (normalizedScheduleAppointmentType === "installation" && !scheduledQuoteItems.length) {
+    if (normalizedScheduleAppointmentType === "installation" && !climateQuoteItems(scheduledQuoteItems).length) {
       setMessage("Szerelési időponthoz válassz legalább egy klímát.", "warning");
+      return;
+    }
+    if (normalizedScheduleAppointmentType === "other" && (!quoteItems.length || quoteItems.some(item => !isQuoteItemFilled(item) || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 1 || item.customPrice === "" || !Number.isFinite(Number(item.customPrice)) || Number(item.customPrice) < 0))) {
+      setMessage("Töltsd ki a munka megnevezését, mennyiségét és díját.", "warning");
       return;
     }
     const slotIsAvailable = appointmentTimeAvailable({
@@ -4210,13 +4209,19 @@ function HomeContent() {
       return;
     }
 
+    if (normalizeAppointmentType(selected.appointmentType) === "other" && selected.status === "Lemondva") { setMessage("A lemondott munkát előbb állítsd vissza.", "warning"); return; }
     const updatedQuoteItems = cleanQuoteItems(quoteItems);
+    const isService = normalizeAppointmentType(selected.appointmentType) === "other";
+    if (isService && (!quoteItems.length || quoteItems.some(item => !isQuoteItemFilled(item) || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 1 || item.customPrice === "" || !Number.isFinite(Number(item.customPrice)) || Number(item.customPrice) < 0))) {
+      setMessage("Add meg a munka tételeit és a mennyiségeket.");
+      return;
+    }
     const updatedTime = firstAppointmentTime(selected.time || scheduleTime || "08:00");
     const changedAt = new Date().toISOString();
     const updated: Customer = {
       ...selected,
       quoteItems: updatedQuoteItems,
-      materialUsage: { materials, overrides: materialOverrides },
+      materialUsage: isService ? selected.materialUsage : { materials, overrides: materialOverrides },
       productId: updatedQuoteItems[0]?.productId || selected.productId,
       time: updatedTime,
       status: selected.status || "Időpont foglalva",
@@ -4225,9 +4230,9 @@ function HomeContent() {
     };
 
     if (!beginAction("work-save")) return;
-    setMessage("Klímák és anyagok mentése folyamatban...", "pending");
+    setMessage(isService ? "Munka tételeinek mentése..." : "Klímák és anyagok mentése folyamatban...", "pending");
     try {
-      stockMaterialQuantities(updatedQuoteItems, updated.materialUsage);
+      if (!isService) stockMaterialQuantities(updatedQuoteItems, updated.materialUsage);
       const persisted = await persistCustomerToDb(updated);
       const savedUpdated: Customer = {
         ...updated,
@@ -4239,7 +4244,7 @@ function HomeContent() {
       setAllowWorkResourceEdit(false);
       clearCustomerDraft(savedUpdated.id);
       setDraftNotice(readCustomerDraft());
-      setMessage("Időponthoz tartozó klímák és anyagok módosítva ✅");
+      setMessage(isService ? "Munka tételei módosítva ✅" : "Időponthoz tartozó klímák és anyagok módosítva ✅");
       replaceView("work");
     } catch (error: any) {
       setMessage(`Mentési hiba: ${error.message}`);
@@ -4265,7 +4270,7 @@ function HomeContent() {
     if (selected.stockDeducted) return "";
 
     const neededByProduct = cleanQuoteItems(quoteItems).reduce((map, item) => {
-      if (!isKnownProductId(item.productId)) return map;
+      if (item.itemType === "extra" || !isKnownProductId(item.productId)) return map;
       map.set(item.productId, (map.get(item.productId) || 0) + itemQuantity(item));
       return map;
     }, new Map<string, number>());
@@ -4385,6 +4390,37 @@ function HomeContent() {
       return;
     }
 
+    if (currentAppointmentType === "other") {
+      if (selected.status === "Lemondva") { setMessage("A lemondott munkát előbb állítsd vissza.", "warning"); return; }
+      const serviceReport = savedReportFor(selected, "other");
+      if (!serviceReport?.id || !hasValidWorkReportSignature(serviceReport)) {
+        setMessage("A munka lezárása előtt készítsd el és írasd alá a munkalapot.");
+        return;
+      }
+      if (workspaceSettings.documentSettings.privacyNotice?.enabled
+          && !privacyNoticeMatchesWorkReportSignature(serviceReport.privacyNotice, serviceReport)) {
+        setMessage("A munka lezárása előtt az adatkezelési tájékoztatót is írja alá az ügyfél a munkalap mellett.");
+        return;
+      }
+      if (!beginAction("service-close")) return;
+      const changedAt = new Date().toISOString();
+      const updated: Customer = { ...selected, quoteItems, status: "Lezárva", isFresh: false, updatedAt: changedAt };
+      try {
+        await persistCustomerToDb(updated);
+        await logDocument(updated, "work_closed", "Munka lezárva", "Lezárva", changedAt);
+        setSelected(updated);
+        promoteCustomerWork(updated);
+        setAllowWorkResourceEdit(false);
+        setMessage("Munka lezárva ✅");
+        replaceView("work");
+      } catch (error: any) {
+        setMessage(`Mentési hiba: ${error.message}`);
+      } finally {
+        endAction("service-close");
+      }
+      return;
+    }
+
     const isInstallation = isInstallationAppointment(currentAppointmentType);
     const error = isInstallation ? stockErrorMessage() : "";
     if (error) {
@@ -4470,6 +4506,16 @@ function HomeContent() {
       return;
     }
     if (currentWorkspaceId() !== workspaceId) return;
+
+    if (currentAppointmentType === "other") {
+      const cancelledWork: Customer = { ...customer, status: "Lemondva", isFresh: false, updatedAt: changedAt };
+      setSelected(cancelledWork);
+      updateWorkHistory(cancelledWork);
+      setAllowWorkResourceEdit(false);
+      setMessage("Az időpont lemondva ✅ A korábbi munkák megmaradtak.");
+      replaceView("work");
+      return;
+    }
 
     if (currentAppointmentType === "maintenance") {
       const cancelledMaintenance: Customer = { ...customer, status: "Lemondva", isFresh: false, updatedAt: changedAt };
@@ -4585,7 +4631,7 @@ function HomeContent() {
     const changedAt = new Date().toISOString();
     const installationWorks = explicitInstallationWorks || customerInstallationWorks(customer);
     const installationIds = installationWorks.map((work) => work.activeAppointmentId).filter(Boolean) as string[];
-    const installationItems = cleanQuoteItems(installationWorks.flatMap((work) => work.quoteItems || []));
+    const installationItems = climateQuoteItems(installationWorks.flatMap((work) => work.quoteItems || []));
     const maintenanceInstallations = installationWorks
       .filter((work) => work.activeAppointmentId)
       .map((work) => ({
@@ -4593,7 +4639,7 @@ function HomeContent() {
         date: work.date,
         time: work.time,
         address: work.address,
-        quoteItems: cleanQuoteItems(work.quoteItems || []),
+        quoteItems: climateQuoteItems(work.quoteItems || []),
       }));
     const maintenanceCustomer: Customer = {
       ...customer,
@@ -4662,7 +4708,7 @@ function HomeContent() {
       .reduce((sum, customer) => {
         const items = customer.quoteItems ?? [];
         return sum + items
-          .filter((item) => item.productId === productId)
+          .filter((item) => item.itemType !== "extra" && item.productId === productId)
           .reduce((itemSum, item) => itemSum + itemQuantity(item), 0);
       }, 0);
   }
@@ -4787,7 +4833,7 @@ function HomeContent() {
 
 
   function climateCountForMaterials() {
-    return Math.max(1, qty(quoteItems));
+    return qty(quoteItems) || (cleanQuoteItems(quoteItems).length ? 0 : 1);
   }
 
   function multiplyQty(value: string, count: number) {
@@ -4874,11 +4920,7 @@ function HomeContent() {
           ))}
         </div>
         <Back onClick={() => goBack()} />
-        {mapMode === "maintenance" ? <div className="mb-4 flex flex-wrap items-center gap-3 text-sm" role="status">
-          {sharedMaintenance.loading ? <span>Átvett karbantartások betöltése...</span> : null}
-          {sharedMaintenance.error ? <span className="text-amber-200">{sharedMaintenance.error}</span> : null}
-          <button type="button" disabled={sharedMaintenance.loading} onClick={()=>sharedMaintenance.refresh()} className="rounded-xl bg-white/10 px-3 py-2 font-bold">Megosztások frissítése</button>
-        </div> : null}
+        {mapMode === "maintenance" && sharedMaintenance.error ? <p role="alert" className="mb-3 text-sm text-amber-200">{sharedMaintenance.error}</p> : null}
         {mapMode === "callbacks" ? (
           <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} onDeleteCustomer={(customer) => deleteCustomer(customer, { stayOnMap: true })} />
         ) : <MaintenanceMapPanel
@@ -4887,6 +4929,13 @@ function HomeContent() {
           points={maintenanceMapPoints}
           googleMapsApiKey={googleMapsApiKey}
           geocodingBusy={maintenanceMapGeocodingBusy}
+          headerActions={<button type="button" disabled={sharedMaintenance.loading} onClick={() => sharedMaintenance.refresh()}
+            title={sharedMaintenance.loading ? "Megosztások frissítése folyamatban" : "Megosztások frissítése"}
+            aria-label={sharedMaintenance.loading ? "Megosztások frissítése folyamatban" : "Megosztások frissítése"}
+            aria-busy={sharedMaintenance.loading}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 disabled:opacity-50">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`h-5 w-5 ${sharedMaintenance.loading ? "animate-spin" : ""}`}><path strokeLinecap="round" strokeLinejoin="round" d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" /></svg>
+          </button>}
           onOpenCustomer={(customer) => openCustomer(customer, "work")}
           onOpenShared={(item) => {if(activeWorkspace?.id && user?.id) setSharedMaintenanceSelection({workspaceId: activeWorkspace.id, userId: user.id, item});}}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
@@ -5490,14 +5539,15 @@ function HomeContent() {
   ): WorkChecklistState {
     if (!customer.id) return { ...workChecklist, completedAt: { ...(workChecklist.completedAt || {}) } };
 
+    const reportType = normalizeAppointmentType(customer.appointmentType);
     const saved = checklistsMap[workScopeKey(customer)] || (!customer.activeAppointmentId ? checklistsMap[customer.id] : undefined) || EMPTY_WORK_CHECKLIST;
     const report = customer.activeAppointmentId
       ? Object.values(reportsMap).find((item) => (
           item.customerId === customer.id
           && item.appointmentId === customer.activeAppointmentId
-          && normalizeAppointmentType(item.appointmentType) === "installation"
+          && normalizeAppointmentType(item.appointmentType) === reportType
         ))
-      : reportsMap[customer.id] || reportsMap[workReportMapKey(customer.id, "installation")] || Object.values(reportsMap).find((item) => item.customerId === customer.id && normalizeAppointmentType(item.appointmentType) === "installation");
+      : reportType === "installation" ? reportsMap[customer.id] || reportsMap[workReportMapKey(customer.id, "installation")] || Object.values(reportsMap).find((item) => item.customerId === customer.id && normalizeAppointmentType(item.appointmentType) === "installation") : undefined;
     const docs = documentsForCustomerScope(customer, docsMap[customer.id] || []);
     const workDoc = docs.find((doc) => doc.type === "work_report");
     const purchaseDoc = docs.find((doc) => doc.type === "purchase_declaration");
@@ -5512,7 +5562,7 @@ function HomeContent() {
     const completedAt: WorkChecklistCompletedAt = { ...(saved.completedAt || {}) };
 
     (["worksheet", "signature", "purchaseDeclaration"] as WorkChecklistItemKey[]).forEach((key) => {
-      if (workAndDeclarationReady) completedAt[key] = completedAt[key] || workDoneAt;
+      if (workAndDeclarationReady && (key !== "purchaseDeclaration" || reportType === "installation")) completedAt[key] = completedAt[key] || workDoneAt;
       else delete completedAt[key];
     });
     if (documentsSent) completedAt.docsSent = completedAt.docsSent || docsSentAt;
@@ -5527,7 +5577,7 @@ function HomeContent() {
       ...saved,
       worksheet: workAndDeclarationReady,
       signature: workAndDeclarationReady,
-      purchaseDeclaration: workAndDeclarationReady,
+      purchaseDeclaration: reportType === "installation" && workAndDeclarationReady,
       docsSent: documentsSent,
       completedAt,
     };
@@ -5760,6 +5810,15 @@ function HomeContent() {
 
   function documentRowsFor(customer: Customer): PageDocumentRow[] {
     const currentAppointmentType = normalizeAppointmentType(customer.appointmentType);
+    if (currentAppointmentType === "other") {
+      const report = savedReportFor(customer, "other");
+      const checklist = effectiveChecklistFor(customer);
+      return [
+        { title: "Munkavégzési időpont-visszaigazolás", status: docStatus(customer, appointmentEmailDocumentType("other"), customer.date ? "Időpont rögzítve" : "Nincs időpont"), action: "Időpont", appointmentType: "other" },
+        { title: "Szervizmunkalap", status: workReportDocumentStatus(customer, "other"), action: "Munkalap", appointmentType: "other", reportId: report?.id, appointmentId: customer.activeAppointmentId },
+        { title: "Szolgáltatási számla", status: checklist.alinInvoice ? "Kész" : "Nincs kiállítva", action: "Számla", appointmentType: "other" },
+      ];
+    }
     const quoteDoc = quoteDocumentFor(customer);
     const quoteSentAt = quoteSentAtFor(customer);
     const quoteBaseStatus = quoteDoc?.status || (customerHasSentQuote(customer) ? "Elküldve" : "Nincs elküldve");
@@ -5859,8 +5918,9 @@ function HomeContent() {
     const workspaceId = currentWorkspaceId();
     setWorkReportLoadBlocked(true);
     setWorkReportDeclaration(undefined);
-    setWorkReportDeclarationItems(customer.quoteItems || []);
-    setPurchaseDeclarationItemKeys((customer.quoteItems || []).map((_, index) => String(index)));
+    const declarationEditor = purchaseDeclarationEditorItems(customer.quoteItems || []);
+    setWorkReportDeclarationItems(declarationEditor.items);
+    setPurchaseDeclarationItemKeys(declarationEditor.selectedKeys);
     setSelectedSellerId((sellerCompanies.find((seller) => seller.isDefault) || sellerCompanies[0] || DEFAULT_SELLER_COMPANY).id);
     const targetType = normalizeAppointmentType(customer.appointmentType);
     const activeReportId = reportId || customer.activeWorkReportId;
@@ -6186,8 +6246,9 @@ function HomeContent() {
       let emailSentAt = data?.email_sent_at || undefined;
       const hasSignedReport = hasValidWorkReportSignature(reportToSave);
       const isMaintenanceReport = currentAppointmentType === "maintenance";
+      const isInstallationReport = currentAppointmentType === "installation";
       let savedPurchaseDeclaration: PurchaseDeclaration | null = preserveDeclaration ? workReportDeclaration! : null;
-      if (!isMaintenanceReport && hasSignedReport && !preserveDeclaration) {
+      if (isInstallationReport && hasSignedReport && !preserveDeclaration) {
         const seller = sellerSnapshot(sellerCompanies, selectedSellerId);
         const declarationItems = workReportDeclarationItems.filter((_, index) => purchaseDeclarationItemKeys.includes(String(index)));
         if (!declarationItems.length) throw new Error("Válassz legalább egy készüléket a vásárlási nyilatkozathoz, majd írasd alá újra.");
@@ -6244,7 +6305,7 @@ function HomeContent() {
         const response = await authenticatedFetch("/api/send-work-report", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(workReportPayload({ id: data.id }, selected,
-            savedPurchaseDeclaration?.id ? [savedPurchaseDeclaration.id] : [], isMaintenanceReport ? "work_report" : "both")),
+            savedPurchaseDeclaration?.id ? [savedPurchaseDeclaration.id] : [], isInstallationReport ? "both" : "work_report")),
         }, workspaceId || undefined);
         const result = await response.json().catch(() => ({}));
         if (currentWorkspaceId() !== workspaceId) return;
@@ -6254,9 +6315,9 @@ function HomeContent() {
         receiptKey = `${workspaceId}:${selected.id}:${selected.activeAppointmentId}:${data.id}`;
         workReportReceiptsRef.current.set(receiptKey, {
           customer: { ...selected, activeWorkReportId: data.id }, sentAt: emailSentAt,
-          documents: isMaintenanceReport ? "work_report" : "both", workReportId: data.id,
+          documents: isInstallationReport ? "both" : "work_report", workReportId: data.id,
           purchaseDeclarationIds: savedPurchaseDeclaration?.id ? [savedPurchaseDeclaration.id] : [],
-          checklist: isMaintenanceReport ? undefined : { worksheet: hasSignedReport, purchaseDeclaration: hasSignedReport, signature: hasSignedReport, docsSent: true },
+          checklist: isMaintenanceReport ? undefined : { worksheet: hasSignedReport, ...(isInstallationReport ? { purchaseDeclaration: hasSignedReport } : {}), signature: hasSignedReport, docsSent: true },
         });
         if (currentWorkspaceId() !== workspaceId) return;
         const deliveryUpdate = await workspaceQuery(supabase.from("work_reports").update({ email_sent_at: emailSentAt })
@@ -6275,7 +6336,7 @@ function HomeContent() {
         );
         if (currentWorkspaceId() !== workspaceId) return;
       }
-      if (!isMaintenanceReport && hasSignedReport) {
+      if (isInstallationReport && hasSignedReport) {
         await logDocument(selected, "purchase_declaration", `Vásárlási nyilatkozat${savedPurchaseDeclaration ? ` – ${savedPurchaseDeclaration.sellerName}` : ""}`, sendEmail ? "Elküldve" : "Elkészült", documentEventAt);
         if (currentWorkspaceId() !== workspaceId) return;
       }
@@ -6283,7 +6344,7 @@ function HomeContent() {
       if (!isMaintenanceReport) {
         await updateChecklistForCustomer(selected, {
           worksheet: hasSignedReport,
-          purchaseDeclaration: hasSignedReport,
+          ...(isInstallationReport ? { purchaseDeclaration: hasSignedReport } : {}),
           signature: hasSignedReport,
           docsSent: Boolean(sendEmail && hasSignedReport),
         });
@@ -6351,7 +6412,7 @@ function HomeContent() {
   function allWorkReportsForPreview(customer: Customer = selected) {
     const reports = [...Object.values(workReportsByCustomer), ...maintenanceReportsFor(customer)]
       .filter((report) => report.id && report.customerId === customer.id
-        && ["installation", "maintenance"].includes(normalizeAppointmentType(report.appointmentType)));
+        && ["installation", "maintenance", "other"].includes(normalizeAppointmentType(report.appointmentType)));
     return Array.from(new Map(reports.map((report) => [report.id, report])).values()).sort(compareWorkReportsDesc);
   }
 
@@ -6520,7 +6581,6 @@ function HomeContent() {
         return haystack.includes(searchTerm);
       })
       .slice(0, 8);
-    const sortedProducts = sortProducts(products);
 
     return (
       <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur">
@@ -6535,11 +6595,12 @@ function HomeContent() {
             <button type="button" onClick={() => setQuickAppointment(null)} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-cyan-100">Bezárás</button>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {([
               ["installation", "Szerelés"],
               ["survey", "Felmérés"],
               ["maintenance", "Karbantartás"],
+              ["other", "Egyéb munka"],
             ] as [AppointmentType, string][]).map(([type, label]) => (
               <button
                 key={type}
@@ -6604,20 +6665,12 @@ function HomeContent() {
                 </label>
               </div>
 
-              {isInstallation ? (
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                  <p className="mb-3 text-sm font-black text-slate-300">Klíma és ár</p>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_100px_160px]">
-                    <select className="input" value={quickAppointment.productId} onChange={(event) => updateQuickAppointmentProduct(event.target.value)}>
-                      <option value="">Válassz klímát...</option>
-                      {sortedProducts.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-                    </select>
-                    <input className="input" type="number" min={1} value={quickAppointment.quantity} onChange={(event) => updateQuickAppointment({ quantity: event.target.value === "" ? "" : Math.max(1, Number(event.target.value) || 1) })} />
-                    <input className="input" type="number" min={0} value={quickAppointment.price} onChange={(event) => updateQuickAppointment({ price: event.target.value === "" ? "" : Math.max(0, Number(event.target.value) || 0) })} placeholder="Ár" />
-                  </div>
-                </div>
-              ) : null}
-
+              {isInstallation || appointmentType === "other" ? <AppointmentItemsEditor
+                extraOnly={appointmentType === "other"}
+                items={quickAppointment.quoteItems}
+                products={products}
+                onChange={items => updateQuickAppointment({ quoteItems: items })}
+              /> : null}
               {isMaintenance ? (
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
                   <p className="mb-3 text-sm font-black text-slate-300">Kapcsolódó korábbi klímák / telepítés</p>
@@ -7052,6 +7105,7 @@ function HomeContent() {
         onUpdateQuoteItem={updateQuoteItem}
         onUpdateQuoteProduct={updateQuoteProduct}
         onAddQuoteItem={addQuoteItem}
+      onChangeQuoteItems={setQuoteItems}
         onToggleMaintenanceInstallation={updateMaintenanceInstallationSelection}
         onSetSendAppointmentNotice={setSendAppointmentNotice}
       />
@@ -7136,6 +7190,8 @@ function HomeContent() {
         onUpdateQuoteProduct={updateQuoteProduct}
         onRemoveQuoteItem={removeQuoteItem}
         onAddQuoteItem={addQuoteItem}
+        onAddExtraQuoteItem={addExtraQuoteItem}
+        onChangeQuoteItems={setQuoteItems}
         onSetAllowWorkResourceEdit={setAllowWorkResourceEdit}
         onSaveWorkChanges={saveWorkChanges}
         onAddExtraMaterial={addExtraMaterial}

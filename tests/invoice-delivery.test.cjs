@@ -39,7 +39,7 @@ function fixture(options = {}) {
   }, {
     '@supabase/supabase-js': { createClient: (_url, key) => { assert.equal(key, 'synthetic-service'); return admin; } },
     '@/lib/alinflow/server-auth': { ApiError,
-      authorizeCustomerRequest: async (_request, body) => ({ workspaceId: workspace, userId: 'synthetic-user', appointment: body.customer.activeAppointmentId ? { id: body.customer.activeAppointmentId } : null }),
+      authorizeCustomerRequest: async (_request, body) => ({ workspaceId: workspace, userId: 'synthetic-user', appointment: body.customer.activeAppointmentId ? { id: body.customer.activeAppointmentId, appointment_type: options.appointmentType, status: options.appointmentStatus, cancelled_at: options.appointmentCancelledAt } : null }),
       apiErrorResponse: error => Response.json({ error: error.message }, { status: error.status || 500 }),
     },
   });
@@ -49,6 +49,115 @@ function fixture(options = {}) {
   }));
   return { h, post, entries, requests, calls, options };
 }
+
+const mixedItems = [
+  { productId: '', itemType: 'climate', customName: 'Teszt klíma', quantity: 2, customPrice: 100000, customInstallPrice: 30000 },
+  { productId: '', itemType: 'extra', customName: 'Faláttörés', quantity: 3, customPrice: 10000 },
+  { productId: '', itemType: 'extra', customName: 'Kábel', quantity: 2, customPrice: 5000, customInstallPrice: 2000 },
+];
+const invoiceGross = xml => [...xml.matchAll(/<bruttoErtek>(\d+)<\/bruttoErtek>/g)].reduce((sum, match) => sum + Number(match[1]), 0);
+
+test('extra items retain their explicit seller split and do not inflate climate quantities', async () => {
+  const expected = { device: 176000, labor: 64000, combined: 240000 };
+  for (const [kind, amount] of Object.entries(expected)) {
+    const f = fixture({ appointmentType: 'installation', env: { SZAMLAZZ_DEVICE_AGENT_KEY: 'synthetic-device', SZAMLAZZ_COMBINED_AGENT_KEY: 'synthetic-combined' } });
+    const billing = f.h.load('src/lib/alinflow/billing.ts');
+    assert.deepEqual(JSON.parse(JSON.stringify(billing.billingAmountsForAppointment(mixedItems, 'installation'))), expected);
+    assert.equal((await f.post({ kind, amount, quoteItems: mixedItems })).status, 200);
+    const xml = f.requests[0];
+    assert.equal(invoiceGross(xml), amount);
+    assert.doesNotMatch(xml, /(?:Faláttörés|Kábel) \+ szerelési anyagok/);
+    assert.doesNotMatch(xml, /7 db Légkondicionáló telepítés/);
+    if (kind !== 'labor') {
+      assert.match(xml, /2 db Teszt klíma \+ szerelési anyagok/);
+      assert.match(xml, /3 db Faláttörés/);
+    }
+    if (kind !== 'device') assert.match(xml, /2 db Légkondicionáló telepítés és beüzemelés/);
+    if (kind === 'labor') {
+      assert.match(xml, /2 db Kábel/);
+      assert.doesNotMatch(xml, /Faláttörés/);
+      assert.match(xml, /<bruttoErtek>60000<\/bruttoErtek>/);
+      assert.match(xml, /<bruttoErtek>4000<\/bruttoErtek>/);
+    }
+  }
+  const maintenance = fixture();
+  assert.equal((await maintenance.post({ kind: 'maintenance', amount: 12000, quoteItems: mixedItems })).status, 200);
+  assert.match(maintenance.requests[0], /2 db Légkondicionáló karbantartás/);
+  assert.doesNotMatch(maintenance.requests[0], /7 db/);
+});
+
+test('other work bills every priced item with the workspace own service issuer, without a device allocation', async () => {
+  const f = fixture({ appointmentType: 'other', env: {
+    SZAMLAZZ_WORKSPACE_ID: 'different-workspace', SZAMLAZZ_SPLIT_WORKSPACE_ID: workspace,
+    SZAMLAZZ_SPLIT_LABOR_AGENT_KEY: 'synthetic-own-service', SZAMLAZZ_SPLIT_LABOR_VAT_KEY: 'AAM', SZAMLAZZ_SPLIT_LABOR_INVOICE_PREFIX: 'OWN',
+    SZAMLAZZ_DEVICE_AGENT_KEY: 'must-not-use-device',
+  } });
+  const items = [
+    { productId: '', itemType: 'extra', customName: 'Klíma leszerelése', quantity: 1, customPrice: 30000 },
+    { productId: '', itemType: 'extra', customName: 'Hűtőközeg visszanyerése', quantity: 2, customPrice: 5000, customInstallPrice: 1000 },
+  ];
+  assert.deepEqual(JSON.parse(JSON.stringify(f.h.load('src/lib/alinflow/billing.ts').billingAmountsForAppointment(items, 'other'))), { device: 0, labor: 40000, combined: 40000 });
+  // The saved appointment wins even if an older browser sends installation.
+  assert.equal((await f.post({ kind: 'labor', amount: 40000, quoteItems: items,
+    customer: { id: customer, activeAppointmentId: appointment, name: 'Synthetic customer', appointmentType: 'installation' } })).status, 200);
+  const xml = f.requests[0];
+  assert.match(xml, /<szamlaagentkulcs>synthetic-own-service<\/szamlaagentkulcs>/);
+  assert.match(xml, /<szamlaszamElotag>OWN<\/szamlaszamElotag>/);
+  assert.match(xml, /Szolgáltatási díj számlája\./);
+  assert.match(xml, /Klíma leszerelése/); assert.match(xml, /2 db Hűtőközeg visszanyerése/);
+  assert.doesNotMatch(xml, /must-not-use-device|szerelési anyagok|telepítés és beüzemelés/);
+  assert.equal(invoiceGross(xml), 40000);
+  assert.equal(f.calls.find(call => call.name === 'claim_invoice_delivery').args.p_invoice_kind, 'labor');
+});
+
+test('saved other appointments reject device, combined and maintenance kinds before any invoice claim or provider call', async () => {
+  for (const kind of ['device', 'combined', 'maintenance']) {
+    const f = fixture({ appointmentType: 'other' });
+    assert.equal((await f.post({ kind, customer: { id: customer, activeAppointmentId: appointment, appointmentType: 'installation' } })).status, 400);
+    assert.equal(f.requests.length, 0); assert.equal(f.calls.length, 0);
+  }
+  const unsaved = fixture();
+  assert.equal((await unsaved.post({ customer: { id: customer, appointmentType: 'other' } })).status, 400);
+  assert.equal(unsaved.requests.length, 0); assert.equal(unsaved.calls.length, 0);
+});
+
+test('an unpriced service description keeps its name when the user later enters the invoice amount', async () => {
+  const f = fixture({ appointmentType: 'other' });
+  assert.equal((await f.post({ amount: 12500, quoteItems: [{ productId: '', itemType: 'extra', customName: 'Hibakeresés & javítás', quantity: 1, customPrice: 0 }] })).status, 200);
+  assert.match(f.requests[0], /Hibakeresés &amp; javítás/);
+  assert.equal(invoiceGross(f.requests[0]), 12500);
+});
+
+test('cancelled saved other appointments reject invoicing before any claim or provider call', async () => {
+  for (const savedCancellation of [
+    { appointmentStatus: 'Lemondva' },
+    { appointmentStatus: 'Időpont egyeztetve', appointmentCancelledAt: '2026-10-16T08:00:00.000Z' },
+  ]) {
+    const f = fixture({ appointmentType: 'other', ...savedCancellation });
+    // A stale browser claiming an active installation cannot override the saved service state.
+    const response = await f.post({ customer: { id: customer, activeAppointmentId: appointment, appointmentType: 'installation', status: 'Időpont egyeztetve', cancelledAt: '' } });
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /lemondott szolgáltatási időpont nem számlázható/);
+    assert.equal(f.requests.length, 0);
+    assert.equal(f.calls.length, 0);
+  }
+});
+
+test('other service invoices cannot fall back to a combined-only workspace device issuer', async () => {
+  const f = fixture({ appointmentType: 'other', env: { SZAMLAZZ_WORKSPACE_ID: 'different', SZAMLAZZ_COMBINED_WORKSPACE_IDS: workspace, SZAMLAZZ_DEVICE_AGENT_KEY: 'wrong-device-key' } });
+  assert.equal((await f.post()).status, 403);
+  assert.equal(f.requests.length, 0); assert.equal(f.calls.length, 0);
+});
+
+test('zero-priced extras keep their own description when the invoice amount is entered manually', async () => {
+  for (const kind of ['device', 'labor', 'combined']) {
+    const f = fixture({ env: { SZAMLAZZ_DEVICE_AGENT_KEY: 'synthetic-device', SZAMLAZZ_COMBINED_AGENT_KEY: 'synthetic-combined' } });
+    assert.equal((await f.post({ kind, amount: 10000, quoteItems: [{ productId: '', itemType: 'extra', customName: 'Külön egyeztetett tétel', quantity: 1, customPrice: 0 }] })).status, 200);
+    assert.match(f.requests[0], /<megnevezes>Külön egyeztetett tétel<\/megnevezes>/);
+    assert.doesNotMatch(f.requests[0], /<megnevezes>[^<]*(?:szerelési anyagok|telepítés és beüzemelés)/);
+    assert.equal(invoiceGross(f.requests[0]), 10000);
+  }
+});
 
 for (const [instant, date] of [
   ['2026-10-11T22:30:00.000Z', '2026-10-12'], ['2026-01-11T23:30:00.000Z', '2026-01-12'],

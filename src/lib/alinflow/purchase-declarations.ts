@@ -1,9 +1,9 @@
 import type { PurchaseDeclaration, QuoteItem, SellerCompany, WorkReport } from "./types";
-import { cleanQuoteItems, itemName, itemQuantity } from "./products";
+import { cleanQuoteItems, climateQuoteItems, isExtraQuoteItem, itemName, itemQuantity } from "./products";
 
 /** Keep saved declaration items available even if the appointment's current devices changed. */
 export function purchaseDeclarationEditorItems(items: QuoteItem[], declaration?: PurchaseDeclaration) {
-  const options = [...items];
+  const options = items.filter((item) => !isExtraQuoteItem(item));
   const selectedKeys: string[] = [];
   for (const saved of declaration?.quoteItems || []) {
     let index = options.findIndex((item, i) => !selectedKeys.includes(String(i))
@@ -93,7 +93,7 @@ export function declarationToRow({
     seller_name: seller.name,
     seller_tax_number: seller.taxNumber,
     seller_representative: seller.representative,
-    quote_items: cleanQuoteItems(quoteItems),
+    quote_items: climateQuoteItems(quoteItems),
     signature_data_url: report.signatureDataUrl || null,
     signer_name: report.signerName || null,
     signed_at: report.signedAt || null,
