@@ -1,7 +1,7 @@
 import type { Customer } from "./types";
 import { appointmentSummaryLabel, appointmentTimeRangeLabel, isInstallationAppointment, normalizeAppointmentType } from "./appointments";
 import { displayAddress } from "./format";
-import { climateSummary } from "./products";
+import { cleanQuoteItems, climateQuoteItems, climateSummary } from "./products";
 import type { SharedMaintenanceInstallation } from "./shared-maintenance";
 
 export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "optOut" | "unknown";
@@ -215,6 +215,7 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
   const installationWorks = uniqueWorks
     .filter((customer) => customer.activeAppointmentId)
     .filter((customer) => isInstallationAppointment(customer.appointmentType))
+    .filter((customer) => !cleanQuoteItems(customer.quoteItems).length || climateQuoteItems(customer.quoteItems).length > 0)
     .filter((customer) => customer.status !== "Lemondva");
   const maintenanceWorks = uniqueWorks
     .filter((customer) => normalizeAppointmentType(customer.appointmentType) === "maintenance")

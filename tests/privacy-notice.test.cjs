@@ -68,6 +68,28 @@ test("maintenance-only settings can omit a seller; installation still requires o
   assert.equal(privacy.privacyNoticeConfigValidation(partiallyFilled, { appointmentType: "maintenance" }).length, 0);
 });
 
+test("other work uses its own version and service provider without seller or purchase purpose", () => {
+  const serviceConfig = { ...config(), partner: party("Teszt Partner EV") };
+  const snapshot = privacy.buildPrivacyNoticeSnapshot(snapshotInput({ config: serviceConfig, appointmentType: "other", consentGranted: true }));
+  assert.equal(snapshot.version, privacy.OTHER_PRIVACY_NOTICE_VERSION);
+  assert.equal(snapshot.controllers.length, 1);
+  assert.equal(snapshot.controllers[0].role, "service_provider");
+  assert.equal(snapshot.controllers[0].party.legalName, serviceConfig.serviceProvider.legalName);
+  assert.doesNotMatch(JSON.stringify(snapshot), /Teszt Készülék Kft\.|A készülékértékesítő az értékesítéshez/);
+  assert.match(snapshot.sections[0].text, /javítás, leszerelés vagy más szolgáltatás/);
+  assert.match(snapshot.sections[1].text, /elutasítása nem érinti a kért szolgáltatást/);
+  assert.equal(privacy.privacyControllerLabel("service_provider", snapshot.version), "Munkát végző vállalkozás");
+  assert.equal(JSON.stringify(privacy.parsePrivacyNoticeSnapshot(clone(snapshot))), JSON.stringify(snapshot));
+  assert.throws(() => privacy.parsePrivacyNoticeSnapshot({ ...clone(snapshot), controllers: [{ role: "device_seller", party: serviceConfig.deviceSeller }] }), /hiányos vagy sérült/);
+  const withoutSeller = { ...serviceConfig, deviceSeller: privacy.normalizePrivacyParty(undefined) };
+  assert.equal(privacy.privacyNoticeConfigValidation(withoutSeller, { appointmentType: "other" }).length, 0);
+  assert.equal(privacy.buildPrivacyNoticeSnapshot(snapshotInput({ config: withoutSeller, appointmentType: "other" })).controllers.length, 1);
+  for (const appointmentType of ["installation", "maintenance"]) {
+    const previous = privacy.buildPrivacyNoticeSnapshot(snapshotInput({ appointmentType }));
+    assert.equal(JSON.stringify(privacy.parsePrivacyNoticeSnapshot(clone(previous))), JSON.stringify(previous));
+  }
+});
+
 test("notice validity requires the freshly captured report signature, signer and time", () => {
   const input = snapshotInput({ appointmentType: "maintenance" });
   const snapshot = privacy.buildPrivacyNoticeSnapshot(input);

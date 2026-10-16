@@ -21,6 +21,7 @@ export const APPOINTMENT_TYPES: { value: AppointmentType; label: string; shortLa
   { value: "installation", label: "Szerelés", shortLabel: "Szerelés", durationLabel: "", description: "Klímaszerelési időpont" },
   { value: "survey", label: "Felmérés", shortLabel: "Felmérés", durationLabel: "", description: "Felmérési időpont" },
   { value: "maintenance", label: "Karbantartás", shortLabel: "Karbantartás", durationLabel: "", description: "Karbantartási időpont" },
+  { value: "other", label: "Egyéb munka", shortLabel: "Egyéb munka", durationLabel: "1 óra", description: "Javítás, leszerelés vagy más egyeztetett munka" },
 ];
 
 export const APPOINTMENT_TYPE_OPTIONS = APPOINTMENT_TYPES;
@@ -34,6 +35,7 @@ export function normalizeAppointmentType(value?: string | null): AppointmentType
   const normalized = String(value || "").trim().toLowerCase();
   if (["survey", "felmeres", "felmérés"].includes(normalized)) return "survey";
   if (["maintenance", "karbantartas", "karbantartás"].includes(normalized)) return "maintenance";
+  if (["other", "egyeb", "egyéb", "egyéb munka"].includes(normalized)) return "other";
   return DEFAULT_APPOINTMENT_TYPE;
 }
 
@@ -51,6 +53,7 @@ export function appointmentTypeEmailLabel(value?: string | null) {
   const type = normalizeAppointmentType(value);
   if (type === "survey") return "felmérési";
   if (type === "maintenance") return "karbantartási";
+  if (type === "other") return "egyeztetett munkavégzési";
   return "klímaszerelési";
 }
 
@@ -127,8 +130,8 @@ export function addHoursToTime(value: string, hours: number) {
   return addMinutesToTime(value, hours * 60);
 }
 
-export function appointmentDurationMinutes(_type?: string | null, _items: QuoteItem[] = [], _time?: string) {
-  return 3 * 60;
+export function appointmentDurationMinutes(type?: string | null, _items: QuoteItem[] = [], _time?: string) {
+  return normalizeAppointmentType(type) === "other" ? 60 : 3 * 60;
 }
 
 export function slotInterval(slot: string, type?: string | null, items: QuoteItem[] = []): AppointmentInterval | null {
@@ -172,6 +175,10 @@ export function appointmentWorkSummary(customer: Pick<AppointmentLike, "appointm
   const type = normalizeAppointmentType(customer.appointmentType);
   if (type === "survey") return "Helyszíni felmérés";
   if (type === "maintenance") return "Klíma karbantartás";
+  if (type === "other") {
+    const items = (customer.quoteItems || []).filter((item) => item.customName?.trim() || item.productName?.trim());
+    return items.map((item) => `${itemQuantity(item)} × ${item.customName?.trim() || item.productName?.trim()}`).join(", ") || "Egyeztetett munka";
+  }
   return "Klímaszerelés";
 }
 
@@ -189,6 +196,7 @@ export function appointmentDocumentTitle(value?: string | null) {
   const type = normalizeAppointmentType(value);
   if (type === "survey") return "Felmérési időpont-visszaigazolás";
   if (type === "maintenance") return "Karbantartási időpont-visszaigazolás";
+  if (type === "other") return "Munkavégzési időpont-visszaigazolás";
   return "Időpont-visszaigazolás";
 }
 
@@ -196,6 +204,7 @@ export function appointmentEmailSubject(value?: string | null) {
   const type = normalizeAppointmentType(value);
   if (type === "survey") return "Felmérési időpont visszaigazolás – KLIMAlin";
   if (type === "maintenance") return "Karbantartási időpont visszaigazolás – KLIMAlin";
+  if (type === "other") return "Munkavégzési időpont visszaigazolás – KLIMAlin";
   return "Időpont visszaigazolás – KLIMAlin";
 }
 
@@ -203,6 +212,7 @@ export function appointmentEmailIntro(value?: string | null) {
   const type = normalizeAppointmentType(value);
   if (type === "survey") return "Ezúton visszaigazoljuk az egyeztetett klímafelmérési időpontot.";
   if (type === "maintenance") return "Ezúton visszaigazoljuk az egyeztetett klímakarbantartási időpontot.";
+  if (type === "other") return "Ezúton visszaigazoljuk az egyeztetett munkavégzés időpontját és az alábbi feladatokat.";
   return "Ezúton visszaigazoljuk az egyeztetett klímás időpontot és a szereléssel együtt értendő klíma telepítését.";
 }
 
@@ -210,5 +220,6 @@ export function appointmentWorkLabel(value?: string | null) {
   const type = normalizeAppointmentType(value);
   if (type === "survey") return "Klímafelmérés";
   if (type === "maintenance") return "Klímakarbantartás";
+  if (type === "other") return "Egyeztetett munka";
   return "Klímatelepítés";
 }

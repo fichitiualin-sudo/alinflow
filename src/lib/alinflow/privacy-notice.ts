@@ -8,7 +8,8 @@
  */
 export const PRIVACY_NOTICE_VERSION = "2026-10-11.1";
 export const MAINTENANCE_PRIVACY_NOTICE_VERSION = "2026-10-11.2";
-type PrivacyAppointmentType = "installation" | "survey" | "maintenance";
+export const OTHER_PRIVACY_NOTICE_VERSION = "2026-10-16.1";
+type PrivacyAppointmentType = "installation" | "survey" | "maintenance" | "other";
 
 export type PrivacyParty = { legalName: string; address: string; email: string; phone: string; taxNumber: string };
 export type PrivacyNoticeConfig = {
@@ -84,9 +85,9 @@ export function privacyNoticeConfigValidation(input: PrivacyNoticeConfig, option
   }
   if (!config.enabled && !options.requirePartner) return [];
   const errors = partyErrors(config.serviceProvider, "Munkát végző vállalkozás");
-  // A maintenance-only business can enable its own notice without inventing a seller.
+  // Service-only work can use its own notice without inventing a seller.
   // Installation signing still requires both complete controller identities.
-  if (options.appointmentType !== "maintenance" && (options.appointmentType || Object.values(config.deviceSeller).some(Boolean))) {
+  if (options.appointmentType !== "maintenance" && options.appointmentType !== "other" && (options.appointmentType || Object.values(config.deviceSeller).some(Boolean))) {
     errors.push(...partyErrors(config.deviceSeller, "Készülékértékesítő"));
   }
   for (const [key, label] of [
@@ -103,28 +104,31 @@ export const configValidation = privacyNoticeConfigValidation;
 
 export function privacyNoticeControllers(input: PrivacyNoticeConfig, appointmentType?: PrivacyAppointmentType): PrivacyNoticeSnapshot["controllers"] {
   const config = normalizePrivacyNoticeConfig(input);
-  return appointmentType === "maintenance"
+  return appointmentType === "maintenance" || appointmentType === "other"
     ? [{ role: "service_provider", party: config.serviceProvider }]
     : [{ role: "device_seller", party: config.deviceSeller }, { role: "service_provider", party: config.serviceProvider }];
 }
 
 export function privacyControllerLabel(role: PrivacyNoticeSnapshot["controllers"][number]["role"], version?: string) {
   return role === "device_seller" ? "Készülék értékesítője"
-    : version === MAINTENANCE_PRIVACY_NOTICE_VERSION ? "Karbantartást végző vállalkozás" : "Szerelési / karbantartási szolgáltató";
+    : version === MAINTENANCE_PRIVACY_NOTICE_VERSION ? "Karbantartást végző vállalkozás"
+    : version === OTHER_PRIVACY_NOTICE_VERSION ? "Munkát végző vállalkozás" : "Szerelési / karbantartási szolgáltató";
 }
 
 export function buildPrivacyNoticeContent(input: PrivacyNoticeConfig, appointmentType?: PrivacyAppointmentType): PrivacyNoticeSnapshot["sections"] {
   const config = normalizePrivacyNoticeConfig(input);
   const isMaintenance = appointmentType === "maintenance";
+  const isOther = appointmentType === "other";
   return [
     { title: "Ki és miért kezeli az adatokat?", text: isMaintenance
       ? "A karbantartást végző vállalkozás az Ön által kért karbantartás egyeztetéséhez, elvégzéséhez, dokumentálásához és saját számlázásához szükséges nevet, címet, elérhetőségeket, készülék- és munkaadatokat, munkafotókat és aláírást kezeli. Ez a tájékoztató az adott karbantartási munkalaphoz tartozik; a korábbi készülékvásárlás vagy telepítés dokumentumait nem módosítja."
+      : isOther ? "A munkát végző vállalkozás az Ön által kért javítás, leszerelés vagy más szolgáltatás egyeztetéséhez, elvégzéséhez, dokumentálásához és saját számlázásához szükséges nevet, címet, elérhetőségeket, készülék- és munkaadatokat, munkafotókat és aláírást kezeli. Ez a tájékoztató az adott munkalaphoz tartozik; a korábbi készülékvásárlás, telepítés vagy karbantartás dokumentumait nem módosítja."
       : "A készülékértékesítő az értékesítéshez, számlázáshoz és jótállási ügyintézéshez szükséges ügyfél-, készülék- és vásárlási adatokat kezeli. A munkát végző vállalkozás az egyeztetéshez, telepítéshez vagy karbantartáshoz, dokumentáláshoz és saját számlázásához szükséges nevet, címet, elérhetőségeket, készülék- és munkaadatokat, munkafotókat és aláírást kezeli. Mindegyik vállalkozás a saját tevékenységéhez szükséges adatokért felel." },
-    { title: "Jogalap és az adatok megadása", text: `Az egyeztetés és teljesítés jogalapja a szerződés, illetve az azt megelőző, Ön által kért lépések (GDPR 6. cikk (1) b)). A kötelező számlázás és bizonylatmegőrzés jogalapja jogi kötelezettség (6. cikk (1) c)). Az ezekhez szükséges adatok nélkül a megrendelés nem teljesíthető. A karbantartó partnernek történő külön adatátadás jogalapja az önkéntes hozzájárulás (6. cikk (1) a)); ennek elutasítása nem érinti a ${isMaintenance ? "karbantartást" : "telepítést"}.` },
+    { title: "Jogalap és az adatok megadása", text: `Az egyeztetés és teljesítés jogalapja a szerződés, illetve az azt megelőző, Ön által kért lépések (GDPR 6. cikk (1) b)). A kötelező számlázás és bizonylatmegőrzés jogalapja jogi kötelezettség (6. cikk (1) c)). Az ezekhez szükséges adatok nélkül a megrendelés nem teljesíthető. A karbantartó partnernek történő külön adatátadás jogalapja az önkéntes hozzájárulás (6. cikk (1) a)); ennek elutasítása nem érinti a ${isMaintenance ? "karbantartást" : isOther ? "kért szolgáltatást" : "telepítést"}.` },
     { title: "Megőrzési idő", text: config.retentionText },
     { title: "Szolgáltatók és címzettek", text: config.recipientsText },
     { title: "EGT-n kívüli adattovábbítás", text: config.internationalTransfersText },
-    { title: "Karbantartó partner", text: `Külön hozzájárulás esetén kizárólag az Ön neve, a karbantartás címe, telefonszáma és email-címe adható át az alább név szerint megjelölt partnernek, karbantartás egyeztetésére és elvégzésére. Más partnerhez új hozzájárulás szükséges. A hozzájárulás bármikor visszavonható a fenti ${isMaintenance ? "vállalkozás" : "vállalkozások"} email-címén, telefonon vagy személyesen; a visszavonás előtti adatkezelés jogszerűségét ez nem érinti.` },
+    { title: "Karbantartó partner", text: `Külön hozzájárulás esetén kizárólag az Ön neve, a karbantartás címe, telefonszáma és email-címe adható át az alább név szerint megjelölt partnernek, karbantartás egyeztetésére és elvégzésére. Más partnerhez új hozzájárulás szükséges. A hozzájárulás bármikor visszavonható a fenti ${isMaintenance || isOther ? "vállalkozás" : "vállalkozások"} email-címén, telefonon vagy személyesen; a visszavonás előtti adatkezelés jogszerűségét ez nem érinti.` },
     { title: "Az Ön jogai", text: "A fenti elérhetőségeken kérhet hozzáférést, helyesbítést, valamint a jogszabályi feltételek szerint törlést, korlátozást és adathordozhatóságot; jogos érdeken alapuló adatkezelés ellen tiltakozhat. Kérelmére főszabály szerint egy hónapon belül választ kap. Panasszal a Nemzeti Adatvédelmi és Információszabadság Hatósághoz fordulhat (naih.hu, ugyfelszolgalat@naih.hu, 1055 Budapest, Falk Miksa utca 9–11.), vagy bírósági jogorvoslatot kérhet." },
     { title: "A tájékoztatás és a hozzájárulás különválik", text: "A tájékoztató átvételét rögzítő aláírás önmagában nem engedélyezi az adatátadást. A partneri hozzájárulást az ügyfél külön, önkéntesen jelöli. A dokumentum nem marketingcélú engedély." },
   ];
@@ -132,7 +136,7 @@ export function buildPrivacyNoticeContent(input: PrivacyNoticeConfig, appointmen
 
 export function partnerConsentText(config: PrivacyNoticeConfig, appointmentType?: PrivacyAppointmentType) {
   if (!config.partner.legalName) return "Karbantartó partner nincs megjelölve; partneri adattovábbításhoz nem adok hozzájárulást.";
-  const controllers = appointmentType === "maintenance" ? config.serviceProvider.legalName : `${config.serviceProvider.legalName} és ${config.deviceSeller.legalName}`;
+  const controllers = appointmentType === "maintenance" || appointmentType === "other" ? config.serviceProvider.legalName : `${config.serviceProvider.legalName} és ${config.deviceSeller.legalName}`;
   return `Hozzájárulok, hogy ${controllers} a nevemet, a karbantartás címét, telefonszámomat és email-címemet ${config.partner.legalName} részére átadja, kizárólag klímakarbantartás egyeztetése és elvégzése céljából, és a partner ebből a célból megkeressen. A hozzájárulás önkéntes, bármikor visszavonható a tájékoztatóban megadott módon.`;
 }
 
@@ -146,7 +150,7 @@ export function buildPrivacyNoticeSnapshot(input: {
   const errors = privacyNoticeConfigValidation(config, { requirePartner: input.consentGranted, appointmentType: input.appointmentType || "installation" });
   if (errors.length) throw new Error(errors.join(" "));
   return parsePrivacyNoticeSnapshot({
-    version: input.appointmentType === "maintenance" ? MAINTENANCE_PRIVACY_NOTICE_VERSION : PRIVACY_NOTICE_VERSION,
+    version: input.appointmentType === "maintenance" ? MAINTENANCE_PRIVACY_NOTICE_VERSION : input.appointmentType === "other" ? OTHER_PRIVACY_NOTICE_VERSION : PRIVACY_NOTICE_VERSION,
     controllers: privacyNoticeControllers(config, input.appointmentType),
     partner: config.partner.legalName ? config.partner : null,
     customer: { name: normalizedText(input.customer.name), address: normalizedText(input.customer.address), phone: normalizedText(input.customer.phone), email: normalizedText(input.customer.email) },
@@ -194,15 +198,15 @@ export function parsePrivacyNoticeSnapshot(input: unknown): PrivacyNoticeSnapsho
   const value = strictObject(input, ["version", "controllers", "partner", "customer", "sections", "consentText", "consentGranted", "signerName", "signatureDataUrl", "signedAt"]);
   // A later text/schema version must keep a reader for this version: signed snapshots
   // remain readable and are never regenerated from the newest business settings.
-  if (![PRIVACY_NOTICE_VERSION, MAINTENANCE_PRIVACY_NOTICE_VERSION].includes(value.version as string) || typeof value.consentGranted !== "boolean") invalidSnapshot();
-  const isMaintenance = value.version === MAINTENANCE_PRIVACY_NOTICE_VERSION;
-  if (!Array.isArray(value.controllers) || value.controllers.length !== (isMaintenance ? 1 : 2)) invalidSnapshot();
+  if (![PRIVACY_NOTICE_VERSION, MAINTENANCE_PRIVACY_NOTICE_VERSION, OTHER_PRIVACY_NOTICE_VERSION].includes(value.version as string) || typeof value.consentGranted !== "boolean") invalidSnapshot();
+  const isServiceOnly = value.version === MAINTENANCE_PRIVACY_NOTICE_VERSION || value.version === OTHER_PRIVACY_NOTICE_VERSION;
+  if (!Array.isArray(value.controllers) || value.controllers.length !== (isServiceOnly ? 1 : 2)) invalidSnapshot();
   const controllers = value.controllers.map((entry): PrivacyNoticeSnapshot["controllers"][number] => {
     const controller = strictObject(entry, ["role", "party"]);
     if (controller.role !== "device_seller" && controller.role !== "service_provider") invalidSnapshot();
     return { role: controller.role, party: strictParty(controller.party) };
   });
-  if (isMaintenance ? controllers[0].role !== "service_provider" : new Set(controllers.map((controller) => controller.role)).size !== 2) invalidSnapshot();
+  if (isServiceOnly ? controllers[0].role !== "service_provider" : new Set(controllers.map((controller) => controller.role)).size !== 2) invalidSnapshot();
   const partner = value.partner === null ? null : strictParty(value.partner);
   if (value.consentGranted && !partner) invalidSnapshot();
   const customer = strictObject(value.customer, ["name", "address", "phone", "email"]);

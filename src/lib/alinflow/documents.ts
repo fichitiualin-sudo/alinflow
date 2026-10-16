@@ -25,6 +25,7 @@ export function appointmentBookedDocumentType(type?: string | null) {
   const normalized = normalizeAppointmentType(type);
   if (normalized === "maintenance") return "maintenance_appointment_booked";
   if (normalized === "survey") return "survey_appointment_booked";
+  if (normalized === "other") return "other_appointment_booked";
   return "appointment_booked";
 }
 
@@ -32,6 +33,7 @@ export function appointmentEmailDocumentType(type?: string | null) {
   const normalized = normalizeAppointmentType(type);
   if (normalized === "maintenance") return "maintenance_appointment_email";
   if (normalized === "survey") return "survey_appointment_email";
+  if (normalized === "other") return "other_appointment_email";
   return "appointment_email";
 }
 

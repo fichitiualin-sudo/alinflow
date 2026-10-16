@@ -27,7 +27,7 @@ function fixture(options = {}) {
     date: "2026-11-10", time: "10:30", appointmentType: "installation",
     customerMode: existing ? "existing" : "new", name: "Synthetic calendar customer", phone: "",
     email: "calendar@example.invalid", city: "Synthetic city", postalCode: "0000", address: "Synthetic street",
-    notes: "Synthetic appointment note", productId: "synthetic-ac", quantity: 2, price: 310000,
+    notes: "Synthetic appointment note", quoteItems: [{productId: "synthetic-ac", quantity: 2, customPrice: 310000}],
     sendQuoteEmail: true, sendAppointmentEmail: true,
     maintenanceInstallationIds: existing ? [oldAppointmentId] : [], ...options.draft,
   };
@@ -569,3 +569,58 @@ test("quote sent markers require a real quote log or quote status, not an appoin
   assert.equal(f.customerHasSentQuote(customer), true);
   assert.equal(f.quoteSentAtFor(customer), customer.quoteSentAt);
 });
+
+
+test("calendar keeps multiple ACs and a separate extra in the saved quote and both emails", async () => {
+  const quoteItems = [
+    {productId: "synthetic-ac", quantity: 2, customPrice: 310000},
+    {productId: "", customName: "Synthetic second AC", isManual: true, quantity: 1, customPrice: 200000},
+    {productId: "", customName: "Synthetic extra pipe", isManual: true, itemType: "extra", quantity: 3, customPrice: 10000, customInstallPrice: 0},
+  ];
+  const f = fixture({draft: {quoteItems}});
+  await f.saveQuickAppointment();
+  assert.equal(f.state.persist.length, 1);
+  assert.equal(f.state.persist[0].quoteItems.length, 3);
+  assert.equal(f.products.qty(f.state.persist[0].quoteItems), 3);
+  for (const request of f.state.requests) {
+    assert.equal(request.body.items.length, 3);
+    assert.equal(request.body.totalAmount, 850000);
+  }
+});
+
+for (const quoteItems of [[], [{productId:"",quantity:1}], [{customName:"Incomplete",quantity:"",customPrice:100}], [{customName:"Incomplete",quantity:1,customPrice:""}], [{customName:"Invalid",quantity:1,customPrice:-100}]]) {
+  test("calendar rejects incomplete or negative-priced service rows before any save", async () => {
+    const f=fixture({draft:{appointmentType:"other",quoteItems}});
+    await f.saveQuickAppointment();
+    assert.equal(f.state.persist.length,0);
+    assert.equal(f.state.requests.length,0);
+  });
+}
+
+test("an extra by itself cannot create an installation", async () => {
+  const f=fixture({draft:{quoteItems:[{customName:"Extra pipe",itemType:"extra",quantity:1,customPrice:1000}]}});
+  await f.saveQuickAppointment();
+  assert.equal(f.state.persist.length,0);
+});
+
+for (const sendAppointmentEmail of [false,true]) {
+  test("customer service job keeps older installations and sends only its selected confirmation: " + sendAppointmentEmail, async () => {
+    const existing=existingCustomer({quotePricingMode:"alternatives"});const before=plain(existing);
+    const f=fixture({existing,draft:{appointmentType:"other",sendAppointmentEmail,sendQuoteEmail:true,
+      quoteItems:[{productId:"",customName:"Klíma leszerelése",itemType:"extra",isManual:true,quantity:2,customPrice:20000,customInstallPrice:0}]}});
+    await f.saveQuickAppointment();
+    assert.deepEqual(existing,before);
+    const saved=f.state.persist[0];
+    assert.equal(saved.appointmentType,"other");
+    assert.equal(saved.activeAppointmentId,undefined);
+    assert.equal(saved.activeQuoteId,undefined);
+    assert.equal(saved.activeWorkReportId,undefined);
+    assert.equal(saved.stockDeducted,false);
+    assert.equal(saved.materialUsage,undefined);
+    assert.equal(saved.quotePricingMode,"bundle");
+    assert.equal(f.products.qty(saved.quoteItems),0);
+    assert.equal(f.products.total(saved.quoteItems),40000);
+    assert.deepEqual(f.state.requests.map(r=>r.url),sendAppointmentEmail ? ["/api/send-appointment"] : []);
+    assert.ok(f.state.logs.every(([,kind])=>kind!=="quote_email"));
+  });
+}

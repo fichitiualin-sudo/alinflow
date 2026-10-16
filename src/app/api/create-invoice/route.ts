@@ -1,6 +1,7 @@
 import type { Customer, QuoteItem } from "@/lib/alinflow/types";
 import { authorizeCustomerRequest, apiErrorResponse, ApiError } from "@/lib/alinflow/server-auth";
-import { cleanQuoteItems, itemDeviceTotal, itemInstallTotal, itemName, itemQuantity } from "@/lib/alinflow/products";
+import { cleanQuoteItems, climateQuoteItems, isExtraQuoteItem, itemDeviceTotal, itemInstallTotal, itemName, itemQuantity, itemTotal } from "@/lib/alinflow/products";
+import { normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { billingDueDateIso, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { invoiceIssueDate, issueInvoiceOnce, InvoiceProviderRejection } from "@/lib/alinflow/invoice-delivery";
 
@@ -201,72 +202,83 @@ function distributeGross(totalGross: number, weights: number[]) {
   });
 }
 
-function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[], labels?: InvoiceRequest["billingLabels"], vatKey = invoiceVatKey(kind)) {
+function invoiceItemName(item: QuoteItem) {
+  return `${invoiceQuantityPrefix(itemQuantity(item))}${itemName(item)}${isExtraQuoteItem(item) ? "" : " + szerelési anyagok"}`;
+}
+
+function weightedInvoiceLines(kind: BillingInvoiceKind, amount: number, lines: Array<{ name: string; weight: number }>, vatKey: string) {
+  const grossValues = distributeGross(amount, lines.map((line) => line.weight));
+  return lines.map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], "", vatKey)).filter((line) => line.gross > 0);
+}
+
+function invoiceLines(kind: BillingInvoiceKind, amount: number, items: QuoteItem[], labels?: InvoiceRequest["billingLabels"], vatKey = invoiceVatKey(kind), appointmentType?: string) {
   const cleanItems = cleanQuoteItems(items);
+  const climateItems = climateQuoteItems(cleanItems);
+  const climateQuantity = climateItems.reduce((sum, item) => sum + itemQuantity(item), 0);
+  const extrasOnlyName = !climateItems.length ? cleanItems.map(invoiceItemName).join("; ") : "";
+
+  if (normalizeAppointmentType(appointmentType) === "other") {
+    const serviceLines = cleanItems.map((item) => ({ name: `${invoiceQuantityPrefix(itemQuantity(item))}${itemName(item)}`, weight: itemTotal(item) })).filter((line) => line.weight > 0);
+    if (serviceLines.length) return weightedInvoiceLines(kind, amount, serviceLines, vatKey);
+    const name = cleanItems.map((item) => `${invoiceQuantityPrefix(itemQuantity(item))}${itemName(item)}`).join("; ") || "Egyéb szolgáltatás";
+    return [invoiceLineFromGross(kind, name, amount, "", vatKey)];
+  }
 
   if (kind === "maintenance") {
-    const quantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
-    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(quantity)}${maintenanceInvoiceLineName(labels)}`, amount, "", vatKey)];
+    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(climateQuantity)}${maintenanceInvoiceLineName(labels)}`, amount, "", vatKey)];
   }
 
   if (kind === "labor") {
-    const quantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
-
-    if (!quantity) {
-      return [invoiceLineFromGross(kind, laborInvoiceLineName(labels), amount, "", vatKey)];
+    const extraLines = cleanItems.filter(isExtraQuoteItem).map((item) => ({ name: invoiceItemName(item), weight: itemInstallTotal(item) })).filter((line) => line.weight > 0);
+    if (extraLines.length) {
+      const climateWeight = climateItems.reduce((sum, item) => sum + itemInstallTotal(item), 0);
+      return weightedInvoiceLines(kind, amount, [
+        ...(climateWeight > 0 ? [{ name: `${invoiceQuantityPrefix(climateQuantity)}${laborInvoiceLineName(labels)}`, weight: climateWeight }] : []),
+        ...extraLines,
+      ], vatKey);
     }
-
-    return [invoiceLineFromGross(kind, `${invoiceQuantityPrefix(quantity)}${laborInvoiceLineName(labels)}`, amount, "", vatKey)];
+    return [invoiceLineFromGross(kind, extrasOnlyName || `${invoiceQuantityPrefix(climateQuantity)}${laborInvoiceLineName(labels)}`, amount, "", vatKey)];
   }
 
   if (kind === "combined") {
     const itemLines = cleanItems
       .map((item) => {
-        const quantity = itemQuantity(item);
         return {
-          name: `${invoiceQuantityPrefix(quantity)}${itemName(item)} + szerelési anyagok`,
-          weight: itemDeviceTotal(item),
+          name: invoiceItemName(item),
+          weight: isExtraQuoteItem(item) ? itemTotal(item) : itemDeviceTotal(item),
         };
       })
       .filter((line) => line.name && line.weight > 0);
-    const laborQuantity = cleanItems.reduce((sum, item) => sum + itemQuantity(item), 0);
-    const laborWeight = cleanItems.reduce((sum, item) => sum + itemInstallTotal(item), 0);
+    const laborWeight = climateItems.reduce((sum, item) => sum + itemInstallTotal(item), 0);
     const combinedLines = [
       ...itemLines,
       laborWeight > 0 ? {
-        name: `${invoiceQuantityPrefix(laborQuantity)}${laborInvoiceLineName(labels)}`,
+        name: `${invoiceQuantityPrefix(climateQuantity)}${laborInvoiceLineName(labels)}`,
         weight: laborWeight,
       } : null,
     ].filter(Boolean) as Array<{ name: string; weight: number }>;
 
     if (!combinedLines.length) {
-      return [invoiceLineFromGross(kind, invoiceLineName("combined", labels), amount, "", vatKey)];
+      return [invoiceLineFromGross(kind, extrasOnlyName || invoiceLineName("combined", labels), amount, "", vatKey)];
     }
 
-    const grossValues = distributeGross(amount, combinedLines.map((line) => line.weight));
-    return combinedLines
-      .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], "", vatKey))
-      .filter((line) => line.gross > 0);
+    return weightedInvoiceLines(kind, amount, combinedLines, vatKey);
   }
 
   const itemLines = cleanItems
     .map((item) => {
-      const quantity = itemQuantity(item);
       return {
-        name: `${invoiceQuantityPrefix(quantity)}${itemName(item)} + szerelési anyagok`,
+        name: invoiceItemName(item),
         weight: itemDeviceTotal(item),
       };
     })
     .filter((line) => line.name && line.weight > 0);
 
   if (!itemLines.length) {
-    return [invoiceLineFromGross(kind, `${invoiceLineName("device", labels)} + szerelési anyagok`, amount, "", vatKey)];
+    return [invoiceLineFromGross(kind, extrasOnlyName || `${invoiceLineName("device", labels)} + szerelési anyagok`, amount, "", vatKey)];
   }
 
-  const grossValues = distributeGross(amount, itemLines.map((line) => line.weight));
-  return itemLines
-    .map((line, index) => invoiceLineFromGross(kind, line.name, grossValues[index], "", vatKey))
-    .filter((line) => line.gross > 0);
+  return weightedInvoiceLines(kind, amount, itemLines, vatKey);
 }
 
 function normalizePaymentMethod(value: unknown): BillingPaymentMethod {
@@ -282,7 +294,7 @@ function buildInvoiceXml({ kind, amount, paymentMethod = "cash", transferDueDays
   const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
   const dueDate = billingDueDateIso(normalizedPaymentMethod, new Date(`${date}T12:00:00.000Z`), transferDueDays);
   const buyer = buyerAddress(customer);
-  const lines = invoiceLines(kind, amount, quoteItems, billingLabels, issuer?.vatKey);
+  const lines = invoiceLines(kind, amount, quoteItems, billingLabels, issuer?.vatKey, customer.appointmentType);
   const externalId = `alinflow-${kind}-${customer.activeAppointmentId || customer.id}`;
   const comment = issuer?.comment ?? invoiceComment(kind);
   const paymentLabel = szamlazzPaymentMethodName(normalizedPaymentMethod);
@@ -386,13 +398,20 @@ export async function POST(request: Request) {
     const { workspaceId, userId, appointment } = await authorizeCustomerRequest(request, body);
     const kind = body.kind === "device" || body.kind === "labor" || body.kind === "maintenance" || body.kind === "combined" ? body.kind : null;
     const amount = parseAmount(body.amount);
-    const customer = body.customer;
+    const customer = { ...body.customer, appointmentType: normalizeAppointmentType(appointment?.appointment_type || body.customer?.appointmentType) };
 
     if (!kind) return Response.json({ ok: false, error: "Ismeretlen számlatípus." }, { status: 400 });
     if (!amount) return Response.json({ ok: false, error: "Hiányzik az érvényes számlaösszeg." }, { status: 400 });
     if (!customer?.id) return Response.json({ ok: false, error: "Hiányzik az ügyfél." }, { status: 400 });
+    if (customer.appointmentType === "other" && (!appointment?.id || kind !== "labor")) {
+      throw new ApiError("Az egyéb munka a mentett időponthoz, saját szolgáltatási számlaként számlázható.", 400);
+    }
+    if (customer.appointmentType === "other" && (appointment?.status === "Lemondva" || appointment?.cancelled_at)) {
+      throw new ApiError("A lemondott szolgáltatási időpont nem számlázható.", 409);
+    }
 
     const issuer = resolveInvoiceIssuer(kind, workspaceId);
+    if (customer.appointmentType === "other") issuer.comment = "Szolgáltatási díj számlája.";
 
     const sendEmail = Boolean(body.sendEmail && customer.email?.trim());
     const xml = buildInvoiceXml({ ...body, kind, amount, customer, sendEmail }, issuer.agentKey, issuer);

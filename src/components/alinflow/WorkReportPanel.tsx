@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import type { Customer, PurchaseDeclaration, QuoteItem, SellerCompany, WorkReport } from "@/lib/alinflow/types";
 import { climateSummary } from "@/lib/alinflow/products";
 import { fullCustomerAddress } from "@/lib/alinflow/format";
-import { formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle, workReportSnapshotCustomer } from "@/lib/alinflow/work-report";
+import { formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle, workReportSnapshotCustomer, workItemsSummary } from "@/lib/alinflow/work-report";
 import { appointmentSummaryLabel, appointmentWorkLabel, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { Back } from "@/components/alinflow/LayoutPrimitives";
 import { WorkSectionToggleButton } from "@/components/alinflow/WorkSectionToggleButton";
-import { buildPrivacyNoticeContent, buildPrivacyNoticeSnapshot, normalizePrivacyNoticeConfig, partnerConsentText, privacyNoticeConfigValidation, privacyNoticeControllers, privacyControllerLabel, MAINTENANCE_PRIVACY_NOTICE_VERSION, type PrivacyNoticeConfig, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
+import { buildPrivacyNoticeContent, buildPrivacyNoticeSnapshot, normalizePrivacyNoticeConfig, partnerConsentText, privacyNoticeConfigValidation, privacyNoticeControllers, privacyControllerLabel, MAINTENANCE_PRIVACY_NOTICE_VERSION, OTHER_PRIVACY_NOTICE_VERSION, type PrivacyNoticeConfig, type PrivacyNoticeSnapshot } from "@/lib/alinflow/privacy-notice";
 import { PrivacyNoticeDocument } from "@/components/alinflow/PrivacyNoticeDocument";
 
 type WorkReportPanelProps = {
@@ -73,8 +73,10 @@ export function WorkReportPanel({
 }: WorkReportPanelProps) {
   const appointmentType = normalizeAppointmentType(selected.appointmentType);
   const isMaintenance = appointmentType === "maintenance";
+  const isOther = appointmentType === "other";
+  const isInstallation = appointmentType === "installation";
   const reportTitle = workReportTitle(selected.appointmentType);
-  const climateLabel = isMaintenance ? "Karbantartandó klímák" : "Klíma";
+  const climateLabel = isOther ? "Munka tételei" : isMaintenance ? "Karbantartandó klímák" : "Klíma";
   const hasValidSignature = hasValidWorkReportSignature(workReport);
   const documentCustomer = hasValidSignature ? workReportSnapshotCustomer(selected, workReport) : selected;
   const savedSeller = hasValidSignature && savedDeclaration ? {
@@ -93,7 +95,7 @@ export function WorkReportPanel({
   const noticeReady = privacy.enabled && privacyErrors.length === 0;
   const partnerReady = noticeReady && privacyNoticeConfigValidation(privacy, { requirePartner: true, appointmentType }).length === 0;
   const noticeControllers = privacyNoticeControllers(privacy, appointmentType);
-  const controllerLabel = (role: PrivacyNoticeSnapshot["controllers"][number]["role"]) => privacyControllerLabel(role, isMaintenance ? MAINTENANCE_PRIVACY_NOTICE_VERSION : undefined);
+  const controllerLabel = (role: PrivacyNoticeSnapshot["controllers"][number]["role"]) => privacyControllerLabel(role, isOther ? OTHER_PRIVACY_NOTICE_VERSION : isMaintenance ? MAINTENANCE_PRIVACY_NOTICE_VERSION : undefined);
 
   useEffect(() => {
     setShowPurchaseDeclaration(false);
@@ -167,11 +169,11 @@ export function WorkReportPanel({
           <Card title={`${reportTitle} adatai`}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Ügyfél" value={documentCustomer.name || "nincs megadva"}/>
-              <Field label={isMaintenance ? "Karbantartási cím" : "Telepítési cím"} value={fullCustomerAddress(documentCustomer)}/>
+              <Field label={isOther ? "Munkavégzés helye" : isMaintenance ? "Karbantartási cím" : "Telepítési cím"} value={fullCustomerAddress(documentCustomer)}/>
               <Field label="Időpont" value={hasValidSignature && workReport.workDate
                 ? `${workReport.workDate.replaceAll("-", ".")} · ${workReport.workTime || ""}`
                 : selected.date ? appointmentSummaryLabel(selected) : `${scheduleDate} · ${shownTime}`}/>
-              <Field label={climateLabel} value={hasValidSignature && workReport.documentSnapshot ? workReport.documentSnapshot.climateSummary : climateSummary(quoteItems)}/>
+              <Field label={climateLabel} value={hasValidSignature && workReport.documentSnapshot ? workReport.documentSnapshot.climateSummary : workItemsSummary(selected, quoteItems)}/>
             </div>
             <label className="mt-5 block rounded-2xl bg-slate-900/80 p-4">
               <span className="text-sm text-slate-400">Elvégzett {appointmentWorkLabel(selected.appointmentType).toLowerCase()} leírása</span>
@@ -246,7 +248,7 @@ export function WorkReportPanel({
               <p className="mt-3 text-sm font-bold text-amber-200">Még nincs aláírás.</p>
             )}
           </Card>
-          {!isMaintenance ? (
+          {isInstallation ? (
             <>
               <WorkSectionToggleButton
                 label="Vásárlási nyilatkozat"
@@ -299,7 +301,7 @@ export function WorkReportPanel({
           <Card title="Műveletek">
             <div className="grid grid-cols-1 gap-3">
               <StepButton color="green" disabled={workReportBusy || workReportEmailBusy || Boolean(signatureDraft)} onClick={()=>onSave(false)}>{workReportBusy && !workReportEmailBusy ? "Mentés..." : "Munkalap mentése"}</StepButton>
-              <StepButton color="blue" disabled={workReportBusy || workReportEmailBusy || Boolean(signatureDraft)} onClick={()=>onSave(true)}>{workReportEmailBusy ? "PDF-ek küldése..." : workReportBusy ? "Mentés..." : isMaintenance ? "Munkalap küldése PDF-ben" : "Mentés és PDF-ek küldése"}</StepButton>
+              <StepButton color="blue" disabled={workReportBusy || workReportEmailBusy || Boolean(signatureDraft)} onClick={()=>onSave(true)}>{workReportEmailBusy ? "PDF-ek küldése..." : workReportBusy ? "Mentés..." : !isInstallation ? "Munkalap küldése PDF-ben" : "Mentés és PDF-ek küldése"}</StepButton>
               {signatureDraft ? <p className="text-sm">Mentés előtt nyomd meg az Aláírás rögzítése gombot.</p> : null}
             </div>
           </Card>

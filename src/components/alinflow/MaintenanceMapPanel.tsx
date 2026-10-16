@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Customer } from "@/lib/alinflow/types";
 import type { SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
 import { paginateItems } from "@/lib/alinflow/customers";
@@ -28,6 +28,7 @@ type MaintenanceMapPanelProps = {
   googleMapsApiKey: string;
   geocodingBusy: boolean;
   preferenceKey?: string;
+  headerActions?: ReactNode;
   onOpenCustomer: (customer: Customer) => void;
   onOpenShared?: (item: SharedMaintenanceInstallation) => void;
   onGeocodeMissing: (points: MaintenanceMapPoint[]) => void;
@@ -59,6 +60,7 @@ export function MaintenanceMapPanel({
   googleMapsApiKey,
   geocodingBusy,
   preferenceKey,
+  headerActions,
   onOpenCustomer,
   onOpenShared,
   onGeocodeMissing,
@@ -202,9 +204,12 @@ export function MaintenanceMapPanel({
             <span className="min-w-0 break-words">{label}</span>
           </label>)}
         </div>
-        <button type="button" onClick={() => onGeocodeMissing(filteredPoints.filter(point => !point.sharedMaintenance))} disabled={geocodingBusy || missingCoordinateCount === 0} className="rounded-2xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
-          {geocodingBusy ? "Koordináták keresése..." : `Hiányzó koordináták (${missingCoordinateCount})`}
-        </button>
+        <div className="flex max-w-full flex-wrap items-center gap-2">
+          {headerActions}
+          <button type="button" onClick={() => onGeocodeMissing(filteredPoints.filter(point => !point.sharedMaintenance))} disabled={geocodingBusy || missingCoordinateCount === 0} className="rounded-2xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
+            {geocodingBusy ? "Koordináták keresése..." : `Hiányzó koordináták (${missingCoordinateCount})`}
+          </button>
+        </div>
       </div>
       <div className="min-w-0">
         <label htmlFor={searchId} className="mb-2 block text-sm font-bold text-slate-300">Ügyfél, cím, település, klíma vagy átadó</label>

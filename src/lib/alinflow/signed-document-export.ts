@@ -1,7 +1,7 @@
 import type { Customer, PurchaseDeclaration, QuoteItem, SellerCompany, WorkReport } from "./types";
-import { appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel } from "./appointments";
+import { appointmentTimeLabel, appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkLabel, normalizeAppointmentType } from "./appointments";
 import { fullCustomerAddress } from "./format";
-import { cleanQuoteItems, itemName, itemQuantity } from "./products";
+import { cleanQuoteItems, climateQuoteItems, isExtraQuoteItem, itemName, itemQuantity } from "./products";
 import { DEFAULT_SELLER_COMPANY } from "./purchase-declarations";
 import { defaultWorkDescription, formatSignedAt, hasValidWorkReportSignature, workAcceptanceText, workReportTitle, workReportSnapshotCustomer } from "./work-report";
 import type { WorkspaceSettings } from "./workspace-settings";
@@ -150,7 +150,10 @@ export function buildWorkReportHtml(customer: Customer, report: WorkReport, quot
     time: report.workTime || customer.time,
   };
   const items = cleanQuoteItems(customer.quoteItems?.length ? customer.quoteItems : quoteItems);
-  const shownItems = items.length ? items : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
+  const isOther = normalizeAppointmentType(reportCustomer.appointmentType) === "other";
+  const reportItems = isOther ? items : climateQuoteItems(items);
+  const extraItems = isOther || report.documentSnapshot ? [] : items.filter(isExtraQuoteItem);
+  const shownItems = reportItems.length ? reportItems : [{ productId: "", quantity: 1, customName: isOther ? "Nincs munkatétel megadva" : "Nincs klíma megadva", isManual: true }];
   const workTime = report.documentSnapshot ? report.workTime || "nincs megadva" : reportCustomer.time
     ? appointmentTimeLabel(reportCustomer.appointmentType, reportCustomer.time, items)
     : appointmentTimeRangeLabel(reportCustomer);
@@ -187,14 +190,16 @@ export function buildWorkReportHtml(customer: Customer, report: WorkReport, quot
     </div>
 
     <section class="section">
-      <h2>Készülékek</h2>
+      <h2>${isOther ? "Munka tételei" : "Készülékek"}</h2>
       <table class="report-devices">
-        <thead><tr><th>Készülék megnevezése</th><th class="quantity">Darab</th><th class="note">Megjegyzés</th></tr></thead>
+        <thead><tr><th>${isOther ? "Tétel megnevezése" : "Készülék megnevezése"}</th><th class="quantity">${isOther ? "Mennyiség" : "Darab"}</th><th class="note">Megjegyzés</th></tr></thead>
         <tbody>
-          ${report.documentSnapshot ? `<tr><td colspan="3">${escapeHtml(report.documentSnapshot.climateSummary || "Nincs rögzített készülékmegnevezés.")}</td></tr>` : shownItems.map((item) => `<tr><td>${escapeHtml(itemName(item))}</td><td class="center"><strong>${itemQuantity(item)}</strong></td><td>${escapeHtml(appointmentWorkLabel(reportCustomer.appointmentType))}</td></tr>`).join("")}
+          ${report.documentSnapshot ? `<tr><td colspan="3">${escapeHtml(report.documentSnapshot.climateSummary || (isOther ? "Nincs rögzített munkatétel." : "Nincs rögzített készülékmegnevezés."))}</td></tr>` : shownItems.map((item) => `<tr><td>${escapeHtml(itemName(item))}</td><td class="center"><strong>${itemQuantity(item)}</strong></td><td>${escapeHtml(appointmentWorkLabel(reportCustomer.appointmentType))}</td></tr>`).join("")}
         </tbody>
       </table>
     </section>
+
+    ${extraItems.length ? `<section class="section"><h2>Egyéb tételek</h2><ul>${extraItems.map((item) => `<li>${itemQuantity(item)} × ${escapeHtml(itemName(item))}</li>`).join("")}</ul></section>` : ""}
 
     <section class="section">
       <h2>Elvégzett munka</h2>
@@ -286,7 +291,7 @@ export function buildPurchaseDeclarationHtml(customer: Customer, declaration: Pu
     taxNumber: declaration.sellerTaxNumber || DEFAULT_SELLER_COMPANY.taxNumber,
     representative: declaration.sellerRepresentative || DEFAULT_SELLER_COMPANY.representative,
   };
-  const shownItems = cleanQuoteItems(declaration.quoteItems || []);
+  const shownItems = climateQuoteItems(declaration.quoteItems || []);
   const items = shownItems.length ? shownItems : [{ productId: "", quantity: 1, customName: "Nincs klíma megadva", isManual: true }];
   const signature = safeDataUrl(declaration.signatureDataUrl);
   const field = (label: string, value = "") => `<p class="purchase-field"><span>${escapeHtml(label)}</span><span class="purchase-field-value">${escapeHtml(value || "\u00A0")}</span></p>`;

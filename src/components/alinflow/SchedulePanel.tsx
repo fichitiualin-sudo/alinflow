@@ -4,6 +4,7 @@ import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem
 import { climateSummary, isCustomQuoteItem, itemName, itemUnitPrice, sortProducts } from "@/lib/alinflow/products";
 import { displayAddress } from "@/lib/alinflow/format";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { AppointmentItemsEditor } from "@/components/alinflow/AppointmentItemsEditor";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
 import { appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
 
@@ -37,6 +38,7 @@ type SchedulePanelProps = {
   onUpdateQuoteItem: (index: number, key: keyof QuoteItem, value: string | number | boolean) => void;
   onUpdateQuoteProduct: (index: number, productId: string) => void;
   onAddQuoteItem: () => void;
+  onChangeQuoteItems: (items: QuoteItem[]) => void;
   onToggleMaintenanceInstallation: (appointmentId: string, checked: boolean) => void;
   onSetSendAppointmentNotice: (value: boolean) => void;
 };
@@ -103,6 +105,7 @@ export function SchedulePanel({
   onUpdateQuoteItem,
   onUpdateQuoteProduct,
   onAddQuoteItem,
+  onChangeQuoteItems,
   onToggleMaintenanceInstallation,
   onSetSendAppointmentNotice,
 }: SchedulePanelProps) {
@@ -113,7 +116,7 @@ export function SchedulePanel({
     ? "Felmérési időpont"
     : isMaintenance
     ? "Karbantartáshoz tartozó klímák"
-    : "Időpontba kerülő klímák";
+    : appointmentType === "other" ? "Munka tételei" : "Időpontba kerülő klímák";
   const manualTimeValue = normalizeAppointmentTimeInput(scheduleTime) || scheduleTime || "";
   const selectedTimeLabel = normalizeAppointmentTimeInput(scheduleTime)
     ? appointmentTimeLabel(appointmentType, scheduleTime, quoteItems)
@@ -168,6 +171,7 @@ export function SchedulePanel({
         <Side>
           <Gradient title="Kiválasztott időpont" value={`${appointmentTypeLabel(appointmentType)} · ${scheduleDate.replaceAll("-", ".")} · ${shownTime}`} />
           <Card title={appointmentDetailsTitle}>
+            {appointmentType === "other" ? <AppointmentItemsEditor extraOnly items={quoteItems} products={products} onChange={onChangeQuoteItems} /> : null}
             {isInstallation ? (
               <>
                 {quoteItems.map((item, index) => (

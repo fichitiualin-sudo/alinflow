@@ -1,10 +1,11 @@
 import { DEFAULT_MATERIALS } from "./constants";
-import { qty } from "./products";
+import { cleanQuoteItems, qty } from "./products";
 import type { Customer, QuoteItem } from "./types";
 
 export function materialAmountForWork(name: string, items: QuoteItem[], usage?: Customer["materialUsage"]) {
   const materials = usage?.materials ?? DEFAULT_MATERIALS;
-  const count = Math.max(1, qty(items));
+  const climateCount = qty(items);
+  const count = climateCount || (cleanQuoteItems(items).length ? 0 : 1);
   const consoleName = materials.find((item) => item.name === "Konzol")?.qty;
   if (name === "450-es konzol" || name === "550-es konzol") return consoleName === name ? count : 0;
   const material = materials.find((item) => item.name === name);

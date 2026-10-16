@@ -2,11 +2,17 @@ import type { Customer, QuoteItem, WorkReport, WorkReportSnapshot } from "./type
 import { appointmentWorkLabel, firstAppointmentTime, normalizeAppointmentType } from "./appointments";
 import { parsePrivacyNoticeSnapshot } from "./privacy-notice";
 import { fullCustomerAddress } from "./format";
-import { climateSummary } from "./products";
+import { climateSummary, itemName, itemQuantity, cleanQuoteItems } from "./products";
+
+export function workItemsSummary(customer: Pick<Customer, "appointmentType">, items: QuoteItem[]) {
+  return normalizeAppointmentType(customer.appointmentType) === "other"
+    ? cleanQuoteItems(items).map(item => `${itemQuantity(item)} × ${itemName(item)}`).join(", ")
+    : climateSummary(items);
+}
 
 export function captureWorkReportSnapshot(customer: Customer, items: QuoteItem[]): WorkReportSnapshot {
   return { customerName: customer.name || "", customerAddress: fullCustomerAddress(customer),
-    customerEmail: customer.email || "", customerPhone: customer.phone || "", climateSummary: climateSummary(items) };
+    customerEmail: customer.email || "", customerPhone: customer.phone || "", climateSummary: workItemsSummary(customer, items) };
 }
 
 export function workReportSnapshotCustomer(customer: Customer, report: WorkReport): Customer {
@@ -23,6 +29,7 @@ export function sameWorkReportSignature(left: WorkReport | undefined, right: Wor
 
 export function defaultWorkDescription(appointmentType?: string | null) {
   const type = normalizeAppointmentType(appointmentType);
+  if (type === "other") return "";
   if (type === "maintenance") {
     return "Klímaberendezés karbantartása, beltéri egység tisztítása, szűrők ellenőrzése/tisztítása, kültéri egység szemrevételezése, kondenzvíz-elvezetés ellenőrzése, működési próba és az ügyfél tájékoztatása.";
   }
@@ -39,6 +46,7 @@ export function workAcceptanceText(appointmentType?: string | null) {
 
 export function workReportTitle(appointmentType?: string | null) {
   const type = normalizeAppointmentType(appointmentType);
+  if (type === "other") return "Szervizmunkalap";
   if (type === "maintenance") return "Klímakarbantartási munkalap";
   if (type === "survey") return "Klímafelmérési munkalap";
   return "Klímaszerelési munkalap";

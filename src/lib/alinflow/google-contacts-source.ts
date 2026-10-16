@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeContactEmail, normalizeContactPhone, type ContactSource } from "./google-contacts-model";
+import { isExtraQuoteItem, quoteItemFromRow } from "./products";
 
 type Row = Record<string, unknown>;
 const PAGE_SIZE = 500;
@@ -69,6 +70,13 @@ export function projectGoogleContactSources(rows: ContactSourceRows, workspaceId
     && (row.maintenance_origin === "own" || row.maintenance_origin == null) && !excluded.has(value(row.id))
     && !row.cancelled_at && ["Lezárva", "Szerelés kész – admin folyamatban"].includes(value(row.status))
     && Boolean(date(row.scheduled_date)) && date(row.scheduled_date) <= today && customers.has(value(row.customer_id)))
+    .filter((work) => {
+      const quote = quotes.get(value(work.quote_id));
+      if (!quote || value(quote.customer_id) !== value(work.customer_id)) return true;
+      const items = rows.quoteItems.filter((item) => scope(item, workspaceId) && item.quote_id === quote.id);
+      const hasDevice = rows.devices.some((device) => scope(device, workspaceId) && device.appointment_id === work.id && device.customer_id === work.customer_id);
+      return !items.length || items.some((item) => !isExtraQuoteItem(quoteItemFromRow(item))) || hasDevice;
+    })
     .sort((a, b) => value(a.scheduled_date).localeCompare(value(b.scheduled_date)) || value(a.id).localeCompare(value(b.id)));
   const byCustomer = new Map<string, Row[]>();
   for (const installation of installations) {
@@ -85,7 +93,7 @@ export function projectGoogleContactSources(rows: ContactSourceRows, workspaceId
       const validQuote = quote && value(quote.customer_id) === customerId;
       const alternatives = validQuote && ["alternatives", "quote_pricing_mode:alternatives"].includes(value(quote.notes));
       const items = validQuote && !alternatives ? rows.quoteItems.filter((item) => scope(item, workspaceId) && item.quote_id === quote.id
-        && Number.isInteger(Number(item.quantity)) && Number(item.quantity) > 0 && Number(item.quantity) <= 1000)
+        && !isExtraQuoteItem(quoteItemFromRow(item)) && Number.isInteger(Number(item.quantity)) && Number(item.quantity) > 0 && Number(item.quantity) <= 1000)
         .sort((a, b) => value(a.id).localeCompare(value(b.id))) : [];
       const devices = rows.devices.filter((device) => scope(device, workspaceId) && device.appointment_id === workId && device.customer_id === customerId)
         .sort((a, b) => value(a.product_key).localeCompare(value(b.product_key)) || Number(a.unit_number) - Number(b.unit_number) || value(a.id).localeCompare(value(b.id)));
@@ -112,7 +120,7 @@ export async function loadGoogleContactSources(admin: SupabaseClient, workspaceI
     readRows(admin, "customers", "id,workspace_id,name,phone,email,city,postal_code,address", workspaceId),
     readRows(admin, "appointments", "id,workspace_id,customer_id,quote_id,scheduled_date,appointment_type,status,address,cancelled_at,maintenance_origin", workspaceId),
     readRows(admin, "quotes", "id,workspace_id,customer_id,notes", workspaceId),
-    readRows(admin, "quote_items", "id,workspace_id,quote_id,product_name,quantity", workspaceId),
+    readRows(admin, "quote_items", "id,workspace_id,quote_id,product_name,quantity,description", workspaceId),
     readRows(admin, "appointment_devices", "id,workspace_id,customer_id,appointment_id,product_key,product_name,unit_number,data", workspaceId),
     readRows(admin, "maintenance_appointment_items", "id,workspace_id,customer_id,maintenance_appointment_id,installation_appointment_id", workspaceId),
     readExcludedInstallations(admin, workspaceId),

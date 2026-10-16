@@ -66,7 +66,7 @@ test('explicit handoff selection bypasses stale same-customer installation histo
   const target={...item.customer,id:'target-customer',activeAppointmentId:'target-new-installation',appointmentType:'installation',
     quoteItems:[{productId:'manual',quantity:2,customPrice:0}],date:item.installationDate,time:item.installationTime};
   const {startMaintenanceForCustomer}=h.functions(['startMaintenanceForCustomer'],{
-    maintenanceReturnRef:{current:null},selected:{id:'different'},cleanQuoteItems:items=>items,
+    maintenanceReturnRef:{current:null},selected:{id:'different'},cleanQuoteItems:items=>items,climateQuoteItems:items=>items.filter(item=>item.itemType!=="extra"),
     customerInstallationWorks:()=>{throw Error('Stale history must not override explicit selected installation');},
     setSelected:value=>selected.push(value),setQuoteItems:value=>quoteItems.push(value),setScheduleDate:noop,setScheduleTime:noop,
     setScheduleAppointmentType:noop,setSendAppointmentNotice:noop,setAllowWorkResourceEdit:noop,setMessage:noop,navigateToView:noop,

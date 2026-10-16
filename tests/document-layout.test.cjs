@@ -12,7 +12,7 @@ class SavedDateOnly extends Date {
 }
 
 const h = harness({ Date: SavedDateOnly }, { "react/jsx-runtime": require("react/jsx-runtime") });
-const { PurchaseDeclarationDocument, WorkReportDocument } = h.load("src/components/alinflow/DocumentPreviewDocuments.tsx");
+const { PurchaseDeclarationDocument, WorkReportDocument, QuoteDocument, AppointmentConfirmationDocument } = h.load("src/components/alinflow/DocumentPreviewDocuments.tsx");
 const { buildPurchaseDeclarationHtml, buildWorkReportHtml, buildPrivacyNoticeHtml } = h.load("src/lib/alinflow/signed-document-export.ts");
 const customer = { id: "synthetic-customer", name: "", city: "Tesztváros", address: "Minta út 1.", date: "2026-09-15", quoteItems: [] };
 const report = { signerName: "Different work-report signer", signatureDataUrl: "data:image/png;base64,V09SSw==", signedAt: "2026-09-15T10:00:00Z", workDate: "2026-09-15", workDescription: "", notes: "" };
@@ -78,4 +78,48 @@ test("declaration archive preserves one copy, original clauses, escaped data and
   assert.match(html, /Több berendezés típus vásárlása/);
   assert.match(html, /Nyilatkozata megtételével egyidejűleg hozzájárul/);
   assert.doesNotMatch(html, /Different work-report signer|V09SSw==/);
+});
+
+test("other work report preview and HTML export use saved service wording and never today's quote", () => {
+  const other = { ...report, appointmentType: "other", workDescription: "Mentett javítás elvégezve.", documentSnapshot: {
+    customerName: "Mentett ügyfél", customerAddress: "Mentett munkacím", customerPhone: "", customerEmail: "",
+    climateSummary: "2 × Mentett hibakeresés <&>",
+  } };
+  const changed = [{ productId: "", itemType: "extra", customName: "MAI TÉTEL NEM SZEREPELHET", quantity: 1, customPrice: 5000 }];
+  const current = { ...customer, appointmentType: "installation", quoteItems: changed };
+  for (const html of [renderToStaticMarkup(WorkReportDocument({ customer: current, report: other, quoteItems: changed })), buildWorkReportHtml(current, other, changed)]) {
+    assert.match(html, /Szervizmunkalap/); assert.match(html, /Munka tételei/);
+    assert.match(html, /2 × Mentett hibakeresés &lt;&amp;&gt;/);
+    assert.doesNotMatch(html, /MAI TÉTEL|Készülék megnevezése|Klímaszerelési munkalap|beüzemelés/);
+  }
+});
+
+test("installation previews separate extras from the climate table and declarations keep devices only", () => {
+  const items = [...declaration.quoteItems, { productId: "", itemType: "extra", customName: "Külön kábelezés", quantity: 3, customPrice: 1000 }];
+  for (const html of [renderToStaticMarkup(WorkReportDocument({ customer, report, quoteItems: items })), buildWorkReportHtml(customer, report, items)]) {
+    const firstTable = html.slice(html.indexOf("<table"), html.indexOf("</table>") + 8);
+    assert.match(firstTable, /Synthetic AC/); assert.doesNotMatch(firstTable, /Külön kábelezés/);
+    assert.match(html, /Egyéb tételek/); assert.match(html, /3 × Külön kábelezés/);
+  }
+  const saved = { ...declaration, quoteItems: items };
+  for (const html of [renderToStaticMarkup(PurchaseDeclarationDocument({ customer, report, quoteItems: items, declaration: saved })), buildPurchaseDeclarationHtml(customer, saved)]) {
+    assert.match(html, /Synthetic AC/); assert.doesNotMatch(html, /Külön kábelezés/);
+  }
+});
+
+test("other work cannot create a fresh purchase declaration while an older saved declaration stays readable", () => {
+  const otherCustomer = { ...customer, appointmentType: "other" };
+  const otherReport = { ...report, appointmentType: "other" };
+  assert.equal(renderToStaticMarkup(PurchaseDeclarationDocument({ customer: otherCustomer, report: otherReport, quoteItems: [] })), "");
+  const html = renderToStaticMarkup(PurchaseDeclarationDocument({ customer: otherCustomer, report: otherReport, quoteItems: [], declaration }));
+  assert.match(html, /Synthetic AC/); assert.match(html, /Declaration signer/);
+});
+
+test("other service quote and appointment preview retain work names without installation promises", () => {
+  const items = [{ productId: "", itemType: "extra", customName: "Hibakeresés és javítás", quantity: 1, customPrice: 10000 }];
+  const other = { ...customer, appointmentType: "other", time: "11:00", quoteItems: items };
+  for (const html of [renderToStaticMarkup(QuoteDocument({ customer: other, quoteItems: items, quoteIssuedAt: report.signedAt })), renderToStaticMarkup(AppointmentConfirmationDocument({ customer: other, quoteItems: items }))]) {
+    assert.match(html, /Hibakeresés és javítás/);
+    assert.doesNotMatch(html, /telepítéssel együtt|szereléssel együtt|alapszereléssel|tervezett helye/);
+  }
 });
