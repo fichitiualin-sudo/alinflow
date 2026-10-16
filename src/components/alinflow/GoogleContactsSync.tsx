@@ -5,16 +5,18 @@ import { supabase } from "@/lib/supabase";
 export type GoogleContactsStatus = {
   configured: boolean; canManage: boolean; connected: boolean; email: string;
   status: "active" | "paused" | "reauth_required" | null;
-  linkedCount: number; pendingCount: number; errorCount: number;
+  linkedCount: number; coveredCustomerCount?: number; pendingCount: number; errorCount: number;
   lastSyncedAt: string | null; lastError: string | null;
 };
 export type ContactPreviewItem = {
   customerId: string; name: string; phone: string; email: string; address: string; notes: string; sourceHash: string;
   state: "new" | "match" | "ambiguous" | "linked" | "review"; resourceName: string | null; lastError?: string;
   candidates: { resourceName: string; name: string; phones: string[]; emails: string[]; evidence: ("phone" | "email")[] }[];
+  groupable?: boolean; memberCustomerIds?: string[]; phones?: string[]; emails?: string[]; addresses?: string[];
+  members?: { customerId: string; name: string; phone: string; email: string; address: string }[];
 };
 export type ContactsPreview = { previewId: string; expiresAt: string; googleEmail: string; items: ContactPreviewItem[] };
-export async function requestGoogleContacts<T>(path: "status" | "connect" | "disconnect" | "preview" | "approve" | "sync", workspaceId: string,
+export async function requestGoogleContacts<T>(path: "status" | "connect" | "disconnect" | "preview" | "groups/preview" | "approve" | "sync", workspaceId: string,
   userId: string, signal: AbortSignal, body: Record<string, unknown> = {}): Promise<T> {
   const { data, error } = await supabase.auth.getSession();
   if (signal.aborted) throw new DOMException("Megszakítva", "AbortError");

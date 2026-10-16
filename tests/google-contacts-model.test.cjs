@@ -238,3 +238,195 @@ test("removing legacy wrappers never adopts an identical personal note as manage
   const result = merge(source(), person, { ...created.managed, noteBlock: legacyBlock }, marker);
   assert.equal(result.ok, false);
 });
+
+
+const groupedSource = (extra = {}) => source({
+  memberCustomerIds: ["customer-two", "customer-one"],
+  phones: ["06301234567", "06201234567"],
+  emails: ["test@example.invalid", "second@example.invalid"],
+  addresses: [source().address, "2222 Példaváros, Másik utca 2."],
+  notes: source().notes + "\n\nTelepítés: 2026.02.03\n2 db Másik tesztklíma\nBeltéri S/N: TEST-SECOND",
+  ...extra,
+});
+
+test("grouped create exports both member contacts and every installation block in a V2 snapshot", () => {
+  const notes = Array.from({ length: 22 }, (_, i) => `Telepítés: 2026.01.02
+1 db Teszt klíma
+Beltéri S/N: TEST-${i}`).join("\n\n");
+  const result = create(groupedSource({ notes }), marker);
+  assert.equal(result.managed.version, 2);
+  assert.deepEqual(plain(result.managed.memberCustomerIds), ["customer-one", "customer-two"]);
+  assert.deepEqual(plain(result.body.phoneNumbers.map(item => item.value)), groupedSource().phones);
+  assert.deepEqual(plain(result.body.emailAddresses.map(item => item.value)), groupedSource().emails);
+  assert.deepEqual(plain(result.body.addresses.map(item => item.formattedValue)), groupedSource().addresses);
+  assert.equal(result.body.biographies[0].value, notes);
+  assert.equal(result.body.biographies[0].value.match(/Telepítés:/g).length, 22);
+  assert.equal(create(source(), marker).managed.version, 1, "Existing single-customer snapshots stay V1");
+});
+
+test("grouped values deduplicate equivalent contacts but never deduplicate work notes", () => {
+  const repeated = source().notes + "\n\n" + source().notes;
+  const input = groupedSource({ phones: ["06 (30) 123-4567", "+36 30 1234567"],
+    emails: ["TEST@example.invalid", "test@example.invalid"], addresses: [source().address, source().address], notes: repeated });
+  const result = create(input, marker);
+  assert.equal(result.body.phoneNumbers.length, 1);
+  assert.equal(result.body.emailAddresses.length, 1);
+  assert.equal(result.body.addresses.length, 1);
+  assert.equal(result.body.biographies[0].value, repeated);
+});
+
+test("group matching uses the second member phone and email and retains ambiguity across Google contacts", () => {
+  const phoneMatch = remote({ phoneNumbers: [{ value: "+36201234567" }] });
+  const emailMatch = remote({ resourceName: "people/other", emailAddresses: [{ value: "SECOND@example.invalid" }] });
+  assert.deepEqual(plain(candidates(groupedSource(), [phoneMatch]).candidates[0].evidence), ["phone"]);
+  assert.deepEqual(plain(candidates(groupedSource(), [emailMatch]).candidates[0].evidence), ["email"]);
+  assert.equal(candidates(groupedSource(), [phoneMatch, emailMatch]).conflict, true);
+  assert.equal(candidates(groupedSource(), [remote({ names: [{ displayName: source().name }] })]).candidates.length, 0);
+});
+
+test("grouped inputs require complete explicit membership and never silently discard an invalid contact", () => {
+  for (const input of [
+    source({ phones: [source().phone] }),
+    groupedSource({ memberCustomerIds: ["customer-one"] }),
+    groupedSource({ memberCustomerIds: ["customer-one", "customer-one"] }),
+    groupedSource({ memberCustomerIds: ["customer-two", "customer-three"] }),
+    groupedSource({ memberCustomerIds: ["customer-one", " "] }),
+    groupedSource({ memberCustomerIds: Array.from({ length: 11 }, (_, i) => i ? `customer-${i}` : "customer-one") }),
+    groupedSource({ phones: undefined }), groupedSource({ emails: undefined }), groupedSource({ addresses: undefined }),
+    groupedSource({ phones: [source().phone, "123"] }), groupedSource({ emails: [source().email, "missing-at"] }),
+    groupedSource({ phones: ["06201234567"] }), groupedSource({ emails: ["second@example.invalid"] }),
+    groupedSource({ addresses: ["Different address"] }),
+  ]) assert.throws(() => create(input, marker));
+  assert.throws(() => create(groupedSource({ notes: "x".repeat(40001) }), marker));
+});
+
+test("group linking preserves matched personal fields, their primary flags, unrelated fields and personal notes", () => {
+  const person = remote({ names: [{ givenName: "Személyes név" }],
+    phoneNumbers: [{ value: "+36301234567", type: "mobile", metadata: { sourcePrimary: true, primary: true } },
+      { value: "+3612223333", type: "work" }],
+    emailAddresses: [{ value: "TEST@example.invalid", type: "home", displayName: "Saját", metadata: { sourcePrimary: true } }],
+    addresses: [{ formattedValue: source().address, type: "home", metadata: { sourcePrimary: true } }],
+    biographies: [{ value: "Személyes megjegyzés", contentType: "TEXT_PLAIN" }],
+    userDefined: [{ key: "Egyéni", value: "marad" }],
+  });
+  const result = merge(groupedSource(), person, null, marker);
+  assert.equal(result.ok, true);
+  assert.equal(result.body.names, undefined);
+  assert.equal(result.managed.name, null);
+  assert.equal(result.managed.phones.length, 1);
+  assert.equal(result.managed.emails.length, 1);
+  assert.equal(result.managed.addresses.length, 1);
+  assert.deepEqual(plain(result.body.phoneNumbers[0]), { value: "+36301234567", type: "mobile", metadata: { sourcePrimary: true } });
+  assert.deepEqual(plain(result.body.phoneNumbers[1]), { value: "+3612223333", type: "work" });
+  assert.equal(result.body.emailAddresses[0].displayName, "Saját");
+  assert.equal(result.body.addresses[0].metadata.sourcePrimary, true);
+  assert.equal(result.body.biographies[0].value, "Személyes megjegyzés\n\n" + groupedSource().notes);
+  assert.deepEqual(plain(result.body.userDefined[0]), { key: "Egyéni", value: "marad" });
+});
+
+test("unchanged grouped contacts remain idempotent despite source and Google field ordering or primary flags", () => {
+  const input = groupedSource(), created = create(input, marker), person = roundtrip(plain(created.body));
+  for (const key of ["names", "phoneNumbers", "emailAddresses", "addresses", "biographies"]) {
+    person[key].reverse(); person[key][0].metadata = { sourcePrimary: true, primary: true, verified: true };
+  }
+  const reordered = groupedSource({ memberCustomerIds: [...input.memberCustomerIds].reverse(), phones: [...input.phones].reverse(),
+    emails: [...input.emails].reverse(), addresses: [...input.addresses].reverse() });
+  const result = merge(reordered, person, created.managed, marker);
+  assert.equal(result.ok, true);
+  assert.equal(result.updatePersonFields, "");
+  assert.equal(model.contactMatchesManagedSnapshot(person, result.managed), true);
+});
+
+test("updating a member number preserves the other member, a personal number and the preferred-field flag", () => {
+  const created = create(groupedSource(), marker);
+  const person = roundtrip(plain(created.body), { phoneNumbers: [created.body.phoneNumbers[0],
+    { ...created.body.phoneNumbers[1], metadata: { sourcePrimary: true, primary: true } }, { value: "+3612223333", type: "home" }] });
+  const next = groupedSource({ phones: [source().phone, "06701234567"] });
+  const result = merge(next, person, created.managed, marker);
+  assert.equal(result.ok, true);
+  assert.deepEqual(plain(result.body.phoneNumbers), plain([created.body.phoneNumbers[0], { value: "+3612223333", type: "home" },
+    { value: "06701234567", type: "other", metadata: { sourcePrimary: true } }]));
+  assert.equal(result.managed.phones.length, 2);
+  const confirmed = roundtrip({ ...person, ...result.body });
+  assert.equal(merge(next, confirmed, result.managed, marker).updatePersonFields, "");
+});
+
+test("manual deletion of a second member phone stays deleted while unrelated work notes can update", () => {
+  const created = create(groupedSource(), marker);
+  const person = roundtrip(created.body, { phoneNumbers: [created.body.phoneNumbers[0]] });
+  const next = groupedSource({ notes: groupedSource().notes + "\nUtolsó rögzített karbantartás: 2026.03.04" });
+  const result = merge(next, person, created.managed, marker);
+  assert.equal(result.ok, true);
+  assert.equal(result.body.phoneNumbers, undefined);
+  assert.equal(result.managed.phones.length, 1);
+  const confirmed = roundtrip({ ...person, ...result.body });
+  assert.equal(merge(next, confirmed, result.managed, marker).updatePersonFields, "");
+  assert.equal(merge(groupedSource({ phones: [source().phone, "06701234567"] }), person, created.managed, marker).ok, false);
+});
+
+test("manual edits to an owned field become personal and are never overwritten by group updates", () => {
+  const created = create(groupedSource(), marker);
+  const person = roundtrip(created.body, { phoneNumbers: [created.body.phoneNumbers[0], { value: "06201234567", type: "work" }] });
+  const result = merge(groupedSource({ notes: "Másik telepítési megjegyzés" }), person, created.managed, marker);
+  assert.equal(result.ok, true);
+  assert.equal(result.body.phoneNumbers, undefined);
+  assert.equal(result.managed.phones.length, 1);
+  assert.equal(merge(groupedSource({ phones: [source().phone, "06701234567"] }), person, created.managed, marker).ok, false);
+});
+
+test("removing a member value only removes the owned field and never a personal equivalent", () => {
+  const created = create(groupedSource(), marker);
+  const personal = { value: "+36201234567", type: "mobile", metadata: { sourcePrimary: true } };
+  const person = roundtrip(created.body, { phoneNumbers: [...created.body.phoneNumbers, personal] });
+  const result = merge(groupedSource({ phones: [source().phone], emails: [source().email] }), person, created.managed, marker);
+  assert.equal(result.ok, true);
+  assert.deepEqual(plain(result.body.phoneNumbers), plain([created.body.phoneNumbers[0], personal]));
+  assert.deepEqual(plain(result.body.emailAddresses), plain([created.body.emailAddresses[0]]));
+});
+
+test("ambiguous identical owned entries, changed membership and singleton/group conversions require review", () => {
+  const group = create(groupedSource(), marker), single = create(source(), marker);
+  const duplicate = roundtrip(group.body, { phoneNumbers: [...group.body.phoneNumbers, { ...group.body.phoneNumbers[1] }] });
+  assert.equal(merge(groupedSource(), duplicate, group.managed, marker).ok, false);
+  assert.equal(merge(groupedSource({ memberCustomerIds: ["customer-one", "customer-three"] }), roundtrip(group.body), group.managed, marker).ok, false);
+  assert.equal(merge(source(), roundtrip(group.body), group.managed, marker).ok, false);
+  assert.equal(merge(groupedSource(), roundtrip(single.body), single.managed, marker).ok, false);
+  assert.equal(merge(groupedSource(), roundtrip(group.body), { ...group.managed, phones: null }, marker).ok, false);
+});
+
+test("group notes update the complete owned block and keep personal text byte-for-byte", () => {
+  const input = groupedSource(), created = create(input, marker);
+  const person = roundtrip(created.body, { biographies: [{ value: "Előtte\n\n" + input.notes + "\n\nUtána", contentType: "TEXT_PLAIN" }] });
+  const next = groupedSource({ notes: input.notes + "\nTelepítés: 2026.03.04\n1 db További klíma" });
+  const result = merge(next, person, created.managed, marker);
+  assert.equal(result.ok, true);
+  assert.equal(result.body.biographies[0].value, "Előtte\n\n" + next.notes + "\n\nUtána");
+  const edited = roundtrip(person, { biographies: [{ value: person.biographies[0].value.replace("TEST-SECOND", "MANUAL-SECOND") }] });
+  assert.equal(merge(next, edited, created.managed, marker).ok, false);
+});
+
+test("lost grouped PATCH response is proven only by every changed array including the second member", () => {
+  const created = create(groupedSource(), marker), person = roundtrip(created.body);
+  const next = groupedSource({ phones: [source().phone, "06701234567"], emails: [source().email], notes: "Frissített telepítési adatok" });
+  const mutation = merge(next, person, created.managed, marker);
+  assert.equal(mutation.ok, true);
+  const confirmed = roundtrip({ ...person, ...mutation.body });
+  assert.equal(model.contactMatchesManagedSnapshot(confirmed, mutation.managed, mutation), true);
+  assert.equal(model.contactMatchesManagedSnapshot(person, mutation.managed, mutation), false);
+  assert.equal(model.contactMatchesManagedSnapshot({ ...confirmed, phoneNumbers: [confirmed.phoneNumbers[0]] }, mutation.managed, mutation), false);
+  assert.equal(model.contactMatchesManagedSnapshot({ ...confirmed, emailAddresses: created.body.emailAddresses }, mutation.managed, mutation), false);
+  assert.equal(model.contactMatchesManagedSnapshot({ ...confirmed, phoneNumbers: [...confirmed.phoneNumbers].reverse() }, mutation.managed, mutation), true);
+  assert.equal(model.contactMatchesManagedSnapshot({ ...confirmed, phoneNumbers: [...confirmed.phoneNumbers, confirmed.phoneNumbers[1]] }, mutation.managed, mutation), false);
+  assert.equal(merge(next, confirmed, mutation.managed, marker).updatePersonFields, "");
+});
+
+test("group recovery rejects a missing member value, invalid membership and a foreign marker", () => {
+  const created = create(groupedSource(), marker), person = roundtrip(created.body);
+  assert.equal(model.contactMatchesManagedSnapshot(person, created.managed), true);
+  for (const field of ["phoneNumbers", "emailAddresses", "addresses"]) {
+    assert.equal(model.contactMatchesManagedSnapshot({ ...person, [field]: [person[field][0]] }, created.managed), false);
+  }
+  assert.equal(model.contactMatchesManagedSnapshot(person, { ...created.managed, memberCustomerIds: ["customer-one", "customer-one"] }), false);
+  assert.equal(model.contactMatchesManagedSnapshot(person, { ...created.managed, phones: null }), false);
+  assert.equal(model.contactMatchesManagedSnapshot({ ...person, userDefined: [{ key: "alinflow", value: "other:customer" }] }, created.managed), false);
+});

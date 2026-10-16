@@ -16,7 +16,7 @@ const status = (extra = {}) => ({ configured: true, canManage: true, connected: 
   linkedCount: 0, pendingCount: 0, errorCount: 0, lastSyncedAt: null, lastError: null, ...extra });
 const item = (index, extra = {}) => ({ customerId: `customer-${index}`, name: `Szintetikus ügyfél ${index}`, phone: `+3630000${String(index).padStart(4,"0")}`,
   email: "", address: `Szintetikus cím ${index}`, notes: `Telepítés ${index}`, sourceHash: String(index).padStart(64,"0"),
-  state: "new", resourceName: null, candidates: [], ...extra });
+  state: "new", resourceName: null, candidates: [], groupable: true, ...extra });
 const preview = (items = Array.from({ length: 12 }, (_, index) => item(index + 1))) => ({ previewId: "preview-fixture",
   expiresAt: new Date(Date.now() + 600000).toISOString(), googleEmail: "owner@example.test", items });
 function deferred() { let resolve, reject; const promise = new Promise((yes,no) => { resolve=yes; reject=no; }); return { promise, resolve, reject }; }
@@ -46,6 +46,7 @@ function contactsUI(options = {}) {
     if (options.request) return options.request(request);
     if (path === "status") return options.status || status();
     if (path === "preview") return options.preview || preview();
+    if (path === "groups/preview") return options.groupPreview || preview();
     if (path === "approve") return { approved: body.items.length };
     if (path === "connect") return { url: "https://accounts.google.com/o/oauth2/v2/auth?fixture=true" };
     if (path === "sync") return { processed: 1, synced: 1, failed: 0 };
@@ -175,4 +176,121 @@ test("unsaved settings prevent OAuth navigation until saved", async () => {
   assert.equal(ui.requests.some(request => request.path==="connect"),false);
   ui.render({ canConnect:true });
   assert.equal(ui.button("Google-kapcsolat újraengedélyezése").props.disabled,false);
+});
+
+function chooseGroupMember(ui, index) {
+  const control=ui.nodes(node => node.type==="input" && node.props["aria-label"]===`Szintetikus ügyfél ${index} hozzáadása a közös névjegyhez`)[0];
+  assert.ok(control,"Group member must be available"); assert.equal(Boolean(control.props.disabled),false);
+  control.props.onChange(); ui.render();
+}
+function confirmGroup(ui, anchorId) {
+  const selector=ui.nodes(node => node.type==="select")[0];
+  selector.props.onChange({ target:{ value:anchorId } }); ui.render();
+  const checkbox=ui.nodes(node => node.type==="input" && node.props.type==="checkbox" && !node.props["aria-label"])[0];
+  assert.equal(Boolean(checkbox.props.disabled),false);
+  checkbox.props.onChange({ target:{ checked:true } }); ui.render();
+}
+
+test("group membership survives pagination and search and requires explicit name and same-person confirmation", async () => {
+  const ui=contactsUI(); await ui.settle(); await ui.click("Ügyfelek áttöltése · előnézet");
+  await ui.click("Az oldal egyértelmű tételeinek kijelölése");
+  await ui.click("Ugyanahhoz a személyhez tartozó adatlapok");
+  assert.match(ui.text(),/0 \/ 10 adatlap/);
+  assert.equal(ui.button("Közös névjegy előnézete").props.disabled,true);
+  assert.equal(ui.nodes(node => node.type==="article").length,0);
+  chooseGroupMember(ui,1);
+  await ui.click("Következő adatlapok →"); chooseGroupMember(ui,12);
+  assert.match(ui.text(),/2 \/ 10 adatlap/);
+  const search=ui.nodes(node => node.type==="input" && node.props.type==="search")[0];
+  search.props.onChange({ target:{ value:"nincs ilyen név" } }); ui.render();
+  assert.match(ui.text(),/Nincs találat/); assert.match(ui.text(),/Szintetikus ügyfél 1/); assert.match(ui.text(),/Szintetikus ügyfél 12/);
+  assert.equal(ui.button("Közös névjegy előnézete").props.disabled,true);
+  const selector=ui.nodes(node => node.type==="select")[0]; selector.props.onChange({ target:{ value:"customer-12" } }); ui.render();
+  assert.equal(ui.button("Közös névjegy előnézete").props.disabled,true);
+  confirmGroup(ui,"customer-12");
+  await ui.click("Közös névjegy előnézete");
+  const request=ui.requests.find(request => request.path==="groups/preview");
+  assert.deepEqual(clone(request.body),{ groups:[{ anchorCustomerId:"customer-12",memberCustomerIds:["customer-1","customer-12"] }] });
+  assert.equal(ui.requests.some(request => ["approve","sync"].includes(request.path)),false);
+  assert.ok(ui.nodes(node => node.type==="select").every(node => node.props.value===""),"Preview must not preselect a Google operation");
+});
+
+test("group preview shows every value and member and approves only the anchor and server proof", async () => {
+  const members=[item(1),item(2,{ email:"second@example.test" })];
+  const group=item(2,{ name:"Közös név",groupable:false,memberCustomerIds:members.map(member => member.customerId),
+    phones:members.map(member => member.phone),emails:["first@example.test","second@example.test"],addresses:members.map(member => member.address),
+    members:members.map(({ customerId,name,phone,email,address }) => ({ customerId,name,phone,email,address })) });
+  const ui=contactsUI({ preview:preview(members),groupPreview:{ ...preview([group]),previewId:"group-proof" } });
+  await ui.settle(); await ui.click("Ügyfelek áttöltése · előnézet"); await ui.click("Ugyanahhoz a személyhez tartozó adatlapok");
+  chooseGroupMember(ui,1); chooseGroupMember(ui,2); confirmGroup(ui,"customer-2"); await ui.click("Közös névjegy előnézete");
+  assert.match(ui.text(),/2 ügyféladatlap → 1 Google-névjegy/);
+  for (const value of [...group.phones,...group.emails,...group.addresses,...members.map(member => member.name)]) assert.ok(ui.text().includes(value),value);
+  assert.equal(ui.nodes(node => node.type==="select")[0].props.value,"");
+  await ui.click("Az oldal egyértelmű tételeinek kijelölése");
+  assert.match(ui.text(),/1 névjegy · 2 ügyféladatlap kiválasztva/);
+  await ui.click("1 névjegy áttöltésének jóváhagyása · 2 adatlap");
+  assert.deepEqual(clone(ui.requests.find(request => request.path==="approve").body),{
+    previewId:"group-proof",items:[{ customerId:"customer-2",sourceHash:group.sourceHash,resourceName:null }],
+  });
+  assert.match(ui.text(),/1 névjegy, 2 ügyféladatlap összerendelése jóváhagyva/);
+  assert.equal(ui.nodes(node => node.type==="article").length,0);
+  await ui.click("Ügyfelek áttöltése · előnézet"); await ui.click("Ugyanahhoz a személyhez tartozó adatlapok");
+  assert.match(ui.text(),/0 \/ 10 adatlap/);
+});
+
+test("grouping excludes linked or reserved customers, caps at ten and invalidates confirmation after editing", async () => {
+  const records=[...Array.from({ length:12 },(_,index) => item(index+1)),item(20,{ state:"linked",resourceName:"people/already",groupable:false }),item(21,{ groupable:false })];
+  const ui=contactsUI({ preview:preview(records) }); await ui.settle(); await ui.click("Ügyfelek áttöltése · előnézet"); await ui.click("Ugyanahhoz a személyhez tartozó adatlapok");
+  for (let index=1;index<=10;index++) chooseGroupMember(ui,index);
+  confirmGroup(ui,"customer-1");
+  await ui.click("Következő adatlapok →");
+  const checkboxes=ui.nodes(node => node.type==="input" && node.props["aria-label"]);
+  assert.equal(checkboxes.length,2); assert.ok(checkboxes.every(node => node.props.disabled));
+  assert.ok(!ui.text().includes("Szintetikus ügyfél 20")); assert.ok(!ui.text().includes("Szintetikus ügyfél 21"));
+  const remove=ui.nodes(node => node.type==="button" && node.props["aria-label"]==="Szintetikus ügyfél 1 kivétele a csoportból")[0];
+  remove.props.onClick(); ui.render();
+  assert.equal(ui.nodes(node => node.type==="select")[0].props.value,"");
+  assert.equal(ui.button("Közös névjegy előnézete").props.disabled,true);
+  assert.equal(ui.nodes(node => node.type==="input" && node.props.type==="checkbox" && !node.props["aria-label"])[0].props.checked,false);
+});
+
+test("cancel and explicit refresh clear group drafts without approving them", async () => {
+  const ui=contactsUI(); await ui.settle(); await ui.click("Ügyfelek áttöltése · előnézet"); await ui.click("Ugyanahhoz a személyhez tartozó adatlapok");
+  chooseGroupMember(ui,1); chooseGroupMember(ui,2); confirmGroup(ui,"customer-1");
+  await ui.click("Mégsem csoportosítok");
+  assert.ok(ui.nodes(node => node.type==="select").every(node => node.props.value===""));
+  await ui.click("Ugyanahhoz a személyhez tartozó adatlapok"); assert.match(ui.text(),/0 \/ 10 adatlap/);
+  chooseGroupMember(ui,1); await ui.click("Ügyfelek áttöltése · előnézet");
+  await ui.click("Ugyanahhoz a személyhez tartozó adatlapok"); assert.match(ui.text(),/0 \/ 10 adatlap/);
+  chooseGroupMember(ui,2); await ui.click("Kapcsolt névjegyek frissítése");
+  assert.equal(ui.nodes(node => node.props?.["aria-label"]==="Közös névjegy összeállítása").length,0);
+  assert.equal(ui.requests.some(request => ["approve","groups/preview"].includes(request.path)),false);
+});
+
+test("late group preview after a workspace switch cannot expose members or reuse old selections", async () => {
+  const pending=deferred();
+  const ui=contactsUI({ request:request => request.path==="status" ? Promise.resolve(status()) : request.path==="preview" ? Promise.resolve(preview()) : pending.promise });
+  await ui.settle(); await ui.click("Ügyfelek áttöltése · előnézet"); await ui.click("Ugyanahhoz a személyhez tartozó adatlapok");
+  chooseGroupMember(ui,1); chooseGroupMember(ui,2); confirmGroup(ui,"customer-1");
+  ui.button("Közös névjegy előnézete").props.onClick();
+  const previous=ui.requests.find(request => request.path==="groups/preview");
+  ui.render({ workspaceId:"workspace-two",userId:"user-two" }); await ui.settle();
+  assert.equal(previous.signal.aborted,true);
+  pending.resolve(preview([item(99,{ name:"Más munkaterület közös névjegye" })])); await ui.settle();
+  assert.ok(!ui.text().includes("Más munkaterület"));
+  await ui.click("Ügyfelek áttöltése · előnézet"); await ui.click("Ugyanahhoz a személyhez tartozó adatlapok");
+  assert.match(ui.text(),/0 \/ 10 adatlap/);
+  assert.equal(ui.requests.some(request => request.path==="approve"),false);
+});
+
+test("an unlinked matching candidate remains groupable even with its suggested Google resource", async () => {
+  const matched=item(1,{ state:"match",resourceName:"people/suggestion",groupable:true,
+    candidates:[{ resourceName:"people/suggestion",name:"Meglévő név",phones:["+36300000001"],emails:[],evidence:["phone"] }] });
+  const ui=contactsUI({ preview:preview([matched,item(2)]) });
+  await ui.settle(); await ui.click("Ügyfelek áttöltése · előnézet"); await ui.click("Ugyanahhoz a személyhez tartozó adatlapok");
+  chooseGroupMember(ui,1); chooseGroupMember(ui,2); confirmGroup(ui,"customer-1");
+  assert.equal(ui.button("Közös névjegy előnézete").props.disabled,false);
+  assert.match(ui.text(),/Meglévő Google-névjegynél a jelenlegi név megmarad/);
+  await ui.click("Közös névjegy előnézete");
+  assert.deepEqual(clone(ui.requests.find(request => request.path==="groups/preview").body.groups[0].memberCustomerIds),["customer-1","customer-2"]);
 });

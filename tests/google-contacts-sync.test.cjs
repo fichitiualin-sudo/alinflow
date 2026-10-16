@@ -8,6 +8,7 @@ const PREVIEW = "44444444-4444-4444-8444-444444444444";
 const MARKER = `${WS}:${CUSTOMER}`;
 const source = { customerId: CUSTOMER, name: "Teszt Ügyfél", phone: "+36301234567", email: "customer@example.invalid", address: "Teszt utca 1.", notes: "Klíma: Példa 3,5 kW", sourceHash: "a".repeat(64) };
 const model = harness().load("src/lib/alinflow/google-contacts-model.ts");
+const sourceLib = harness({}, { "node:crypto": require("node:crypto") }).load("src/lib/alinflow/google-contacts-source.ts");
 function person(extra = {}) { return { resourceName: "people/c123", metadata: { sources: [{ type: "CONTACT", id: "123", etag: "v1" }] },
   names: [{ unstructuredName: "Személyes név" }], phoneNumbers: [{ value: source.phone }], biographies: [{ value: "Személyes jegyzet", contentType: "TEXT_PLAIN" }], ...extra }; }
 class ApiError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
@@ -20,13 +21,14 @@ function fixture(options = {}) {
   const sources = options.sources || [source], calls = [], writes = [], rpcCalls = [];
   const previews = [];
   const admin = database(op => {
-    assert.equal(op.filters.workspace_id || op.filters.id, WS, `${op.table} must remain scoped`);
+    assert.equal(op.filters.workspace_id || op.filters.id || op.value?.workspace_id, WS, `${op.table} must remain scoped`);
     if (op.table === "workspaces") return { data: options.inactiveWorkspace ? null : { id: WS } };
     if (op.table === "google_contacts_connections") {
       if (op.method === "update") { Object.assign(connection, op.value); return { data: null }; }
       if (options.currentConnection) return { data: { ...connection, ...options.currentConnection } };
       return { data: { ...connection } };
     }
+    if (op.table === "google_contacts_link_members") return { data: options.members || [] };
     if (op.table === "google_contacts_links") {
       if (op.method === "update") {
         writes.push(structuredClone(op.value));
@@ -59,7 +61,7 @@ function fixture(options = {}) {
     if (response.error) throw Error(response.error);
     return new Response(JSON.stringify(response.body || {}), { status: response.status || 200 });
   } }, { "node:crypto": require("node:crypto"), "./google-contacts-auth": auth, "./server-auth": { ApiError },
-    "./google-contacts-source": { loadGoogleContactSources: async () => sources } }).load("src/lib/alinflow/google-contacts-sync.ts");
+    "./google-contacts-source": { ...sourceLib, loadGoogleContactSources: async () => sources } }).load("src/lib/alinflow/google-contacts-sync.ts");
   return { worker, connection, links, calls, writes, rpcCalls, previews };
 }
 
@@ -224,4 +226,116 @@ test("uncertain PATCH recovers its exact applied snapshot without duplicate note
   await g.worker.runGoogleContactsSync(WS);
   assert.equal(g.links[0].state, "synced"); assert.equal(g.links[0].mutation_snapshot, null);
   assert.equal(g.calls.filter(call => call.method === "PATCH").length, 1);
+});
+
+const MEMBER = "55555555-5555-4555-8555-555555555555";
+const OUTSIDE = "66666666-6666-4666-8666-666666666666";
+function grouped() {
+  const second = { ...source, customerId: MEMBER, name: "Másik névalak", phone: "+36709998888", email: "other@example.invalid", notes: "Második telepítés", sourceHash: "b".repeat(64) };
+  const group = { anchorCustomerId: CUSTOMER, memberCustomerIds: [CUSTOMER, MEMBER] };
+  const combined = sourceLib.groupGoogleContactSources([source, second], [group]).sources[0];
+  const members = group.memberCustomerIds.map(customer_id => ({ customer_id, anchor_customer_id: CUSTOMER }));
+  return { second, group, combined, members };
+}
+test("group preview binds all explicit members and matches the second member's identifier", async () => {
+  const { second, group } = grouped();
+  const f = fixture({ links: [], sources: [source, second], responses: [{ body: { connections: [person({ phoneNumbers: [{ value: second.phone }] })] } }] });
+  const preview = await f.worker.previewGoogleContactGroups(WS, USER, [group]);
+  assert.equal(preview.items.length, 1); assert.equal(preview.items[0].state, "match");
+  assert.equal(preview.items[0].members.length, 2); assert.equal(preview.items[0].phones.length, 2);
+  assert.equal(f.previews[0].proofs[0].memberCustomerIds.length, 2);
+  assert.doesNotMatch(JSON.stringify(f.previews[0].proofs), /Teszt Ügyfél|Másik névalak|example.invalid/);
+  assert.equal(f.calls.filter(call => call.method !== "GET").length, 0);
+});
+test("third-party local collisions stay blocked despite explicit same-person grouping", async () => {
+  const { second, group } = grouped();
+  const f = fixture({ links: [], sources: [source, second, { ...source, customerId: OUTSIDE, name: "Másik személy" }] });
+  const preview = await f.worker.previewGoogleContactGroups(WS, USER, [group]);
+  assert.equal(preview.items[0].state, "review"); assert.equal(f.previews[0].proofs.length, 0);
+});
+test("group proposals reject linked members, missing own sources and overlapping selection", async () => {
+  const { second, group } = grouped();
+  for (const options of [{ links: [{ customer_id: CUSTOMER }], sources: [source, second] }, { links: [], sources: [source] }]) {
+    const f = fixture(options); await assert.rejects(f.worker.previewGoogleContactGroups(WS, USER, [group]), /saját telepítéssel/);
+    assert.equal(f.previews.length, 0);
+  }
+  const f = fixture({ links: [], sources: [source, second] });
+  await assert.rejects(f.worker.previewGoogleContactGroups(WS, USER, [group, group]), /fedhetik/);
+});
+test("approval rechecks a secondary member hash and never writes after source change", async () => {
+  const { second, group } = grouped();
+  const first = fixture({ links: [], sources: [source, second] });
+  const preview = await first.worker.previewGoogleContactGroups(WS, USER, [group]);
+  const f = fixture({ links: [], sources: [source, { ...second, sourceHash: "c".repeat(64) }], preview: first.previews[0] });
+  await assert.rejects(f.worker.approveGoogleContacts(WS, USER, preview.previewId,
+    [{ customerId: CUSTOMER, sourceHash: preview.items[0].sourceHash, resourceName: null }]), /változtak/);
+  assert.equal(f.rpcCalls.length, 0);
+});
+test("approved group creates one contact with both phones and all work notes", async () => {
+  const { second, combined, members } = grouped();
+  const created = model.buildContactCreate(combined, MARKER);
+  const f = fixture({ sources: [source, second], members, responses: [{ body: { connections: [] } }, { body: person(created.body) }] });
+  f.links[0].approved_source_hash = combined.sourceHash;
+  await f.worker.runGoogleContactsSync(WS);
+  const posts = f.calls.filter(call => call.method === "POST");
+  assert.equal(posts.length, 1); assert.equal(posts[0].body.phoneNumbers.length, 2);
+  assert.match(posts[0].body.biographies[0].value, /Második telepítés/);
+  assert.equal(f.links[0].managed_snapshot.version, 2); assert.equal(f.links[0].state, "synced");
+});
+test("missing group member stops worker without partial Google export", async () => {
+  const { combined, members } = grouped();
+  const f = fixture({ members }); f.links[0].approved_source_hash = combined.sourceHash;
+  await f.worker.runGoogleContactsSync(WS);
+  assert.equal(f.calls.length, 0); assert.equal(f.links[0].state, "review"); assert.match(f.links[0].last_error, /egyik ügyfele/);
+});
+test("grouped worker checks unrelated identifiers before updating an existing Google target", async () => {
+  const { second, combined, members } = grouped();
+  const f = fixture({ members, sources: [source, second, { ...source, customerId: OUTSIDE }] });
+  Object.assign(f.links[0], { resource_name: "people/c123", state: "synced", managed_snapshot: model.buildContactCreate(combined, MARKER).managed });
+  await f.worker.runGoogleContactsSync(WS);
+  assert.equal(f.calls.length, 0); assert.equal(f.links[0].state, "review");
+});
+test("normal preview collapses approved group and shows separate represented-customer count", async () => {
+  const { second, members } = grouped();
+  const f = fixture({ sources: [source, second], members });
+  const preview = await f.worker.previewGoogleContacts(WS, USER);
+  assert.equal(preview.items.length, 1); assert.equal(preview.items[0].state, "linked"); assert.equal(preview.items[0].groupable, false);
+  assert.equal(await f.worker.countGoogleContactsRepresentedCustomers(WS, 1), 2);
+});
+
+test("unchanged group approval submits only the reviewed anchor while proof retains immutable members", async () => {
+  const { second, group } = grouped();
+  const f = fixture({ links: [], sources: [source, second] });
+  const preview = await f.worker.previewGoogleContactGroups(WS, USER, [group]);
+  const result = await f.worker.approveGoogleContacts(WS, USER, preview.previewId,
+    [{ customerId: CUSTOMER, sourceHash: preview.items[0].sourceHash, resourceName: null, memberCustomerIds: [CUSTOMER, OUTSIDE] }]);
+  assert.equal(result.approved, 1);
+  const approval = f.rpcCalls.find(call => call.name === "approve_google_contacts_links");
+  assert.equal(approval.args.p_items[0].customerId, CUSTOMER);
+  assert.equal(approval.args.p_items[0].memberCustomerIds, undefined);
+  assert.deepEqual([...f.previews[0].proofs[0].memberCustomerIds], [CUSTOMER, MEMBER]);
+  assert.equal(f.calls.filter(call => call.method !== "GET").length, 0);
+});
+test("group creation uncertainty recovers the same anchor marker without another POST", async () => {
+  const { second, combined, members } = grouped(), created = model.buildContactCreate(combined, MARKER);
+  const remote = person(created.body);
+  const f = fixture({ sources: [source, second], members, responses: [{ body: { connections: [] } }, { error: "timeout after applied" },
+    { body: { connections: [remote] } }, { body: remote }] });
+  f.links[0].approved_source_hash = combined.sourceHash;
+  await f.worker.runGoogleContactsSync(WS);
+  assert.equal(f.links[0].state, "uncertain"); assert.equal(f.links[0].managed_snapshot.version, 2);
+  f.links[0].next_sync_at = new Date(0).toISOString();
+  await f.worker.runGoogleContactsSync(WS);
+  assert.equal(f.links[0].state, "synced"); assert.equal(f.links[0].resource_name, "people/c123");
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 1);
+  assert.equal(f.calls.filter(call => call.method === "PATCH").length, 0);
+});
+test("a missing member in another group cannot hide an external identifier collision", async () => {
+  const { second, group } = grouped();
+  const hiddenAnchor = OUTSIDE, absentMember = "77777777-7777-4777-8777-777777777777";
+  const f = fixture({ links: [{ customer_id: hiddenAnchor, state: "synced", resource_name: "people/other" }],
+    sources: [source, second, { ...source, customerId: hiddenAnchor }], members: [
+      { customer_id: hiddenAnchor, anchor_customer_id: hiddenAnchor }, { customer_id: absentMember, anchor_customer_id: hiddenAnchor }] });
+  const preview = await f.worker.previewGoogleContactGroups(WS, USER, [group]);
+  assert.equal(preview.items[0].state, "review"); assert.equal(f.previews[0].proofs.length, 0);
 });

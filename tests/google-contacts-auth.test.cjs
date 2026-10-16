@@ -11,7 +11,7 @@ function fixture(options = {}) {
   const queries = [], rpcs = [], calls = []; let pending;
   const client = { auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) }, from(table) {
     const op = { table, method: "select", filters: {} }, q = {
-      select(columns) { op.columns = columns; return q; }, eq(k,v) { op.filters[k] = v; return q; }, lt() { return q; }, in() { return q; }, maybeSingle() { return q; },
+      select(columns) { op.columns = columns; return q; }, eq(k,v) { op.filters[k] = v; return q; }, lt() { return q; }, in() { return q; }, maybeSingle() { return q; }, order(column) { op.order = column; return q; }, range(from,to) { op.range = [from,to]; return q; },
       insert(value) { op.method = "insert"; op.value = value; return q; }, delete() { op.method = "delete"; return q; }, update(value) { op.method = "update"; op.value = value; return q; },
       then(resolve,reject) { return Promise.resolve().then(() => {
         queries.push(op);
@@ -19,6 +19,7 @@ function fixture(options = {}) {
         if (table === "workspaces") return { data: { id: workspaceId }, error: null };
         if (table === "google_contacts_connections") return { data: options.connection || null, error: null };
         if (table === "google_contacts_oauth_states") { if (op.method === "insert") pending = op.value; return { data: null, error: null }; }
+        if (table === "google_contacts_link_members") return { data: options.members || [], error: null };
         if (table === "google_contacts_links") return { data: null, count: 2, error: null };
         throw Error("Unexpected table " + table);
       }).then(resolve,reject); },
@@ -87,9 +88,14 @@ test("Contact management rejects non-admins, changed Google identity, missing sc
   assert.equal(outcome(await f.routes.callback.GET(new Request(flow.callback,{ headers: { cookie: flow.cookie } }))),"failed"); assert.equal(f.calls.length,0);
 });
 test("status omits secrets; pause keeps mappings and does not revoke the Calendar grant", async () => {
-  const f = fixture({ connection: { status:"active", google_email:email, last_synced_at:null, last_error:null, refresh_token_encrypted:"sensitive-fixture" } });
+  const f = fixture({ connection: { status:"active", google_email:email, last_synced_at:null, last_error:null, refresh_token_encrypted:"sensitive-fixture" },
+    members: [{ customer_id:"member-one",anchor_customer_id:"member-one" }, { customer_id:"member-two",anchor_customer_id:"member-one" }] });
   const response = await f.routes.status.POST(f.post("status")); const body = await response.json();
-  assert.equal(body.email,email); assert.equal(body.linkedCount,2); assert.equal(JSON.stringify(body).includes("sensitive"),false);
+  assert.equal(response.status,200); assert.equal(body.email,email); assert.equal(body.linkedCount,2); assert.equal(body.coveredCustomerCount,3); assert.equal(JSON.stringify(body).includes("sensitive"),false);
+  const membershipRead = f.queries.find(q => q.table === "google_contacts_link_members");
+  assert.equal(membershipRead.filters.workspace_id,workspaceId); assert.equal(membershipRead.order,"customer_id");
+  assert.deepEqual(membershipRead.range,[0,999]);
+  assert.equal(JSON.stringify(body).includes("member-one"),false);
   await f.routes.disconnect.POST(f.post("disconnect"));
   const writes = f.queries.filter(q => q.method !== "select"); assert.equal(writes.length,1); assert.equal(writes[0].value.status,"paused");
   assert.equal(writes[0].filters.workspace_id,workspaceId); assert.equal(f.calls.length,0);

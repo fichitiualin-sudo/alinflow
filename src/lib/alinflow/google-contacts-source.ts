@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ContactSource } from "./google-contacts-model";
+import { normalizeContactEmail, normalizeContactPhone, type ContactSource } from "./google-contacts-model";
 
 type Row = Record<string, unknown>;
 const PAGE_SIZE = 500;
@@ -119,4 +119,49 @@ export async function loadGoogleContactSources(admin: SupabaseClient, workspaceI
   ]);
   return projectGoogleContactSources({ customers, appointments, quotes, quoteItems, devices, maintenanceLinks,
     excludedInstallationIds: excluded }, workspaceId);
+}
+
+
+export type GoogleContactGroup = { anchorCustomerId: string; memberCustomerIds: string[] };
+/** Group only explicitly approved identities. Missing members never produce a partial export. */
+export function groupGoogleContactSources(sources: ContactSource[], groups: GoogleContactGroup[]) {
+  const byId = new Map(sources.map(source => [source.customerId, source]));
+  const reserved = new Set<string>(), errors = new Map<string, string>(), combined: ContactSource[] = [];
+  for (const group of groups) {
+    if (!group || !Array.isArray(group.memberCustomerIds) || group.memberCustomerIds.length < 2 || group.memberCustomerIds.length > 10
+      || !group.memberCustomerIds.includes(group.anchorCustomerId) || new Set(group.memberCustomerIds).size !== group.memberCustomerIds.length
+      || group.memberCustomerIds.some(id => typeof id !== "string" || !id || reserved.has(id))) {
+      throw new Error("A közös névjegyek tagsága hibás vagy átfedi egymást. Ellenőrzés szükséges.");
+    }
+    for (const id of group.memberCustomerIds) reserved.add(id);
+    const ids = [...group.memberCustomerIds].sort(), members = ids.map(id => byId.get(id));
+    if (members.some(member => !member || member.memberCustomerIds)) {
+      errors.set(group.anchorCustomerId, "A közös névjegy egyik ügyfele már nem érhető el a saját telepítések között. A névjegyet megtartottuk.");
+      continue;
+    }
+    const complete = members as ContactSource[], anchor = byId.get(group.anchorCustomerId)!;
+    if (complete.some(member => member.phone.trim() && !normalizeContactPhone(member.phone)
+      || member.email.trim() && !normalizeContactEmail(member.email))) {
+      errors.set(group.anchorCustomerId, "A közös névjegy egyik elérhetősége hibás. Javítsd az ügyféladatot az összekapcsolás előtt.");
+      continue;
+    }
+    const unique = (values: string[], key: (value: string) => string) => {
+      const seen = new Set<string>();
+      return values.map(value => value.trim()).filter(value => { const id = key(value); if (!value || seen.has(id)) return false; seen.add(id); return true; });
+    };
+    const notes = complete.map(member => member.notes).join("\n\n");
+    if (!anchor.name.trim() || notes.length > 40000) {
+      errors.set(group.anchorCustomerId, "A közös névjegy neve hiányzik vagy a munkajegyzete túl hosszú. Ellenőrzés szükséges.");
+      continue;
+    }
+    const result = { ...anchor, memberCustomerIds: ids,
+      phones: unique(complete.map(member => member.phone), normalizeContactPhone),
+      emails: unique(complete.map(member => member.email), normalizeContactEmail),
+      addresses: unique(complete.map(member => member.address), value => value), notes };
+    result.sourceHash = createHash("sha256").update(JSON.stringify({ ...result, sourceHash: undefined,
+      memberHashes: complete.map(member => [member.customerId, member.sourceHash]) })).digest("hex");
+    combined.push(result);
+  }
+  return { sources: [...sources.filter(source => !reserved.has(source.customerId)), ...combined]
+    .sort((a, b) => a.name.localeCompare(b.name, "hu-HU") || a.customerId.localeCompare(b.customerId)), errors };
 }
