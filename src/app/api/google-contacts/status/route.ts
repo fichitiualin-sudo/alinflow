@@ -1,3 +1,4 @@
+import { countGoogleContactsRepresentedCustomers } from "@/lib/alinflow/google-contacts-sync";
 import { authorizeContactsWorkspace, contactsApiError, contactsAdmin, googleContactsConfigured, readContactsBody } from "@/lib/alinflow/google-contacts-auth";
 import { ApiError } from "@/lib/alinflow/server-auth";
 
@@ -7,7 +8,7 @@ export async function POST(request: Request) {
     const body = await readContactsBody(request);
     const scope = await authorizeContactsWorkspace(request, body.workspaceId);
     const configured = googleContactsConfigured();
-    const empty = { configured, canManage: true, connected: false, email: "", status: null, linkedCount: 0, pendingCount: 0, errorCount: 0, lastSyncedAt: null, lastError: null };
+    const empty = { configured, canManage: true, connected: false, email: "", status: null, linkedCount: 0, coveredCustomerCount: 0, pendingCount: 0, errorCount: 0, lastSyncedAt: null, lastError: null };
     if (!configured) return Response.json(empty, { headers: { "Cache-Control": "no-store" } });
     const admin = contactsAdmin();
     const connection = await admin.from("google_contacts_connections").select("status,google_email,last_synced_at,last_error")
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
     ]);
     if (linked.error || pending.error || errors.error) throw new ApiError("A névjegyfrissítés állapota nem tölthető be.", 503);
     return Response.json({ ...empty, connected: connection.data.status === "active", email: connection.data.google_email, status: connection.data.status,
-      linkedCount: linked.count || 0, pendingCount: pending.count || 0, errorCount: errors.count || 0,
+      linkedCount: linked.count || 0, coveredCustomerCount: await countGoogleContactsRepresentedCustomers(scope.workspaceId, linked.count || 0), pendingCount: pending.count || 0, errorCount: errors.count || 0,
       lastSyncedAt: connection.data.last_synced_at, lastError: connection.data.last_error,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return contactsApiError(error); }

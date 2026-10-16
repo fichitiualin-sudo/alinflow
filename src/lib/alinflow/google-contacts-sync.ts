@@ -2,17 +2,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { contactsAccessToken, contactsAdmin, GoogleContactsAuthError } from "./google-contacts-auth";
 import { ApiError } from "./server-auth";
 import { buildContactCreate, contactMatchesManagedSnapshot, findContactCandidates, googleContactMarkers, mergeContactUpdate,
-  normalizeContactEmail, normalizeContactPhone, type ContactSource, type GoogleContact, type ManagedContactSnapshot } from "./google-contacts-model";
-import { loadGoogleContactSources } from "./google-contacts-source";
+  contactSourceValues, normalizeContactEmail, normalizeContactPhone, type ContactSource, type GoogleContact, type ManagedContactSnapshot } from "./google-contacts-model";
+import { groupGoogleContactSources, loadGoogleContactSources, type GoogleContactGroup } from "./google-contacts-source";
 
 type Admin = ReturnType<typeof contactsAdmin>;
 export type ContactsConnection = { workspace_id: string; google_subject: string; google_email: string; status: string;
   refresh_token_encrypted: string; lease_token?: string; lease_expires_at?: string };
 type Link = { customer_id: string; resource_name: string | null; state: "pending" | "creating" | "uncertain" | "synced" | "review";
   approved_source_hash: string; synced_source_hash: string | null; managed_snapshot: ManagedContactSnapshot | null; mutation_snapshot?: ManagedContactSnapshot | null; mutation_source_hash?: string | null; mutation_payload?: { body: GoogleContact; updatePersonFields: string } | null; last_error: string | null; next_sync_at: string };
-type Proof = { customerId: string; sourceHash: string; options: (string | null)[]; remoteHashes: Record<string, string> };
+type Proof = { memberCustomerIds?: string[]; customerId: string; sourceHash: string; options: (string | null)[]; remoteHashes: Record<string, string> };
 type Approval = { customerId: string; resourceName: string | null; sourceHash: string };
-export type ContactPreviewItem = ContactSource & { state: "new" | "match" | "ambiguous" | "linked" | "review"; resourceName: string | null;
+export type ContactPreviewItem = ContactSource & { groupable?: boolean; members?: Pick<ContactSource, "customerId" | "name" | "phone" | "email" | "address">[]; state: "new" | "match" | "ambiguous" | "linked" | "review"; resourceName: string | null;
   candidates: { resourceName: string; name: string; phones: string[]; emails: string[]; evidence: ("phone" | "email")[] }[]; lastError?: string };
 const FIELDS = "metadata,names,phoneNumbers,emailAddresses,addresses,biographies,userDefined";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -74,12 +74,63 @@ async function loadLinks(admin: Admin, workspaceId: string): Promise<Link[]> {
   }
   throw new ContactsSyncError("database");
 }
-function localCollision(source: ContactSource, sources: ContactSource[]) {
-  const phone = normalizeContactPhone(source.phone), email = normalizeContactEmail(source.email);
-  return sources.some(other => other.customerId !== source.customerId &&
-    (Boolean(phone) && normalizeContactPhone(other.phone) === phone || Boolean(email) && normalizeContactEmail(other.email) === email));
+async function loadGroups(admin: Admin, workspaceId: string): Promise<GoogleContactGroup[]> {
+  const groups = new Map<string, string[]>();
+  for (let page = 0; page < 100; page += 1) {
+    const result = await admin.from("google_contacts_link_members").select("customer_id,anchor_customer_id")
+      .eq("workspace_id", workspaceId).order("customer_id").range(page * 1000, page * 1000 + 999);
+    if (result.error || !Array.isArray(result.data)) throw new ContactsSyncError("database");
+    for (const row of result.data) groups.set(row.anchor_customer_id, [...groups.get(row.anchor_customer_id) || [], row.customer_id]);
+    if (result.data.length < 1000) return [...groups].map(([anchorCustomerId, memberCustomerIds]) => ({ anchorCustomerId, memberCustomerIds }));
+  }
+  throw new ContactsSyncError("database");
 }
-export function buildContactPreview(workspaceId: string, sources: ContactSource[], contacts: GoogleContact[], links: Link[]) {
+export async function countGoogleContactsRepresentedCustomers(workspaceId: string, linkedCount: number) {
+  const groups = await loadGroups(contactsAdmin(), workspaceId);
+  return linkedCount + groups.reduce((total, group) => total + Math.max(0, group.memberCustomerIds.length - 1), 0);
+}
+function localCollision(source: ContactSource, sources: ContactSource[]) {
+  const values = contactSourceValues(source), phones = new Set(values.phones.map(normalizeContactPhone).filter(Boolean)),
+    emails = new Set(values.emails.map(normalizeContactEmail).filter(Boolean));
+  return sources.some(other => {
+    if ((source.memberCustomerIds || [source.customerId]).includes(other.customerId)) return false;
+    const otherValues = contactSourceValues(other);
+    return otherValues.phones.some(value => phones.has(normalizeContactPhone(value))) || otherValues.emails.some(value => emails.has(normalizeContactEmail(value)));
+  });
+}
+function parseProposedGroups(requested: unknown): GoogleContactGroup[] {
+  if (!Array.isArray(requested) || requested.length < 1 || requested.length > 10) throw new ApiError("Legfeljebb tíz közös névjegyet állíts össze.");
+  const seen = new Set<string>();
+  return requested.map(group => {
+    if (!group || typeof group.anchorCustomerId !== "string" || !UUID.test(group.anchorCustomerId) || !Array.isArray(group.memberCustomerIds)
+      || group.memberCustomerIds.length < 2 || group.memberCustomerIds.length > 10 || !group.memberCustomerIds.includes(group.anchorCustomerId)
+      || group.memberCustomerIds.some((id: unknown) => typeof id !== "string" || !UUID.test(id) || seen.has(id))
+      || new Set(group.memberCustomerIds).size !== group.memberCustomerIds.length) throw new ApiError("Válassz 2–10 különböző ügyfelet és közülük egy fő nevet. A csoportok nem fedhetik egymást.");
+    group.memberCustomerIds.forEach((id: string) => seen.add(id));
+    return { anchorCustomerId: group.anchorCustomerId, memberCustomerIds: [...group.memberCustomerIds].sort() };
+  });
+}
+function assertNewGroups(groups: GoogleContactGroup[], raw: ContactSource[], links: Link[], existing: GoogleContactGroup[]) {
+  const reserved = new Set(existing.flatMap(group => group.memberCustomerIds));
+  if (groups.some(group => group.memberCustomerIds.some(id => reserved.has(id) || links.some(link => link.customer_id === id)
+    || !raw.some(source => source.customerId === id)))) throw new ApiError("Csak még nem összekapcsolt, saját telepítéssel rendelkező ügyfelek választhatók közös névjegyhez.", 409);
+}
+function decorateItems(items: ContactPreviewItem[], raw: ContactSource[]) {
+  return items.map(item => ({ ...item, ...(item.memberCustomerIds ? { members: item.memberCustomerIds.flatMap(id => {
+    const source = raw.find(source => source.customerId === id);
+    return source ? [{ customerId: id, name: source.name, phone: source.phone, email: source.email, address: source.address }] : [];
+  }) } : {}) }));
+}
+async function storePreview(admin: Admin, connection: ContactsConnection, userId: string, items: ContactPreviewItem[], proofs: Proof[]) {
+  const previewId = randomUUID(), expiresAt = new Date(Date.now() + 15 * 60000).toISOString();
+  const removed = await admin.from("google_contacts_previews").delete().eq("workspace_id", connection.workspace_id).eq("user_id", userId);
+  if (removed.error) throw new ContactsSyncError("database");
+  const saved = await admin.from("google_contacts_previews").insert({ id: previewId, workspace_id: connection.workspace_id, user_id: userId,
+    google_subject: connection.google_subject, proofs, expires_at: expiresAt });
+  if (saved.error) throw new ContactsSyncError("database");
+  return { previewId, expiresAt, googleEmail: connection.google_email, items };
+}
+export function buildContactPreview(workspaceId: string, sources: ContactSource[], contacts: GoogleContact[], links: Link[], collisionSources = sources) {
   const proofs: Proof[] = [];
   const items: ContactPreviewItem[] = sources.map(source => {
     const link = links.find(item => item.customer_id === source.customerId);
@@ -89,20 +140,20 @@ export function buildContactPreview(workspaceId: string, sources: ContactSource[
       name: String(candidate.contact.names?.[0]?.displayName || candidate.contact.names?.[0]?.unstructuredName || "Névtelen névjegy"),
       phones: (candidate.contact.phoneNumbers || []).map(item => String(item.value || "")).filter(Boolean),
       emails: (candidate.contact.emailAddresses || []).map(item => String(item.value || "")).filter(Boolean), evidence: candidate.evidence }));
-    const base: ContactPreviewItem = { ...source, state: "new", resourceName: link?.resource_name || null, candidates };
+    const base: ContactPreviewItem = { ...source, groupable: !link && !source.memberCustomerIds, state: "new", resourceName: link?.resource_name || null, candidates };
     const retryable = link?.state === "review" && !link.managed_snapshot && !link.synced_source_hash && !link.mutation_snapshot;
     if (link && !retryable) return { ...base, state: link.state === "review" || link.state === "uncertain" || link.state === "creating" ? "review" : "linked",
       ...(link.last_error ? { lastError: link.last_error } : {}) };
     const marked = contacts.filter(contact => googleContactMarkers(contact).includes(marker));
     const unavailable = found.candidates.some(candidate => googleContactMarkers(candidate.contact).some(value => value !== marker) ||
       links.some(item => item.customer_id !== source.customerId && item.resource_name === candidate.contact.resourceName));
-    if (localCollision(source, sources) || marked.length > 0 || unavailable) return { ...base, state: "review",
+    if (localCollision(source, collisionSources) || marked.length > 0 || unavailable) return { ...base, state: "review",
       lastError: marked.length ? "Ehhez az ügyfélhez már tartozik AlinFlow-jelölés. Az összerendelést ellenőrizni kell." :
         "Az elérhetőség több ügyfélhez vagy már összekapcsolt névjegyhez tartozik. Ellenőrizd az adatokat." };
-    if (!normalizeContactPhone(source.phone) && !normalizeContactEmail(source.email)) return { ...base, state: "review", lastError: "Az ügyfélhez telefonszám vagy e-mail-cím szükséges." };
+    if (!contactSourceValues(source).phones.some(normalizeContactPhone) && !contactSourceValues(source).emails.some(normalizeContactEmail)) return { ...base, state: "review", lastError: "Az ügyfélhez telefonszám vagy e-mail-cím szükséges." };
     base.state = candidates.length > 1 || found.conflict ? "ambiguous" : candidates.length === 1 ? "match" : "new";
     base.resourceName = candidates.length === 1 ? candidates[0].resourceName : null;
-    proofs.push({ customerId: source.customerId, sourceHash: source.sourceHash,
+    proofs.push({ customerId: source.customerId, sourceHash: source.sourceHash, ...(source.memberCustomerIds ? { memberCustomerIds: source.memberCustomerIds } : {}),
       options: candidates.length ? candidates.map(item => item.resourceName) : [null],
       remoteHashes: Object.fromEntries(found.candidates.map(item => [item.contact.resourceName!, hash(item.contact)])) });
     return base;
@@ -110,18 +161,26 @@ export function buildContactPreview(workspaceId: string, sources: ContactSource[
   return { items, proofs };
 }
 export async function previewGoogleContacts(workspaceId: string, userId: string) {
-  const admin = contactsAdmin(), connection = await connectionFor(admin, workspaceId);
-  const token = await contactsAccessToken(connection);
-  const [sources, contacts, links] = await Promise.all([loadGoogleContactSources(admin, workspaceId), listGoogleContacts(token), loadLinks(admin, workspaceId)]);
-  const { items, proofs } = buildContactPreview(workspaceId, sources, contacts, links);
-  const previewId = randomUUID(), expiresAt = new Date(Date.now() + 15 * 60000).toISOString();
-  // Replace only this administrator's previous preview, retaining other users' work.
-  const removed = await admin.from("google_contacts_previews").delete().eq("workspace_id", workspaceId).eq("user_id", userId);
-  if (removed.error) throw new ContactsSyncError("database");
-  const saved = await admin.from("google_contacts_previews").insert({ id: previewId, workspace_id: workspaceId, user_id: userId,
-    google_subject: connection.google_subject, proofs, expires_at: expiresAt });
-  if (saved.error) throw new ContactsSyncError("database");
-  return { previewId, expiresAt, googleEmail: connection.google_email, items };
+  const admin = contactsAdmin(), connection = await connectionFor(admin, workspaceId), token = await contactsAccessToken(connection);
+  const [raw, contacts, links, groups] = await Promise.all([loadGoogleContactSources(admin, workspaceId), listGoogleContacts(token), loadLinks(admin, workspaceId), loadGroups(admin, workspaceId)]);
+  const projected = groupGoogleContactSources(raw, groups);
+  const { items, proofs } = buildContactPreview(workspaceId, projected.sources, contacts, links, raw);
+  for (const [customerId, lastError] of projected.errors) {
+    const original = raw.find(source => source.customerId === customerId);
+    items.push({ customerId, name: original?.name || "Közös névjegy", phone: "", email: "", address: "", notes: "", sourceHash: "",
+      memberCustomerIds: groups.find(group => group.anchorCustomerId === customerId)!.memberCustomerIds,
+      groupable: false, state: "review", resourceName: links.find(link => link.customer_id === customerId)?.resource_name || null, candidates: [], lastError });
+  }
+  return storePreview(admin, connection, userId, decorateItems(items, raw), proofs);
+}
+export async function previewGoogleContactGroups(workspaceId: string, userId: string, requested: unknown) {
+  const proposed = parseProposedGroups(requested), admin = contactsAdmin(), connection = await connectionFor(admin, workspaceId), token = await contactsAccessToken(connection);
+  const [raw, contacts, links, existing] = await Promise.all([loadGoogleContactSources(admin, workspaceId), listGoogleContacts(token), loadLinks(admin, workspaceId), loadGroups(admin, workspaceId)]);
+  assertNewGroups(proposed, raw, links, existing);
+  const projected = groupGoogleContactSources(raw, [...existing, ...proposed]);
+  for (const group of proposed) if (projected.errors.has(group.anchorCustomerId)) throw new ApiError(projected.errors.get(group.anchorCustomerId)!, 409);
+  const { items, proofs } = buildContactPreview(workspaceId, projected.sources, contacts, links, raw), anchors = new Set(proposed.map(group => group.anchorCustomerId));
+  return storePreview(admin, connection, userId, decorateItems(items.filter(item => anchors.has(item.customerId)), raw), proofs.filter(proof => anchors.has(proof.customerId)));
 }
 export async function approveGoogleContacts(workspaceId: string, userId: string, previewId: unknown, requested: unknown) {
   if (typeof previewId !== "string" || !UUID.test(previewId) || !Array.isArray(requested) || !requested.length || requested.length > 10) throw new ApiError("Legfeljebb tíz ellenőrzött névjegyet jelölj ki.");
@@ -136,12 +195,18 @@ export async function approveGoogleContacts(workspaceId: string, userId: string,
   if (preview.error) throw new ContactsSyncError("database");
   if (!preview.data || Date.parse(preview.data.expires_at) <= Date.now() || preview.data.google_subject !== connection.google_subject) throw refreshPreview();
   const token = await contactsAccessToken(connection);
-  const [sources, contacts, links] = await Promise.all([loadGoogleContactSources(admin, workspaceId), listGoogleContacts(token), loadLinks(admin, workspaceId)]);
-  const fresh = buildContactPreview(workspaceId, sources, contacts, links).proofs;
+  const [raw, contacts, links, existing] = await Promise.all([loadGoogleContactSources(admin, workspaceId), listGoogleContacts(token), loadLinks(admin, workspaceId), loadGroups(admin, workspaceId)]);
   const old = preview.data.proofs as Proof[];
+  const proposed = old.filter(proof => proof.memberCustomerIds && selections.some(selection => selection.customerId === proof.customerId)
+    && !existing.some(group => group.anchorCustomerId === proof.customerId))
+    .map(proof => ({ anchorCustomerId: proof.customerId, memberCustomerIds: proof.memberCustomerIds! }));
+  if (proposed.length) { parseProposedGroups(proposed); assertNewGroups(proposed, raw, links, existing); }
+  const projected = groupGoogleContactSources(raw, [...existing, ...proposed]);
+  const fresh = buildContactPreview(workspaceId, projected.sources, contacts, links, raw).proofs;
   for (const selection of selections) {
     const before = old.find(item => item.customerId === selection.customerId), now = fresh.find(item => item.customerId === selection.customerId);
     if (!before || !now || before.sourceHash !== selection.sourceHash || now.sourceHash !== selection.sourceHash
+      || JSON.stringify(before.memberCustomerIds || []) !== JSON.stringify(now.memberCustomerIds || [])
       || !before.options.includes(selection.resourceName) || !now.options.includes(selection.resourceName)
       || selection.resourceName && before.remoteHashes[selection.resourceName] !== now.remoteHashes[selection.resourceName]) throw refreshPreview();
   }
@@ -184,10 +249,14 @@ export async function runGoogleContactsSync(workspaceId?: string): Promise<{ pro
   if (!connection) return result;
   try {
     const token = await contactsAccessToken(connection);
-    const sources = await loadGoogleContactSources(admin, connection.workspace_id);
+    const raw = await loadGoogleContactSources(admin, connection.workspace_id);
+    // Read links before memberships: an approval committed between reads can add
+    // an unused group, never expose a new anchor without its durable members.
+    const loadedLinks = await loadLinks(admin, connection.workspace_id);
+    const groups = await loadGroups(admin, connection.workspace_id), projected = groupGoogleContactSources(raw, groups), sources = projected.sources;
     const sourceHashes = new Map(sources.map(source => [source.customerId, source.sourceHash]));
     const priority = (link: Link) => link.state === "pending" ? 0 : link.synced_source_hash !== sourceHashes.get(link.customer_id) ? 1 : 2;
-    const links = (await loadLinks(admin, connection.workspace_id)).filter(link => link.state !== "review" && Date.parse(link.next_sync_at) <= Date.now())
+    const links = loadedLinks.filter(link => link.state !== "review" && Date.parse(link.next_sync_at) <= Date.now())
       .sort((a, b) => priority(a) - priority(b) || Date.parse(a.next_sync_at) - Date.parse(b.next_sync_at)).slice(0, 8);
     let allContacts: GoogleContact[] | null = null;
     for (const link of links) {
@@ -196,7 +265,10 @@ export async function runGoogleContactsSync(workspaceId?: string): Promise<{ pro
       try {
         await ensureCurrentLease(admin, connection);
         const source = sources.find(item => item.customerId === link.customer_id), marker = markerFor(connection.workspace_id, link.customer_id);
-        if (!source) { await markReview(admin, connection.workspace_id, link, "Az ügyfél már nem szerepel a saját telepítések között. A Google-névjegyet megtartottuk."); result.failed += 1; continue; }
+        if (!source) { await markReview(admin, connection.workspace_id, link, projected.errors.get(link.customer_id) || "Az ügyfél már nem szerepel a saját telepítések között. A Google-névjegyet megtartottuk."); result.failed += 1; continue; }
+        if (source.memberCustomerIds && localCollision(source, raw)) {
+          await markReview(admin, connection.workspace_id, link, "A közös névjegy elérhetősége másik ügyfélhez is tartozik. Ellenőrzés szükséges."); result.failed += 1; continue;
+        }
         if (!link.resource_name) {
           allContacts ||= await listGoogleContacts(token, deadline);
           const recovered = allContacts.filter(contact => googleContactMarkers(contact).includes(marker));
@@ -207,7 +279,7 @@ export async function runGoogleContactsSync(workspaceId?: string): Promise<{ pro
               last_error: "A létrehozás eredménye még nem igazolható. Nem hozunk létre újabb névjegyet; ellenőrzés szükséges." });
             result.failed += 1; continue;
           } else {
-            if (link.approved_source_hash !== source.sourceHash || recovered.length || localCollision(source, sources) || findContactCandidates(source, allContacts).candidates.length) {
+            if (link.approved_source_hash !== source.sourceHash || recovered.length || localCollision(source, raw) || findContactCandidates(source, allContacts).candidates.length) {
               await markReview(admin, connection.workspace_id, link, "A jóváhagyás óta változtak az adatok vagy megjelent egy egyező névjegy. Új ellenőrzés szükséges."); result.failed += 1; continue;
             }
             const created = buildContactCreate(source, marker);

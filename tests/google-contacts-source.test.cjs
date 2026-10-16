@@ -103,3 +103,51 @@ test("partial data/provenance failures stop the entire projection", async () => 
     await assert.rejects(load(admin, workspace));
   }
 });
+
+const { groupGoogleContactSources: groupSources } = harness({}, { "node:crypto": require("node:crypto") }).load("src/lib/alinflow/google-contacts-source.ts");
+function groupFixture() {
+  const first = project(rows(), workspace, today)[0];
+  const second = { ...first, customerId: "customer-two", name: "Másik névalak", phone: "+36709998888", email: "second@example.invalid", address: "Másik cím 2.", sourceHash: "b".repeat(64) };
+  return { first, second, group: { anchorCustomerId: first.customerId, memberCustomerIds: [first.customerId, second.customerId] } };
+}
+test("explicit group preserves both customer sources, each phone/email and duplicate-looking work blocks", () => {
+  const { first, second, group } = groupFixture();
+  const result = groupSources([first, second], [group]);
+  assert.equal(result.errors.size, 0); assert.equal(result.sources.length, 1);
+  const contact = result.sources[0];
+  assert.equal(contact.name, first.name); assert.equal(contact.phone, first.phone);
+  assert.equal(contact.phones.length, 2); assert.equal(contact.emails.length, 2); assert.equal(contact.addresses.length, 2);
+  assert.equal(contact.notes, first.notes + "\n\n" + second.notes);
+  assert.equal(contact.notes.split("Telepítés:").length - 1, 2);
+  assert.equal(first.memberCustomerIds, undefined); assert.equal(second.memberCustomerIds, undefined);
+});
+test("group identifier deduplication does not deduplicate installations and hashes bind every member", () => {
+  const { first, second, group } = groupFixture(); second.phone = "+36 30 123 4567"; second.email = first.email.toUpperCase();
+  const a = groupSources([first, second], [group]).sources[0];
+  const b = groupSources([second, first], [{ ...group, memberCustomerIds: [...group.memberCustomerIds].reverse() }]).sources[0];
+  assert.equal(a.phones.length, 1); assert.equal(a.emails.length, 1); assert.equal(a.sourceHash, b.sourceHash);
+  const changed = groupSources([first, { ...second, sourceHash: "c".repeat(64) }], [group]).sources[0];
+  assert.notEqual(a.sourceHash, changed.sourceHash);
+});
+test("missing eligible group member never exports a partial source, unrelated singleton remains identical", () => {
+  const { first, group } = groupFixture(), third = { ...first, customerId: "third" };
+  const result = groupSources([first, third], [group]);
+  assert.equal(result.errors.size, 1); assert.equal(result.sources.length, 1); assert.equal(result.sources[0], third);
+});
+test("invalid nonempty phone or email stops the group without dropping an identifier", () => {
+  const { first, second, group } = groupFixture();
+  for (const change of [{ phone: "123" }, { email: "broken email" }]) {
+    const result = groupSources([first, { ...second, ...change }], [group]);
+    assert.equal(result.errors.size, 1); assert.equal(result.sources.length, 0);
+  }
+});
+test("overlapping membership and a missing anchor are rejected", () => {
+  const { first, second, group } = groupFixture();
+  assert.throws(() => groupSources([first, second], [group, group]), /tagsága/);
+  assert.throws(() => groupSources([first, second], [{ ...group, anchorCustomerId: "unrelated" }]), /tagsága/);
+});
+test("combined note size is limited even when both individual notes fit", () => {
+  const { first, second, group } = groupFixture();
+  const result = groupSources([{ ...first, notes: "a".repeat(25000) }, { ...second, notes: "b".repeat(25000) }], [group]);
+  assert.equal(result.sources.length, 0); assert.match(result.errors.get(first.customerId), /túl hosszú/);
+});
