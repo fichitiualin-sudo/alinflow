@@ -180,7 +180,8 @@ export function buildSmsReminder(customer: Customer, brand: string, today: strin
   const date = customer.date!;
   const time = savedTime(customer.time)!;
   const type = (customer.appointmentType || "installation") as Exclude<AppointmentType, "other">;
-  const name = singleLine(customer.name) || "Ügyfelünk";
+  const savedName = singleLine(customer.name);
+  const name = /\p{L}/u.test(savedName) ? savedName : "Ügyfelünk";
   const count = smsReminderDeviceCount(customer);
   const plural = count > 1;
   const window = arrivalWindow(time);
