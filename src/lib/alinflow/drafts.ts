@@ -2,6 +2,7 @@ import type { Customer, CustomerDraft, ReturnContext, View } from "./types";
 import { CUSTOMER_DRAFT_KEY, EMPTY_QUOTE_ITEMS, RESTORABLE_VIEWS, RETURN_CONTEXT_KEY } from "./constants";
 import { firstAppointmentTime, normalizeAppointmentType } from "./appointments";
 import { todayIso } from "./format";
+import { customerLocationFromData } from "./customers";
 
 export function safeReturnView(value: unknown): View {
   return typeof value === "string" && RESTORABLE_VIEWS.includes(value as View) ? (value as View) : "work";
@@ -63,8 +64,18 @@ export function readCustomerDraft(scope: DraftScope): CustomerDraft | null {
       removeStored(key);
       return null;
     }
+    let customer = parsed.customer as Customer;
+    if (!String(customer.city || "").trim()) {
+      const location = customerLocationFromData(customer.city, customer.postalCode, customer.address);
+      const savedPostalCode = String(customer.postalCode || "").trim();
+      // Old work drafts hid the city. Recover only from this draft's own,
+      // consistent location; keep every other unsaved field and stored snapshot.
+      if (location.city && (!savedPostalCode || savedPostalCode === location.postalCode)) {
+        customer = { ...customer, city: location.city, postalCode: savedPostalCode ? customer.postalCode : location.postalCode };
+      }
+    }
     return {
-      customer: parsed.customer as Customer,
+      customer,
       quoteItems: Array.isArray(parsed.quoteItems) && parsed.quoteItems.length ? parsed.quoteItems : (parsed.customer as Customer).quoteItems || EMPTY_QUOTE_ITEMS,
       scheduleDate: typeof parsed.scheduleDate === "string" ? parsed.scheduleDate : (parsed.customer as Customer).date || todayIso(),
       scheduleTime: typeof parsed.scheduleTime === "string" ? firstAppointmentTime(parsed.scheduleTime) : firstAppointmentTime((parsed.customer as Customer).time),

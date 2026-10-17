@@ -40,3 +40,7 @@ Célzott kódrevert; adatpótlásnál megőrzött előtteértékek és csak vál
 - Teljes `npm test`: 1244 esetből 1242 sikeres, 2 környezetfüggő kihagyás, 0 hiba; a helyi PGlite-függőség rendelkezésre állt.
 - `git diff --check`: sikeres; nincs gyökérszintű `app` és nincs új/duplikált `page.tsx`.
 - Számlázási ellenőrzés szintetikus ügyféllel és mock szolgáltatóval: a külön irányítószám/település/utca XML-mezők, munkacím-felülbírálás, megosztott irányítószámok és jogosultságok lefedve. Valós számla vagy email nem készült.
+## Éles visszaellenőrzés kiegészítése
+A kiadás után a naptári sor már a helyes települést mutatta, de régi munkapiszkozat visszaállíthatott üres várost. A `src/lib/alinflow/drafts.ts` visszaolvasáskor kizárólag a piszkozat saját címéből/irányítószámából pótolja az üres várost, ha az adatok egyértelműek és összhangban vannak. Kitöltött város, ellentmondó irányítószám és minden más szerkesztett mező megmarad; nincs másik munka vagy adatbázisbeli cím átvétele, nincs tárolótörlés vagy automatikus adatbázis-mentés. A `tests/auth-draft-isolation.test.cjs` a régi piszkozatok helyreállítását és a felhasználói szerkesztések megőrzését is ellenőrzi.
+
+A piszkozat-kiegészítés ellenőrzése: TypeScript és build sikeres; 1250 tesztből 1248 sikeres, 2 környezetfüggő kihagyás, 0 hiba. További adatbázis-javítás vagy migráció nincs.
