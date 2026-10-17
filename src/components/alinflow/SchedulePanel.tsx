@@ -4,9 +4,10 @@ import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem
 import { climateSummary, isCustomQuoteItem, itemName, itemUnitPrice, sortProducts } from "@/lib/alinflow/products";
 import { displayAddress } from "@/lib/alinflow/format";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
+import { AppointmentTimePicker } from "@/components/alinflow/AppointmentTimePicker";
 import { AppointmentItemsEditor } from "@/components/alinflow/AppointmentItemsEditor";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
-import { appointmentTimeLabel, appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
+import { appointmentTypeLabel, normalizeAppointmentTimeInput, isInstallationAppointment } from "@/lib/alinflow/appointments";
 
 type SchedulePanelProps = {
   selected: Customer;
@@ -20,6 +21,7 @@ type SchedulePanelProps = {
   shownTime: string;
   appointmentType: AppointmentType;
   freeSlots: string[];
+  freeStartTimes: string[];
   quoteItems: QuoteItem[];
   products: ClimateProduct[];
   maintenanceInstallationWorks: Customer[];
@@ -72,10 +74,6 @@ function priceInputValue(value: string) {
   return Number.isFinite(numeric) ? Math.max(0, numeric) : "";
 }
 
-function slotLabel(slot: string, appointmentType: AppointmentType, items: QuoteItem[]) {
-  return appointmentTimeLabel(appointmentType, slot, items);
-}
-
 export function SchedulePanel({
   selected,
   isExistingSchedule,
@@ -87,6 +85,7 @@ export function SchedulePanel({
   shownTime,
   appointmentType,
   freeSlots,
+  freeStartTimes,
   quoteItems,
   products,
   maintenanceInstallationWorks,
@@ -117,10 +116,7 @@ export function SchedulePanel({
     : isMaintenance
     ? "Karbantartáshoz tartozó klímák"
     : appointmentType === "other" ? "Munka tételei" : "Időpontba kerülő klímák";
-  const manualTimeValue = normalizeAppointmentTimeInput(scheduleTime) || scheduleTime || "";
-  const selectedTimeLabel = normalizeAppointmentTimeInput(scheduleTime)
-    ? appointmentTimeLabel(appointmentType, scheduleTime, quoteItems)
-    : "adj meg időpontot";
+  const timeAvailable = freeStartTimes.includes(normalizeAppointmentTimeInput(scheduleTime));
   const busy = saving || appointmentEmailBusy;
 
   return (
@@ -140,36 +136,13 @@ export function SchedulePanel({
             onStep={onStep}
             onOpen={onOpenCustomer}
           />
-          <Card title="Ajánlott időpontok">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-              {freeSlots.length === 0 ? (
-                <div className="rounded-2xl bg-amber-400/15 p-4 font-black text-amber-100 md:col-span-4">Nincs szabad ajánlott idősáv. Kézzel megadhatsz másik időpontot.</div>
-              ) : (
-                freeSlots.map((slot) => (
-                  <button key={slot} className={normalizeAppointmentTimeInput(scheduleTime) === normalizeAppointmentTimeInput(slot) ? "slot-active" : "slot"} onClick={() => onSetScheduleTime(slot)}>
-                    {slotLabel(slot, appointmentType, quoteItems)}
-                  </button>
-                ))
-              )}
-            </div>
-            <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-              <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Egyedi időpont</label>
-              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-[180px_1fr] sm:items-center">
-                <input
-                  type="time"
-                  step={300}
-                  className="input"
-                  value={manualTimeValue}
-                  onChange={(event) => onSetScheduleTime(event.target.value)}
-                  onBlur={(event) => onSetScheduleTime(normalizeAppointmentTimeInput(event.target.value) || event.target.value)}
-                />
-                <p className="text-sm font-bold text-slate-300">Kiválasztva: <span className="text-cyan-100">{selectedTimeLabel}</span></p>
-              </div>
-            </div>
+          <Card title="Szabad időpontok">
+            <AppointmentTimePicker appointmentType={appointmentType} items={quoteItems} time={scheduleTime}
+              recommendedTimes={freeSlots} availableTimes={freeStartTimes} onChange={onSetScheduleTime} />
           </Card>
         </Main>
         <Side>
-          <Gradient title="Kiválasztott időpont" value={`${appointmentTypeLabel(appointmentType)} · ${scheduleDate.replaceAll("-", ".")} · ${shownTime}`} />
+          <Gradient title="Kiválasztott időpont" value={`${appointmentTypeLabel(appointmentType)} · ${scheduleDate.replaceAll("-", ".")} · ${timeAvailable ? shownTime : "Válassz szabad időpontot"}`} />
           <Card title={appointmentDetailsTitle}>
             {appointmentType === "other" ? <AppointmentItemsEditor extraOnly items={quoteItems} products={products} onChange={onChangeQuoteItems} /> : null}
             {isInstallation ? (
@@ -263,7 +236,7 @@ export function SchedulePanel({
               />
               <span>Tájékoztató email küldése az ügyfélnek az időpont rögzítésekor</span>
             </label>
-            <Btn color="green" disabled={busy} onClick={onSaveSchedule}>
+            <Btn color="green" disabled={busy || !timeAvailable} onClick={onSaveSchedule}>
               {appointmentEmailBusy ? "Mentés és email küldés..." : saving ? "Időpont mentése..." : isExistingSchedule ? `${appointmentTypeLabel(appointmentType)} időpont frissítése` : `${appointmentTypeLabel(appointmentType)} időpont mentése`}
             </Btn>
           </Card>

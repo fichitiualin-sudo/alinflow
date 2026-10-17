@@ -111,6 +111,7 @@ import {
 import {
   appointmentTimeAvailable,
   availableAppointmentSlots,
+  availableAppointmentStartTimes,
   sortCustomersBySchedule,
 } from "@/lib/alinflow/schedule";
 import { Calendar } from "@/components/alinflow/CalendarPanel";
@@ -129,6 +130,7 @@ import { Stats } from "@/components/alinflow/StatsPanel";
 import { TaskPanel, type TaskFilter } from "@/components/alinflow/TaskPanel";
 import { ArchivePanel } from "@/components/alinflow/ArchivePanel";
 import { QuotePreviewPanel } from "@/components/alinflow/QuotePreviewPanel";
+import { AppointmentTimePicker } from "@/components/alinflow/AppointmentTimePicker";
 import { SchedulePanel } from "@/components/alinflow/SchedulePanel";
 import { SettingsPanel } from "@/components/alinflow/SettingsPanel";
 import { MaintenanceOriginEditor } from "@/components/alinflow/MaintenanceOriginEditor";
@@ -168,7 +170,7 @@ import { applySharedMaintenanceResults, mergeSharedMaintenancePoints, sharedMain
 import { acceptMaintenanceOrder } from "@/lib/alinflow/shared-maintenance-client";
 import { resolvePrivacyPartner } from "@/lib/alinflow/privacy-partner-client";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
-import { appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
+import { appointmentDurationMinutes, appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { appointmentIdAliases, appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { canonicalAppointmentIds, canonicalCustomerAppointments } from "@/lib/alinflow/maintenance-selection";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
@@ -3213,7 +3215,20 @@ function HomeContent() {
     };
   }
 
+  function ensureAppointmentDurationAvailable(customer: Customer) {
+    if (!customer.activeAppointmentId || !customer.date || !customer.time || customer.status === "Lemondva") return;
+    const previous = allWorkCustomers.find(work => work.id === customer.id && work.activeAppointmentId === customer.activeAppointmentId);
+    if (!previous || appointmentDurationMinutes(customer.appointmentType, customer.quoteItems)
+      <= appointmentDurationMinutes(previous.appointmentType, previous.quoteItems)) return;
+    if (!appointmentTimeAvailable({ customers: allWorkCustomers, date: customer.date,
+      appointmentType: normalizeAppointmentType(customer.appointmentType), items: customer.quoteItems,
+      selectedCustomerId: customer.id, selectedAppointmentId: customer.activeAppointmentId, time: customer.time })) {
+      throw new Error("A hosszabb munka már foglalt időszakba nyúlna, vagy nem fér el ezen a napon. Előbb válassz másik időpontot az Időpont módosítása gombbal.");
+    }
+  }
+
   async function persistCustomerToDb(customer: Customer, options: PersistCustomerOptions = {}): Promise<PersistCustomerResult | undefined> {
+    ensureAppointmentDurationAvailable(customer);
     if (!user) throw new Error("A mentéshez be kell jelentkezni.");
     if (!customer.id) throw new Error("Hiányzik az ügyfél azonosítója.");
     if (!customer.name.trim()) throw new Error("Adj meg ügyfélnevet a mentéshez.");
@@ -4280,6 +4295,7 @@ function HomeContent() {
     if (!beginAction("work-save")) return;
     setMessage(isService ? "Munka tételeinek mentése..." : "Klímák és anyagok mentése folyamatban...", "pending");
     try {
+      ensureAppointmentDurationAvailable(updated);
       if (!isService) stockMaterialQuantities(updatedQuoteItems, updated.materialUsage);
       const persisted = await persistCustomerToDb(updated);
       const savedUpdated: Customer = {
@@ -5127,6 +5143,7 @@ function HomeContent() {
         return {
           name: itemName(item),
           quantity: itemQuantity(item),
+          ...(item.itemType ? { itemType: item.itemType } : {}),
           unitPrice: itemUnitPrice(item),
           totalPrice: itemTotal(item),
           productUrl: media.productUrl,
@@ -6614,6 +6631,12 @@ function HomeContent() {
     const isExistingMode = quickAppointment.customerMode === "existing";
     const selectedQuickCustomer = quickAppointmentSelectedCustomer(quickAppointment);
     const maintenanceInstallationWorks = selectedQuickCustomer ? customerInstallationWorks(selectedQuickCustomer) : [];
+    const quickItems = quickAppointmentQuoteItems(quickAppointment, selectedQuickCustomer);
+    const quickAvailability = { customers: allWorkCustomers, date: quickAppointment.date,
+      appointmentType: appointmentType || "installation" as AppointmentType, items: quickItems };
+    const quickStartTimes = availableAppointmentStartTimes({ ...quickAvailability, includeTime: quickAppointment.time });
+    const quickRecommendedTimes = availableAppointmentSlots(quickAvailability);
+    const quickTimeAvailable = quickStartTimes.includes(normalizeAppointmentTimeInput(quickAppointment.time));
     const searchTerm = normalizeSearch(quickAppointment.search);
     const quickCustomerMatches = customers
       .filter((customer) => {
@@ -6638,7 +6661,7 @@ function HomeContent() {
             <div>
               <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-200">Naptár gyors rögzítés</p>
               <h2 className="mt-2 text-2xl font-black">Mit szeretnél rögzíteni?</h2>
-              <p className="mt-1 text-sm font-bold text-slate-400">{quickAppointment.date.replaceAll("-", ".")} · {quickAppointment.time || "08:00"}</p>
+              <p className="mt-1 text-sm font-bold text-slate-400">{quickAppointment.date.replaceAll("-", ".")} · {quickTimeAvailable ? appointmentTimeRangeLabel({ appointmentType, time: quickAppointment.time, quoteItems: quickItems }) : "Válassz szabad időpontot"}</p>
             </div>
             <button type="button" onClick={() => setQuickAppointment(null)} className="rounded-2xl bg-white/10 px-4 py-3 font-black text-cyan-100">Bezárás</button>
           </div>
@@ -6703,10 +6726,11 @@ function HomeContent() {
           {appointmentType && (quickAppointment.customerMode === "new" || selectedQuickCustomer) ? (
             <div className="mt-5 space-y-4">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <label className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                  <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Időpont</span>
-                  <input type="time" step={300} className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={quickAppointment.time} onChange={(event) => updateQuickAppointment({ time: event.target.value })} onBlur={(event) => updateQuickAppointment({ time: normalizeAppointmentTimeInput(event.target.value) || event.target.value })} />
-                </label>
+                <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 md:col-span-2">
+                  <AppointmentTimePicker appointmentType={appointmentType} items={quickItems} time={quickAppointment.time}
+                    recommendedTimes={quickRecommendedTimes} availableTimes={quickStartTimes}
+                    onChange={time => updateQuickAppointment({ time })} />
+                </div>
                 <label className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
                   <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Megjegyzés</span>
                   <input className="mt-2 w-full bg-transparent text-lg font-black outline-none" value={quickAppointment.notes} onChange={(event) => updateQuickAppointment({ notes: event.target.value })} placeholder="belső megjegyzés" />
@@ -6769,7 +6793,7 @@ function HomeContent() {
               </div>
               <div className="flex flex-col gap-3 md:flex-row md:justify-end">
                 <button type="button" onClick={() => setQuickAppointment(null)} className="rounded-2xl bg-white/10 px-5 py-4 font-black text-slate-100">Mégse</button>
-                <button type="button" onClick={() => void saveQuickAppointment()} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:opacity-50">{quickAppointmentSaving ? (hasSelectedEmail ? "Mentés és emailküldés…" : "Mentés…") : "Időpont mentése"}</button>
+                <button type="button" onClick={() => void saveQuickAppointment()} disabled={!quickTimeAvailable} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950 disabled:opacity-50">{quickAppointmentSaving ? (hasSelectedEmail ? "Mentés és emailküldés…" : "Mentés…") : "Időpont mentése"}</button>
               </div>
             </div>
           ) : null}
@@ -7113,15 +7137,17 @@ function HomeContent() {
   }
 
   if (view==="schedule") {
-    const free = availableAppointmentSlots({
+    const isExistingSchedule = Boolean(selected.date) && normalizeAppointmentType(selected.appointmentType) === normalizedScheduleAppointmentType;
+    const availability = {
       customers: allWorkCustomers,
       date: scheduleDate,
       selectedCustomerId: selected.id,
-      selectedAppointmentId: selected.activeAppointmentId,
+      selectedAppointmentId: isExistingSchedule ? selected.activeAppointmentId : undefined,
       appointmentType: normalizedScheduleAppointmentType,
       items: quoteItems,
-    });
-    const isExistingSchedule = Boolean(selected.date) && normalizeAppointmentType(selected.appointmentType) === normalizedScheduleAppointmentType;
+    };
+    const free = availableAppointmentSlots(availability);
+    const freeStartTimes = availableAppointmentStartTimes({ ...availability, includeTime: scheduleTime });
     return (
       <SchedulePanel
         saving={scheduleSaveBusy}
@@ -7136,6 +7162,7 @@ function HomeContent() {
         shownTime={shownTime}
         appointmentType={normalizedScheduleAppointmentType}
         freeSlots={free}
+        freeStartTimes={freeStartTimes}
         quoteItems={quoteItems}
         products={products}
         maintenanceInstallationWorks={normalizedScheduleAppointmentType === "maintenance" ? customerInstallationWorks(selected) : []}

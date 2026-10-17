@@ -32,6 +32,7 @@ type Customer = {
 };
 
 type QuoteItem = {
+  itemType?: "climate" | "extra";
   name?: string;
   quantity?: number;
   totalPrice?: number;
@@ -143,7 +144,11 @@ function appointmentEmailHtml(customer: Customer, items: QuoteItem[], workspaceS
   const appointmentLabel = appointmentTypeLabel(type);
   const name = escapeHtml(customer.name || "Ügyfelünk");
   const date = escapeHtml(formatDate(customer.date));
-  const time = escapeHtml(appointmentTimeRangeLabel({ time: customer.time, appointmentType: type }));
+  const time = escapeHtml(appointmentTimeRangeLabel({
+    time: customer.time,
+    appointmentType: type,
+    quoteItems: items.map((item) => ({ productId: "", customName: item.name, quantity: item.quantity ?? 1, itemType: item.itemType })),
+  }));
   const address = escapeHtml(fullAddress(customer.city, customer.address, "egyeztetés szerint", customer.postalCode));
   const phone = escapeHtml(customer.phone || "");
 

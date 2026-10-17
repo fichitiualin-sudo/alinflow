@@ -22,7 +22,7 @@ function fixture(options = {}) {
       assert.equal(op.filters.id, appointment.quote_id); assert.equal(op.filters.customer_id, appointment.customer_id);
       return { data: options.missingQuote ? null : { id: appointment.quote_id, notes: "quote_pricing_mode:bundle" }, error: null };
     }
-    if (op.table === "quote_items") { assert.equal(op.filters.quote_id, appointment.quote_id); return { data: [{ product_name: "Saved equipment", description: "synthetic-product|install_price=40000", quantity: 2, unit_price: 123000, purchase_price: 99999 }], error: null }; }
+    if (op.table === "quote_items") { assert.equal(op.filters.quote_id, appointment.quote_id); return { data: options.quoteItems || [{ product_name: "Saved equipment", description: "synthetic-product|install_price=40000", quantity: 2, unit_price: 123000, purchase_price: 99999 }], error: null }; }
     throw Error("Unexpected database operation " + op.table);
   });
   let remainingClaims = options.claims || 1;
@@ -68,6 +68,7 @@ test("new event uses saved workspace-scoped data, deterministic valid Google ID,
   assert.match(created.body.description, /Saved equipment.*246\s000 Ft/);
   assert.doesNotMatch(created.body.description, /99999|OldCity/);
   assert.equal(created.body.location, "2750 Tesztváros, Példa utca 1.");
+  assert.equal(Date.parse(created.body.end.dateTime) - Date.parse(created.body.start.dateTime), 6 * 3600000);
   assert.equal(created.body.attendees, undefined);
   assert.equal(created.body.reminders.useDefault, false);
   assert.equal(f.finishes()[0].p_version, 2);
@@ -225,4 +226,27 @@ test("other customer work reuses the durable Google queue with its own service l
   assert.equal(Date.parse(event.end.dateTime) - Date.parse(event.start.dateTime), 3600000);
   assert.equal(event.extendedProperties.private.alinflow_appointment_id, "appointment-one");
   assert.equal(f.finishes()[0].p_success, true);
+});
+
+
+test("server calendar worker derives duration from saved equipment quantities and excludes extra line items", async () => {
+  const f = fixture({ quoteItems: [
+    { product_name: "Saved AC", description: "synthetic-product|install_price=40000", quantity: 1, unit_price: 123000 },
+    { product_name: "Extra work", description: "manual:Extra work|item_type=extra|install_price=0", quantity: 10, unit_price: 1000 },
+  ] });
+  const result = await f.worker.runGoogleCalendarSync("workspace-one");
+  assert.equal(result.synced, 1);
+  const event = f.httpCalls.find(call => call.method === "POST").body;
+  assert.equal(Date.parse(event.end.dateTime) - Date.parse(event.start.dateTime), 3 * 3600000);
+  assert.ok(event.description.includes("Idősáv: 08:00–11:00"));
+});
+
+test("server calendar worker keeps multi-device maintenance to one hour", async () => {
+  const f = fixture({ appointment: { appointment_type: "maintenance" } });
+  const result = await f.worker.runGoogleCalendarSync("workspace-one");
+  assert.equal(result.synced, 1);
+  const event = f.httpCalls.find(call => call.method === "POST").body;
+  assert.equal(Date.parse(event.end.dateTime) - Date.parse(event.start.dateTime), 3600000);
+  assert.ok(event.description.includes("Idősáv: 08:00–09:00"));
+  assert.doesNotMatch(event.description, /szereléssel együtt|Klíma:|Ft/);
 });

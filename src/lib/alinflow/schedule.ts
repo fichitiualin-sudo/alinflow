@@ -3,13 +3,16 @@ import {
   appointmentInterval,
   appointmentSlotOptions,
   intervalsOverlap,
+  minutesToTime,
+  normalizeAppointmentTimeInput,
   slotInterval,
 } from "./appointments";
 
 export function appointmentIntervalsForDay(customers: Customer[], date: string, selectedCustomerId?: string, selectedAppointmentId?: string) {
   const dayCustomers = customers.filter((customer) => {
-    if (customer.date !== date || customer.status === "Lemondva") return false;
-    if (selectedAppointmentId && customer.activeAppointmentId === selectedAppointmentId) return false;
+    if (customer.date !== date || String(customer.status || "").trim().toLocaleLowerCase("hu-HU") === "lemondva") return false;
+    if (selectedAppointmentId && customer.activeAppointmentId === selectedAppointmentId
+      && (!selectedCustomerId || customer.id === selectedCustomerId)) return false;
     return true;
   });
   return dayCustomers.map((customer) => appointmentInterval(customer)).filter(Boolean) as { start: number; end: number }[];
@@ -33,7 +36,7 @@ export function appointmentTimeAvailable({
   time: string;
 }) {
   const candidate = slotInterval(time, appointmentType, items);
-  if (!candidate) return false;
+  if (!date || !candidate || candidate.end > 24 * 60) return false;
   const intervals = appointmentIntervalsForDay(customers, date, selectedCustomerId, selectedAppointmentId);
   return intervals.every((interval) => !intervalsOverlap(candidate, interval));
 }
@@ -57,6 +60,35 @@ export function availableAppointmentSlots({
   return slots.filter((slot) => appointmentTimeAvailable({ customers, date, appointmentType, items, selectedCustomerId, selectedAppointmentId, time: slot }));
 }
 
+export function availableAppointmentStartTimes({
+  customers,
+  date,
+  appointmentType,
+  items,
+  selectedCustomerId,
+  selectedAppointmentId,
+  includeTime,
+}: {
+  customers: Customer[];
+  date: string;
+  appointmentType: AppointmentType;
+  items: QuoteItem[];
+  selectedCustomerId?: string;
+  selectedAppointmentId?: string;
+  includeTime?: string;
+}) {
+  if (!date) return [];
+  const intervals = appointmentIntervalsForDay(customers, date, selectedCustomerId, selectedAppointmentId);
+  const times = Array.from({ length: 24 * 12 }, (_, index) => minutesToTime(index * 5));
+  // Keep an existing off-grid start selectable when editing, if it still fits.
+  const includedTime = normalizeAppointmentTimeInput(includeTime);
+  if (includedTime && !times.includes(includedTime)) times.push(includedTime);
+  return times.sort().filter((time) => {
+    const candidate = slotInterval(time, appointmentType, items);
+    return candidate !== null && candidate.end <= 24 * 60
+      && intervals.every((interval) => !intervalsOverlap(candidate, interval));
+  });
+}
 export function scheduledTimeValue(value?: string) {
   const match = String(value || "").match(/(\d{1,2}):(\d{2})/);
   if (!match) return 24 * 60 + 1;
