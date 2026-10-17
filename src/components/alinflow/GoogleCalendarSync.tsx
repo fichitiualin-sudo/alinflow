@@ -89,20 +89,23 @@ export function useGoogleCalendarSync({ workspaceId, userId, enabled, onReturn }
     let syncing = false;
     let queued = false;
     let statusVersion = 0;
+    let lastRefreshAt = -Infinity;
     const optimisticManagedIds = new Set<string>();
     const controller = new AbortController();
     setState({ context, status: null, loading: true, error: "" });
 
-    async function loadStatus() {
+    async function loadStatus(): Promise<GoogleCalendarStatus | null> {
       const version = ++statusVersion;
       try {
         const result = await requestGoogleCalendar<GoogleCalendarStatus>("status", workspaceId!, userId!, controller.signal);
-        if (!active || version !== statusVersion) return;
+        if (!active || version !== statusVersion) return null;
         for (const id of result.managedAppointmentIds) optimisticManagedIds.delete(id);
         connection = { ...result, managedAppointmentIds: [...new Set([...result.managedAppointmentIds, ...optimisticManagedIds])] };
         setState({ context, status: connection, loading: false, error: "" });
+        return connection;
       } catch (error) {
         if (active && version === statusVersion) setState((current) => ({ ...current, context, loading: false, error: error instanceof Error ? error.message : "A naptárkapcsolat állapota nem tölthető be." }));
+        return null;
       }
     }
 
@@ -113,9 +116,12 @@ export function useGoogleCalendarSync({ workspaceId, userId, enabled, onReturn }
         return;
       }
       syncing = true;
+      lastRefreshAt = Date.now();
       try {
-        await loadStatus();
-        if (!active || !connection?.connected) return;
+        const current = await loadStatus();
+        if (!active || !current?.connected) return;
+        // Local saves still force a worker attempt; idle polling only reads status.
+        if (!appointmentChanged && current.pending === 0) return;
         await requestGoogleCalendar("sync", workspaceId!, userId!, controller.signal);
         if (active) await loadStatus();
       } catch (error) {
@@ -125,7 +131,7 @@ export function useGoogleCalendarSync({ workspaceId, userId, enabled, onReturn }
         syncing = false;
         if (active && queued) {
           queued = false;
-          void sync();
+          void sync(true);
         }
       }
     }
@@ -142,26 +148,31 @@ export function useGoogleCalendarSync({ workspaceId, userId, enabled, onReturn }
     }
     function handleConnectionChanged(event: Event) {
       if ((event as CustomEvent<{ workspaceId: string }>).detail?.workspaceId !== workspaceId) return;
-      void loadStatus().then(() => { if (active) void sync(true); });
+      void sync(true);
     }
     function refreshIfVisible() {
       if (document.visibilityState === "visible") void sync();
     }
 
-    void sync();
+    function refreshOnWake() {
+      if (Date.now() - lastRefreshAt < 15_000) return;
+      refreshIfVisible();
+    }
+
+    refreshIfVisible();
     const timer = window.setInterval(refreshIfVisible, 60_000);
     window.addEventListener(APPOINTMENTS_CHANGED, handleAppointmentChanged);
     window.addEventListener(CONNECTION_CHANGED, handleConnectionChanged);
-    window.addEventListener("focus", refreshIfVisible);
-    document.addEventListener("visibilitychange", refreshIfVisible);
+    window.addEventListener("focus", refreshOnWake);
+    document.addEventListener("visibilitychange", refreshOnWake);
     return () => {
       active = false;
       controller.abort();
       window.clearInterval(timer);
       window.removeEventListener(APPOINTMENTS_CHANGED, handleAppointmentChanged);
       window.removeEventListener(CONNECTION_CHANGED, handleConnectionChanged);
-      window.removeEventListener("focus", refreshIfVisible);
-      document.removeEventListener("visibilitychange", refreshIfVisible);
+      window.removeEventListener("focus", refreshOnWake);
+      document.removeEventListener("visibilitychange", refreshOnWake);
     };
   }, [context, enabled, userId, workspaceId]);
 

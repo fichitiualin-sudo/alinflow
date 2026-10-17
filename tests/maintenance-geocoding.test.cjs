@@ -56,11 +56,13 @@ test('identity change while reading session cannot send a request with the wrong
   session.resolve({data:{session:{access_token:'new-account',user:{id:'other'}}}});await pending;
   assert.equal(fetched,false);assert.equal(run.patches.length,0);
 });
-test('stale server rejection is not counted or patched as a saved coordinate',async()=>{
-  const run=flow();run.context.supabase.rpc=async()=>({error:{code:'40001',message:'Address changed'},data:null});
-  await run.geocodeMissingMaintenanceMapPoints();assert.equal(run.patches.length,0);
+for (const code of ['PT409', '40001']) test(`stale server rejection ${code} is skipped once without retry or coordinate patch`,async()=>{
+  const run=flow();let attempts=0;
+  run.context.supabase.rpc=async()=>{attempts++;return{error:{code,message:'Address changed'},data:null};};
+  await run.geocodeMissingMaintenanceMapPoints();assert.equal(run.patches.length,0);assert.equal(attempts,1);
   assert.match(run.messages.at(-1),/0 cím mentve/);assert.match(run.messages.at(-1),/1 közben módosult cím kihagyva/);
 });
+
 test('workspace change during RPC and unconfirmed response never patch local markers',async()=>{
   const reply=deferred(),run=flow();run.context.supabase.rpc=()=>reply.promise;
   const pending=run.geocodeMissingMaintenanceMapPoints();await new Promise(done=>setImmediate(done));
@@ -75,4 +77,16 @@ test('local geocode patch preserves a newer or edited selected address',()=>{
   run.patchAppointmentMapData(id,geo.maintenanceGeocodePatch(saved),geo.maintenanceGeocodeTarget(point));
   assert.equal(customers[0].mapLatitude,47);assert.equal(customers[1],fresh);assert.equal(selected,edited);
   assert.equal(works.customer[0].appointmentUpdatedAt,saved.updatedAt);
+});
+
+test('stale geocode does not block the next valid address in the same batch',async()=>{
+  const secondId='10000000-0000-0000-0000-000000000002';
+  const secondPoint={...point,appointmentId:secondId,customer:{...point.customer,activeAppointmentId:secondId}};
+  const run=flow({maintenanceMapPoints:[point,secondPoint],fetch:async()=>({ok:true,json:async()=>({results:[result,{...result,appointmentId:secondId}]})})});
+  const attempted=[];
+  run.context.supabase.rpc=async(name,args)=>{attempted.push(args.p_appointment_id);return args.p_appointment_id===id
+    ?{error:{code:'PT409',message:'Address changed'},data:null}:{error:null,data:saved};};
+  await run.geocodeMissingMaintenanceMapPoints();
+  assert.deepEqual(attempted,[id,secondId]);assert.equal(run.patches.length,1);assert.equal(run.patches[0][0],secondId);
+  assert.match(run.messages.at(-1),/1 cím mentve, 1 közben módosult cím kihagyva/);
 });

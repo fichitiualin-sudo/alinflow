@@ -58,7 +58,7 @@ begin
   if not found then raise exception 'A telepítés nem érhető el.' using errcode='42501'; end if;
   if p_expected_appointment_updated_at is null or a.updated_at is distinct from p_expected_appointment_updated_at
     or coalesce(nullif(btrim(a.address),''),btrim(c.address),'') is distinct from btrim(coalesce(p_expected_address,'')) then
-    raise exception 'A telepítés címe vagy adatai közben megváltoztak. Frissítsd a térképet.' using errcode='40001';
+    raise exception 'A telepítés címe vagy adatai közben megváltoztak. Frissítsd a térképet.' using errcode='PT409';
   end if;
   saved_at:=clock_timestamp();
   update public.appointments set latitude=case when p_status='ok' then p_latitude end,

@@ -150,16 +150,20 @@ test('accepted reference keeps one marker and combines source history with newer
 });
 // Preserve hook slots/dependencies and run effect cleanup when identity changes.
 // Controlled focus/timer events and deferred RPCs exercise the actual hook.
-function sharedHookHarness() {
-  const slots=[],effects=[],focusListeners=new Set(),intervals=new Set(),receivedCalls=[],resultCalls=[];
+function sharedHookHarness({visibility = "visible"} = {}) {
+  const slots=[],effects=[],focusListeners=new Set(),visibilityListeners=new Set(),intervals=new Set(),receivedCalls=[],resultCalls=[];
+  let now=0;
+  class ClockDate extends Date { static now() { return now; } }
   let cursor=0,args=['workspace',true,'user'];
-  const document={visibilityState:'visible'};
+  const document={visibilityState:visibility,
+    addEventListener:(event,fn)=>{assert.equal(event,'visibilitychange');visibilityListeners.add(fn);},
+    removeEventListener:(_event,fn)=>visibilityListeners.delete(fn)};
   const sameDeps=(left,right)=>left && left.length===right.length && left.every((value,index)=>Object.is(value,right[index]));
   function deferred(calls,workspaceId) {
     const call={workspaceId};calls.push(call);
     return new Promise((resolve,reject)=>{call.resolve=resolve;call.reject=reject;});
   }
-  const hookHarness=harness({document,window:{
+  const hookHarness=harness({document,Date:ClockDate,window:{
     addEventListener:(event,fn)=>{assert.equal(event,'focus');focusListeners.add(fn);},
     removeEventListener:(event,fn)=>focusListeners.delete(fn),
     setInterval:(fn,delay)=>{assert.equal(delay,60000);intervals.add(fn);return fn;},
@@ -184,7 +188,8 @@ function sharedHookHarness() {
   const flush=()=>new Promise(resolve=>setImmediate(resolve));
   return {document,receivedCalls,resultCalls,
     render(nextArgs=args){args=nextArgs;cursor=0;const value=useSharedMaintenance(...args);effects.splice(0).forEach(effect=>effect());return value;},
-    focus(){[...focusListeners].forEach(fn=>fn());},tick(){[...intervals].forEach(fn=>fn());},
+    focus(){[...focusListeners].forEach(fn=>fn());},tick(){now+=60000;[...intervals].forEach(fn=>fn());},
+    advance(ms){now+=ms;},visibility(value){document.visibilityState=value;[...visibilityListeners].forEach(fn=>fn());},
     async complete(index,received=[item],results=[]){receivedCalls[index].resolve(received);resultCalls[index].resolve(results);await flush();},
     async fail(index){receivedCalls[index].reject(new Error('Network unavailable'));resultCalls[index].resolve([]);await flush();},
   };
@@ -195,7 +200,7 @@ test('focus/interval refresh retains marker data and source summaries in flight 
   const results=[{installationId:'own-installation',date:'2026-10-11',status:'Lezárva',providerName:'Partner'}];
   await hook.complete(0,[item],results);const initial=hook.render();
   const markerId=shared.sharedMaintenanceMapPoint(initial.received[0]).appointmentId;
-  hook.focus();const loading=hook.render();
+  hook.advance(15000);hook.focus();const loading=hook.render();
   assert.equal(loading.loading,true);assert.equal(loading.received,initial.received);assert.equal(loading.results,initial.results);
   assert.equal(shared.sharedMaintenanceMapPoint(loading.received[0]).appointmentId,markerId);
   hook.tick();hook.focus();await loading.refresh();
@@ -217,7 +222,7 @@ test('successful empty refresh removes revoked shared installations instead of p
 test('failed or malformed permission refresh clears previously visible shared data and summaries',async()=>{
   for(const malformed of [false,true]) {
     const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[{installationId:'own-installation',date:'2026-10-11'}]);
-    hook.focus();assert.equal(hook.render().received.length,1);
+    hook.advance(15000);hook.focus();assert.equal(hook.render().received.length,1);
     if(malformed)await hook.complete(1,{invalid:true});else await hook.fail(1);
     const failed=hook.render();assert.equal(failed.received.length,0);assert.equal(failed.results.length,0);
     assert.equal(failed.loading,false);assert.ok(failed.error);
@@ -226,7 +231,7 @@ test('failed or malformed permission refresh clears previously visible shared da
 
 test('user or workspace switches hide data before effects and discard prior identity responses',async()=>{
   for(const nextArgs of [['workspace',true,'new-user'],['other-workspace',true,'user']]) {
-    const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();hook.focus();
+    const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();hook.advance(15000);hook.focus();
     const switched=hook.render(nextArgs);assert.equal(switched.received.length,0);assert.equal(switched.results.length,0);
     assert.equal(hook.receivedCalls.length,3);
     await hook.complete(2,[]);await hook.complete(1,[item]);
@@ -235,7 +240,7 @@ test('user or workspace switches hide data before effects and discard prior iden
 });
 
 test('disabled hook hides data immediately, cancels timers and ignores an outstanding response',async()=>{
-  const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();hook.focus();
+  const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();hook.advance(15000);hook.focus();
   const disabled=hook.render(['workspace',false,'user']);assert.equal(disabled.received.length,0);
   hook.focus();hook.tick();assert.equal(hook.receivedCalls.length,2);
   await hook.complete(1,[item]);assert.equal(hook.render().received.length,0);
@@ -259,4 +264,33 @@ test('received history credits the actual earlier provider and schedules from it
   const merged=shared.mergeSharedMaintenancePoints([local],[{...history,targetInstallationId:'target-installation'}])[0];
   assert.equal(merged.maintenanceCount,4);assert.equal(merged.maintenanceProviderName,'Previous independent provider');
   assert.equal(merged.nextMaintenanceDue,'2027-10-01');
+});
+
+
+test('completed shared-map focus/visibility checks deduplicate for 15 seconds but manual refresh bypasses the cooldown',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();
+  hook.focus();hook.visibility('visible');assert.equal(hook.receivedCalls.length,1);
+  hook.advance(14999);hook.focus();assert.equal(hook.receivedCalls.length,1);
+  hook.advance(1);hook.focus();assert.equal(hook.receivedCalls.length,2);
+  await hook.complete(1);const current=hook.render();
+  hook.visibility('visible');hook.focus();assert.equal(hook.receivedCalls.length,2);
+  const pending=current.refresh();assert.equal(hook.receivedCalls.length,3,'manual refresh is immediate');
+  await hook.complete(2,[]);await pending;
+  assert.equal(hook.render().received.length,0,'a forced permission refresh still removes revoked access');
+});
+
+test('hidden initial shared-map mount defers requests until visible and merges focus with the visibility check',async()=>{
+  const hook=sharedHookHarness({visibility:'hidden'});hook.render();hook.tick();hook.focus();
+  assert.equal(hook.receivedCalls.length,0);
+  hook.visibility('visible');hook.focus();assert.equal(hook.receivedCalls.length,1);
+  await hook.complete(0);assert.equal(hook.render().received.length,1);
+  hook.render(['workspace',false,'user']);hook.visibility('hidden');hook.visibility('visible');hook.focus();hook.tick();
+  assert.equal(hook.receivedCalls.length,1,'cleanup removes visibility/focus listeners and the periodic timer');
+});
+
+test('shared-map periodic permission checking remains one minute despite focus throttling',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0);hook.render();
+  hook.advance(15000);hook.focus();await hook.complete(1);hook.render();
+  hook.tick();assert.equal(hook.receivedCalls.length,3);
+  await hook.complete(2,[]);assert.equal(hook.render().received.length,0);
 });

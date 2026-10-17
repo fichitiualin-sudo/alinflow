@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
-const require=createRequire(new URL('../.photo-test/package.json',import.meta.url)),{PGlite}=require('@electric-sql/pglite');
+const require=createRequire(import.meta.url),{PGlite}=require(process.env.PGLITE_MODULE_PATH || '../.photo-test/node_modules/@electric-sql/pglite');
 const db=new PGlite();
 try {
   await db.exec(await readFile('tests/fixtures/schema.sql','utf8'));
@@ -18,7 +18,16 @@ try {
   const migration=await readFile('docs/sql/20261012_MAINTENANCE_GEOCODE_SAFETY.sql','utf8');
   const row=async(id=appointment)=>(await db.query('select * from appointments where id=$1',[id])).rows[0];
   const before=await row();const reportBefore=(await db.query('select * from work_reports')).rows;
-  await db.exec(migration);await db.exec(migration);assert.deepEqual(await row(),before);
+  // Exercise upgrading the original legacy error, not just a fresh schema.
+  await db.exec(migration.replace("using errcode='PT409'","using errcode='40001'"));
+  const signature="public.save_maintenance_geocode(uuid,uuid,timestamptz,text,double precision,double precision,text,text)";
+  const security=async()=>(await db.query('select proowner,proacl,prosecdef,proconfig from pg_proc where oid=$1::regprocedure',[signature])).rows;
+  const securityBefore=await security();
+  const legacyDefinition=(await db.query('select pg_get_functiondef($1::regprocedure) body',[signature])).rows[0].body;
+  const fix=await readFile('docs/sql/20261017_GEOCODE_NON_RETRYABLE_CONFLICT.sql','utf8');
+  await db.exec(fix);await db.exec(fix);assert.deepEqual(await security(),securityBefore);
+  assert.deepEqual(await row(),before);
+  assert.equal((await db.query('select pg_get_functiondef($1::regprocedure) body',[signature])).rows[0].body,legacyDefinition.replace("using errcode='40001'","using errcode='PT409'"));
   console.log('PASS idempotent migration preserves every historical row and coordinate');
   await db.exec('set role authenticated');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user]);
   const save=(version,address='New street',lat=48,lng=20,status='ok',work=appointment,ws=workspace)=>db.query('select save_maintenance_geocode($1,$2,$3,$4,$5,$6,$7,$8) saved',[ws,work,version,address,lat,lng,status,'Synthetic no result']);
@@ -28,17 +37,17 @@ try {
   let fresh=await row();
   assert.equal(fresh.latitude,null);assert.equal(fresh.longitude,null);assert.equal(fresh.geocode_status,null);
   assert.notEqual(fresh.updated_at,before.updated_at);
-  await rejects(save(before.updated_at,'Old street'),'40001');assert.equal((await row()).latitude,null);
+  await rejects(save(before.updated_at,'Old street'),'PT409');assert.equal((await row()).latitude,null);
   console.log('PASS normal appointment save invalidates old coordinates and rejects an in-flight old-address result');
   const saved=(await save(fresh.updated_at)).rows[0].saved;
   assert.equal(saved.latitude,48);assert.equal(saved.longitude,20);assert.equal(saved.geocodeStatus,'ok');
   assert.equal(new Date((await row()).updated_at).toISOString(),new Date(saved.updatedAt).toISOString());
-  await rejects(save(fresh.updated_at),'40001');
+  await rejects(save(fresh.updated_at),'PT409');
   console.log('PASS acknowledged geocode saves version once; stale/duplicate responses cannot overwrite newer coordinates');
   const invalidatedBy=async(field,value)=>{
     fresh=await row();await db.query(`update customers set ${field}=$2 where id=$1`,[customer,value]);
     const invalid=await row();assert.equal(invalid.latitude,null);assert.notEqual(invalid.updated_at,fresh.updated_at);
-    await rejects(save(fresh.updated_at),'40001');
+    await rejects(save(fresh.updated_at),'PT409');
     await save(invalid.updated_at);
   };
   await invalidatedBy('city','Other City');await invalidatedBy('postal_code','4321');
@@ -48,12 +57,12 @@ try {
   await db.query('update appointments set address=null where id=$1',[appointment]);fresh=await row();
   await save(fresh.updated_at,'Different fallback');fresh=await row();
   await db.query("update customers set address='New fallback' where id=$1",[customer]);assert.equal((await row()).latitude,null);
-  await rejects(save(fresh.updated_at,'Different fallback'),'40001');
+  await rejects(save(fresh.updated_at,'Different fallback'),'PT409');
   console.log('PASS fallback changes invalidate only appointments depending on the changed fallback');
   fresh=await row();
   for(const coords of [[null,19],[47,null],[91,19],[47,181],[NaN,19],[Infinity,19]])await rejects(save(fresh.updated_at,'New fallback',...coords),'22023');
-  await rejects(save(fresh.updated_at,'Wrong street'),'40001');
-  await rejects(save(null,'New fallback'),'40001');
+  await rejects(save(fresh.updated_at,'Wrong street'),'PT409');
+  await rejects(save(null,'New fallback'),'PT409');
   const failed=(await save(fresh.updated_at,'New fallback',null,null,'failed')).rows[0].saved;
   assert.equal(failed.latitude,null);assert.equal(failed.geocodeStatus,'failed');assert.equal((await row()).latitude,null);
   console.log('PASS invalid coordinates/address/version are rejected; failed lookup never fabricates a (0,0) marker');
@@ -63,4 +72,7 @@ try {
   await db.exec('reset role;set role anon');await rejects(save(failed.updatedAt,'New fallback'),'42501');
   await db.exec('reset role');assert.deepEqual((await db.query('select * from work_reports')).rows,reportBefore);
   console.log('PASS foreign/anonymous access denied and existing signed reports are unchanged');
+  const finalRow=await row();await db.exec(migration);assert.deepEqual(await row(),finalRow);
+  assert.match((await db.query('select pg_get_functiondef($1::regprocedure) body',[signature])).rows[0].body,/errcode='PT409'/);
+  console.log('PASS reapplying the base migration cannot restore the retryable error');
 } finally {await db.close();}
