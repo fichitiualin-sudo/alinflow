@@ -44,9 +44,9 @@ test("Budapest winter and summer offsets are independent of server timezone", ()
   const summer = buildGoogleCalendarEvent(customer(), identity);
   const winter = buildGoogleCalendarEvent(customer({ date: "2026-12-01", time: "14:30" }), identity);
   assert.equal(summer.start.dateTime, "2026-07-01T08:00:00+02:00");
-  assert.equal(summer.end.dateTime, "2026-07-01T11:00:00+02:00");
+  assert.equal(summer.end.dateTime, "2026-07-01T14:00:00+02:00");
   assert.equal(winter.start.dateTime, "2026-12-01T14:30:00+01:00");
-  assert.equal(winter.end.dateTime, "2026-12-01T17:30:00+01:00");
+  assert.equal(winter.end.dateTime, "2026-12-01T20:30:00+01:00");
   assert.equal(winter.start.timeZone, "Europe/Budapest");
 });
 
@@ -56,7 +56,7 @@ test("duration remains three elapsed hours across midnight and DST transitions",
     ["2026-03-29", "01:30", "2026-03-29T05:30:00+02:00"],
     ["2026-10-25", "01:30", "2026-10-25T03:30:00+01:00"],
   ]) {
-    const event = buildGoogleCalendarEvent(customer({ date, time }), identity);
+    const event = buildGoogleCalendarEvent(customer({ date, time, quoteItems: [{ productId: "synthetic", productName: "Teszt klíma", quantity: 1 }] }), identity);
     assert.equal(event.end.dateTime, end);
     assert.equal(Date.parse(event.end.dateTime) - Date.parse(event.start.dateTime), 3 * 3600000);
     assert.ok(event.description.includes(`Idősáv: ${time}–${end.slice(11, 16)}`));
@@ -78,4 +78,30 @@ test("private identity matches workspace, appointment, and event generation", ()
   }
   assert.equal(googleCalendarEventOwnedBy({}, identity), false);
   assert.equal(googleCalendarDetails(customer()).summary, "Szerelés – Teszt Ügyfél");
+});
+
+
+test("manual and automatic calendar exports agree on one-hour maintenance and installation quantities", () => {
+  const cases = [
+    { appointmentType: "maintenance", quantity: 5, hours: 1 },
+    { appointmentType: "survey", quantity: 5, hours: 1 },
+    { appointmentType: "other", quantity: 5, hours: 1 },
+    { appointmentType: "installation", quantity: 1, hours: 3 },
+    { appointmentType: "installation", quantity: 2, hours: 6 },
+    { appointmentType: "installation", quantity: 3, hours: 9 },
+    { appointmentType: "installation", quantity: 8, hours: 9 },
+  ];
+  for (const { appointmentType, quantity, hours } of cases) {
+    const record = customer({ appointmentType, quoteItems: [
+      { productId: "synthetic", productName: "Saved AC", quantity },
+      { productId: "", customName: "Extra pipe", itemType: "extra", quantity: 15 },
+    ] });
+    const event = buildGoogleCalendarEvent(record, identity);
+    const manual = new URL(googleCalendarHref(record)).searchParams;
+    const endTime = String(8 + hours).padStart(2, "0") + ":00";
+    assert.equal(Date.parse(event.end.dateTime) - Date.parse(event.start.dateTime), hours * 3600000);
+    assert.equal(manual.get("dates"), "20260701T080000/20260701T" + endTime.replace(":", "") + "00");
+    assert.equal(event.description, manual.get("details"));
+    assert.ok(event.description.includes("Idősáv: 08:00–" + endTime));
+  }
 });

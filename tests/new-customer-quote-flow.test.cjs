@@ -84,7 +84,7 @@ function fixture({ rejectedEmail = false, rejectedDocumentWrites = 0 } = {}) {
   const setter = (key) => (value) => { state[key] = typeof value === "function" ? value(state[key]) : value; };
   const names = [
     "beginAction", "endAction", "workspaceQuery", "withWorkspace", "readWorkspaceRows",
-    "persistCustomerToDb", "isMissingPostalCodeColumnError", "withoutPostalCode",
+    "ensureAppointmentDurationAvailable", "persistCustomerToDb", "isMissingPostalCodeColumnError", "withoutPostalCode",
     "saveCustomer", "sendQuoteEmail", "quotePayload", "logDocument", "promoteCustomerWork",
     "saveSchedule", "saveAppointmentWithJobMirror", "quoteReceiptScopeFromRows", "quoteDocumentFor",
     "updateWorkHistory", "shouldPromoteWorkToCustomerList", "documentsForCustomerScope",

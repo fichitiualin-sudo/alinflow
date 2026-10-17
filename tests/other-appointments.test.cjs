@@ -21,10 +21,13 @@ test("other is a distinct customer work type and never an installation", () => {
   assert.equal(appointments.APPOINTMENT_TYPES.filter(value => value.value === "other").length, 1);
 });
 
-test("other occupies one hour while every existing appointment type stays three hours", () => {
+test("other, survey and maintenance occupy one hour while a single installation takes three", () => {
   assert.equal(appointments.appointmentDurationMinutes("other"), 60);
   assert.equal(appointments.appointmentTimeRangeLabel(work), "10:30–11:30");
-  for (const value of ["installation", "survey", "maintenance", undefined]) {
+  for (const value of ["survey", "maintenance"]) {
+    assert.equal(appointments.appointmentDurationMinutes(value), 60);
+  }
+  for (const value of ["installation", undefined]) {
     assert.equal(appointments.appointmentDurationMinutes(value), 180);
   }
   assert.equal(appointments.intervalsOverlap(appointments.appointmentInterval(work), { start: 11 * 60, end: 12 * 60 }), true);

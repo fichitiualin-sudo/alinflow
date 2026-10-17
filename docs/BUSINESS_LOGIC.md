@@ -108,13 +108,15 @@ Nem jelenhet meg felesleges belső ár- vagy költségbontás az ügyfélnek sz�
 
 Alapértelmezett időponttípus: `installation`.
 
-Ajánlott sávok:
+Időtartam a klímák összes darabszáma alapján:
 
-- 08:00–12:00;
-- 12:00–16:00;
-- +1 időpont, jellemzően 16:00 után.
+- 1 klíma: 3 óra;
+- 2 klíma: 6 óra;
+- 3 vagy több klíma: 9 óra.
 
-Az időpont legyen módosítható, és az ütközést ellenőrizni kell. Több klíma hosszabb időt igényelhet; a tényleges jelenlegi időtartam-logikát az `appointments.ts` tartalmazza.
+Az egyéb tétel (anyag, munkadíj, szolgáltatás) és az üres klímasor nem növeli az időtartamot. Ajánlott kezdések: 08:00, 11:00, 14:00, 17:00, ha a teljes munka szabad időszakba és az adott napba fér. További szabad kezdés ötperces lépésekben választható. A foglalt időszakba nyúló kezdések nem jelennek meg sem az ügyféltől indított, sem a naptári gyorsrögzítésben. A karbantartás, felmérés és egyéb munka 1 órás; ajánlott kezdéseik 08:00–17:00 között óránként jelennek meg.
+
+Mentéskor az ütközés újra ellenőrzendő. Saját időpont szerkesztésekor csak az adott foglalást zárjuk ki, ugyanazon ügyfél más munkáját nem. Klímamennyiség növelésekor a hosszabb munka nem nyúlhat más foglalásba. Változatlan hosszúságú, régi munka ár- vagy anyagmódosítása nem akad el egy korábban fennálló átfedés miatt.
 
 Az időpont írásának elsődleges rekordja az `appointments`. A `jobs` csak kompatibilitási tükör, ezért felmérés, szerelés és karbantartás nem írhatja felül egymás `appointments` rekordját.
 

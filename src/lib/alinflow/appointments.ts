@@ -14,7 +14,11 @@ function itemQuantity(item: QuoteItem) {
 }
 
 function totalQuantity(items: QuoteItem[] = []) {
-  return items.reduce((sum, item) => sum + itemQuantity(item), 0);
+  return items.reduce((sum, item) => {
+    // Legacy quote rows omit itemType; named manual and archived devices still count.
+    if (item.itemType === "extra" || !(item.productId?.trim() || item.productName?.trim() || item.customName?.trim())) return sum;
+    return sum + itemQuantity(item);
+  }, 0);
 }
 
 export const APPOINTMENT_TYPES: { value: AppointmentType; label: string; shortLabel: string; durationLabel: string; description: string }[] = [
@@ -26,7 +30,7 @@ export const APPOINTMENT_TYPES: { value: AppointmentType; label: string; shortLa
 
 export const APPOINTMENT_TYPE_OPTIONS = APPOINTMENT_TYPES;
 export const RECOMMENDED_APPOINTMENT_SLOTS = ["08:00", "11:00", "14:00", "17:00"];
-export const ONE_HOUR_APPOINTMENT_SLOTS = RECOMMENDED_APPOINTMENT_SLOTS;
+export const ONE_HOUR_APPOINTMENT_SLOTS = Array.from({ length: 10 }, (_, hour) => `${String(hour + 8).padStart(2, "0")}:00`);
 export const INSTALLATION_APPOINTMENT_SLOTS = RECOMMENDED_APPOINTMENT_SLOTS;
 
 export type AppointmentInterval = { start: number; end: number };
@@ -44,9 +48,8 @@ export function appointmentTypeLabel(value?: string | null) {
   return APPOINTMENT_TYPES.find((item) => item.value === type)?.label || "Szerelés";
 }
 
-export function appointmentDurationLabel(value?: string | null) {
-  const type = normalizeAppointmentType(value);
-  return APPOINTMENT_TYPES.find((item) => item.value === type)?.durationLabel || "";
+export function appointmentDurationLabel(value?: string | null, items: QuoteItem[] = []) {
+  return `${appointmentDurationMinutes(value, items) / 60} óra`;
 }
 
 export function appointmentTypeEmailLabel(value?: string | null) {
@@ -130,19 +133,24 @@ export function addHoursToTime(value: string, hours: number) {
   return addMinutesToTime(value, hours * 60);
 }
 
-export function appointmentDurationMinutes(type?: string | null, _items: QuoteItem[] = [], _time?: string) {
-  return normalizeAppointmentType(type) === "other" ? 60 : 3 * 60;
+export function appointmentDurationMinutes(type?: string | null, items: QuoteItem[] = [], _time?: string) {
+  if (!isInstallationAppointment(type)) return 60;
+  // An empty installation still reserves the minimum three-hour visit.
+  const climateCount = Math.max(1, Math.min(3, Math.ceil(totalQuantity(items))));
+  return climateCount * 3 * 60;
 }
 
 export function slotInterval(slot: string, type?: string | null, items: QuoteItem[] = []): AppointmentInterval | null {
-  const start = timeToMinutes(slot);
-  if (!Number.isFinite(start)) return null;
+  const normalized = normalizeAppointmentTimeInput(slot);
+  if (!normalized) return null;
+  const start = timeToMinutes(normalized);
   return { start, end: start + appointmentDurationMinutes(type, items, slot) };
 }
 
 export function appointmentInterval(customer: AppointmentLike): AppointmentInterval | null {
-  if (!customer.time) return null;
-  const start = timeToMinutes(customer.time);
+  const normalized = normalizeAppointmentTimeInput(customer.time);
+  if (!normalized) return null;
+  const start = timeToMinutes(normalized);
   return {
     start,
     end: start + appointmentDurationMinutes(customer.appointmentType, customer.quoteItems || [], customer.time),
@@ -153,8 +161,9 @@ export function intervalsOverlap(first: AppointmentInterval, second: Appointment
   return first.start < second.end && second.start < first.end;
 }
 
-export function appointmentSlotOptions(_type?: string | null, _items: QuoteItem[] = []) {
-  return INSTALLATION_APPOINTMENT_SLOTS;
+export function appointmentSlotOptions(type?: string | null, items: QuoteItem[] = []) {
+  const slots = isInstallationAppointment(type) ? INSTALLATION_APPOINTMENT_SLOTS : ONE_HOUR_APPOINTMENT_SLOTS;
+  return slots.filter((slot) => (slotInterval(slot, type, items)?.end ?? Infinity) <= 24 * 60);
 }
 
 export function appointmentTimeRangeLabel(customer: AppointmentLike, fallback = "egyeztetés szerint") {

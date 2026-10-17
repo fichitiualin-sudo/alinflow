@@ -46,6 +46,7 @@ function fixture({ customer = canonical, work = appointment, onOperation } = {})
   };
   const context = {
     ...h.load("src/lib/alinflow/products.ts"), ...h.load("src/lib/alinflow/appointments.ts"),
+    ...h.load("src/lib/alinflow/schedule.ts"), allWorkCustomers: [],
     ...h.load("src/lib/alinflow/appointment-records.ts"), ...h.load("src/lib/alinflow/maintenance-selection.ts"),
     ...h.load("src/lib/alinflow/maintenance-origin.ts"), ...h.load("src/lib/alinflow/constants.ts"), ...customers,
     user: { id: "user-a" }, activeWorkspaceIdRef: scope.workspace, authUserIdRef: scope.user,
@@ -62,7 +63,7 @@ function fixture({ customer = canonical, work = appointment, onOperation } = {})
   const actions = h.functions([
     "currentWorkspaceId", "workspaceQuery", "withWorkspace", "numericDbValue", "stockDeductedFromWorkStatus",
     "isMissingPostalCodeColumnError", "withoutPostalCode", "quoteReceiptScopeFromRows",
-    "loadCustomersFromDb", "persistCustomerToDb", "saveAppointmentWithJobMirror",
+    "loadCustomersFromDb", "ensureAppointmentDurationAvailable", "persistCustomerToDb", "saveAppointmentWithJobMirror",
   ], context);
   return { ...actions, state, scope, context,
     async loadWork() {

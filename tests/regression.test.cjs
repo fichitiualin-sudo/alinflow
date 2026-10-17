@@ -9,6 +9,7 @@ const reports = h.load("src/lib/alinflow/work-report.ts");
 const scopes = h.load("src/lib/alinflow/report-scope.ts");
 const materials = h.load("src/lib/alinflow/materials.ts");
 const base = { ...products, ...appointments, ...reports, ...scopes, ...h.load("src/lib/alinflow/purchase-declarations.ts"),
+  ...h.load("src/lib/alinflow/schedule.ts"), allWorkCustomers: [],
   DEFAULT_SELLER_COMPANY: { id: "synthetic-seller" }, sellerCompanies: [],
   setWorkReportDeclaration: noop, setWorkReportDeclarationItems: noop, setPurchaseDeclarationItemKeys: noop, setSelectedSellerId: noop,
   workspaceQuery: identity, withWorkspace: identity, workspaceOnConflict: identity,
@@ -195,7 +196,7 @@ test("A06: failed atomic quote save never deletes rows through a separate reques
   const operations = [];
   const db = database(op => { operations.push(op); return { data: null, error: null }; });
   db.rpc = async (name, args) => { operations.push({ method: "rpc", name, args }); return { error: { message: "atomic insert failure" } }; };
-  const f = h.functions(["persistCustomerToDb"], { ...base, isMissingPostalCodeColumnError: () => false, supabase: db, authUserIdRef: { current: base.user.id }, authLoadGenerationRef: { current: 1 }, customerLocationFromData: h.load("src/lib/alinflow/customers.ts").customerLocationFromData, postalCodeFromCustomerData: () => "" });
+  const f = h.functions(["ensureAppointmentDurationAvailable", "persistCustomerToDb"], { ...base, isMissingPostalCodeColumnError: () => false, supabase: db, authUserIdRef: { current: base.user.id }, authLoadGenerationRef: { current: 1 }, customerLocationFromData: h.load("src/lib/alinflow/customers.ts").customerLocationFromData, postalCodeFromCustomerData: () => "" });
   await assert.rejects(() => f.persistCustomerToDb({ ...customer, date: undefined, activeAppointmentId: undefined,
     activeQuoteId: "quote-A", quoteItems: [{ customName: "AC", quantity: 2, customPrice: 0 }] }),
     error => error.message === "atomic insert failure");
@@ -387,7 +388,7 @@ test("R01: export follows server page limits and uses stable ordering", async ()
 
 test("A10: invalid materials prevent saving a work rather than persisting corrupt quantities", async () => {
   let writes = 0, message = "";
-  const f = h.functions(["beginAction", "endAction", "saveWorkChanges"], { ...base, selected: customer,
+  const f = h.functions(["beginAction", "endAction", "ensureAppointmentDurationAvailable", "saveWorkChanges"], { ...base, selected: customer,
     pendingActionsRef: { current: new Set() }, setPendingActions: noop,
     workResourceEditLocked: false, allowWorkResourceEdit: true, quoteItems: [],
     materials: [{ name: "Pipe", qty: "-1", unit: "m" }], materialOverrides: {},
