@@ -21,6 +21,26 @@ test("approved accented installation text uses the full saved name and one-hour 
   assert.equal(draft({ time: "08:00:00" }).time, "08:00");
 });
 
+test("non-letter imported names use a neutral salutation while real Unicode names remain intact", () => {
+  for (const name of ["06 30 123 4567", " +36 (30) 123-4567 ", "...?!", "１２３４５", "😊", " \t "]) {
+    const reminder = draft({ name });
+    assert.ok(reminder.text.startsWith("Kedves Ügyfelünk!"), name);
+    assert.equal(JSON.parse(reminder.fingerprint).name, "Ügyfelünk");
+    assert.equal(reminder.fingerprint, draft({ name: "" }).fingerprint);
+  }
+  for (const [savedName, expected] of [
+    ["  Ötvös   Ágnes  ", "Ötvös Ágnes"],
+    ["Jean-Luc de la Fontaine", "Jean-Luc de la Fontaine"],
+    ["李 小龍", "李 小龍"],
+    ["Мария Иванова", "Мария Иванова"],
+    ["أحمد علي", "أحمد علي"],
+  ]) {
+    const reminder = draft({ name: savedName });
+    assert.ok(reminder.text.startsWith(`Kedves ${expected}!`), savedName);
+    assert.equal(JSON.parse(reminder.fingerprint).name, expected);
+  }
+});
+
 test("maintenance and survey use their exact approved templates and workspace brand", () => {
   assert.equal(draft({ appointmentType: "maintenance" }).text,
     "Kedves Nagy Anna! Holnap elvégezzük a klímája karbantartását, várhatóan 8–9 között érkezünk. Kérjük, tegye hozzáférhetővé a készüléket. Köszönjük, szép napot! KLIMAlin");

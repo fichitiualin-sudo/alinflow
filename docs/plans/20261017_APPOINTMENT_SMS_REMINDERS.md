@@ -55,3 +55,8 @@ A frontend változás visszavonható. Az új nyilatkozattábla megmaradhat; megl
 - Nincs gyökér app/ vagy új page.tsx. Nincs valódi SMS-küldés vagy próbajelölés éles ügyfélen.
 - A mobil SMS-URI szerkezete és kezelése tesztelt; az iPhone natív Üzenetek alkalmazásának megnyitását a felhasználó készülékén kell véglegesen kipróbálni.
 - Teljes npm test: 1288 sikeres, 8 meglévő feltételes kihagyás, 0 hiba (1296 teszt).
+
+## Éles felületi ellenőrzés
+A #153 változás Vercel-élesítése sikeres. Asztali és 390×844-es mobilnézetben ellenőrizve az 1/2/3 napos lista, a betöltött előnézet, az ékezetek, a munkaterületi aláírás és a letiltott Elküldtem gomb megnyitás/másolás előtt. Közvetlen munkaoldalon több klímás időpontnál a klímáit többes szám és a 8–9 érkezési sáv helyes, a naptári 6 órás foglalás változatlan. SMS-küldés és kézi jelölés éles ügyfélen nem történt.
+
+Az éles adatellenőrzés során egy importált ügyfélnév csak telefonszámot tartalmazott. Célzott javítás: betűt nem tartalmazó névnél Kedves Ügyfelünk! megszólítás, a valódi mentett nevek változatlanok. Ezt külön regresszió ellenőrzi.
