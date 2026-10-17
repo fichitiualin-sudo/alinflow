@@ -118,7 +118,7 @@ Felmérés és karbantartás esetén az esemény címe, időtartama és leírás
 
 ## Kézi SMS-időpontemlékeztető
 
-A naptár SMS-emlékeztetők gombja a holnapi, a 2 és a 3 nap múlva esedékes időpontokat külön listázza; a napok a budapesti időzónához igazodnak. Az egyes jövőbeli munkák oldalán közvetlen SMS-emlékeztető is nyitható. Telepítés, karbantartás és felmérés támogatott; lezárt, lemondott, múltbeli és egyéb munkák nem kapnak emlékeztetőt.
+A naptár SMS-emlékeztetők gombja a holnapi, a 2 és a 3 nap múlva esedékes időpontokat külön listázza; a napok a budapesti időzónához igazodnak. Az egyes jövőbeli munkák oldalán közvetlen SMS-emlékeztető is nyitható. A heti és havi naptár időpontkártyáin a kis SMS gomb közvetlenül az adott időpont előnézetét nyitja; heti nézetben a + Naptár mellett, illetve az automatikus szinkronjelzésnél jelenik meg. A gomb és az előnézet használata nem indít új időpont-rögzítést. Telepítés, karbantartás és felmérés támogatott; lezárt, lemondott, múltbeli és egyéb munkák nem kapnak emlékeztetőt.
 
 Az ékezetes magyar szöveg a mentett ügyfélnevet, a munkaterület saját márkanevét és a kezdésből számított egyórás érkezési sávot használja. Ez nem módosítja a naptár foglalt időtartamát. A klímák darabszáma az adott időpontból származik, karbantartásnál a kiválasztott telepítésekből; egyéb tételek nem számítanak klímának. Holnapi munkánál Holnap, későbbinél konkrét dátum szerepel. A teljes név megmarad, keresztnév nem találgatható. A részletes, ékezetes szöveg több SMS-részre oszolhat; a felület a GSM-7/UCS-2 szerinti becslést mutatja.
 

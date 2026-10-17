@@ -7,6 +7,7 @@ import { cleanQuoteItems, itemName, itemQuantity } from "@/lib/alinflow/products
 import { iso } from "@/lib/alinflow/format";
 import { calLabel, googleCalendarHref, weekStart } from "@/lib/alinflow/calendar";
 import { appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkSummary, isInstallationAppointment } from "@/lib/alinflow/appointments";
+import { isSmsReminderAppointment, smsReminderToday } from "@/lib/alinflow/sms-reminders";
 import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
 
 type CalendarProps = {
@@ -89,6 +90,7 @@ export function Calendar({
   managedCalendarAppointmentIds,
 }: CalendarProps) {
   const start = weekStart(date);
+  const smsToday = smsReminderToday();
   const weekdayNames = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"];
   const days = useMemo(() => {
     if (mode === "week") {
@@ -152,7 +154,7 @@ export function Calendar({
             <div
               key={dayIso}
               onClick={() => selectable ? onSelect?.(dayIso) : current ? onCreate?.(dayIso) : undefined}
-              className={`min-h-[96px] rounded-3xl border p-3 md:min-h-[125px] ${isSelected ? "border-emerald-300 bg-emerald-400/20" : current ? "border-white/10 bg-slate-900/80" : "border-white/5 bg-slate-950/40 opacity-40"} ${selectable || (current && onCreate) ? "cursor-pointer hover:ring-2 hover:ring-emerald-300/50" : ""}`}
+              className={`min-h-[96px] rounded-3xl border p-3 md:p-2 md:min-h-[125px] ${isSelected ? "border-emerald-300 bg-emerald-400/20" : current ? "border-white/10 bg-slate-900/80" : "border-white/5 bg-slate-950/40 opacity-40"} ${selectable || (current && onCreate) ? "cursor-pointer hover:ring-2 hover:ring-emerald-300/50" : ""}`}
             >
               <div className="mb-2 flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -164,7 +166,7 @@ export function Calendar({
               <div className="space-y-2">
                 {jobs.map((job) => (
                   <div
-                    key={job.id}
+                    key={job.activeAppointmentId || job.id}
                     className={`calendar-event-card w-full rounded-2xl p-3 text-left transition hover:ring-2 hover:ring-cyan-300/50 md:p-2 ${calendarStatusStyle(job.status)}`}
                   >
                     <button
@@ -183,19 +185,27 @@ export function Calendar({
                       </div>
                       <p className="truncate text-xs opacity-70 md:text-[11px]">{job.city}</p>
                     </button>
-                    {mode === "week" && !selectable && job.activeAppointmentId && managedCalendarAppointmentIds?.has(job.activeAppointmentId) ? (
-                      <p className="mt-2 text-[10px] font-bold opacity-80">Google Naptár-szinkron</p>
-                    ) : mode === "week" && !selectable ? (
-                      <a
-                        href={googleCalendarHref(job, manualCalendarEmail)}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                        className="calendar-add-link mt-2 inline-flex items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2.5 py-1 text-[10px] font-black text-amber-100 transition hover:bg-amber-300/25"
-                        title={manualCalendarEmail ? `Hozzáadás Google Naptárhoz · ${manualCalendarEmail}` : "Hozzáadás Google Naptárhoz"}
-                      >
-                        + Naptár
-                      </a>
+                    {!selectable && (mode === "week" || (workspaceId && userId && isSmsReminderAppointment(job, smsToday))) ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-1">
+                        {mode === "week" && job.activeAppointmentId && managedCalendarAppointmentIds?.has(job.activeAppointmentId) ? (
+                          <p className="text-[10px] font-bold opacity-80">Google Naptár-szinkron</p>
+                        ) : mode === "week" ? (
+                          <a
+                            href={googleCalendarHref(job, manualCalendarEmail)}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            className="calendar-add-link inline-flex shrink-0 items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2 py-1 text-[10px] md:px-1 md:text-[9px] font-black text-amber-100 transition hover:bg-amber-300/25"
+                            title={manualCalendarEmail ? `Hozzáadás Google Naptárhoz · ${manualCalendarEmail}` : "Hozzáadás Google Naptárhoz"}
+                          >
+                            + Naptár
+                          </a>
+                        ) : null}
+                        {workspaceId && userId && isSmsReminderAppointment(job, smsToday) ? (
+                          <AppointmentSmsRemindersButton key={`${workspaceId}:${userId}:${job.activeAppointmentId}`}
+                            workspaceId={workspaceId} userId={userId} appointmentId={job.activeAppointmentId} customerId={job.id} calendarCard />
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 ))}

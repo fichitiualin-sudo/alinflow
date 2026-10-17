@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import { smsComposerHref, smsReminderToday, type SmsComposerPlatform, type SmsReminderDays } from "@/lib/alinflow/sms-reminders";
 import type { SmsReminderEntry } from "@/lib/alinflow/sms-reminders-client";
@@ -12,6 +13,7 @@ type Props = {
   customerId?: string;
   disabled?: boolean;
   compact?: boolean;
+  calendarCard?: boolean;
 };
 
 const PAGE_SIZE = 10;
@@ -36,7 +38,7 @@ function displayDate(value: string) {
     : value;
 }
 
-export function AppointmentSmsRemindersButton({ workspaceId, userId, appointmentId, customerId, disabled, compact }: Props) {
+export function AppointmentSmsRemindersButton({ workspaceId, userId, appointmentId, customerId, disabled, compact, calendarCard }: Props) {
   const identity = JSON.stringify([workspaceId, userId, appointmentId || "", customerId || ""]);
   const [openIdentity, setOpenIdentity] = useState<string | null>(null);
   const [days, setDays] = useState<SmsReminderDays>(1);
@@ -309,13 +311,20 @@ export function AppointmentSmsRemindersButton({ workspaceId, userId, appointment
   const pageCount = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
   const buttonLabel = appointmentId ? "SMS-emlékeztető" : "SMS-emlékeztetők";
   return <>
-    <button type="button" disabled={disabled || !workspaceId || !userId} onClick={() => {
+    <button type="button" disabled={disabled || !workspaceId || !userId}
+      title={calendarCard ? buttonLabel : undefined} aria-label={calendarCard ? buttonLabel : undefined}
+      onClick={(event) => {
+      event.stopPropagation();
+      setLoading(true);
       setError(""); setNotice(""); setPage(0); setPrepared({}); setManualCopy({}); setCopyMessages({});
       setEntries([]); setLoadedDay(""); setSelectedDate(""); setOpenIdentity(identity);
-    }} className={`${controlClass} ${compact ? "!px-2 !py-1.5 !text-xs" : ""}`}>
-      {buttonLabel}
+    }} className={calendarCard
+      ? "inline-flex shrink-0 items-center justify-center rounded-full border border-emerald-400/40 bg-emerald-400/20 px-2 py-1 text-[10px] md:px-1 md:text-[9px] font-black text-emerald-100 transition hover:bg-emerald-400/30 disabled:opacity-40"
+      : `${controlClass} ${compact ? "!px-2 !py-1.5 !text-xs" : ""}`}>
+      {calendarCard ? "SMS" : buttonLabel}
     </button>
-    {open && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-2 sm:p-4" onClick={(event) => {
+    {open && createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-2 sm:p-4" onClick={(event) => {
+      event.stopPropagation();
       if (event.target === event.currentTarget) setOpenIdentity(null);
     }}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={buttonLabel} tabIndex={-1}
@@ -395,6 +404,6 @@ export function AppointmentSmsRemindersButton({ workspaceId, userId, appointment
           </nav>}
         </div>
       </div>
-    </div>}
+    </div>, document.body)}
   </>;
 }
