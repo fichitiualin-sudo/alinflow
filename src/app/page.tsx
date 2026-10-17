@@ -7223,6 +7223,7 @@ function HomeContent() {
   if (view==="work") return (
     <Shell>
       <WorkPagePanel
+        userId={user.id}
         saving={workActionBusy}
         selected={selected}
         onSendPdf={sendSavedWorkDocuments}
@@ -7328,7 +7329,7 @@ function HomeContent() {
       <Stats products={products} customers={activeCustomers} sentQuoteCount={activeCustomers.filter(customerHasSentQuoteAwaitingAppointment).length} stockOf={stockOf} reservedForProduct={reservedForProduct} onSelect={openTask}/>
 
       <section className="space-y-6 xl:hidden">
-        <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment} googleCalendar={googleCalendar.status} googleCalendarError={googleCalendar.error} managedCalendarAppointmentIds={managedCalendarAppointmentIds} manualCalendarEmail={workspaceSettings.companyProfile.manualCalendarEmail}/>
+        <Calendar workspaceId={activeWorkspace?.id} userId={user.id} mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment} googleCalendar={googleCalendar.status} googleCalendarError={googleCalendar.error} managedCalendarAppointmentIds={managedCalendarAppointmentIds} manualCalendarEmail={workspaceSettings.companyProfile.manualCalendarEmail}/>
         {renderCustomerSearchPanel()}
         {renderDraftNoticePanel()}
         {renderDashboardLeadsPanel()}
@@ -7337,7 +7338,7 @@ function HomeContent() {
 
       <section className="hidden gap-6 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(360px,430px)] xl:items-start 2xl:grid-cols-[minmax(0,2.25fr)_minmax(380px,460px)]">
         <div className="space-y-6">
-          <Calendar mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment} googleCalendar={googleCalendar.status} googleCalendarError={googleCalendar.error} managedCalendarAppointmentIds={managedCalendarAppointmentIds} manualCalendarEmail={workspaceSettings.companyProfile.manualCalendarEmail}/>
+          <Calendar workspaceId={activeWorkspace?.id} userId={user.id} mode={mode} date={calDate} customers={calendarCustomers} onMode={setMode} onStep={step} onOpen={c=>openCustomer(c,"work")} onCreate={openQuickAppointment} googleCalendar={googleCalendar.status} googleCalendarError={googleCalendar.error} managedCalendarAppointmentIds={managedCalendarAppointmentIds} manualCalendarEmail={workspaceSettings.companyProfile.manualCalendarEmail}/>
           {renderDashboardLeadsPanel()}
         </div>
 

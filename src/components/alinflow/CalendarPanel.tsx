@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { AppointmentSmsRemindersButton } from "@/components/alinflow/AppointmentSmsReminders";
 import type { CalendarMode, Customer } from "@/lib/alinflow/types";
 import { cleanQuoteItems, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { iso } from "@/lib/alinflow/format";
@@ -9,6 +10,8 @@ import { appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkSummary
 import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
 
 type CalendarProps = {
+  workspaceId?: string;
+  userId?: string;
   mode: CalendarMode;
   date: Date;
   customers: Customer[];
@@ -68,6 +71,8 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 export function Calendar({
+  workspaceId,
+  userId,
   mode,
   date,
   customers,
@@ -117,6 +122,7 @@ export function Calendar({
       <div className="mb-5 flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-end gap-2">
           {!selectable && googleCalendar?.connected && !calendarNotice ? <span className="mr-auto inline-flex items-center gap-1 text-xs font-bold text-emerald-200" title="Új időpontok automatikus mentése a Google Naptárba" aria-label="Új időpontok automatikus mentése a Google Naptárba"><span aria-hidden="true">✓</span> Google Naptár</span> : null}
+          {!selectable && workspaceId && userId ? <AppointmentSmsRemindersButton key={`${workspaceId}:${userId}`} workspaceId={workspaceId} userId={userId} compact /> : null}
           <div className="flex gap-2">
             <button onClick={() => onMode("week")} className={mode === "week" ? "tab-active" : "tab"}>Heti</button>
             <button onClick={() => onMode("month")} className={mode === "month" ? "tab-active" : "tab"}>Havi</button>

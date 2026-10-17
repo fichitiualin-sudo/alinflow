@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AppointmentSmsRemindersButton } from "@/components/alinflow/AppointmentSmsReminders";
+import { isSmsReminderAppointment, smsReminderToday } from "@/lib/alinflow/sms-reminders";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, MaintenanceInstallationSummary, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
 import { Back, Btn, Card, Field, Gradient, Layout } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
@@ -183,6 +185,7 @@ function InstalledClimateMaintenanceCard({
 
 type WorkPagePanelProps = {
   selected: Customer;
+  userId?: string;
   workspaceId?: string | null;
   scheduleDate: string;
   scheduleTime: string;
@@ -252,6 +255,7 @@ type WorkPagePanelProps = {
 
 export function WorkPagePanel({
   selected,
+  userId,
   workspaceId,
   scheduleDate,
   scheduleTime,
@@ -498,6 +502,10 @@ export function WorkPagePanel({
             />
             <div className="mt-4 flex flex-wrap gap-3">
               {selected.phone ? <a href={telHref(selected.phone)} onClick={() => onRecordCustomerPhoneCall(selected, "work")} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Hívás</a> : null}
+              {workspaceId && userId && isSmsReminderAppointment(selected, smsReminderToday()) ? (
+                <AppointmentSmsRemindersButton key={`${workspaceId}:${userId}:${selected.activeAppointmentId}`} workspaceId={workspaceId} userId={userId}
+                  appointmentId={selected.activeAppointmentId} customerId={selected.id} disabled={editCustomer || saving} />
+              ) : null}
               {editCustomer ? <Btn color="green" disabled={saving} onClick={onSaveCustomerData}>{saving ? "Mentés..." : "Ügyféladatok mentése"}</Btn> : <Btn color="blue" onClick={() => onSetEditCustomer(true)}>Ügyféladatok szerkesztése</Btn>}
               {editCustomer ? <button onClick={() => onSetEditCustomer(false)} className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 font-black text-cyan-200">Mégse</button> : null}
             </div>
