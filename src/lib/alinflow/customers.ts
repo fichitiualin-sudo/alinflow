@@ -35,8 +35,8 @@ export function postalCodeFromCustomerData(city?: string, postalCode?: string, a
   const direct = normalizePostalCodeInput(postalCode);
   if (direct) return direct;
 
-  const addressMatch = String(address || "").match(/\b\d{4}\b/);
-  if (addressMatch?.[0]) return addressMatch[0];
+  const addressMatch = String(address || "").match(/^\s*(\d{4})\s*\p{L}/u);
+  if (addressMatch?.[1]) return addressMatch[1];
 
   return uniqueSettlementByCity(city)?.postalCode || "";
 }

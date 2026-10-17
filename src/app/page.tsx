@@ -2998,7 +2998,7 @@ function HomeContent() {
         : quoteItemsFromDb;
       const appointmentAddress = String(appointment?.address || "");
       const displayWorkAddress = appointmentAddress || row.address || "";
-      const appointmentAddressHasLocation = Boolean(appointmentAddress.match(/\b\d{4}\b/));
+      const appointmentAddressHasLocation = Boolean(appointmentAddress.match(/^\s*\d{4}\s*\p{L}/u));
       const customerCity = appointmentAddressHasLocation ? "" : row.city || "";
       const customerPostalCode = postalCodeFromCustomerData(customerCity, appointmentAddressHasLocation ? "" : row.postal_code, displayWorkAddress);
 
@@ -3158,9 +3158,10 @@ function HomeContent() {
 
   type PersistCustomerOptions = {
     persistQuote?: boolean;
+    persistCustomerAddress?: boolean;
   };
 
-  async function saveAppointmentWithJobMirror(customer: Customer, quoteId?: string): Promise<PersistCustomerResult> {
+  async function saveAppointmentWithJobMirror(customer: Customer, quoteId?: string, savedAddress?: string | null): Promise<PersistCustomerResult> {
     const workspaceId = currentWorkspaceId();
     const { data, error } = await supabase.rpc("save_appointment_with_resources", {
       p_appointment_id: customer.activeAppointmentId || null,
@@ -3171,7 +3172,7 @@ function HomeContent() {
       p_scheduled_time: customer.time || "08:00",
       p_appointment_type: normalizeAppointmentType(customer.appointmentType),
       p_status: normalizeStatus(customer.status || "Időpont foglalva"),
-      p_address: customer.address || null,
+      p_address: savedAddress === undefined ? customer.address || null : savedAddress,
       p_notes: customer.notes || customer.need || null,
       p_created_by: user?.id || null,
       p_workspace_id: workspaceId,
@@ -3220,14 +3221,61 @@ function HomeContent() {
     if (!customer.id) throw new Error("Hiányzik az ügyfél azonosítója.");
     if (!customer.name.trim()) throw new Error("Adj meg ügyfélnevet a mentéshez.");
 
+    const savingWorkspaceId = currentWorkspaceId();
+    const savingUserId = authUserIdRef.current;
+    const generation = authLoadGenerationRef.current;
+    const assertCurrentScope = () => {
+      if (currentWorkspaceId() !== savingWorkspaceId || authUserIdRef.current !== savingUserId
+          || authLoadGenerationRef.current !== generation) throw new Error("A munkaterület vagy a bejelentkezés megváltozott. A mentés leállt.");
+    };
+    let customerRead = await workspaceQuery(supabase.from("customers")
+      .select("id,address,city,postal_code").eq("id", customer.id)).maybeSingle();
+    assertCurrentScope();
+    if (customerRead.error && isMissingPostalCodeColumnError(customerRead.error)) {
+      customerRead = await workspaceQuery(supabase.from("customers")
+        .select("id,address,city").eq("id", customer.id)).maybeSingle();
+      assertCurrentScope();
+    }
+    if (customerRead.error) throw customerRead.error;
+    const existingCustomer = customerRead.data;
+
+    let appointmentAddress = customer.address || null;
+    let existingAppointment: { id: string; address: string | null; quote_id?: string | null } | null = null;
+    if (customer.date && customer.activeAppointmentId) {
+      const { data, error } = await workspaceQuery(supabase.from("appointments")
+        .select("id,address,quote_id").eq("id", customer.activeAppointmentId).eq("customer_id", customer.id)).maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("A mentendő időpont nem érhető el. Frissítsd az adatokat.");
+      existingAppointment = data;
+      // The loader displays the customer address when a legacy work has none.
+      // Saving that unchanged fallback must not turn it into an address change.
+      if (!String(data.address || "").trim()
+          && String(customer.address || "").trim() === String(existingCustomer?.address || "").trim()) {
+        appointmentAddress = data.address;
+      }
+    }
+    assertCurrentScope();
+
+    // Work views may hide the city or show another installation's full address.
+    // Only explicit customer edits and first creation own these canonical fields.
+    const storedWorkAddress = existingAppointment?.address || existingCustomer?.address || "";
+    const workAddressHasLocation = Boolean(existingAppointment?.address?.match(/^\s*\d{4}\s*\p{L}/u));
+    const storedVisibleCity = workAddressHasLocation ? "" : existingCustomer?.city || "";
+    const storedVisiblePostalCode = postalCodeFromCustomerData(storedVisibleCity,
+      workAddressHasLocation ? "" : existingCustomer?.postal_code, storedWorkAddress);
+    const addressWasEdited = customer.address !== storedWorkAddress || customer.city !== storedVisibleCity
+      || (customer.postalCode || "") !== storedVisiblePostalCode;
+    const persistCustomerAddress = !existingCustomer || Boolean(options.persistCustomerAddress && addressWasEdited);
     const customerPayload = {
       id: customer.id,
       name: customer.name,
       phone: customer.phone || null,
       email: customer.email || null,
-      city: customer.city || null,
-      postal_code: customer.postalCode || null,
-      address: customer.address || null,
+      ...(persistCustomerAddress ? {
+        city: customer.city || null,
+        postal_code: customer.postalCode || null,
+        address: customer.address || null,
+      } : {}),
       source: customer.source || "Kézi rögzítés",
       status: customer.status || "Visszahívandó",
       need: customer.need || null,
@@ -3239,8 +3287,10 @@ function HomeContent() {
     };
 
     let customerResult = await supabase.from("customers").upsert(withWorkspace(customerPayload));
+    assertCurrentScope();
     if (customerResult.error && isMissingPostalCodeColumnError(customerResult.error)) {
       customerResult = await supabase.from("customers").upsert(withWorkspace(withoutPostalCode(customerPayload)));
+      assertCurrentScope();
     }
 
     if (customerResult.error) throw customerResult.error;
@@ -3253,17 +3303,20 @@ function HomeContent() {
         .select("appointment_id")
         .eq("id", quoteId))
         .maybeSingle();
+      assertCurrentScope();
       if (error) throw error;
       if (quoteScope?.appointment_id && quoteScope.appointment_id !== customer.activeAppointmentId) {
         quoteId = undefined;
       }
     }
-    if (!quoteId && customer.activeAppointmentId) {
+    if (!quoteId && existingAppointment?.quote_id) quoteId = existingAppointment.quote_id;
+    if (!quoteId && customer.activeAppointmentId && !existingAppointment) {
       const { data: appointmentQuote, error } = await workspaceQuery(supabase
         .from("appointments")
         .select("quote_id")
         .eq("id", customer.activeAppointmentId))
         .maybeSingle();
+      assertCurrentScope();
       if (error) throw error;
       quoteId = appointmentQuote?.quote_id || undefined;
     }
@@ -3278,13 +3331,14 @@ function HomeContent() {
         p_notes: quotePricingModeToNotes(customer.quotePricingMode),
         p_items: cleanedQuoteItems.map((item) => quoteItemToRow(item, quoteId || "")),
       });
+      assertCurrentScope();
       if (error) throw error;
       if (typeof data !== "string" || !data) throw new Error("Az ajánlat mentése nem adott vissza azonosítót.");
       quoteId = data;
     }
 
     if (customer.date) {
-      const result = await saveAppointmentWithJobMirror(customer, quoteId);
+      const result = await saveAppointmentWithJobMirror(customer, quoteId, appointmentAddress);
       return { ...result, quoteId };
     }
 
@@ -3663,7 +3717,7 @@ function HomeContent() {
     const previous = customerEditSnapshotRef.current;
     const addressChanged = !previous || previous.address !== updated.address || previous.postalCode !== updated.postalCode || previous.city !== updated.city;
     try {
-      const persisted = await persistCustomerToDb(updated);
+      const persisted = await persistCustomerToDb(updated, { persistCustomerAddress: addressChanged });
       if (!isCurrent()) return;
       const savedUpdated: Customer = {
         ...updated,
@@ -3902,7 +3956,7 @@ function HomeContent() {
 
     setMessage("Ügyfél mentése folyamatban...", "pending");
     try {
-      const persisted = await persistCustomerToDb(customerToSave, { persistQuote: true });
+      const persisted = await persistCustomerToDb(customerToSave, { persistQuote: true, persistCustomerAddress: true });
       const saved = { ...customerToSave, activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
         activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId };
       setSelected(saved);
@@ -3948,7 +4002,7 @@ function HomeContent() {
 
     setMessage("Ügyfél mentése folyamatban...", "pending");
     try {
-      await persistCustomerToDb(customerToSave, { persistQuote: false });
+      await persistCustomerToDb(customerToSave, { persistQuote: false, persistCustomerAddress: true });
       setSelected(customerToSave);
       setQuoteItems(EMPTY_QUOTE_ITEMS);
       setScheduleAppointmentType("survey");
@@ -3981,7 +4035,7 @@ function HomeContent() {
 
     setMessage("Ügyféladatok mentése folyamatban...", "pending");
     try {
-      const persisted = await persistCustomerToDb(customerToSave, { persistQuote: false });
+      const persisted = await persistCustomerToDb(customerToSave, { persistQuote: false, persistCustomerAddress: true });
       const saved = { ...customerToSave, activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
         activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId };
       setSelected(saved);
