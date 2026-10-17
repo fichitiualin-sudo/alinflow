@@ -114,3 +114,14 @@ Státusz: <státusz>
 Ne legyen külön `Ár:` sor, ha az ár már a klíma sor végén szerepel.
 
 Felmérés és karbantartás esetén az esemény címe, időtartama és leírása a megfelelő típushoz igazodjon. Karbantartásnál ne jelenjen meg új klímaeladásként ár vagy készletfoglalás.
+
+
+## Kézi SMS-időpontemlékeztető
+
+A naptár SMS-emlékeztetők gombja a holnapi, a 2 és a 3 nap múlva esedékes időpontokat külön listázza; a napok a budapesti időzónához igazodnak. Az egyes jövőbeli munkák oldalán közvetlen SMS-emlékeztető is nyitható. Telepítés, karbantartás és felmérés támogatott; lezárt, lemondott, múltbeli és egyéb munkák nem kapnak emlékeztetőt.
+
+Az ékezetes magyar szöveg a mentett ügyfélnevet, a munkaterület saját márkanevét és a kezdésből számított egyórás érkezési sávot használja. Ez nem módosítja a naptár foglalt időtartamát. A klímák darabszáma az adott időpontból származik, karbantartásnál a kiválasztott telepítésekből; egyéb tételek nem számítanak klímának. Holnapi munkánál Holnap, későbbinél konkrét dátum szerepel. A teljes név megmarad, keresztnév nem találgatható. A részletes, ékezetes szöveg több SMS-részre oszolhat; a felület a GSM-7/UCS-2 szerinti becslést mutatja.
+
+A telefonos gomb pontosan egy címzettet és az előnézet szövegét adja át az Üzenetek alkalmazásnak. Az üzenetet a felhasználó küldi el a telefonjáról. Nincs SMS-szolgáltató, időzített automatikus küldés vagy kapcsolódó email. Az iOS és Android átadás mellett szövegmásolás is használható; az iPhone natív működését a készüléken kell kipróbálni.
+
+Az Elküldtem gomb külön felhasználói nyilatkozat: a megnyitás vagy másolás nem jelenti a küldést, és a jelölés nem szolgáltatói kézbesítési visszaigazolás. A `20261017_APPOINTMENT_SMS_RECEIPTS.sql` migráció külön RLS-védett táblában, szöveg és telefonszám helyett SHA-256 tartalmi lenyomattal őrzi ezt. Időpont-, címzett-, darabszám- vagy márkanévváltozás után új emlékeztetőigény látszik. A konkrét dátum Holnap formára változása nem törli a korábbi visszajelzést. Új környezeti változó és folyamatos háttérlekérdezés nincs.

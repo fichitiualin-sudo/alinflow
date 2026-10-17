@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { harness } = require("./helpers.cjs");
 const { Calendar } = harness({}, {
   react: { useMemo: run => run() }, "react/jsx-runtime": require("react/jsx-runtime"),
+  "@/components/alinflow/AppointmentSmsReminders": { AppointmentSmsRemindersButton: "test-sms-reminders" },
 }).load("src/components/alinflow/CalendarPanel.tsx");
 const connected = { configured: true, connected: true, status: "connected", pending: 0, canManage: true, managedAppointmentIds: [] };
 function nodes(tree, predicate) {

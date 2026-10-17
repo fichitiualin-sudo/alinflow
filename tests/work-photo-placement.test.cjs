@@ -37,6 +37,7 @@ function workPage(appointmentType = "installation") {
     "react/jsx-runtime": jsx,
     "@/components/alinflow/LayoutPrimitives": { Card: "test-card", Layout: "test-layout", Main: "test-main", Side: "test-side", Btn: "test-button", Field: "test-field", Gradient: "test-gradient" },
     "@/components/alinflow/PostalCodeCityFields": { PostalCodeCityFields: "test-postal-code" },
+    "@/components/alinflow/AppointmentSmsReminders": { AppointmentSmsRemindersButton: "test-sms-reminders" },
     "@/components/alinflow/WorkPhotosPanel": { WorkPhotosPanel: "test-work-photos" },
     "@/components/alinflow/AppointmentDevicesPanel": { AppointmentDevicesPanel: "test-appointment-devices" },
     "@/components/alinflow/WorkSectionToggleButton": { WorkSectionToggleButton: "test-section-toggle" },
