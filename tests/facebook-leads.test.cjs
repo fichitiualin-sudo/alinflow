@@ -26,6 +26,22 @@ test("configured city question takes precedence over profile city", () => {
   assert.equal(value.city, "Cegléd");
 });
 
+test("postcode-only Meta leads fill only a missing city while preserving the submitted postcode", () => {
+  for (const [postalCode, city] of [["2100", "Gödöllő"], ["1139", "Budapest"], ["3053", ""],
+    ["9999", ""], ["21000", ""], ["2100/2", ""], ["2100 unknown", ""]]) {
+    const value = api.normalizeFacebookLead({ ...lead, field_data: [{ name: "zip_code", values: [postalCode] }] }, config);
+    assert.equal(value.city, city);
+    assert.equal(value.postal_code, postalCode);
+  }
+  for (const postalCode of ["2100", "2100 unknown", ""]) {
+    const value = api.normalizeFacebookLead({ ...lead, field_data: [
+      { name: "city", values: ["Synthetic custom town"] }, { name: "postal_code", values: [postalCode] },
+    ] }, config);
+    assert.equal(value.city, "Synthetic custom town");
+    assert.equal(value.postal_code, postalCode);
+  }
+});
+
 test("unmapped and organic leads do not guess climate from ad titles", () => {
   for (const ad_id of [undefined, "999"]) {
     assert.equal(api.normalizeFacebookLead({ ...lead, ad_id, ad_name: "Polar Prime" }, config).climate_name, "");

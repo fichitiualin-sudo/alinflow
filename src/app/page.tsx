@@ -103,6 +103,7 @@ import {
 import {
   LIST_PAGE_SIZE,
   formatCustomerCreatedAt,
+  customerLocationFromData,
   paginateItems,
   postalCodeFromCustomerData,
   sortCustomersByCreatedAtDesc,
@@ -1041,8 +1042,7 @@ function HomeContent() {
       const newCustomers = (insertResult.data || []).map((row: any) => ({
         id: row.id,
         name: row.name || "",
-        city: row.city || "",
-        postalCode: postalCodeFromCustomerData(row.city, row.postal_code, row.address),
+        ...customerLocationFromData(row.city, row.postal_code, row.address),
         phone: row.phone || "",
         email: row.email || "",
         address: row.address || "",
@@ -2998,15 +2998,12 @@ function HomeContent() {
         : quoteItemsFromDb;
       const appointmentAddress = String(appointment?.address || "");
       const displayWorkAddress = appointmentAddress || row.address || "";
-      const appointmentAddressHasLocation = Boolean(appointmentAddress.match(/^\s*\d{4}\s*\p{L}/u));
-      const customerCity = appointmentAddressHasLocation ? "" : row.city || "";
-      const customerPostalCode = postalCodeFromCustomerData(customerCity, appointmentAddressHasLocation ? "" : row.postal_code, displayWorkAddress);
+      const location = customerLocationFromData(row.city, row.postal_code, displayWorkAddress);
 
       const customer: Customer = {
         id: row.id,
         name: row.name || "",
-        city: customerCity,
-        postalCode: customerPostalCode,
+        ...location,
         phone: row.phone || "",
         email: row.email || "",
         address: displayWorkAddress,
@@ -3256,15 +3253,12 @@ function HomeContent() {
     }
     assertCurrentScope();
 
-    // Work views may hide the city or show another installation's full address.
+    // Work views may derive the city or show another installation's full address.
     // Only explicit customer edits and first creation own these canonical fields.
     const storedWorkAddress = existingAppointment?.address || existingCustomer?.address || "";
-    const workAddressHasLocation = Boolean(existingAppointment?.address?.match(/^\s*\d{4}\s*\p{L}/u));
-    const storedVisibleCity = workAddressHasLocation ? "" : existingCustomer?.city || "";
-    const storedVisiblePostalCode = postalCodeFromCustomerData(storedVisibleCity,
-      workAddressHasLocation ? "" : existingCustomer?.postal_code, storedWorkAddress);
-    const addressWasEdited = customer.address !== storedWorkAddress || customer.city !== storedVisibleCity
-      || (customer.postalCode || "") !== storedVisiblePostalCode;
+    const storedLocation = customerLocationFromData(existingCustomer?.city, existingCustomer?.postal_code, storedWorkAddress);
+    const addressWasEdited = customer.address !== storedWorkAddress || customer.city !== storedLocation.city
+      || (customer.postalCode || "") !== storedLocation.postalCode;
     const persistCustomerAddress = !existingCustomer || Boolean(options.persistCustomerAddress && addressWasEdited);
     const customerPayload = {
       id: customer.id,

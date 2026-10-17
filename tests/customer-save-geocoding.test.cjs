@@ -101,7 +101,7 @@ test("an address save must refresh after an already running pre-save customer lo
           latitude: afterSave ? null : 47, longitude: afterSave ? null : 19, geocode_status: afterSave ? "pending" : "ok" }] : [] };
     },
     persistCustomerToDb: async () => { committed = true; return { appointmentId: original.activeAppointmentId }; },
-    normalizeStatus: (value) => value, postalCodeFromCustomerData: () => "", numericDbValue: (value) => value == null ? undefined : value,
+    normalizeStatus: (value) => value, customerLocationFromData: h.load("src/lib/alinflow/customers.ts").customerLocationFromData, postalCodeFromCustomerData: () => "", numericDbValue: (value) => value == null ? undefined : value,
     stockDeductedFromWorkStatus: () => false, sortCustomersByCreatedAtDesc: (value) => value,
     setCustomers: (value) => { run.state.customers = value; }, setWorkHistoryByCustomer: (value) => { run.state.history = value; },
   };

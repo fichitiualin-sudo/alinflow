@@ -49,17 +49,25 @@ function parseAmount(value: unknown) {
 function buyerAddress(customer: Customer) {
   const postalCode = customer.postalCode || "";
   const city = customer.city || "";
-  let address = customer.address || "";
+  const originalAddress = (customer.address || "").normalize("NFC").trim();
+  let address = originalAddress;
+  const prefix = /^(\d{4})[\s,.;:]*(.*)$/u.exec(address);
+  const normalizedCity = city.normalize("NFC").trim();
+  const normalizeCity = (value: string) => value.toLocaleLowerCase("hu-HU").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  if (postalCode && address.startsWith(postalCode)) address = address.slice(postalCode.length).trim();
-  if (city && address.toLocaleLowerCase("hu-HU").startsWith(city.toLocaleLowerCase("hu-HU"))) {
-    address = address.slice(city.length).replace(/^,?\s*/, "");
+  // Remove only a complete postcode/city prefix; city-named streets stay intact.
+  if (prefix?.[1] === postalCode && normalizedCity) {
+    const cityPrefix = prefix[2].slice(0, normalizedCity.length);
+    const afterCity = prefix[2].slice(normalizedCity.length);
+    if (normalizeCity(cityPrefix) === normalizeCity(normalizedCity) && /^(?:[\s,.;:(]|$)/u.test(afterCity)) {
+      address = afterCity.replace(/^[\s,.;:]+/u, "");
+    }
   }
 
   return {
     postalCode,
     city,
-    address: address || customer.address || "",
+    address: address || originalAddress,
   };
 }
 

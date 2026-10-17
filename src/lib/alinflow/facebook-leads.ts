@@ -1,3 +1,5 @@
+import { customerLocationFromData } from "./customers";
+
 export type FacebookLeadsConfig = {
   workspaceId: string;
   pageId: string;
@@ -126,13 +128,14 @@ export function normalizeFacebookLead(lead: FacebookGraphLead, config: FacebookL
     ? lead.field_data.find(field => field.name === config.cityField)?.values.find(value => value.trim()) || first([config.cityField])
     : "";
   const city = explicitCity || first(["city", "town", "település", "szerelés települése", "a szerelés települése", "melyik településen lenne a szerelés"]);
+  const postalCode = clean(first(["zip_code", "postal_code", "irányítószám"]), 20);
   const adId = isFacebookId(lead.ad_id) ? lead.ad_id : "";
   return {
     name: clean(first(["full_name", "name", "teljes név", "név"]) ||
       [first(["last_name", "vezetéknév"]), first(["first_name", "keresztnév"])].filter(Boolean).join(" "), 200),
     phone: clean(first(["phone_number", "phone", "telefonszám", "telefon"]), 80),
     email: clean(first(["email", "email_address", "e-mail cím"]), 320).toLowerCase(),
-    city: clean(city, 200), postal_code: clean(first(["zip_code", "postal_code", "irányítószám"]), 20),
+    city: clean(city, 200) || customerLocationFromData("", postalCode).city, postal_code: postalCode,
     climate_name: adId && Object.prototype.hasOwnProperty.call(config.adClimateMap, adId) ? config.adClimateMap[adId] : "",
     submitted_at: new Date(lead.created_time).toISOString(), form_id: lead.form_id,
     ad_id: adId, ad_name: clean(lead.ad_name, 300),
