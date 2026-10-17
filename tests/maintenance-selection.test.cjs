@@ -161,7 +161,7 @@ for (const type of ["installation", "maintenance"]) test(`customer reload canoni
       : table === "jobs" ? [{ id: "job", workspace_id: "workspace", customer_id: "customer", legacy_source_key: "appointments:installation" }]
       : table === "quotes" ? [{ id: "installation-quote", customer_id: "customer", appointment_id: "installation" }]
       : table === "quote_items" ? [{ quote_id: "installation-quote", product_name: "Synthetic AC", quantity: 1, unit_price: 100000 }] : [] }),
-    postalCodeFromCustomerData: () => "", numericDbValue: () => undefined, stockDeductedFromWorkStatus: () => false,
+    customerLocationFromData: h.load("src/lib/alinflow/customers.ts").customerLocationFromData, postalCodeFromCustomerData: () => "", numericDbValue: () => undefined, stockDeductedFromWorkStatus: () => false,
     sortCustomersByCreatedAtDesc: value => value, setCustomers: noop, setWorkHistoryByCustomer: value => { state.history = value; },
     readReturnContext: () => ({ customerId: "customer", appointmentId: savedId, view: "work" }),
     readCustomerDraft: () => draft, setDraftNotice: noop, setSelected: value => { state.selected = value; },

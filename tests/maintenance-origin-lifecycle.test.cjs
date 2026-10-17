@@ -73,7 +73,7 @@ test("reload restores the draft appointment's origin instead of the customer's d
     currentWorkspaceId: () => "workspace", selected: external, products: [], documentsByCustomer: {}, EMPTY_QUOTE_ITEMS: [], LIST_PAGE_SIZE: 10,
     setDataLoading: noop, setMessage: noop, loadProductsFromDb: async () => [], loadSellerCompaniesFromDb: async () => [], loadInventoryFromDb: async () => {},
     readWorkspaceRows: async table => ({ error: null, data: table === "customers" ? [{ id: "customer", name: "Test Customer" }] : table === "appointments" ? rows : [] }),
-    normalizeStatus: value => value, postalCodeFromCustomerData: () => "", numericDbValue: () => undefined,
+    normalizeStatus: value => value, customerLocationFromData: h.load("src/lib/alinflow/customers.ts").customerLocationFromData, postalCodeFromCustomerData: () => "", numericDbValue: () => undefined,
     stockDeductedFromWorkStatus: () => false, sortCustomersByCreatedAtDesc: value => value,
     setCustomers: value => { state.customers = value; }, setWorkHistoryByCustomer: value => { state.history = value; },
     readReturnContext: () => null, readCustomerDraft: () => draft, setDraftNotice: noop,

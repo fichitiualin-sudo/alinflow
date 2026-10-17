@@ -92,7 +92,7 @@ test("loaded full work address can be saved and closed without erasing the canon
   for (const status of ["Időpont foglalva", "Lezárva"]) for (const explicit of [false, true]) {
     const run = fixture();
     const loaded = await run.loadWork();
-    assert.equal(loaded.city, "");
+    assert.equal(loaded.city, canonical.city);
     assert.equal(loaded.address, appointment.address);
     assert.equal(loaded.postalCode, "3000");
     await run.persistCustomerToDb({ ...loaded, status }, { persistCustomerAddress: explicit, persistQuote: false });
@@ -202,7 +202,7 @@ test("parcel numbers preserve the settlement and compact postcode prefixes still
   }
   const run = fixture({ work: { ...appointment, address: "1162Budapest, Synthetic utca 1." } });
   const loaded = await run.loadWork();
-  assert.equal(loaded.city, "");
+  assert.equal(loaded.city, "Budapest");
   assert.equal(loaded.postalCode, "1162");
   await run.persistCustomerToDb(loaded, { persistCustomerAddress: true, persistQuote: false });
   assertLocationOmitted(addressPayload(run.state));

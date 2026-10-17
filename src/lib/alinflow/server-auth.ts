@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { customerLocationFromData } from "./customers";
 
 export class ApiError extends Error {
   constructor(message: string, public status = 400) {
@@ -49,11 +50,13 @@ export async function authorizeCustomerRequest(request: Request, body: any) {
     if (result.error || !result.data) throw new ApiError("Az időpont nem ehhez az ügyfélhez tartozik.", 403);
     appointment = result.data;
   }
+  const address = appointment?.address || customer.address;
+  const location = customerLocationFromData(customer.city, customer.postal_code, address);
   // Recipients and customer identity come from the authorized database row.
   body.customer = {
     ...body.customer, id: customer.id, name: customer.name, email: customer.email,
-    phone: customer.phone, postalCode: customer.postal_code, city: customer.city,
-    address: appointment?.address || customer.address,
+    phone: customer.phone, postalCode: location.postalCode, city: location.city,
+    address,
     date: appointment?.scheduled_date || body.customer.date,
     time: appointment?.scheduled_time || body.customer.time,
     appointmentType: appointment?.appointment_type || body.customer.appointmentType,

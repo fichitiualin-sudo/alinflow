@@ -140,7 +140,7 @@ function restoreFixture(returnContext, error = null) {
     readWorkspaceRows: async table => ({ error, data: table === "customers"
       ? [{ id: "customer-a", name: "Customer A" }, { id: "customer-b", name: "Customer B" }]
       : table === "appointments" ? [{ id: "appointment-a", customer_id: "customer-a", appointment_type: "installation", status: "Lezárva", scheduled_date: "2026-01-01" }] : [] }),
-    normalizeStatus: value => value, postalCodeFromCustomerData: () => "", numericDbValue: () => undefined,
+    normalizeStatus: value => value, customerLocationFromData: h.load("src/lib/alinflow/customers.ts").customerLocationFromData, postalCodeFromCustomerData: () => "", numericDbValue: () => undefined,
     stockDeductedFromWorkStatus: () => false, sortCustomersByCreatedAtDesc: value => value,
     setCustomers: noop, setWorkHistoryByCustomer: noop, readReturnContext: () => returnContext, readCustomerDraft: () => localDraft, setDraftNotice: noop,
     setSelected: value => { state.selected = value; }, setQuoteItems: value => { state.quoteItems = value; }, setWorkChecklist: noop, effectiveChecklistFor: () => ({}),

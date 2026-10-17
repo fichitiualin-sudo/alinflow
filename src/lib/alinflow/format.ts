@@ -29,8 +29,8 @@ function customerLocationLine(customer: Pick<Customer, "city" | "address" | "pos
 }
 
 function addressAlreadyContainsLocation(address: string, location: string) {
-  const normalizedAddress = address.toLocaleLowerCase("hu-HU");
-  const normalizedLocation = location.toLocaleLowerCase("hu-HU");
+  const normalizedAddress = address.toLocaleLowerCase("hu-HU").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const normalizedLocation = location.toLocaleLowerCase("hu-HU").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   return Boolean(location && normalizedAddress.includes(normalizedLocation));
 }
 
