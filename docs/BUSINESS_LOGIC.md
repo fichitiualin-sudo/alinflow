@@ -114,7 +114,7 @@ Időtartam a klímák összes darabszáma alapján:
 - 2 klíma: 6 óra;
 - 3 vagy több klíma: 9 óra.
 
-Az egyéb tétel (anyag, munkadíj, szolgáltatás) és az üres klímasor nem növeli az időtartamot. Ajánlott kezdések: 08:00, 11:00, 14:00, 17:00, ha a teljes munka szabad időszakba és az adott napba fér. További szabad kezdés ötperces lépésekben választható. A foglalt időszakba nyúló kezdések nem jelennek meg sem az ügyféltől indított, sem a naptári gyorsrögzítésben. A karbantartás, felmérés és egyéb munka 1 órás; ajánlott kezdéseik 08:00–17:00 között óránként jelennek meg.
+Az egyéb tétel (anyag, munkadíj, szolgáltatás) és az üres klímasor nem növeli az időtartamot. Ajánlott kezdések: 08:00, 11:00, 14:00, 17:00, ha a teljes munka szabad időszakba és az adott napba fér. A külön kezdésválasztó egyelőre nem jelenik meg; már mentett, elérhető köztes kezdés megőrizhető. A foglalt időszakba nyúló kezdések nem jelennek meg sem az ügyféltől indított, sem a naptári gyorsrögzítésben. A karbantartás, felmérés és egyéb munka 1 órás; ajánlott kezdéseik 08:00–17:00 között óránként jelennek meg.
 
 Mentéskor az ütközés újra ellenőrzendő. Saját időpont szerkesztésekor csak az adott foglalást zárjuk ki, ugyanazon ügyfél más munkáját nem. Klímamennyiség növelésekor a hosszabb munka nem nyúlhat más foglalásba. Változatlan hosszúságú, régi munka ár- vagy anyagmódosítása nem akad el egy korábban fennálló átfedés miatt.
 
