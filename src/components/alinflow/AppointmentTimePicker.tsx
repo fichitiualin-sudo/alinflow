@@ -1,6 +1,5 @@
 "use client";
 
-import { useId } from "react";
 import type { AppointmentType, QuoteItem } from "@/lib/alinflow/types";
 import { appointmentDurationLabel, appointmentTimeLabel, normalizeAppointmentTimeInput } from "@/lib/alinflow/appointments";
 
@@ -14,7 +13,6 @@ type Props = {
 };
 
 export function AppointmentTimePicker({ appointmentType, items, time, recommendedTimes, availableTimes, onChange }: Props) {
-  const id = useId();
   const normalizedTime = normalizeAppointmentTimeInput(time);
   const selectedTime = availableTimes.includes(normalizedTime) ? normalizedTime : "";
   const label = (value: string) => appointmentTimeLabel(appointmentType, value, items);
@@ -30,12 +28,12 @@ export function AppointmentTimePicker({ appointmentType, items, time, recommende
           ))}
         </div>
       ) : null}
-      <label htmlFor={id} className="block text-sm font-bold text-slate-300">Szabad kezdési idő</label>
-      <select id={id} className="input" value={selectedTime} disabled={!availableTimes.length} onChange={event => onChange(event.target.value)}>
-        <option value="" disabled>{availableTimes.length ? "Válassz szabad időpontot…" : "Erre a napra nincs szabad időpont"}</option>
-        {availableTimes.map(value => <option key={value} value={value}>{label(value)}</option>)}
-      </select>
-      {!availableTimes.length ? <p role="status" className="text-sm font-bold text-amber-200">Válassz másik napot.</p> : !selectedTime ? (
+      {selectedTime && !recommendedTimes.includes(selectedTime) ? (
+        <p className="text-sm font-bold text-slate-300">Kiválasztva: {label(selectedTime)}</p>
+      ) : null}
+      {!recommendedTimes.length && !selectedTime ? (
+        <p role="status" className="text-sm font-bold text-amber-200">Erre a napra nincs szabad ajánlott idősáv. Válassz másik napot.</p>
+      ) : !selectedTime ? (
         <p role="status" className="text-sm font-bold text-amber-200">Válassz a munka teljes időtartamára szabad kezdést.</p>
       ) : null}
     </div>

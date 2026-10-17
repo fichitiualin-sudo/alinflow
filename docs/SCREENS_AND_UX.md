@@ -126,4 +126,4 @@ A dokumentumok ne tűnjenek el attól, hogy más időponttípust választunk.
 
 ### Szabad időpont választása (2026-10-17)
 
-A normál időpontoldal és a naptári gyorsrögzítés ugyanazt a választót használja: a munka óraszáma, szabad ajánlott idősávok és ötperces kezdésválasztó. A foglalt időbe nyúló kezdés nem szerepel a választékban. Dátum, típus vagy klímamennyiség változtatásakor a választék újraszámolódik. Ha a korábbi kiválasztás már nem fér el, új időpontot kell választani a mentéshez. A kijelzett idősáv, visszaigazoló email és Google Naptár közös időtartam-számítást használ.
+A normál időpontoldal és a naptári gyorsrögzítés ugyanazt a választót használja: a munka óraszáma és a szabad ajánlott idősávok gombjai. A külön kezdésválasztó a felhasználó kérésére egyelőre rejtve marad; egy már mentett köztes kezdés továbbra is megjelenik és megőrizhető. A foglalt időbe nyúló kezdés nem szerepel a választékban. Dátum, típus vagy klímamennyiség változtatásakor a választék újraszámolódik. Ha a korábbi kiválasztás már nem fér el, új időpontot kell választani a mentéshez. A kijelzett idősáv, visszaigazoló email és Google Naptár közös időtartam-számítást használ.
