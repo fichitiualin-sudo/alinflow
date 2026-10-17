@@ -319,7 +319,7 @@ export function AppointmentSmsRemindersButton({ workspaceId, userId, appointment
       setError(""); setNotice(""); setPage(0); setPrepared({}); setManualCopy({}); setCopyMessages({});
       setEntries([]); setLoadedDay(""); setSelectedDate(""); setOpenIdentity(identity);
     }} className={calendarCard
-      ? "inline-flex shrink-0 items-center justify-center rounded-full border border-emerald-400/40 bg-emerald-400/20 px-2 py-1 text-[10px] font-black text-emerald-100 transition hover:bg-emerald-400/30 disabled:opacity-40"
+      ? "inline-flex shrink-0 items-center justify-center rounded-full border border-emerald-400/40 bg-emerald-400/20 px-2 py-1 text-[10px] md:px-1 md:text-[9px] font-black text-emerald-100 transition hover:bg-emerald-400/30 disabled:opacity-40"
       : `${controlClass} ${compact ? "!px-2 !py-1.5 !text-xs" : ""}`}>
       {calendarCard ? "SMS" : buttonLabel}
     </button>

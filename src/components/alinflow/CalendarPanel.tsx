@@ -154,7 +154,7 @@ export function Calendar({
             <div
               key={dayIso}
               onClick={() => selectable ? onSelect?.(dayIso) : current ? onCreate?.(dayIso) : undefined}
-              className={`min-h-[96px] rounded-3xl border p-3 md:min-h-[125px] ${isSelected ? "border-emerald-300 bg-emerald-400/20" : current ? "border-white/10 bg-slate-900/80" : "border-white/5 bg-slate-950/40 opacity-40"} ${selectable || (current && onCreate) ? "cursor-pointer hover:ring-2 hover:ring-emerald-300/50" : ""}`}
+              className={`min-h-[96px] rounded-3xl border p-3 md:p-2 md:min-h-[125px] ${isSelected ? "border-emerald-300 bg-emerald-400/20" : current ? "border-white/10 bg-slate-900/80" : "border-white/5 bg-slate-950/40 opacity-40"} ${selectable || (current && onCreate) ? "cursor-pointer hover:ring-2 hover:ring-emerald-300/50" : ""}`}
             >
               <div className="mb-2 flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -195,7 +195,7 @@ export function Calendar({
                             target="_blank"
                             rel="noreferrer"
                             onClick={(event) => event.stopPropagation()}
-                            className="calendar-add-link inline-flex shrink-0 items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2 py-1 text-[10px] font-black text-amber-100 transition hover:bg-amber-300/25"
+                            className="calendar-add-link inline-flex shrink-0 items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/15 px-2 py-1 text-[10px] md:px-1 md:text-[9px] font-black text-amber-100 transition hover:bg-amber-300/25"
                             title={manualCalendarEmail ? `Hozzáadás Google Naptárhoz · ${manualCalendarEmail}` : "Hozzáadás Google Naptárhoz"}
                           >
                             + Naptár
