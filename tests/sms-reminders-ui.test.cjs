@@ -25,8 +25,26 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
+function clickEvent(extra = {}) {
+  return {
+    stopped: false, defaultPrevented: false,
+    stopPropagation() { this.stopped = true; },
+    preventDefault() { this.defaultPrevented = true; },
+    ...extra,
+  };
+}
+function ancestry(tree, target, parents = []) {
+  if (Array.isArray(tree)) {
+    for (const child of tree) { const path = ancestry(child, target, parents); if (path) return path; }
+    return null;
+  }
+  if (!tree || typeof tree !== "object") return null;
+  const path = [...parents, tree];
+  return tree === target ? path : ancestry(tree.props?.children, target, path);
+}
+
 function remindersUI(options = {}) {
-  const slots = [], effects = [], requests = [], clipboard = [], listeners = new Map(), selections = [], timers = new Map();
+  const slots = [], effects = [], requests = [], clipboard = [], listeners = new Map(), selections = [], timers = new Map(), portals = [];
   let nextTimer = 0;
   let cursor = 0, dirty = false, tree, clock = "2026-10-17T10:00:00Z";
   const props = { workspaceId: "workspace-one", userId: "user-one", ...options.props };
@@ -82,6 +100,7 @@ function remindersUI(options = {}) {
     },
   }, {
     react, "react/jsx-runtime": require("react/jsx-runtime"),
+    "react-dom": { createPortal(children, host) { portals.push({ children, host }); return children; } },
     "@/lib/supabase": { supabase: { auth: { getSession: () => options.getSession ? options.getSession() : Promise.resolve(session) } } },
   }).load("src/components/alinflow/AppointmentSmsReminders.tsx");
   function render(changes = {}) {
@@ -106,13 +125,26 @@ function remindersUI(options = {}) {
   }
   render();
   return {
-    render, settle, requests, clipboard, listeners, selections, document, timers,
+    render, settle, requests, clipboard, listeners, selections, document, timers, portals,
     nodes: (predicate) => nodes(tree, predicate), text: () => text(tree), button,
     async click(label) {
       const control = button(label); assert.equal(Boolean(control.props.disabled), false, "Button must be enabled");
-      control.props.onClick(); render(); await settle();
+      control.props.onClick(clickEvent()); render(); await settle();
     },
-    async open() { await this.click(props.appointmentId ? "SMS-emlékeztető" : "SMS-emlékeztetők"); },
+    async open() { await this.click(props.calendarCard ? "SMS" : props.appointmentId ? "SMS-emlékeztető" : "SMS-emlékeztetők"); },
+    async bubbleClick(control) {
+      const path = ancestry(tree, control);
+      assert.ok(path, "Click target belongs to the rendered SMS component");
+      const event = clickEvent({ target: control });
+      for (const node of [...path].reverse()) {
+        event.currentTarget = node;
+        node.props?.onClick?.(event);
+        if (event.stopped) break;
+      }
+      if (!event.stopped) options.onParentClick?.(event);
+      render(); await settle();
+      return event;
+    },
     clock(value) { clock = value; },
     cleanup() { for (const slot of slots) slot?.cleanup?.(); },
   };
@@ -196,7 +228,7 @@ test("single-appointment button scopes both IDs and omits calendar tabs", async 
 test("workspace switch aborts a pending read and cannot reveal old customer data", async () => {
   const gate = deferred();
   const ui = remindersUI({ request: () => gate.promise });
-  ui.button("SMS-emlékeztetők").props.onClick(); ui.render(); await ui.settle();
+  ui.button("SMS-emlékeztetők").props.onClick(clickEvent()); ui.render(); await ui.settle();
   assert.equal(ui.requests.length, 1);
   ui.render({ workspaceId: "workspace-two", userId: "user-two" });
   assert.equal(ui.requests[0].signal.aborted, true);
@@ -211,7 +243,7 @@ test("out-of-order day responses cannot replace the selected day's preview", asy
   const old = deferred();
   const ui = remindersUI({ request: (request) => request.url.includes("days=1") ? old.promise
     : Promise.resolve(Response.json({ entries: [entry(2)], date: "2026-10-19" })) });
-  ui.button("SMS-emlékeztetők").props.onClick(); ui.render(); await ui.settle();
+  ui.button("SMS-emlékeztetők").props.onClick(clickEvent()); ui.render(); await ui.settle();
   await ui.click("2 nap múlva");
   assert.equal(ui.requests[0].signal.aborted, true);
   old.resolve(Response.json({ entries: [entry(99)], date: "2026-10-18" })); await ui.settle();
@@ -238,7 +270,7 @@ test("failed acknowledgement remains retryable and rapid duplicate clicks issue 
   const ui = remindersUI({ request: (request) => request.method === "POST" ? gate.promise
     : Promise.resolve(Response.json({ entries: [entry()], date: "2026-10-18" })) });
   await ui.open(); await ui.click("Szöveg másolása");
-  const button = ui.button("Elküldtem"); button.props.onClick(); button.props.onClick(); ui.render(); await ui.settle();
+  const button = ui.button("Elküldtem"); button.props.onClick(clickEvent()); button.props.onClick(clickEvent()); ui.render(); await ui.settle();
   assert.equal(ui.requests.filter((request) => request.method === "POST").length, 1);
   gate.resolve(Response.json({ error: "Synthetic save failure" }, { status: 500 })); await ui.settle();
   assert.match(ui.text(), /Synthetic save failure/);
@@ -283,7 +315,7 @@ test("session mismatch and a session resolving after scope change never fetch wi
   await mismatch.open(); assert.equal(mismatch.requests.length, 0); assert.match(mismatch.text(), /bejelentkezés lejárt/);
   const gate = deferred();
   const stale = remindersUI({ getSession: () => gate.promise });
-  stale.button("SMS-emlékeztetők").props.onClick(); stale.render();
+  stale.button("SMS-emlékeztetők").props.onClick(clickEvent()); stale.render();
   stale.render({ workspaceId: "workspace-two" });
   gate.resolve({ data: { session: { user: { id: "user-one" }, access_token: "old-token" } }, error: null });
   await stale.settle(); assert.equal(stale.requests.length, 0);
@@ -295,7 +327,7 @@ test("closing aborts a pending acknowledgement and reopening reads the saved ser
   const ui = remindersUI({ request: (request) => request.method === "POST" ? gate.promise
     : Promise.resolve(Response.json({ entries: [entry(1, { acknowledgedAt: ++readCount === 1 ? null : "2026-10-17T10:05:00Z" })], date: "2026-10-18" })) });
   await ui.open(); await ui.click("Szöveg másolása");
-  ui.button("Elküldtem").props.onClick(); ui.render(); await ui.settle();
+  ui.button("Elküldtem").props.onClick(clickEvent()); ui.render(); await ui.settle();
   await ui.click("Bezárás");
   assert.equal(ui.requests.find((request) => request.method === "POST").signal.aborted, true);
   gate.resolve(Response.json({ acknowledgedAt: "2026-10-17T10:05:00Z" })); await ui.settle();
@@ -343,7 +375,7 @@ test("focus during acknowledgement does not abort the write or unlock duplicate 
   const ui = remindersUI({ request: (request) => request.method === "POST" ? gate.promise
     : Promise.resolve(Response.json({ entries: [entry()], date: "2026-10-18" })) });
   await ui.open(); await ui.click("Szöveg másolása");
-  ui.button("Elküldtem").props.onClick(); ui.render(); await ui.settle();
+  ui.button("Elküldtem").props.onClick(clickEvent()); ui.render(); await ui.settle();
   const write = ui.requests.find((request) => request.method === "POST");
   ui.listeners.get("window:focus")();
   ui.listeners.get("document:visibilitychange")();
@@ -360,7 +392,7 @@ test("focus during acknowledgement does not abort the write or unlock duplicate 
 test("read timeout aborts the network and replaces loading with a retryable error", async () => {
   const gate = deferred();
   const ui = remindersUI({ request: () => gate.promise });
-  ui.button("SMS-emlékeztetők").props.onClick(); ui.render(); await ui.settle();
+  ui.button("SMS-emlékeztetők").props.onClick(clickEvent()); ui.render(); await ui.settle();
   assert.equal(ui.timers.size, 1);
   const [timer] = ui.timers.values(); assert.equal(timer.delay, 20000); timer.fn(); await ui.settle();
   assert.equal(ui.requests[0].signal.aborted, true);
@@ -377,7 +409,7 @@ test("write timeout leaves the outcome unconfirmed and retries with the same con
     ? Promise.resolve(Response.json({ entries: [entry()], date: "2026-10-18" }))
     : ++writes === 1 ? pendingWrite.promise : Promise.resolve(Response.json({ acknowledgedAt: "2026-10-17T10:05:00Z" })) });
   await ui.open(); await ui.click("Szöveg másolása");
-  ui.button("Elküldtem").props.onClick(); ui.render(); await ui.settle();
+  ui.button("Elküldtem").props.onClick(clickEvent()); ui.render(); await ui.settle();
   const [timer] = ui.timers.values(); timer.fn(); await ui.settle();
   assert.match(ui.text(), /A jelölés visszaigazolása nem érkezett meg/);
   assert.ok(!ui.text().includes("Elküldöttnek jelölted"));
@@ -388,5 +420,75 @@ test("write timeout leaves the outcome unconfirmed and retries with the same con
   assert.deepEqual(submitted[0].body, submitted[1].body);
   assert.match(ui.text(), /Elküldöttnek jelölted/);
   assert.equal(ui.timers.size, 0);
+  ui.cleanup();
+});
+
+test("compact calendar-card trigger is accessible, scopes one appointment and never bubbles or loads automatically", async () => {
+  let parentClicks = 0;
+  const ui = remindersUI({
+    props: { calendarCard: true, workspaceId: "workspace-calendar", userId: "user-calendar", appointmentId: "appointment-calendar", customerId: "customer-calendar" },
+    entries: [entry(1, { appointmentId: "appointment-calendar", customerId: "customer-calendar" })],
+    getSession: async () => ({ data: { session: { user: { id: "user-calendar" }, access_token: "calendar-token" } }, error: null }),
+    onParentClick() { parentClicks++; },
+  });
+  await ui.settle();
+  const trigger = ui.button("SMS");
+  assert.equal(trigger.props.title, "SMS-emlékeztető");
+  assert.equal(trigger.props["aria-label"], "SMS-emlékeztető");
+  assert.equal(ui.requests.length, 0);
+  const event = await ui.bubbleClick(trigger);
+  assert.equal(event.stopped, true);
+  assert.equal(parentClicks, 0);
+  assert.equal(ui.requests.length, 1);
+  assert.equal(ui.requests[0].method, "GET");
+  const query = new URL(ui.requests[0].url, "https://example.test").searchParams;
+  assert.equal(query.get("workspaceId"), "workspace-calendar");
+  assert.equal(query.get("appointmentId"), "appointment-calendar");
+  assert.equal(query.get("customerId"), "customer-calendar");
+  assert.equal(query.has("days"), false);
+  assert.equal(ui.requests[0].headers.Authorization, "Bearer calendar-token");
+  assert.equal(ui.nodes((node) => node.props?.role === "dialog" && node.props["aria-label"] === "SMS-emlékeztető").length, 1);
+  assert.equal(ui.nodes((node) => node.props?.role === "tab").length, 0);
+  assert.equal(ui.portals.at(-1).host, ui.document.body);
+  assert.equal(ui.requests.some((request) => request.method === "POST"), false);
+  ui.cleanup();
+});
+
+test("calendar-card dialog content, composer and backdrop clicks cannot trigger the parent calendar day", async () => {
+  let parentClicks = 0;
+  const ui = remindersUI({
+    props: { calendarCard: true, appointmentId: "appointment-1", customerId: "customer-1" },
+    platform: "ios", onParentClick() { parentClicks++; },
+  });
+  await ui.open();
+  const [preview] = ui.nodes((node) => node.type === "textarea");
+  const previewClick = await ui.bubbleClick(preview);
+  assert.equal(previewClick.stopped, true);
+  assert.equal(ui.nodes((node) => node.props?.role === "dialog").length, 1);
+  await ui.bubbleClick(ui.button("Szöveg másolása"));
+  assert.deepEqual(ui.clipboard, [entry().text]);
+  const [composer] = ui.nodes((node) => node.type === "a");
+  const composerClick = await ui.bubbleClick(composer);
+  assert.equal(composerClick.stopped, true);
+  assert.equal(composerClick.defaultPrevented, false, "The phone composer action remains allowed");
+  assert.equal(ui.nodes((node) => node.props?.role === "dialog").length, 1);
+  assert.equal(ui.requests.some((request) => request.method === "POST"), false);
+  const [backdrop] = ui.nodes((node) => node.type === "div" && typeof node.props?.onClick === "function"
+    && nodes(node, (child) => child.props?.role === "dialog").length === 1);
+  assert.ok(backdrop);
+  const backdropClick = await ui.bubbleClick(backdrop);
+  assert.equal(backdropClick.stopped, true);
+  assert.equal(ui.nodes((node) => node.props?.role === "dialog").length, 0);
+  assert.equal(parentClicks, 0);
+  assert.equal(ui.requests.some((request) => request.method === "POST"), false);
+  ui.cleanup();
+});
+
+test("disabled compact calendar-card SMS never opens a dialog or fetches", async () => {
+  const ui = remindersUI({ props: { calendarCard: true, appointmentId: "appointment-1", customerId: "customer-1", disabled: true } });
+  await ui.settle();
+  assert.equal(ui.button("SMS").props.disabled, true);
+  assert.equal(ui.nodes((node) => node.props?.role === "dialog").length, 0);
+  assert.equal(ui.requests.length, 0);
   ui.cleanup();
 });
