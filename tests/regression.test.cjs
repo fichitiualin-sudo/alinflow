@@ -195,7 +195,7 @@ test("A06: failed atomic quote save never deletes rows through a separate reques
   const operations = [];
   const db = database(op => { operations.push(op); return { data: null, error: null }; });
   db.rpc = async (name, args) => { operations.push({ method: "rpc", name, args }); return { error: { message: "atomic insert failure" } }; };
-  const f = h.functions(["persistCustomerToDb"], { ...base, isMissingPostalCodeColumnError: () => false, supabase: db });
+  const f = h.functions(["persistCustomerToDb"], { ...base, isMissingPostalCodeColumnError: () => false, supabase: db, authUserIdRef: { current: base.user.id }, authLoadGenerationRef: { current: 1 }, postalCodeFromCustomerData: () => "" });
   await assert.rejects(() => f.persistCustomerToDb({ ...customer, date: undefined, activeAppointmentId: undefined,
     activeQuoteId: "quote-A", quoteItems: [{ customName: "AC", quantity: 2, customPrice: 0 }] }),
     error => error.message === "atomic insert failure");
