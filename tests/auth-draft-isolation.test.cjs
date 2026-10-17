@@ -173,3 +173,81 @@ test("an initial database failure stays uninitialized so a later auth focus can 
   assert.equal(f.state.ready, false);
   assert.equal(f.context.lastCustomerLoadRef.current, null);
 });
+
+test("restoring a draft fills its missing location from its own address and preserves edits and storage", () => {
+  const store = storageHarness();
+  const saved = {
+    ...draft(),
+    customer: { ...draft().customer, activeAppointmentId: "draft-installation", city: "", postalCode: "",
+      address: "8105 Pétfürdő, Synthetic utca 4.", notes: "Unsaved note", email: "edited@example.invalid",
+      phone: "unsaved-phone", quoteItems: [{ productId: "draft-ac", quantity: 7 }] },
+    quoteItems: [{ productId: "draft-ac", quantity: 7 }], scheduleDate: "2027-03-14", scheduleTime: "10:00",
+    scheduleAppointmentType: "maintenance", view: "work", editCustomer: true, allowWorkResourceEdit: true,
+  };
+  store.writeCustomerDraft(saved, a);
+  const snapshot = [...store.values.entries()];
+  const expectedCustomer = { ...saved.customer, city: "Pétfürdő", postalCode: "8105" };
+  const read = store.readCustomerDraft(a);
+  assert.deepEqual(JSON.parse(JSON.stringify(read)), { ...saved, customer: expectedCustomer });
+
+  const otherWork = { ...saved.customer, activeAppointmentId: "different-installation", city: "Budapest", postalCode: "1162",
+    address: "1162 Budapest, Other utca 9.", notes: "Stored note", email: "stored@example.invalid", quoteItems: [] };
+  const restored = store.draftForCustomer(otherWork, a);
+  assert.deepEqual(JSON.parse(JSON.stringify(restored)), { ...saved, customer: expectedCustomer });
+  assert.deepEqual([...store.values.entries()], snapshot, "restoring does not rewrite the session snapshot");
+  assert.equal(saved.customer.city, "", "restoring does not mutate the caller's draft");
+  assert.equal(saved.customer.postalCode, "");
+  assert.equal(otherWork.city, "Budapest");
+});
+
+test("draft location recovery accepts a blank city with its matching saved postcode", () => {
+  const store = storageHarness();
+  store.writeCustomerDraft({ ...draft(), customer: { ...draft().customer,
+    city: " \t", postalCode: " 8105 ", address: "8105 Petfurdo, Synthetic utca 4." } }, a);
+  const restored = store.readCustomerDraft(a).customer;
+  assert.equal(restored.city, "Pétfürdő");
+  assert.equal(restored.postalCode, " 8105 ", "a nonempty user postcode retains its exact value");
+  assert.equal(restored.address, "8105 Petfurdo, Synthetic utca 4.");
+});
+
+test("draft location recovery preserves an explicitly edited city and does not add a postcode", () => {
+  const store = storageHarness();
+  const customer = { ...draft().customer, city: "  Edited town  ", postalCode: "",
+    address: "8105 Pétfürdő, Synthetic utca 4.", notes: "Keep this edit" };
+  store.writeCustomerDraft({ ...draft(), customer }, a);
+  assert.deepEqual(JSON.parse(JSON.stringify(store.readCustomerDraft(a).customer)), customer);
+});
+
+test("draft location recovery leaves conflicting or invalid explicit postcodes untouched", () => {
+  for (const postalCode of ["1162", "810", "81050", "8x105", "8105/2"]) {
+    const store = storageHarness();
+    const customer = { ...draft().customer, city: "", postalCode, address: "8105 Pétfürdő, Synthetic utca 4." };
+    store.writeCustomerDraft({ ...draft(), customer }, a);
+    assert.deepEqual(JSON.parse(JSON.stringify(store.readCustomerDraft(a).customer)), customer, postalCode);
+  }
+});
+
+test("draft location recovery never borrows another work's city for an ambiguous or absent own location", () => {
+  for (const customer of [
+    { ...draft().customer, activeAppointmentId: "draft-installation", city: "", postalCode: "3053", address: "Synthetic utca 4." },
+    { ...draft().customer, activeAppointmentId: "draft-installation", city: "", postalCode: "", address: "Synthetic utca 4." },
+    { ...draft().customer, activeAppointmentId: "draft-installation", city: "", postalCode: "", address: "3053 Unknown town, Synthetic utca 4." },
+  ]) {
+    const store = storageHarness();
+    store.writeCustomerDraft({ ...draft(), customer }, a);
+    const otherWork = { ...customer, activeAppointmentId: "different-installation", city: "Budapest", postalCode: "1162",
+      address: "1162 Budapest, Other utca 9." };
+    assert.deepEqual(JSON.parse(JSON.stringify(store.readCustomerDraft(a).customer)), customer);
+    assert.deepEqual(JSON.parse(JSON.stringify(store.draftForCustomer(otherWork, a).customer)), customer);
+  }
+});
+
+test("draft location recovery disambiguates a shared postcode only with its own complete town name", () => {
+  const store = storageHarness();
+  store.writeCustomerDraft({ ...draft(), customer: { ...draft().customer,
+    city: "", postalCode: "3053", address: "3053 Ecseg, Synthetic utca 4." } }, a);
+  const restored = store.readCustomerDraft(a).customer;
+  assert.equal(restored.city, "Ecseg");
+  assert.equal(restored.postalCode, "3053");
+  assert.equal(restored.address, "3053 Ecseg, Synthetic utca 4.");
+});
