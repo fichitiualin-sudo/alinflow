@@ -4,18 +4,20 @@ const { harness } = require("./helpers.cjs");
 
 const modulePath = "src/components/alinflow/GoogleCalendarSync.tsx";
 const session = { user: { id: "user-fixture" }, access_token: "test-token" };
-const connected = { configured: true, connected: true, status: "connected", pending: 0, canManage: true, managedAppointmentIds: [] };
+const connected = { configured: true, connected: true, status: "connected", pending: 1, canManage: true, managedAppointmentIds: [] };
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 function setup(options = {}) {
   const effects = [], cleanups = [], requests = [], states = [], timers = [];
+  let now = 0;
+  class ClockDate extends Date { static now() { return now; } }
   const window = Object.assign(new EventTarget(), {
     location: { href: options.url || "https://app.example.test/" },
     history: { state: null, replaceState: (_state, _title, url) => { window.location.href = `https://app.example.test${url}`; } },
-    setInterval: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    setInterval: (callback, delay) => { timers.push({ callback: () => { now += delay; callback(); }, delay }); return timers.length; },
     clearInterval: () => {},
   });
-  const document = Object.assign(new EventTarget(), { visibilityState: "visible" });
+  const document = Object.assign(new EventTarget(), { visibilityState: options.visibility || "visible" });
   const react = {
     useEffect: (effect) => effects.push(effect),
     useRef: (current) => ({ current }),
@@ -26,14 +28,14 @@ function setup(options = {}) {
     },
   };
   const api = harness({
-    window, document, AbortController, DOMException, CustomEvent,
+    window, document, AbortController, DOMException, CustomEvent, Date: ClockDate,
     fetch: async (url, init) => {
       requests.push({ url, init });
       return options.fetch ? options.fetch(url, init) : Response.json(url.includes("/status") ? (options.status || connected) : { processed: 1, synced: 1, failed: 0 });
     },
   }, { react, "@/lib/supabase": { supabase: { auth: { getSession: options.getSession || (async () => ({ data: { session }, error: null })) } } } }).load(modulePath);
   return {
-    api, requests, states, timers, window, document,
+    api, requests, states, timers, window, document, advance: ms => { now += ms; },
     mount: () => {
       api.useGoogleCalendarSync({ workspaceId: "workspace-fixture", userId: "user-fixture", enabled: true, onReturn: options.onReturn || (() => {}) });
       effects.forEach((effect) => { const cleanup = effect(); if (cleanup) cleanups.push(cleanup); });
@@ -225,4 +227,78 @@ test("a failed appointment write never starts calendar sync; a completed write k
   workspaceId = "original-workspace";
   await fns.saveAppointmentWithJobMirror({ ...customer, activeAppointmentId: "previous-appointment" });
   assert.deepEqual(notifications[1], { id: "original-workspace", newAppointmentId: undefined });
+});
+
+
+test("idle calendar polling only reads status and deduplicates completed focus/visibility bursts", async () => {
+  const run = setup({ status: { ...connected, pending: 0 } });
+  run.mount(); await tick();
+  assert.equal(run.requests.length, 1);
+  run.timers[0].callback(); await tick();
+  assert.equal(run.requests.length, 2);
+  run.window.dispatchEvent(new Event("focus"));
+  run.document.dispatchEvent(new Event("visibilitychange")); await tick();
+  assert.equal(run.requests.length, 2);
+  run.advance(15000);
+  run.window.dispatchEvent(new Event("focus")); await tick();
+  run.document.dispatchEvent(new Event("visibilitychange")); await tick();
+  assert.equal(run.requests.length, 3);
+  assert.ok(run.requests.every(({ init }) => init.method === "GET"));
+  run.unmount();
+});
+
+test("a local appointment save and connection change force immediate sync even with an empty reported queue", async () => {
+  const run = setup({ status: { ...connected, pending: 0 } });
+  run.mount(); await tick();
+  run.api.notifyGoogleCalendarAppointmentsChanged("workspace-fixture", "new-appointment"); await tick();
+  assert.equal(run.requests.length, 4);
+  assert.equal(run.requests.filter(({ init }) => init.method === "POST").length, 1);
+  assert.ok(run.states[0].status.managedAppointmentIds.includes("new-appointment"));
+  run.api.refreshGoogleCalendarConnection("workspace-fixture"); await tick();
+  assert.equal(run.requests.length, 7, "connection change performs one status/sync/status cycle without an extra status request");
+  assert.equal(run.requests.filter(({ init }) => init.method === "POST").length, 2);
+  run.unmount();
+});
+
+test("queued local saves retain forced sync when an in-flight status reports no pending work", async () => {
+  let finishStatus, statusReads = 0;
+  const run = setup({ fetch: async url => {
+    if (url.includes("/status")) {
+      if (++statusReads === 1) await new Promise(resolve => { finishStatus = resolve; });
+      return Response.json({ ...connected, pending: 0 });
+    }
+    return Response.json({ processed: 1, synced: 1, failed: 0 });
+  } });
+  run.mount(); await tick();
+  run.api.notifyGoogleCalendarAppointmentsChanged("workspace-fixture");
+  run.api.notifyGoogleCalendarAppointmentsChanged("workspace-fixture");
+  finishStatus(); await tick();
+  assert.equal(run.requests.filter(({ init }) => init.method === "POST").length, 1);
+  assert.equal(run.requests.length, 4);
+  run.unmount();
+});
+
+test("a failed fresh status cannot run sync using a stale connected state", async () => {
+  let fail = false;
+  const run = setup({ fetch: async url => {
+    assert.ok(url.includes("/status"));
+    return fail ? Response.json({ error: "Status unavailable" }, { status: 503 }) : Response.json({ ...connected, pending: 0 });
+  } });
+  run.mount(); await tick(); fail = true;
+  run.api.notifyGoogleCalendarAppointmentsChanged("workspace-fixture"); await tick();
+  assert.equal(run.requests.length, 2);
+  assert.ok(run.requests.every(({ init }) => init.method === "GET"));
+  assert.match(run.states[0].error, /Status unavailable/);
+  run.unmount();
+});
+
+test("a hidden initial calendar mount waits for visibility and then performs one fresh check", async () => {
+  const run = setup({ visibility: "hidden", status: { ...connected, pending: 0 } });
+  run.mount(); await tick(); run.timers[0].callback(); await tick();
+  assert.equal(run.requests.length, 0);
+  run.document.visibilityState = "visible";
+  run.document.dispatchEvent(new Event("visibilitychange")); run.window.dispatchEvent(new Event("focus")); await tick();
+  assert.equal(run.requests.length, 1);
+  assert.equal(run.states[0].loading, false);
+  run.unmount();
 });

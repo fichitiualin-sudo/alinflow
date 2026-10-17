@@ -1432,7 +1432,7 @@ function HomeContent() {
         const { data, error } = await supabase.rpc("save_maintenance_geocode", parameters);
         if (!isCurrent()) return;
         if (error) {
-          if (error.code === "40001") { staleCount += 1; continue; }
+          if (error.code === "PT409" || error.code === "40001") { staleCount += 1; continue; }
           if (error.code === "PGRST202" || error.code === "42883" || isMissingMaintenanceMapSchemaError(error)) {
             throw new Error("A térképes címvédelem szerverfrissítése szükséges.");
           }

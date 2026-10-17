@@ -11,11 +11,13 @@ export function useSharedMaintenance(workspaceId?: string, enabled = false, user
   const [state, setState] = useState<SharedMaintenanceState>(EMPTY_STATE);
   const request = useRef(0);
   const inFlight = useRef<{identity: string; ticket: number} | null>(null);
+  const lastRefresh = useRef<{identity: string; at: number} | null>(null);
   const refresh = useCallback(async () => {
     if (enabled && identity && inFlight.current?.identity === identity) return;
     const ticket = ++request.current;
     if (!workspaceId || !identity || !enabled) { inFlight.current = null; setState(EMPTY_STATE); return; }
     inFlight.current = {identity, ticket};
+    lastRefresh.current = {identity, at: Date.now()};
     // A background permission check must not briefly remove every map marker.
     // Scope changes still hide old data synchronously in the returned state.
     setState(current => current.identity === identity
@@ -35,13 +37,23 @@ export function useSharedMaintenance(workspaceId?: string, enabled = false, user
     }
   }, [workspaceId, enabled, identity]);
   useEffect(() => {
-    void refresh();
-    const cancel = () => { request.current++; inFlight.current = null; };
-    if (!enabled) return cancel;
-    const onFocus = () => { if (document.visibilityState !== "hidden") void refresh(); };
-    window.addEventListener("focus", onFocus);
-    const interval = window.setInterval(onFocus, 60000);
-    return () => { cancel(); window.removeEventListener("focus", onFocus); window.clearInterval(interval); };
-  }, [refresh, enabled]);
+    const cancel = () => { request.current++; inFlight.current = null; lastRefresh.current = null; };
+    if (!enabled || !identity) { void refresh(); return cancel; }
+    const refreshIfVisible = () => { if (document.visibilityState !== "hidden") void refresh(); };
+    const onWake = () => {
+      // Focus and visibility events often arrive together. Manual refresh and the
+      // one-minute permission check remain immediate and are never throttled.
+      if (lastRefresh.current?.identity === identity && Date.now() - lastRefresh.current.at < 15_000) return;
+      refreshIfVisible();
+    };
+    refreshIfVisible();
+    window.addEventListener("focus", onWake);
+    document.addEventListener("visibilitychange", onWake);
+    const interval = window.setInterval(refreshIfVisible, 60000);
+    return () => {
+      cancel(); window.removeEventListener("focus", onWake);
+      document.removeEventListener("visibilitychange", onWake); window.clearInterval(interval);
+    };
+  }, [refresh, enabled, identity]);
   return { ...(identity && state.identity === identity && enabled ? state : EMPTY_STATE), refresh };
 }

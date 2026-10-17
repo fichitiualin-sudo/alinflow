@@ -98,7 +98,7 @@ Az AlinFlow-ban módosított időpont ugyanazt a kezelt Google-eseményt frissí
 
 Az automatikus eseménynek nincsenek meghívottai. A Google írások `sendUpdates=none` paraméterrel mennek, az alapértelmezett naptáremlékeztetők kikapcsolva maradnak. Emiatt nem indul második Google-meghívó vagy visszaigazoló levél; a meglévő AlinFlow-emailküldés változatlan. Google-hiba nem vonhatja vissza az időpont mentését vagy a saját levélküldést.
 
-A szinkronizálás tartós, verziózott feldolgozási sort használ. A megnyitott alkalmazás mentés után és látható állapotban percenként próbál feldolgozni; a böngészőtől független újrapróbáláshoz az opcionális Supabase/Vault cronfeladatot külön aktiválni kell. A **Szinkronizálás szüneteltetése** megőrzi az eseményeket és a várakozó sorokat. Ugyanazon fiók újraengedélyezése az eredeti kapcsolódási határt megtartja.
+A szinkronizálás tartós, verziózott feldolgozási sort használ. A megnyitott alkalmazás mentés után azonnal próbál feldolgozni, látható állapotban pedig percenként ellenőrzi a sort. Üres sor esetén csak az állapotot olvassa, a workert nem indítja el; a gyors fókusz/láthatóság eseményeket 15 másodpercen belül összevonja. A mentés vagy kapcsolatváltozás ezt a korlátozást megkerüli; a böngészőtől független újrapróbáláshoz az opcionális Supabase/Vault cronfeladatot külön aktiválni kell. A **Szinkronizálás szüneteltetése** megőrzi az eseményeket és a várakozó sorokat. Ugyanazon fiók újraengedélyezése az eredeti kapcsolódási határt megtartja.
 
 A szerelési esemény leírásában szerepelhet:
 
