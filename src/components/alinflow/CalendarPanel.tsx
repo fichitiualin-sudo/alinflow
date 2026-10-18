@@ -6,7 +6,7 @@ import type { CalendarMode, Customer } from "@/lib/alinflow/types";
 import { cleanQuoteItems, itemName, itemQuantity } from "@/lib/alinflow/products";
 import { iso } from "@/lib/alinflow/format";
 import { calLabel, googleCalendarHref, weekStart } from "@/lib/alinflow/calendar";
-import { appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkSummary, isInstallationAppointment } from "@/lib/alinflow/appointments";
+import { appointmentTimeRangeLabel, appointmentTypeLabel, appointmentWorkSummary, isInstallationAppointment, normalizeAppointmentType } from "@/lib/alinflow/appointments";
 import { isSmsReminderAppointment, smsReminderToday } from "@/lib/alinflow/sms-reminders";
 import type { GoogleCalendarStatus } from "@/components/alinflow/GoogleCalendarSync";
 
@@ -44,12 +44,27 @@ function sortJobsByTime(jobs: Customer[]) {
   });
 }
 
-function calendarStatusStyle(status: string) {
+function calendarStatusStyle(status: string, appointmentType?: Customer["appointmentType"]) {
+  const type = normalizeAppointmentType(appointmentType);
+  if (type === "survey") return "calendar-event-survey border border-rose-400/50 bg-rose-950/90 text-rose-50";
+  if (type === "maintenance") return "calendar-event-maintenance border border-teal-400/50 bg-teal-950/90 text-teal-50";
   if (status === "Lezárva") return "border border-emerald-700/70 bg-emerald-950/90 text-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.12)]";
   if (status === "Szerelés kész – admin folyamatban") return "border border-amber-300/45 bg-amber-400/20 text-amber-50 shadow-[0_0_0_1px_rgba(251,191,36,0.10)]";
   if (status === "Időpont foglalva") return "border border-sky-300/45 bg-sky-400/20 text-sky-50 shadow-[0_0_0_1px_rgba(56,189,248,0.10)]";
   if (status === "Ajánlat elküldve") return "border border-violet-300/40 bg-violet-400/15 text-violet-50";
   return "border border-white/10 bg-white/10 text-white";
+}
+
+function CalendarTypeStatus({ job }: { job: Customer }) {
+  const type = normalizeAppointmentType(job.appointmentType);
+  if ((type !== "survey" && type !== "maintenance") || !job.status || job.status === "Időpont foglalva") return null;
+  const closed = job.status === "Lezárva";
+  const adminPending = job.status === "Szerelés kész – admin folyamatban";
+  return (
+    <small className={`mt-1 inline-block max-w-full rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-snug ${closed ? "bg-emerald-100 text-emerald-900" : adminPending ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-900"}`}>
+      {closed ? "✓ Lezárva" : adminPending ? "Admin folyamatban" : job.status}
+    </small>
+  );
 }
 
 function calendarJobSummaryLines(job: Customer) {
@@ -167,12 +182,13 @@ export function Calendar({
                 {jobs.map((job) => (
                   <div
                     key={job.activeAppointmentId || job.id}
-                    className={`calendar-event-card w-full rounded-2xl p-3 text-left transition hover:ring-2 hover:ring-cyan-300/50 md:p-2 ${calendarStatusStyle(job.status)}`}
+                    className={`calendar-event-card w-full rounded-2xl p-3 text-left transition hover:ring-2 hover:ring-cyan-300/50 md:p-2 ${calendarStatusStyle(job.status, job.appointmentType)}`}
                   >
                     <button
                       type="button"
                       onClick={(event) => { event.stopPropagation(); onOpen(job); }}
                       className="w-full text-left"
+                      title={`${appointmentTypeLabel(job.appointmentType)} · ${job.status}`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-xs font-black">{appointmentTypeLabel(job.appointmentType)} · {appointmentTimeRangeLabel(job)}</p>
@@ -184,6 +200,7 @@ export function Calendar({
                         ))}
                       </div>
                       <p className="truncate text-xs opacity-70 md:text-[11px]">{job.city}</p>
+                      <CalendarTypeStatus job={job} />
                     </button>
                     {!selectable && (mode === "week" || (workspaceId && userId && isSmsReminderAppointment(job, smsToday))) ? (
                       <div className="mt-2 flex flex-wrap items-center gap-1">
