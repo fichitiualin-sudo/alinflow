@@ -42,13 +42,90 @@ test("postcode-only Meta leads fill only a missing city while preserving the sub
   }
 });
 
-test("unmapped and organic leads do not guess climate from ad titles", () => {
-  for (const ad_id of [undefined, "999"]) {
-    assert.equal(api.normalizeFacebookLead({ ...lead, ad_id, ad_name: "Polar Prime" }, config).climate_name, "");
+const knownConfig = { ...config, adClimateMap: {
+  "333": "Polar Prime", "334": "Gree Comfort Pro", "335": "AUX Aura", "336": "Tesla Superior",
+} };
+const climateFor = (ad_name, ad_id = "999", selectedConfig = knownConfig, patch = {}) =>
+  api.normalizeFacebookLead({ ...lead, ad_id, ad_name, ...patch }, selectedConfig).climate_name;
+
+test("explicit ad IDs remain authoritative over missing, different or ambiguous title names", () => {
+  for (const title of [undefined, "", "Gree Comfort Pro", "Polar Prime | Gree Comfort Pro", "Polar Prime Plus"]) {
+    assert.equal(climateFor(title, "333"), "Polar Prime");
   }
+});
+
+test("new and copied ads recognize one complete known model in an isolated title field", () => {
+  for (const [title, expected] of [
+    ["01 | Polar Prime | 280000 Ft | Eredeti kreatív | 2026-10-18", "Polar Prime"],
+    ["02 | Gree Comfort Pro | 300000 Ft | Eredeti kreatív | 2026-10-18", "Gree Comfort Pro"],
+    ["01 | Polar Prime | Fűtésre tervezve | 280000 Ft | 2026-10-17", "Polar Prime"],
+    ["01 | (PÓLÁR---prime) | 280000 Ft", "Polar Prime"],
+    ["02; GREE.\tComfort / Pro; 300000 Ft", "Gree Comfort Pro"],
+    ["03 • aux\u00a0 aura • Új kreatív", "AUX Aura"],
+    ["04 · Tesla Superior · Új kreatív", "Tesla Superior"],
+    ["01\nPolar Prime\nÚj kreatív", "Polar Prime"],
+    [" Gree Comfort Pro ", "Gree Comfort Pro"],
+    ["Polar Prime | PÓLAR--PRIME", "Polar Prime"],
+  ]) assert.equal(climateFor(title), expected, title);
+});
+
+test("duplicate configured names and formatting variants count as one known model", () => {
+  const duplicateConfig = { ...config, adClimateMap: {
+    "333": "Polar Prime", "334": "Polar Prime", "335": "PÓLAR--PRIME",
+  } };
+  assert.equal(climateFor("01 | polar prime | Új kreatív", "999", duplicateConfig), "Polar Prime");
+  assert.equal(climateFor("ignored", "335", duplicateConfig), "PÓLAR--PRIME", "exact mapping keeps its configured value");
+});
+
+test("fallback requires a valid ad ID and a nonempty title, with no campaign or form inference", () => {
+  for (const ad_id of [undefined, null, "", "not-an-id", 999]) {
+    const value = api.normalizeFacebookLead({ ...lead, ad_id, ad_name: "Polar Prime" }, knownConfig);
+    assert.equal(value.climate_name, "");
+  }
+  for (const ad_name of [undefined, null, "", " \t "]) assert.equal(climateFor(ad_name), "");
+  assert.equal(climateFor("Új kampány", "999", knownConfig, {
+    campaign_name: "Polar Prime",
+    field_data: [{ name: "climate_name", values: ["Polar Prime"] }, { name: "product", values: ["Gree Comfort Pro"] }],
+  }), "");
   assert.equal(api.normalizeFacebookLead({ ...lead, field_data: [] }, config).name, "");
 });
 
+test("unsupported, brand-only, embedded and longer model names stay unassigned", () => {
+  for (const title of [
+    "Polar", "Prime", "Gree", "Midea Xtreme Save", "01 | Brand New Model | 280000 Ft",
+    "Polar Prime Plus", "01 | Polar Prime Plus | 280000 Ft", "Polar Prime+",
+    "01 | Polar Prime + | 280000 Ft", "SuperPolar Prime", "Polar PrimeXL", "PolarPrime",
+    "01 | Polar Prime X | 280000 Ft", "Polar Prime 3.5 kW", "Akciós Polar Prime",
+    "Polar Prime - 280000 Ft", "01 / Polar Prime / 280000 Ft",
+  ]) assert.equal(climateFor(title), "", title);
+  assert.equal(climateFor("Polar", "999", { ...config, adClimateMap: { "333": "Polar" } }), "");
+  assert.equal(climateFor("Polar Prime", "999", { ...config, adClimateMap: {} }), "");
+});
+
+test("titles mentioning multiple known models or an extended second model are ambiguous", () => {
+  for (const title of [
+    "Polar Prime | Gree Comfort Pro", "Polar Prime / Gree Comfort Pro",
+    "Polar Prime | Gree Comfort Pro Plus", "Polar Prime | Gree Comfort Pro+",
+    "01 | Polar Prime | Akciós Gree Comfort Pro", "Polar Prime Plus | Gree Comfort Pro",
+    "Polar Prime | Polar Prime Plus", "AUX Aura | Tesla Superior",
+    "Polar Prime | Gree Comfort ProXL", "Polar Prime | Polar Prime2", "Polar Prime | Akciós Gree Comfort ProXL",
+  ]) assert.equal(climateFor(title), "", title);
+});
+
+test("a configured longer model must match fully and never inherits the shorter model", () => {
+  const extendedConfig = { ...knownConfig, adClimateMap: { ...knownConfig.adClimateMap, "337": "Polar Prime Plus" } };
+  assert.equal(climateFor("01 | Polar Prime Plus | 300000 Ft", "999", extendedConfig), "Polar Prime Plus");
+  assert.equal(climateFor("01 | Polar Prime+ | 300000 Ft", "999", extendedConfig), "Polar Prime Plus");
+  assert.equal(climateFor("Polar Prime Plus | Polar Prime", "999", extendedConfig), "");
+});
+
+test("inherited map keys and inherited known-name values cannot identify an ad", () => {
+  const inheritedMap = Object.assign(Object.create({ "999": "Polar Prime" }), { "334": "Gree Comfort Pro" });
+  const inheritedConfig = { ...config, adClimateMap: inheritedMap };
+  assert.equal(climateFor("Unknown title", "999", inheritedConfig), "");
+  assert.equal(climateFor("Polar Prime", "998", inheritedConfig), "");
+  assert.equal(climateFor("Gree Comfort Pro", "998", inheritedConfig), "Gree Comfort Pro");
+});
 test("configuration validation rejects unsafe routing and malformed ad mappings", () => {
   assert.ok(api.parseFacebookLeadsConfig(config));
   assert.equal(api.parseFacebookLeadsConfig({ ...config, pageId: "../me" }), null);
