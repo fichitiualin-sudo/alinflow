@@ -2,7 +2,7 @@
 
 ## Működés és jelenlegi aktiválási állapot
 
-A kapcsolat a Meta `leadgen` eseményéből lekéri a jelentkezés hiteles adatait, ellenőrzi az űrlapot és az oldalt, majd tranzakcióban menti az érdeklődést. A szerelés települése az űrlap válasza, a klíma neve a pontos hirdetésazonosítóhoz tartozó szerverbeállítás. Az import nem készít ajánlatot, nem foglal készletet és nem küld üzenetet az ügyfélnek.
+A kapcsolat a Meta `leadgen` eseményéből lekéri a jelentkezés hiteles adatait, ellenőrzi az űrlapot és az oldalt, majd tranzakcióban menti az érdeklődést. A szerelés települése az űrlap válasza, a klíma neve elsődlegesen a pontos hirdetésazonosítóhoz tartozó szerverbeállítás. Új hirdetésazonosítónál a hirdetés nevének külön mezőjeként szereplő, már konfigurált teljes modellnév is felismerhető. Az import nem készít ajánlatot, nem foglal készletet és nem küld üzenetet az ügyfélnek.
 
 **2026-10-06-i ellenőrzés:** a meglévő `Klimalin Marketing API` Meta-alkalmazás Live állapotú, de jelenleg csak hirdetéskezelési használati esetét ellenőriztük. A közös űrlap és a hozzá tartozó oldal a Meta felületén igazolt. A Lead Ads jogosultság, a szerveres titkok és a működő webhook-kézbesítés még nem igazolt. Az `Add use cases` műveletet az automatikus jóváhagyás-ellenőrzés megállította; ennek folytatásához a felhasználó jóváhagyása szükséges. A kész kód és a felület „Beolvasás elérhető” jelzése önmagában nem bizonyít éles Meta-kapcsolatot.
 
@@ -122,7 +122,7 @@ Hiányzó név, használható elérhetőség vagy többértelmű kontakt-egyezé
 
 ## Korlátok és hibaelhárítás
 
-- **Új/másolt hirdetés:** új azonosítója külön bejegyzést igényel az `adClimateMap` objektumban. A hirdetés neve alapján nincs automatikus találgatás. Ismeretlen vagy hiányzó ad ID mellett az érdeklődés megmarad, a panel „Klíma nincs azonosítva” jelzést ad.
+- **Új/másolt hirdetés:** a pontos azonosítóhoz tartozó `adClimateMap` bejegyzés mindig elsőbbséget élvez. Enélkül érvényes ad ID mellett a hirdetés neve alapján felismerhető egy már konfigurált, legalább két szóból álló teljes modellnév, ha önálló mezőként szerepel: például `01 | Polar Prime | 280000 Ft | Eredeti kreatív`. Elválasztó lehet `|`, pontosvessző, felsorolásjel (`•` vagy `·`) vagy sortörés; a teljes hirdetésnév is lehet maga a modellnév. A kis-/nagybetű, ékezet, szóköz és a modellen belüli írásjel eltérése nem akadály; a `+` viszont `Plus` modellváltozatot jelöl. Több különböző modell, másik mezőben említett modellváltozat, részleges név vagy ismeretlen utótag (például csak `Polar Prime` konfiguráció mellett `Polar Prime Plus`) nem kap automatikus besorolást. Kampánynévből, űrlapválaszból és márkanévből nincs következtetés. Nem egyértelmű címnél vagy új modellnél adj meg külön azonosító-párosítást; hiányzó ad ID mellett továbbra is „Klíma nincs azonosítva” jelenik meg.
 - **Korábbi pillanatkép:** az új párosítás nem írja át a már mentett naplókat vagy ügyfél-igényeket. A hiányzó régi információ kézi egyeztetést igényel.
 - **Ismételt érdeklődés:** normalizált telefonszám vagy email alapján egyetlen létező ügyfélhez kapcsolódik; annak neve, települése, igénye és státusza nem íródik felül. Az új kérés külön naplósorban látható.
 - **Törölt ügyfél:** a leadazonosító megmarad; az ismételt kézbesítés nem hozza létre újra a szándékosan törölt ügyfelet.

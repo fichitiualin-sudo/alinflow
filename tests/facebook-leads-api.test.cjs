@@ -299,3 +299,41 @@ test("sync rejects invalid pagination and mixed-form pages before any commit", a
     assert.equal(f.commits.length, 0);
   }
 });
+
+
+test("webhook and manual sync persist the known climate from a copied ad title", async () => {
+  for (const route of ["webhook", "sync"]) {
+    const copiedLead = { ...graphLead(), ad_id: "999", ad_name: "01 | Polar Prime | 280000 Ft | New creative" };
+    const f = setup({ graph: async url => {
+      if (url.pathname.endsWith("/leads")) return Response.json({ data: [copiedLead] });
+      if (url.pathname.endsWith("/444")) return Response.json(copiedLead);
+      return Response.json({ id: "222", page: { id: "111" } });
+    } });
+    const body = route === "webhook" ? event() : { workspaceId };
+    assert.equal((await f.route(route).POST(f.request(body))).status, 200);
+    assert.equal(f.commits.length, 1);
+    assert.equal(f.commits[0].p_payload.climate_name, "Polar Prime");
+    assert.equal(f.commits[0].p_payload.ad_id, "999");
+    assert.equal(f.commits[0].p_payload.ad_name, copiedLead.ad_name);
+    assert.equal(f.commits[0].p_payload.city, "Tápiószele");
+    const requestsBeforeRetry = f.requests.length;
+    assert.equal((await f.route(route).POST(f.request(body))).status, 200);
+    assert.equal(f.commits.length, 1, "repeated delivery must not create a second lead");
+    if (route === "webhook") assert.equal(f.requests.length, requestsBeforeRetry);
+  }
+});
+
+test("ambiguous new ads still import without inventing a climate", async () => {
+  for (const route of ["webhook", "sync"]) {
+    const ambiguousLead = { ...graphLead(), ad_id: "999", ad_name: "Polar Prime | Gree Comfort Pro" };
+    const f = setup({ env: { META_LEADS_CONFIG: JSON.stringify({ ...config,
+      adClimateMap: { ...config.adClimateMap, "334": "Gree Comfort Pro" } }) }, graph: async url => {
+      if (url.pathname.endsWith("/leads")) return Response.json({ data: [ambiguousLead] });
+      if (url.pathname.endsWith("/444")) return Response.json(ambiguousLead);
+      return Response.json({ id: "222", page: { id: "111" } });
+    } });
+    assert.equal((await f.route(route).POST(f.request(route === "webhook" ? event() : { workspaceId }))).status, 200);
+    assert.equal(f.commits.length, 1);
+    assert.equal(f.commits[0].p_payload.climate_name, "");
+  }
+});

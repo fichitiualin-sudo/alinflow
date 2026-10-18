@@ -116,6 +116,37 @@ function fieldKey(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 }
 
+function climateNameWords(value: string) {
+  // "+" can identify a different model; do not erase it as decoration.
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\+/g, " plus ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function climateForAd(lead: FacebookGraphLead, config: FacebookLeadsConfig) {
+  if (!isFacebookId(lead.ad_id)) return "";
+  if (Object.prototype.hasOwnProperty.call(config.adClimateMap, lead.ad_id)) return config.adClimateMap[lead.ad_id];
+  if (!lead.ad_name?.trim()) return "";
+
+  const knownNames = new Map<string, string>();
+  for (const name of Object.values(config.adClimateMap)) {
+    const words = climateNameWords(name);
+    // A brand alone is not enough evidence for a model.
+    if (words.includes(" ") && !knownNames.has(words)) knownNames.set(words, name);
+  }
+  const fields = lead.ad_name.split(/[|;\r\n•·]+/u).map(climateNameWords).filter(Boolean);
+  const matches = new Set(fields.filter(field => knownNames.has(field)));
+  if (matches.size !== 1) return "";
+  const candidate = [...matches][0];
+
+  // Require a complete, separate title field. A second model mention, even an
+  // unknown extension such as "Polar Prime Plus" or "PrimeXL", is ambiguous.
+  for (const field of fields) {
+    if (field === candidate) continue;
+    if ([...knownNames.keys()].some(name => (" " + field).includes(" " + name))) return "";
+  }
+  return knownNames.get(candidate) || "";
+}
+
 export function normalizeFacebookLead(lead: FacebookGraphLead, config: FacebookLeadsConfig): FacebookLeadPayload {
   const fields = new Map<string, string>();
   for (const field of lead.field_data) {
@@ -136,7 +167,7 @@ export function normalizeFacebookLead(lead: FacebookGraphLead, config: FacebookL
     phone: clean(first(["phone_number", "phone", "telefonszám", "telefon"]), 80),
     email: clean(first(["email", "email_address", "e-mail cím"]), 320).toLowerCase(),
     city: clean(city, 200) || customerLocationFromData("", postalCode).city, postal_code: postalCode,
-    climate_name: adId && Object.prototype.hasOwnProperty.call(config.adClimateMap, adId) ? config.adClimateMap[adId] : "",
+    climate_name: climateForAd(lead, config),
     submitted_at: new Date(lead.created_time).toISOString(), form_id: lead.form_id,
     ad_id: adId, ad_name: clean(lead.ad_name, 300),
     campaign_id: isFacebookId(lead.campaign_id) ? lead.campaign_id : "",
