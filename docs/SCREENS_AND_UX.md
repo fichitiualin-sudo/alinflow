@@ -98,6 +98,8 @@ Felül a teljes klíma- és anyagkészlet bruttó beszerzési értéke, ebből a
 
 A Beállítások Google Naptár blokkja mutatja a kapcsolt fiókot, a várakozó frissítések számát és az esetleges újraengedélyezési igényt. A tulajdonos/admin kapcsolhatja össze vagy szüneteltetheti a kapcsolatot. A fő naptár rövid állapotsort mutat; az automatikusan kezelt időpontoknál a kézi `+ Naptár` helyett szinkronjelzés látszik. A kapcsolás előtti időpontok kézi gombja megmarad. A háttérhibák nem írják felül az időpontmentés sikeréről szóló visszajelzést.
 
+A heti és havi naptárban a felmérés rózsaszín, a karbantartás türkiz kártyát kap világos és sötét témában is. Ezeknél a lezárt vagy adminisztrációra váró állapotot kis szöveges jelvény jelöli, így a munka típusa lezárás után is felismerhető. A szerelési kártyák meglévő státuszszínei megmaradnak.
+
 - az aznapi események kezdési idő szerint rendezve;
 - az eseményen látszódjon a típus: Szerelés, Felmérés vagy Karbantartás;
 - a rövid időpontok valós 1 órás tartományként jelenjenek meg;

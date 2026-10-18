@@ -371,6 +371,24 @@ html[data-theme="light"] .calendar-event-card.bg-white\/10 {
   --calendar-event-accent: #0e7490;
 }
 
+html[data-theme="light"] .calendar-event-card.calendar-event-survey {
+  border-color: rgba(190, 18, 60, 0.35) !important;
+  background: #fff1f2 !important;
+  --calendar-event-text: #881337;
+  --calendar-event-muted: #9f1239;
+  --calendar-event-time: #9f1239;
+  --calendar-event-accent: #be123c;
+}
+
+html[data-theme="light"] .calendar-event-card.calendar-event-maintenance {
+  border-color: rgba(15, 118, 110, 0.4) !important;
+  background: #f0fdfa !important;
+  --calendar-event-text: #134e4a;
+  --calendar-event-muted: #0f766e;
+  --calendar-event-time: #0f766e;
+  --calendar-event-accent: #0f766e;
+}
+
 html[data-theme="light"] .calendar-add-link {
   border-color: rgba(180, 83, 9, 0.35) !important;
   background: #fef3c7 !important;
