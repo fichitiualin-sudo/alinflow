@@ -170,7 +170,7 @@ import { applySharedMaintenanceResults, mergeSharedMaintenancePoints, sharedMain
 import { acceptMaintenanceOrder } from "@/lib/alinflow/shared-maintenance-client";
 import { resolvePrivacyPartner } from "@/lib/alinflow/privacy-partner-client";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
-import { appointmentDurationMinutes, appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType } from "@/lib/alinflow/appointments";
+import { appointmentDurationMinutes, appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType, scheduledInstallationStatus } from "@/lib/alinflow/appointments";
 import { appointmentIdAliases, appointmentsByCustomer, compatibleAppointmentRows, currentAppointmentsByCustomer, isMissingAppointmentsTableError } from "@/lib/alinflow/appointment-records";
 import { canonicalAppointmentIds, canonicalCustomerAppointments } from "@/lib/alinflow/maintenance-selection";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
@@ -3150,6 +3150,7 @@ function HomeContent() {
   }
 
   type PersistCustomerResult = {
+    status?: Customer["status"];
     appointmentId?: string;
     jobId?: string;
     quoteId?: string;
@@ -3252,10 +3253,11 @@ function HomeContent() {
     const existingCustomer = customerRead.data;
 
     let appointmentAddress = customer.address || null;
-    let existingAppointment: { id: string; address: string | null; quote_id?: string | null } | null = null;
+    let existingAppointment: { id: string; address: string | null; quote_id?: string | null;
+      status?: string | null; appointment_type?: string | null; scheduled_date?: string | null; cancelled_at?: string | null } | null = null;
     if (customer.date && customer.activeAppointmentId) {
       const { data, error } = await workspaceQuery(supabase.from("appointments")
-        .select("id,address,quote_id").eq("id", customer.activeAppointmentId).eq("customer_id", customer.id)).maybeSingle();
+        .select("id,address,quote_id,status,appointment_type,scheduled_date,cancelled_at").eq("id", customer.activeAppointmentId).eq("customer_id", customer.id)).maybeSingle();
       if (error) throw error;
       if (!data) throw new Error("A mentendő időpont nem érhető el. Frissítsd az adatokat.");
       existingAppointment = data;
@@ -3267,6 +3269,10 @@ function HomeContent() {
       }
     }
     assertCurrentScope();
+
+    // A restored lead/quote draft must not downgrade an already scheduled work.
+    // Resolve against the stored appointment before any customer or quote write.
+    customer = { ...customer, status: scheduledInstallationStatus(customer, existingAppointment) };
 
     // Work views may derive the city or show another installation's full address.
     // Only explicit customer edits and first creation own these canonical fields.
@@ -3348,7 +3354,7 @@ function HomeContent() {
 
     if (customer.date) {
       const result = await saveAppointmentWithJobMirror(customer, quoteId, appointmentAddress);
-      return { ...result, quoteId };
+      return { ...result, quoteId, status: customer.status };
     }
 
     if (customer.status === "Lemondva") {
@@ -3677,6 +3683,7 @@ function HomeContent() {
       const persisted = await persistCustomerToDb(customerToSave);
       const savedCustomer: Customer = {
         ...customerToSave,
+        status: persisted?.status || customerToSave.status,
         activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId,
         activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
       };
@@ -3730,6 +3737,7 @@ function HomeContent() {
       if (!isCurrent()) return;
       const savedUpdated: Customer = {
         ...updated,
+        status: persisted?.status || updated.status,
         ...(addressChanged ? { workAddress: updated.address, mapLatitude: undefined, mapLongitude: undefined,
           mapGeocodedAt: undefined, mapGeocodeStatus: undefined, mapGeocodeError: undefined } : {}),
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
@@ -3966,10 +3974,11 @@ function HomeContent() {
     setMessage("Ügyfél mentése folyamatban...", "pending");
     try {
       const persisted = await persistCustomerToDb(customerToSave, { persistQuote: true, persistCustomerAddress: true });
-      const saved = { ...customerToSave, activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
+      const saved = { ...customerToSave, status: persisted?.status || customerToSave.status, activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
         activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId };
       setSelected(saved);
       setCustomers((prev) => sortCustomersByCreatedAtDesc([saved, ...prev.filter((customer) => customer.id !== saved.id)]));
+      if (saved.activeAppointmentId && saved.date) updateWorkHistory(saved);
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
       setMessage("Ügyfél mentve ✅");
@@ -4045,10 +4054,11 @@ function HomeContent() {
     setMessage("Ügyféladatok mentése folyamatban...", "pending");
     try {
       const persisted = await persistCustomerToDb(customerToSave, { persistQuote: false, persistCustomerAddress: true });
-      const saved = { ...customerToSave, activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
+      const saved = { ...customerToSave, status: persisted?.status || customerToSave.status, activeQuoteId: persisted?.quoteId || customerToSave.activeQuoteId,
         activeAppointmentId: persisted?.appointmentId || customerToSave.activeAppointmentId };
       setSelected(saved);
       setCustomers((prev) => sortCustomersByCreatedAtDesc([saved, ...prev.filter((customer) => customer.id !== saved.id)]));
+      if (saved.activeAppointmentId && saved.date) updateWorkHistory(saved);
       setMessage("Ügyféladatok mentve ✅");
       clearCustomerDraft(customerToSave.id);
       setDraftNotice(readCustomerDraft());
@@ -4226,6 +4236,7 @@ function HomeContent() {
       const persisted = await persistCustomerToDb(updated);
       const savedUpdated: Customer = {
         ...updated,
+        status: persisted?.status || updated.status,
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
         activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
@@ -4300,6 +4311,7 @@ function HomeContent() {
       const persisted = await persistCustomerToDb(updated);
       const savedUpdated: Customer = {
         ...updated,
+        status: persisted?.status || updated.status,
         activeAppointmentId: persisted?.appointmentId || updated.activeAppointmentId,
         activeQuoteId: persisted?.quoteId || updated.activeQuoteId,
       };
@@ -5187,7 +5199,7 @@ function HomeContent() {
         setQuoteIssuedAt(issuedAt);
         const draft = { ...selected, quoteItems: items };
         const persisted = await persistCustomerToDb(draft);
-        const savedCustomer = { ...draft, activeQuoteId: persisted?.quoteId || draft.activeQuoteId,
+        const savedCustomer = { ...draft, status: persisted?.status || draft.status, activeQuoteId: persisted?.quoteId || draft.activeQuoteId,
           activeAppointmentId: persisted?.appointmentId || draft.activeAppointmentId };
         if (currentWorkspaceId() !== workspaceId) throw new Error("A munkaterület megváltozott. A küldés leállt.");
         if (selectedCustomerIdRef.current === savedCustomer.id) setSelected(savedCustomer);

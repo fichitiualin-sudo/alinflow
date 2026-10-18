@@ -1,4 +1,5 @@
-import type { AppointmentType, QuoteItem } from "./types";
+import { normalizeStatus } from "./constants";
+import type { AppointmentType, Customer, QuoteItem } from "./types";
 
 type AppointmentLike = {
   time?: string;
@@ -231,4 +232,32 @@ export function appointmentWorkLabel(value?: string | null) {
   if (type === "maintenance") return "Klímakarbantartás";
   if (type === "other") return "Egyeztetett munka";
   return "Klímatelepítés";
+}
+
+type SavedAppointmentStatus = {
+  status?: string | null;
+  appointment_type?: string | null;
+  scheduled_date?: string | null;
+  cancelled_at?: string | null;
+};
+
+/** A saved installation keeps its work stage when a lead/quote draft is saved. */
+export function scheduledInstallationStatus(
+  customer: Pick<Customer, "date" | "status" | "appointmentType">,
+  existing?: SavedAppointmentStatus | null,
+): string {
+  const incoming = normalizeStatus(customer.status);
+  if (!customer.date || normalizeAppointmentType(customer.appointmentType) !== "installation"
+      || !["Visszahívandó", "Ajánlat elküldve"].includes(incoming)) return customer.status;
+
+  if (existing?.cancelled_at || existing?.status === "Lemondva") {
+    throw new Error("Az időpontot közben lemondták. Frissítsd az adatokat; az ajánlat mentése nem állíthatja vissza.");
+  }
+  if (existing?.appointment_type && normalizeAppointmentType(existing.appointment_type) !== "installation") {
+    throw new Error("Az időpont típusa közben megváltozott. Frissítsd az adatokat a mentés előtt.");
+  }
+
+  const saved = normalizeStatus(existing?.status || undefined);
+  return ["Időpont foglalva", "Szerelés kész – admin folyamatban", "Lezárva"].includes(saved)
+    ? saved : "Időpont foglalva";
 }

@@ -118,6 +118,8 @@ Az egyéb tétel (anyag, munkadíj, szolgáltatás) és az üres klímasor nem n
 
 Mentéskor az ütközés újra ellenőrzendő. Saját időpont szerkesztésekor csak az adott foglalást zárjuk ki, ugyanazon ügyfél más munkáját nem. Klímamennyiség növelésekor a hosszabb munka nem nyúlhat más foglalásba. Változatlan hosszúságú, régi munka ár- vagy anyagmódosítása nem akad el egy korábban fennálló átfedés miatt.
 
+Mentett szerelési időpont ügyfél- vagy ajánlatmentésekor egy régi „Visszahívandó” / „Ajánlat elküldve” piszkozat nem léptetheti vissza a munka státuszát. A mentés az adatbázisban tárolt foglalt, adminisztrációs vagy lezárt állapotot őrzi meg; korábbi hibás ajánlati státusznál „Időpont foglalva” állapotot ment és jelenít meg. Lemondott időpontot ilyen piszkozatból nem lehet újraaktiválni. Ez a korrekció nem módosítja a felmérések státuszfolyamatát.
+
 Az időpont írásának elsődleges rekordja az `appointments`. A `jobs` csak kompatibilitási tükör, ezért felmérés, szerelés és karbantartás nem írhatja felül egymás `appointments` rekordját.
 
 Szerelési időpontnál:
