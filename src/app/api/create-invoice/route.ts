@@ -82,25 +82,30 @@ function agentKeyEnvName(kind: BillingInvoiceKind) {
 
 function resolveInvoiceIssuer(kind: BillingInvoiceKind, workspaceId: string): InvoiceIssuer {
   const primaryWorkspaceId = readEnv("SZAMLAZZ_WORKSPACE_ID").trim();
-  const splitWorkspaceId = readEnv("SZAMLAZZ_SPLIT_WORKSPACE_ID").trim();
-  if (splitWorkspaceId && splitWorkspaceId === primaryWorkspaceId && workspaceId === splitWorkspaceId) {
+  const splitBindings = ["SZAMLAZZ_SPLIT", "SZAMLAZZ_SPLIT_SECONDARY"].map((envPrefix) => ({
+    envPrefix,
+    workspaceId: readEnv(`${envPrefix}_WORKSPACE_ID`).trim(),
+  }));
+  const matchingBindings = splitBindings.filter((binding) => binding.workspaceId && binding.workspaceId === workspaceId);
+  if (matchingBindings.length + Number(Boolean(primaryWorkspaceId && primaryWorkspaceId === workspaceId)) > 1) {
     throw new ApiError("A munkaterület számlázási beállításai ütköznek. A számlázási kapcsolat ellenőrzése szükséges.", 403);
   }
 
-  if (splitWorkspaceId && workspaceId === splitWorkspaceId) {
+  const splitBinding = matchingBindings[0];
+  if (splitBinding) {
     // A split issuer binding takes precedence over any older combined allowlist entry.
     if (kind === "combined") {
       throw new ApiError("Ezen a munkaterületen a készüléket és a munkadíjat külön kell számlázni.", 403);
     }
     if (kind === "labor" || kind === "maintenance") {
-      const agentKey = readEnv("SZAMLAZZ_SPLIT_LABOR_AGENT_KEY").trim();
-      const vatKey = readEnv("SZAMLAZZ_SPLIT_LABOR_VAT_KEY").trim();
+      const agentKey = readEnv(`${splitBinding.envPrefix}_LABOR_AGENT_KEY`).trim();
+      const vatKey = readEnv(`${splitBinding.envPrefix}_LABOR_VAT_KEY`).trim();
       if (!agentKey) throw new ApiError("Hiányzik a munkaterület saját munkadíj-számlázási kapcsolata.", 500);
       if (!vatKey) throw new ApiError("Hiányzik a munkaterület saját munkadíj-számlázási áfabeállítása.", 500);
       return {
         agentKey,
         vatKey,
-        invoicePrefix: readEnv("SZAMLAZZ_SPLIT_LABOR_INVOICE_PREFIX").trim(),
+        invoicePrefix: readEnv(`${splitBinding.envPrefix}_LABOR_INVOICE_PREFIX`).trim(),
         comment: kind === "maintenance" ? "Légkondicionáló karbantartás számlája." : "Klímaszerelési munkadíj számlája.",
       };
     }
