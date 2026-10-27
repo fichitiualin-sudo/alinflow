@@ -14,7 +14,11 @@ export type SharedMaintenanceInstallation = {
   climates: Array<{ productName: string; quantity: number }>;
   latitude: number | null; longitude: number | null; lastMaintenanceDate: string | null; maintenanceCount: number;
   lastMaintenanceProviderName?: string | null;
+  maintenanceOptOut?: boolean; maintenanceOptOutAt?: string | null;
   targetCustomerId?: string | null; targetInstallationId?: string | null;
+};
+export type SharedMaintenanceOptOut = {
+  maintenanceOptOut: boolean; maintenanceOptOutAt: string | null; targetInstallationId: string | null;
 };
 export type SharedMaintenanceResult = { installationId: string; date: string; providerName: string; status: string };
 
@@ -25,8 +29,10 @@ export function sharedMaintenanceMapPoint(item: SharedMaintenanceInstallation): 
     customName: climate.productName, quantity: climate.quantity, isManual: true, customPrice: 0, customInstallPrice: 0 }));
   const customer: Customer = { ...item.customer, id, source: "Karbantartási megbízás", status: "Lezárva", need: "Karbantartás",
     date: item.installationDate, time: item.installationTime, appointmentType: "installation", quoteItems,
-    maintenanceOrigin: "external", maintenanceSourceName: item.sourceWorkspaceName };
+    maintenanceOrigin: "external", maintenanceSourceName: item.sourceWorkspaceName,
+    maintenanceOptOut: item.maintenanceOptOut === true, maintenanceOptOutAt: item.maintenanceOptOutAt || undefined };
   const baseDate = item.lastMaintenanceDate || item.installationDate;
+  const schedule = maintenanceMapSchedule(baseDate);
   return { appointmentId: id, customer, customerId: id, customerName: item.customer.name,
     climateSummary: item.climates.map(c => `${c.quantity} db ${c.productName}`).join(" · "),
     address: [item.customer.postalCode, item.customer.city, item.customer.address].filter(Boolean).join(" "), city: item.customer.city,
@@ -34,7 +40,8 @@ export function sharedMaintenanceMapPoint(item: SharedMaintenanceInstallation): 
     lastMaintenanceDate: item.lastMaintenanceDate || undefined, maintenanceCount: item.maintenanceCount,
     maintenanceProviderName: item.lastMaintenanceProviderName || undefined,
     maintenanceOrigin: "external", maintenanceSourceName: item.sourceWorkspaceName,
-    ...maintenanceMapSchedule(baseDate), latitude: item.latitude ?? undefined, longitude: item.longitude ?? undefined,
+    ...schedule, status: item.maintenanceOptOut ? "optOut" : schedule.status,
+    latitude: item.latitude ?? undefined, longitude: item.longitude ?? undefined,
     sharedMaintenance: item };
 }
 

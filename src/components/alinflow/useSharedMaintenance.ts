@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listMaintenanceResults, listReceivedMaintenance } from "@/lib/alinflow/shared-maintenance-client";
-import type { SharedMaintenanceInstallation, SharedMaintenanceResult } from "@/lib/alinflow/shared-maintenance";
+import type { SharedMaintenanceInstallation, SharedMaintenanceResult, SharedMaintenanceOptOut } from "@/lib/alinflow/shared-maintenance";
 
 type SharedMaintenanceState = {identity?: string; received: SharedMaintenanceInstallation[]; results: SharedMaintenanceResult[]; error: string; loading: boolean};
 const EMPTY_STATE: SharedMaintenanceState = {received: [], results: [], error: "", loading: false};
@@ -12,6 +12,16 @@ export function useSharedMaintenance(workspaceId?: string, enabled = false, user
   const request = useRef(0);
   const inFlight = useRef<{identity: string; ticket: number} | null>(null);
   const lastRefresh = useRef<{identity: string; at: number} | null>(null);
+  const applyOptOut = useCallback((item: SharedMaintenanceInstallation, saved: SharedMaintenanceOptOut) => {
+    // Discard a refresh started before the save: it may contain the old choice.
+    request.current++;
+    inFlight.current = null;
+    setState(current => current.identity === identity && enabled ? {
+      ...current, loading: false,
+      received: current.received.map(row => row.sourceWorkspaceId === item.sourceWorkspaceId
+        && row.installationId === item.installationId ? {...row, ...saved} : row),
+    } : current);
+  }, [identity, enabled]);
   const refresh = useCallback(async () => {
     if (enabled && identity && inFlight.current?.identity === identity) return;
     const ticket = ++request.current;
@@ -55,5 +65,5 @@ export function useSharedMaintenance(workspaceId?: string, enabled = false, user
       document.removeEventListener("visibilitychange", onWake); window.clearInterval(interval);
     };
   }, [refresh, enabled, identity]);
-  return { ...(identity && state.identity === identity && enabled ? state : EMPTY_STATE), refresh };
+  return { ...(identity && state.identity === identity && enabled ? state : EMPTY_STATE), refresh, applyOptOut };
 }

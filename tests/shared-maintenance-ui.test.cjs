@@ -255,6 +255,20 @@ test('hidden tabs skip background polling and resume a single check on visible f
 });
 
 
+test('a confirmed opt-out survives an older in-flight refresh and remains reversible',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0);const initial=hook.render();
+  hook.advance(15000);hook.focus();assert.equal(hook.render().loading,true);
+  initial.applyOptOut(item,{maintenanceOptOut:true,maintenanceOptOutAt:'2026-10-27T07:00:00Z',targetInstallationId:null});
+  assert.equal(hook.render().received[0].maintenanceOptOut,true);
+  await hook.complete(1,[item]);
+  const saved=hook.render();assert.equal(saved.received[0].maintenanceOptOut,true);assert.equal(saved.loading,false);
+  assert.equal(shared.sharedMaintenanceMapPoint(saved.received[0]).status,'optOut');
+  saved.applyOptOut(item,{maintenanceOptOut:false,maintenanceOptOutAt:null,targetInstallationId:null});
+  assert.equal(hook.render().received[0].maintenanceOptOut,false);
+  hook.advance(15000);hook.focus();await hook.complete(2,[{...item,maintenanceOptOut:false,maintenanceOptOutAt:null}]);
+  assert.equal(hook.render().received[0].maintenanceOptOut,false);
+});
+
 test('received history credits the actual earlier provider and schedules from its completed service',()=>{
   const history={...item,lastMaintenanceDate:'2026-10-01',maintenanceCount:3,lastMaintenanceProviderName:'Previous independent provider'};
   const point=shared.sharedMaintenanceMapPoint(history);

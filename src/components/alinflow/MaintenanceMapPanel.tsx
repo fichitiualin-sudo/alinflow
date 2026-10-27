@@ -33,6 +33,7 @@ type MaintenanceMapPanelProps = {
   onOpenShared?: (item: SharedMaintenanceInstallation) => void;
   onGeocodeMissing: (points: MaintenanceMapPoint[]) => void;
   onToggleMaintenanceOptOut: (point: MaintenanceMapPoint, checked: boolean) => void;
+  maintenanceOptOutBusyIds?: string[];
   onEditMaintenanceOrigin?: (point: MaintenanceMapPoint) => void;
 };
 
@@ -65,6 +66,7 @@ export function MaintenanceMapPanel({
   onOpenShared,
   onGeocodeMissing,
   onToggleMaintenanceOptOut,
+  maintenanceOptOutBusyIds = [],
   onEditMaintenanceOrigin,
 }: MaintenanceMapPanelProps) {
   const searchId = useId();
@@ -252,10 +254,11 @@ export function MaintenanceMapPanel({
               {point.maintenanceProviderName ? <p>Karbantartó: {point.maintenanceProviderName}</p> : null}
               {!hasMaintenanceMapCoordinates(point) ? <p className="font-black text-amber-100">Nincs használható koordináta{point.geocodeError ? `: ${point.geocodeError}` : "."}</p> : null}
             </div>
-            {!point.sharedMaintenance ? <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-black text-slate-100">
-              <input type="checkbox" className="h-5 w-5 shrink-0 accent-zinc-400" checked={point.status === "optOut"} onChange={(event) => onToggleMaintenanceOptOut(point, event.target.checked)} />
+            <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-black text-slate-100">
+              <input type="checkbox" className="h-5 w-5 shrink-0 accent-zinc-400 disabled:cursor-wait disabled:opacity-50" checked={point.status === "optOut"} disabled={maintenanceOptOutBusyIds.includes(point.appointmentId)} onChange={(event) => onToggleMaintenanceOptOut(point, event.target.checked)} />
               <span>Nem kéri a karbantartást</span>
-            </label> : <p className="mt-3 text-sm text-violet-200">Egyeztetés {point.maintenanceSourceName} nevében</p>}
+            </label>
+            {point.sharedMaintenance ? <p className="mt-3 text-sm text-violet-200">Egyeztetés {point.maintenanceSourceName} nevében</p> : null}
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => point.sharedMaintenance ? onOpenShared?.(point.sharedMaintenance) : onOpenCustomer(point.customer)} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">{point.sharedMaintenance ? "Egyeztetés" : "Ügyfél"}</button>
               {routeTarget(point) ? <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(routeTarget(point))}`} target="_blank" rel="noreferrer" className="rounded-2xl bg-emerald-400 px-4 py-3 text-center text-sm font-black text-slate-950">Térkép</a> : <span className="rounded-2xl bg-slate-500/20 px-4 py-3 text-center text-sm font-black text-slate-400">Nincs cím</span>}
