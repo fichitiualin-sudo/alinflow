@@ -167,7 +167,7 @@ import { parsePrivacyNoticeSnapshot, privacyNoticeMatchesWorkReportSignature, ty
 import { useSharedMaintenance } from "@/components/alinflow/useSharedMaintenance";
 import { SharedMaintenanceDialog } from "@/components/alinflow/SharedMaintenanceDialog";
 import { applySharedMaintenanceResults, mergeSharedMaintenancePoints, sharedMaintenanceMapPoint, type SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
-import { acceptMaintenanceOrder } from "@/lib/alinflow/shared-maintenance-client";
+import { acceptMaintenanceOrder, setSharedMaintenanceOptOut } from "@/lib/alinflow/shared-maintenance-client";
 import { resolvePrivacyPartner } from "@/lib/alinflow/privacy-partner-client";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDurationMinutes, appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType, scheduledInstallationStatus } from "@/lib/alinflow/appointments";
@@ -1486,7 +1486,31 @@ function HomeContent() {
   }
 
   async function toggleMaintenanceOptOut(point: MaintenanceMapPoint, checked: boolean) {
-    await toggleAppointmentMaintenanceOptOut(point.appointmentId, checked);
+    if (!point.sharedMaintenance) {
+      await toggleAppointmentMaintenanceOptOut(point.appointmentId, checked);
+      return;
+    }
+    const workspaceId = currentWorkspaceId();
+    const userId = authUserIdRef.current;
+    const generation = authLoadGenerationRef.current;
+    const isCurrent = () => currentWorkspaceId() === workspaceId && authUserIdRef.current === userId
+      && authLoadGenerationRef.current === generation;
+    const actionKey = `maintenance-option:${point.appointmentId}`;
+    if (!workspaceId || !userId || !beginAction(actionKey)) return;
+    setMessage("Karbantartási jelölés mentése...", "pending");
+    try {
+      const saved = await setSharedMaintenanceOptOut(point.sharedMaintenance, checked);
+      if (!isCurrent()) return;
+      sharedMaintenance.applyOptOut(point.sharedMaintenance, saved);
+      if (saved.targetInstallationId) patchAppointmentMapData(saved.targetInstallationId, {
+        maintenanceOptOut: saved.maintenanceOptOut, maintenanceOptOutAt: saved.maintenanceOptOutAt || undefined,
+      });
+      setMessage(checked ? "Mentve: az ügyfél nem kéri a karbantartást." : "Mentve: a klíma újra bekerült a karbantartási figyelésbe.");
+    } catch (error: any) {
+      if (isCurrent()) setMessage(`Karbantartási jelölés hiba: ${error.message}`);
+    } finally {
+      endAction(actionKey);
+    }
   }
 
   async function saveMaintenanceOrigin(point: MaintenanceMapPoint, origin: MaintenanceOrigin, sourceName: string, expectedWorkspaceId: string) {
@@ -5016,6 +5040,7 @@ function HomeContent() {
           onOpenShared={(item) => {if(activeWorkspace?.id && user?.id) setSharedMaintenanceSelection({workspaceId: activeWorkspace.id, userId: user.id, item});}}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
           onToggleMaintenanceOptOut={toggleMaintenanceOptOut}
+          maintenanceOptOutBusyIds={pendingActions.filter(key => key.startsWith("maintenance-option:")).map(key => key.slice("maintenance-option:".length))}
           onEditMaintenanceOrigin={(point) => {
             const workspaceId = currentWorkspaceId();
             if (workspaceId) setMaintenanceOriginEdit({ point, workspaceId });
