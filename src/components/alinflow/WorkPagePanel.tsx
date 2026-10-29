@@ -36,6 +36,7 @@ import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, is
 import { billingAmountsForAppointment, billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { normalizeStatus } from "@/lib/alinflow/constants";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
+import type { SharedMaintenanceResult } from "@/lib/alinflow/shared-maintenance";
 
 type MaterialItem = {
   name: string;
@@ -44,7 +45,7 @@ type MaterialItem = {
   isExtra?: boolean;
 };
 
-type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; appointmentId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string; relatedClimateSummary?: string; relatedClimateAddress?: string };
+type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; appointmentId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string; relatedClimateSummary?: string; relatedClimateAddress?: string; providerName?: string; sourceInstallationId?: string };
 type WorkActionDates = {
   appointmentEmail?: string;
   workReport?: string;
@@ -110,23 +111,42 @@ function maintenanceWorksForInstallation(installation: Customer, maintenanceWork
     .sort(compareWorkByDateDesc);
 }
 
+// Partner results are display-only summaries, never local appointments or documents.
+function sharedMaintenanceHistoryRows(customerId: string, installations: Customer[], results: SharedMaintenanceResult[]): DocumentRow[] {
+  const ownInstallations = new Map(installations.filter(work => work.id === customerId && isInstalledClimateWork(work))
+    .map(work => [work.activeAppointmentId, work]));
+  return results.flatMap(result => {
+    const installation = ownInstallations.get(result.installationId);
+    if (!installation || result.status !== "Lezárva" || !result.date) return [];
+    return [{ action: "SharedMaintenance", title: "Partner által végzett karbantartás", status: result.status,
+      reportDate: result.date, reportDateLabel: result.date.replaceAll("-", "."), providerName: result.providerName,
+      sourceInstallationId: result.installationId, relatedClimateSummary: climateSummary(installation.quoteItems),
+      relatedClimateAddress: workAddressLabel(installation) }];
+  }).sort((a, b) => String(b.reportDate).localeCompare(String(a.reportDate)));
+}
+
 function ClimateMaintenanceHistory({
   works,
+  sharedRows = [],
   addressLabel,
   onOpenWorkVersion,
 }: {
   works: Customer[];
+  sharedRows?: DocumentRow[];
   addressLabel?: string;
   onOpenWorkVersion: (customer: Customer) => void;
 }) {
-  if (!works.length) return null;
+  if (!works.length && !sharedRows.length) return null;
+  const entries = [...works.map(work => ({ work, row: undefined as DocumentRow | undefined, date: work.date || "" })),
+    ...sharedRows.map(row => ({ work: undefined as Customer | undefined, row, date: row.reportDate || "" }))]
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <div className="mt-3 rounded-2xl border border-emerald-300/15 bg-emerald-400/10 p-3">
       <p className="text-xs font-black uppercase tracking-wide text-emerald-200">Karbantartások ennél a klímánál</p>
       {addressLabel ? <p className="mt-1 text-sm font-bold text-slate-300">Cím: {addressLabel}</p> : null}
       <div className="mt-2 space-y-2">
-        {works.map((work) => (
+        {entries.map(({ work, row }, index) => work ? (
           <button
             key={workIdentity(work)}
             type="button"
@@ -136,6 +156,12 @@ function ClimateMaintenanceHistory({
             <span>{workDateTimeLabel(work)}</span>
             <span className="ml-2 text-slate-400">· {work.status || "Folyamatban"}</span>
           </button>
+        ) : (
+          <div key={`shared-${index}`} className="rounded-xl bg-white/10 px-3 py-2 text-sm font-bold text-slate-100">
+            <span>{row!.reportDateLabel}</span>
+            <span className="ml-2 text-slate-400">· {row!.status}</span>
+            <p className="mt-1 text-slate-300">Karbantartó: {row!.providerName || "Karbantartó partner"}</p>
+          </div>
         ))}
       </div>
     </div>
@@ -145,11 +171,13 @@ function ClimateMaintenanceHistory({
 function InstalledClimateMaintenanceCard({
   installation,
   works,
+  sharedRows = [],
   onOpenWorkVersion,
   onToggleMaintenanceOptOut,
 }: {
   installation: Customer;
   works: Customer[];
+  sharedRows?: DocumentRow[];
   onOpenWorkVersion: (customer: Customer) => void;
   onToggleMaintenanceOptOut: (customer: Customer, checked: boolean) => void;
 }) {
@@ -174,8 +202,8 @@ function InstalledClimateMaintenanceCard({
           <span>Nem kéri</span>
         </label>
       </div>
-      {works.length ? (
-        <ClimateMaintenanceHistory works={works} onOpenWorkVersion={onOpenWorkVersion} />
+      {works.length || sharedRows.length ? (
+        <ClimateMaintenanceHistory works={works} sharedRows={sharedRows} onOpenWorkVersion={onOpenWorkVersion} />
       ) : (
         <p className="mt-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-400">Még nincs rögzített karbantartás ennél a klímánál.</p>
       )}
@@ -207,6 +235,7 @@ type WorkPagePanelProps = {
   actionDates: WorkActionDates;
   documentRows: DocumentRow[];
   maintenanceRows: DocumentRow[];
+  sharedMaintenanceResults?: SharedMaintenanceResult[];
   workHistory: Customer[];
   workspaceSettings: WorkspaceSettings;
   onBack: () => void;
@@ -276,6 +305,7 @@ export function WorkPagePanel({
   actionDates,
   documentRows,
   maintenanceRows,
+  sharedMaintenanceResults = [],
   workHistory,
   workspaceSettings,
   onBack,
@@ -371,6 +401,7 @@ export function WorkPagePanel({
     .filter((work) => work.activeAppointmentId !== selected.activeAppointmentId)
     .filter((work) => !selected.date || !work.date || work.date !== selected.date)
     .sort(compareWorkByDateDesc);
+  const partnerMaintenanceRows = sharedMaintenanceHistoryRows(selected.id, installationWorksForMaintenance, sharedMaintenanceResults);
   const selectedMaintenanceInstallations = isMaintenance ? selected.maintenanceInstallations || [] : [];
   const maintenanceClimateItems = climateQuoteItems(quoteItems);
   const hasMaintenanceClimateDetails = selectedMaintenanceInstallations.length > 0 || maintenanceClimateItems.length > 0;
@@ -459,6 +490,7 @@ export function WorkPagePanel({
                     key={workIdentity(installation)}
                     installation={installation}
                     works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
+                    sharedRows={partnerMaintenanceRows.filter(row => row.sourceInstallationId === installation.activeAppointmentId)}
                     onOpenWorkVersion={onOpenWorkVersion}
                     onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
                   />
@@ -467,7 +499,8 @@ export function WorkPagePanel({
             ) : null}
             <MaintenanceHistory
               selected={selected}
-              rows={maintenanceRows}
+              rows={partnerMaintenanceRows.length ? [...maintenanceRows, ...partnerMaintenanceRows]
+                .sort((a, b) => String(b.reportDate || "").localeCompare(String(a.reportDate || ""))) : maintenanceRows}
               canStartMaintenance={canStartMaintenance}
               quoteEmailBusy={quoteEmailBusy}
               appointmentEmailBusy={appointmentEmailBusy}
@@ -1510,20 +1543,22 @@ function MaintenanceHistory({
 
       {reportRows.length ? (
         <div className="mt-4 divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60">
-          {reportRows.map((row) => {
+          {reportRows.map((row, index) => {
             const label = row.reportDateLabel || row.reportDate || row.title || "Dátum nélkül";
             const isCancelled = row.action === "MaintenanceCancelled" || row.status.includes("Lemond");
             const hasReport = row.action === "MaintenanceReport" && Boolean(row.reportId);
-            const customerForRow = rowCustomer(row);
+            const isShared = row.action === "SharedMaintenance";
+            const customerForRow = isShared ? selected : rowCustomer(row);
             return (
-              <div key={`${row.action}-${row.reportId || row.reportDateLabel || row.reportDate || row.title}`} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div key={isShared ? `shared-${index}` : `${row.action}-${row.reportId || row.reportDateLabel || row.reportDate || row.title}`} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-black text-slate-100">{label}</p>
+                  {isShared ? <p className="mt-1 text-sm font-bold text-slate-300">Karbantartó: {row.providerName || "Karbantartó partner"}</p> : null}
                   {row.relatedClimateSummary ? <p className="mt-1 text-xs font-bold text-emerald-200">Klíma: {row.relatedClimateSummary}</p> : null}
                   {row.relatedClimateAddress ? <p className="mt-1 text-xs font-bold text-slate-300">Cím: {row.relatedClimateAddress}</p> : null}
                   {isCancelled ? <p className="mt-1 text-xs font-black text-red-200">Lemondva</p> : row.status ? <p className="mt-1 text-xs font-bold text-slate-400">{row.status}</p> : null}
                 </div>
-                {isCancelled ? null : hasReport ? (
+                {isCancelled || isShared ? null : hasReport ? (
                   <div className="flex flex-wrap gap-2">
                   <button
                     type="button"

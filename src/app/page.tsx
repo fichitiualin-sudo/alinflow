@@ -898,7 +898,7 @@ function HomeContent() {
   const sortedCustomers = useMemo(() => sortCustomersByCreatedAtDesc(customers), [customers]);
   const allWorkCustomers = useMemo(() => workCustomersForScheduling(sortedCustomers, workHistoryByCustomer), [sortedCustomers, workHistoryByCustomer]);
   const mapStatusDay = todayIso();
-  const sharedMaintenance = useSharedMaintenance(activeWorkspace?.id, view === "maintenanceMap" && mapMode === "maintenance", user?.id);
+  const sharedMaintenance = useSharedMaintenance(activeWorkspace?.id, (view === "maintenanceMap" && mapMode === "maintenance") || view === "work", user?.id);
   useEffect(() => {
     if (sharedMaintenance.loading) return;
     setSharedMaintenanceSelection(current => {
@@ -7286,6 +7286,7 @@ function HomeContent() {
         actionDates={workActionDatesFor(selected)}
         documentRows={documentRowsFor(selected)}
         maintenanceRows={maintenanceDocumentRowsFor(selected)}
+        sharedMaintenanceResults={sharedMaintenance.results}
         workHistory={workHistoryByCustomer[selected.id] || []}
         workspaceSettings={workspaceSettings}
         onBack={()=>goBack()}
