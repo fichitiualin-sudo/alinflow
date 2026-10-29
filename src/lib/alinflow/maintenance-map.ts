@@ -3,12 +3,15 @@ import { appointmentSummaryLabel, appointmentTimeRangeLabel, isInstallationAppoi
 import { displayAddress } from "./format";
 import { cleanQuoteItems, climateQuoteItems, climateSummary } from "./products";
 import type { SharedMaintenanceInstallation } from "./shared-maintenance";
+import type { MaintenanceContactPreference } from "./maintenance-contact-choice";
 
-export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "optOut" | "unknown";
+export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "optOut" | "originalInstaller" | "unknown";
 export type MaintenanceMapVisibility = { own: boolean; external: boolean };
 
 export type MaintenanceMapPoint = {
   sharedMaintenance?: SharedMaintenanceInstallation;
+  maintenanceContactPreference?: MaintenanceContactPreference;
+  originalInstallerAvailable?: boolean;
   maintenanceProviderName?: string;
   appointmentId: string;
   customer: Customer;
@@ -65,7 +68,10 @@ export function filterMaintenanceMapPoints(points: readonly MaintenanceMapPoint[
   const query = normalizeSearch(search);
   return points.filter((point) => {
     const origin = point.maintenanceOrigin === "external" ? "external" : "own";
-    if (!visibility[origin] || (status !== "all" && point.status !== status)) return false;
+    const matchesStatus = status === "all" || (status === "originalInstaller"
+      ? point.status === "originalInstaller" || point.maintenanceContactPreference?.choice === "original_installer"
+      : point.status === status);
+    if (!visibility[origin] || !matchesStatus) return false;
     return !query || normalizeSearch([
       point.customerName, point.climateSummary, point.address, point.city,
       origin === "external" ? point.maintenanceSourceName : "",
@@ -95,7 +101,7 @@ export function hasMaintenanceMapCoordinates(
 export function groupMaintenanceMapPoints(points: readonly MaintenanceMapPoint[]): MaintenanceMapPointGroup[] {
   const groups = new Map<string, MaintenanceMapPointGroup>();
   const statusPriority: Record<MaintenanceMapStatus, number> = {
-    overdue: 0, dueSoon: 1, unknown: 2, ok: 3, optOut: 4,
+    overdue: 0, dueSoon: 1, unknown: 2, ok: 3, originalInstaller: 4, optOut: 5,
   };
 
   for (const point of points) {
@@ -187,6 +193,7 @@ export function formatMapDate(value?: string) {
 }
 
 export function maintenanceMapStatusLabel(status: MaintenanceMapStatus) {
+  if (status === "originalInstaller") return "Az eredeti szerelőtől kéri";
   if (status === "optOut") return "Nem kéri";
   if (status === "overdue") return "Esedékes / elmaradt";
   if (status === "dueSoon") return "Hamarosan esedékes";
@@ -195,6 +202,7 @@ export function maintenanceMapStatusLabel(status: MaintenanceMapStatus) {
 }
 
 export function maintenanceMapStatusColor(status: MaintenanceMapStatus) {
+  if (status === "originalInstaller") return "#8b5cf6";
   if (status === "optOut") return "#6b7280";
   if (status === "overdue") return "#ef4444";
   if (status === "dueSoon") return "#f59e0b";
@@ -203,6 +211,7 @@ export function maintenanceMapStatusColor(status: MaintenanceMapStatus) {
 }
 
 export function maintenanceMapStatusClass(status: MaintenanceMapStatus) {
+  if (status === "originalInstaller") return "border-violet-300/30 bg-violet-400/15 text-violet-200";
   if (status === "optOut") return "border-zinc-300/30 bg-zinc-500/25 text-zinc-100";
   if (status === "overdue") return "border-red-300/30 bg-red-500/20 text-red-100";
   if (status === "dueSoon") return "border-amber-300/30 bg-amber-300/20 text-amber-100";
@@ -268,7 +277,7 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
     })
     .filter((point): point is MaintenanceMapPoint => Boolean(point))
     .sort((a, b) => {
-      const statusPriority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, ok: 2, optOut: 3, unknown: 4 };
+      const statusPriority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, ok: 2, originalInstaller: 3, optOut: 4, unknown: 5 };
       const priorityDiff = statusPriority[a.status] - statusPriority[b.status];
       if (priorityDiff !== 0) return priorityDiff;
       return String(a.nextMaintenanceDue || "9999-99-99").localeCompare(String(b.nextMaintenanceDue || "9999-99-99"));

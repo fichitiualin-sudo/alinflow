@@ -59,7 +59,7 @@ export function mergeSharedMaintenancePoints(ownPoints: MaintenanceMapPoint[], r
     const sourceLast = source.lastMaintenanceDate || "";
     const lastMaintenanceDate = [ownLast, sourceLast].sort().at(-1) || undefined;
     const schedule = maintenanceMapSchedule(lastMaintenanceDate || point.installationDate || source.installationDate);
-    return { ...point, lastMaintenanceDate, maintenanceCount: point.maintenanceCount + source.maintenanceCount,
+    return { ...point, originalInstallerAvailable: true, lastMaintenanceDate, maintenanceCount: point.maintenanceCount + source.maintenanceCount,
       ...schedule, status: point.status === "optOut" ? point.status : schedule.status,
       maintenanceProviderName: sourceLast > ownLast ? source.lastMaintenanceProviderName || source.sourceWorkspaceName : point.maintenanceProviderName };
   });

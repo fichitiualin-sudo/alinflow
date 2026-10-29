@@ -167,7 +167,8 @@ import { parsePrivacyNoticeSnapshot, privacyNoticeMatchesWorkReportSignature, ty
 import { useSharedMaintenance } from "@/components/alinflow/useSharedMaintenance";
 import { SharedMaintenanceDialog } from "@/components/alinflow/SharedMaintenanceDialog";
 import { applySharedMaintenanceResults, mergeSharedMaintenancePoints, sharedMaintenanceMapPoint, type SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
-import { acceptMaintenanceOrder, setSharedMaintenanceOptOut } from "@/lib/alinflow/shared-maintenance-client";
+import { acceptMaintenanceOrder, setSharedMaintenanceOptOut, setMaintenanceContactPreference } from "@/lib/alinflow/shared-maintenance-client";
+import { applyMaintenanceContactPreferences, type MaintenanceContactChoice } from "@/lib/alinflow/maintenance-contact-choice";
 import { resolvePrivacyPartner } from "@/lib/alinflow/privacy-partner-client";
 import { buildLeadImportPreview } from "@/lib/alinflow/lead-import";
 import { appointmentDurationMinutes, appointmentDocumentTitle, appointmentSlotOptions, appointmentSummaryLabel, appointmentTimeRangeLabel, appointmentTypeLabel, firstAppointmentTime, isInstallationAppointment, normalizeAppointmentTimeInput, normalizeAppointmentType, scheduledInstallationStatus } from "@/lib/alinflow/appointments";
@@ -909,8 +910,8 @@ function HomeContent() {
   }, [activeWorkspace?.id, user?.id, sharedMaintenance.loading, sharedMaintenance.received]);
   const maintenanceMapPoints = useMemo(() => {
     const own = applySharedMaintenanceResults(buildMaintenanceMapPoints(allWorkCustomers), sharedMaintenance.results);
-    return mergeSharedMaintenancePoints(own, sharedMaintenance.received);
-  }, [allWorkCustomers, sharedMaintenance.received, sharedMaintenance.results, mapStatusDay]);
+    return applyMaintenanceContactPreferences(mergeSharedMaintenancePoints(own, sharedMaintenance.received), sharedMaintenance.preferences);
+  }, [allWorkCustomers, sharedMaintenance.received, sharedMaintenance.results, sharedMaintenance.preferences, mapStatusDay]);
   const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
@@ -1452,6 +1453,52 @@ function HomeContent() {
       if (isCurrent()) setMaintenanceMapGeocodingBusy(false);
       endAction(actionKey);
     }
+  }
+
+  async function saveMaintenancePreference(installationId: string, choice: MaintenanceContactChoice, shared?: SharedMaintenanceInstallation) {
+    const workspaceId = currentWorkspaceId();
+    const userId = authUserIdRef.current;
+    const generation = authLoadGenerationRef.current;
+    const isCurrent = () => currentWorkspaceId() === workspaceId && authUserIdRef.current === userId
+      && authLoadGenerationRef.current === generation;
+    if (!installationId) { setMessage("A karbantartási jelöléshez előbb mentsd az időpontot."); return; }
+    if (sharedMaintenance.loading || sharedMaintenance.error) {
+      setMessage(sharedMaintenance.error || "A karbantartási jelölések még töltődnek. Próbáld újra egy pillanat múlva.", "warning");
+      if (sharedMaintenance.error) void sharedMaintenance.refresh();
+      return;
+    }
+    const displayId = shared ? `shared:${shared.grantId}:${shared.installationId}` : installationId;
+    const actionKey = `maintenance-option:${displayId}`;
+    if (!workspaceId || !userId || !beginAction(actionKey)) return;
+    const source = shared || sharedMaintenance.received.find(item => item.targetInstallationId === installationId);
+    const previous = sharedMaintenance.preferences.find(row => source
+      ? row.sourceWorkspaceId === source.sourceWorkspaceId && row.sourceInstallationId === source.installationId && !row.isSource
+      : row.installationId === installationId);
+    setMessage("Karbantartási jelölés mentése...", "pending");
+    try {
+      const saved = await setMaintenanceContactPreference(workspaceId, installationId, choice, previous?.updatedAt || null, shared?.grantId);
+      if (!isCurrent()) return;
+      sharedMaintenance.applyPreference(saved);
+      if (saved.isSource && choice !== "declined") patchAppointmentMapData(saved.installationId, {
+        maintenanceOptOut: false, maintenanceOptOutAt: undefined,
+      });
+      setMessage(choice === "original_installer" ? "Mentve: az ügyfél az eredeti szerelőtől kéri a karbantartást."
+        : choice === "declined" ? "Mentve: az ügyfél nem kéri a karbantartást."
+        : "Mentve: a klíma újra bekerült a karbantartási figyelésbe.");
+    } catch (error: any) {
+      if (isCurrent()) {
+        setMessage(`Karbantartási jelölés hiba: ${error.message}`);
+        void sharedMaintenance.refresh();
+      }
+    } finally { endAction(actionKey); }
+  }
+
+  async function changeMapMaintenancePreference(point: MaintenanceMapPoint, choice: MaintenanceContactChoice) {
+    await saveMaintenancePreference(point.sharedMaintenance?.installationId || point.appointmentId, choice, point.sharedMaintenance);
+  }
+
+  async function changeCustomerMaintenancePreference(customer: Customer, choice: MaintenanceContactChoice) {
+    await saveMaintenancePreference(customer.activeAppointmentId || "", choice);
   }
 
   async function toggleAppointmentMaintenanceOptOut(appointmentId: string, checked: boolean) {
@@ -5040,6 +5087,7 @@ function HomeContent() {
           onOpenShared={(item) => {if(activeWorkspace?.id && user?.id) setSharedMaintenanceSelection({workspaceId: activeWorkspace.id, userId: user.id, item});}}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
           onToggleMaintenanceOptOut={toggleMaintenanceOptOut}
+          onChangeMaintenancePreference={changeMapMaintenancePreference}
           maintenanceOptOutBusyIds={pendingActions.filter(key => key.startsWith("maintenance-option:")).map(key => key.slice("maintenance-option:".length))}
           onEditMaintenanceOrigin={(point) => {
             const workspaceId = currentWorkspaceId();
@@ -7287,6 +7335,10 @@ function HomeContent() {
         documentRows={documentRowsFor(selected)}
         maintenanceRows={maintenanceDocumentRowsFor(selected)}
         sharedMaintenanceResults={sharedMaintenance.results}
+        maintenanceContactPreferences={sharedMaintenance.preferences}
+        sharedMaintenanceInstallations={sharedMaintenance.received}
+        onChangeMaintenancePreference={changeCustomerMaintenancePreference}
+        maintenancePreferenceBusyIds={pendingActions.filter(key => key.startsWith("maintenance-option:")).map(key => key.slice("maintenance-option:".length))}
         workHistory={workHistoryByCustomer[selected.id] || []}
         workspaceSettings={workspaceSettings}
         onBack={()=>goBack()}

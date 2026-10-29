@@ -36,7 +36,9 @@ import { appointmentSummaryLabel, appointmentTypeLabel, firstAppointmentTime, is
 import { billingAmountsForAppointment, billingDueDateIso, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { normalizeStatus } from "@/lib/alinflow/constants";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
-import type { SharedMaintenanceResult } from "@/lib/alinflow/shared-maintenance";
+import type { SharedMaintenanceInstallation, SharedMaintenanceResult } from "@/lib/alinflow/shared-maintenance";
+import type { MaintenanceContactChoice, MaintenanceContactPreference } from "@/lib/alinflow/maintenance-contact-choice";
+import { MaintenanceChoiceControls } from "./MaintenanceChoiceControls";
 
 type MaterialItem = {
   name: string;
@@ -125,6 +127,15 @@ function sharedMaintenanceHistoryRows(customerId: string, installations: Custome
   }).sort((a, b) => String(b.reportDate).localeCompare(String(a.reportDate)));
 }
 
+function maintenancePreferenceForInstallation(installationId: string | undefined, preferences: MaintenanceContactPreference[], received: SharedMaintenanceInstallation[]) {
+  if (!installationId) return undefined;
+  const direct = preferences.find(preference => preference.installationId === installationId);
+  if (direct) return direct;
+  const source = received.find(item => item.targetInstallationId === installationId);
+  return source ? preferences.find(preference => !preference.isSource
+    && preference.sourceWorkspaceId === source.sourceWorkspaceId && preference.sourceInstallationId === source.installationId) : undefined;
+}
+
 function ClimateMaintenanceHistory({
   works,
   sharedRows = [],
@@ -174,15 +185,23 @@ function InstalledClimateMaintenanceCard({
   sharedRows = [],
   onOpenWorkVersion,
   onToggleMaintenanceOptOut,
+  maintenanceContactPreference,
+  originalInstallerAvailable = false,
+  maintenancePreferenceBusy = false,
+  onChangeMaintenancePreference,
 }: {
   installation: Customer;
   works: Customer[];
   sharedRows?: DocumentRow[];
   onOpenWorkVersion: (customer: Customer) => void;
   onToggleMaintenanceOptOut: (customer: Customer, checked: boolean) => void;
+  maintenanceContactPreference?: MaintenanceContactPreference;
+  originalInstallerAvailable?: boolean;
+  maintenancePreferenceBusy?: boolean;
+  onChangeMaintenancePreference?: (customer: Customer, choice: MaintenanceContactChoice) => void;
 }) {
   const addressLabel = workAddressLabel(installation);
-  const optedOut = Boolean(installation.maintenanceOptOut);
+  const optedOut = maintenanceContactPreference ? maintenanceContactPreference.choice === "declined" : Boolean(installation.maintenanceOptOut);
 
   return (
     <article className={`rounded-3xl border p-4 ${optedOut ? "border-zinc-300/25 bg-zinc-500/15" : "border-emerald-300/15 bg-emerald-400/10"}`}>
@@ -192,7 +211,7 @@ function InstalledClimateMaintenanceCard({
           {addressLabel ? <p className="mt-1 text-sm font-bold text-slate-300">Cím: {addressLabel}</p> : null}
           <p className="mt-1 text-sm font-bold text-slate-400">Telepítés: {workDateTimeLabel(installation)}</p>
         </div>
-        <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-zinc-300/20 bg-white/5 px-3 py-2 text-sm font-black text-slate-100">
+        {!onChangeMaintenancePreference ? <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-zinc-300/20 bg-white/5 px-3 py-2 text-sm font-black text-slate-100">
           <input
             type="checkbox"
             className="h-5 w-5 accent-zinc-400"
@@ -200,8 +219,15 @@ function InstalledClimateMaintenanceCard({
             onChange={(event) => onToggleMaintenanceOptOut(installation, event.target.checked)}
           />
           <span>Nem kéri</span>
-        </label>
+        </label> : null}
       </div>
+      {onChangeMaintenancePreference ? <MaintenanceChoiceControls
+        choice={maintenanceContactPreference?.choice}
+        legacyOptOut={Boolean(installation.maintenanceOptOut)}
+        allowOriginalInstaller={originalInstallerAvailable}
+        busy={maintenancePreferenceBusy}
+        onChange={(choice) => onChangeMaintenancePreference(installation, choice)}
+      /> : null}
       {works.length || sharedRows.length ? (
         <ClimateMaintenanceHistory works={works} sharedRows={sharedRows} onOpenWorkVersion={onOpenWorkVersion} />
       ) : (
@@ -236,6 +262,10 @@ type WorkPagePanelProps = {
   documentRows: DocumentRow[];
   maintenanceRows: DocumentRow[];
   sharedMaintenanceResults?: SharedMaintenanceResult[];
+  maintenanceContactPreferences?: MaintenanceContactPreference[];
+  sharedMaintenanceInstallations?: SharedMaintenanceInstallation[];
+  maintenancePreferenceBusyIds?: string[];
+  onChangeMaintenancePreference?: (customer: Customer, choice: MaintenanceContactChoice) => void;
   workHistory: Customer[];
   workspaceSettings: WorkspaceSettings;
   onBack: () => void;
@@ -306,6 +336,10 @@ export function WorkPagePanel({
   documentRows,
   maintenanceRows,
   sharedMaintenanceResults = [],
+  maintenanceContactPreferences = [],
+  sharedMaintenanceInstallations = [],
+  maintenancePreferenceBusyIds = [],
+  onChangeMaintenancePreference,
   workHistory,
   workspaceSettings,
   onBack,
@@ -493,6 +527,10 @@ export function WorkPagePanel({
                     sharedRows={partnerMaintenanceRows.filter(row => row.sourceInstallationId === installation.activeAppointmentId)}
                     onOpenWorkVersion={onOpenWorkVersion}
                     onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
+                    maintenanceContactPreference={maintenancePreferenceForInstallation(installation.activeAppointmentId, maintenanceContactPreferences, sharedMaintenanceInstallations)}
+                    originalInstallerAvailable={installation.maintenanceOrigin !== "external" || sharedMaintenanceInstallations.some(item => item.targetInstallationId === installation.activeAppointmentId)}
+                    maintenancePreferenceBusy={maintenancePreferenceBusyIds.includes(installation.activeAppointmentId || "")}
+                    onChangeMaintenancePreference={onChangeMaintenancePreference}
                   />
                 ))}
               </div>

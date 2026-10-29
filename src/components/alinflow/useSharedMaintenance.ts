@@ -1,10 +1,11 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listMaintenanceResults, listReceivedMaintenance } from "@/lib/alinflow/shared-maintenance-client";
+import { listMaintenanceResults, listReceivedMaintenance, listMaintenanceContactPreferences } from "@/lib/alinflow/shared-maintenance-client";
+import type { MaintenanceContactPreference } from "@/lib/alinflow/maintenance-contact-choice";
 import type { SharedMaintenanceInstallation, SharedMaintenanceResult, SharedMaintenanceOptOut } from "@/lib/alinflow/shared-maintenance";
 
-type SharedMaintenanceState = {identity?: string; received: SharedMaintenanceInstallation[]; results: SharedMaintenanceResult[]; error: string; loading: boolean};
-const EMPTY_STATE: SharedMaintenanceState = {received: [], results: [], error: "", loading: false};
+type SharedMaintenanceState = {identity?: string; received: SharedMaintenanceInstallation[]; results: SharedMaintenanceResult[]; preferences: MaintenanceContactPreference[]; error: string; loading: boolean};
+const EMPTY_STATE: SharedMaintenanceState = {received: [], results: [], preferences: [], error: "", loading: false};
 
 export function useSharedMaintenance(workspaceId?: string, enabled = false, userId?: string) {
   const identity = workspaceId && userId ? `${workspaceId}:${userId}` : undefined;
@@ -12,6 +13,14 @@ export function useSharedMaintenance(workspaceId?: string, enabled = false, user
   const request = useRef(0);
   const inFlight = useRef<{identity: string; ticket: number} | null>(null);
   const lastRefresh = useRef<{identity: string; at: number} | null>(null);
+  const applyPreference = useCallback((saved: MaintenanceContactPreference) => {
+    request.current++;
+    inFlight.current = null;
+    setState(current => current.identity === identity && enabled ? { ...current, loading: false,
+      preferences: [...current.preferences.filter(row => row.sourceWorkspaceId !== saved.sourceWorkspaceId
+        || row.sourceInstallationId !== saved.sourceInstallationId), saved],
+    } : current);
+  }, [identity, enabled]);
   const applyOptOut = useCallback((item: SharedMaintenanceInstallation, saved: SharedMaintenanceOptOut) => {
     // Discard a refresh started before the save: it may contain the old choice.
     request.current++;
@@ -34,11 +43,12 @@ export function useSharedMaintenance(workspaceId?: string, enabled = false, user
       ? {...current, error: "", loading: true}
       : {...EMPTY_STATE, identity, loading: true});
     try {
-      const [received, results] = await Promise.all([listReceivedMaintenance(workspaceId), listMaintenanceResults(workspaceId)]);
-      if (!Array.isArray(received) || !Array.isArray(results)) throw new Error("A megosztott karbantartások válasza nem olvasható.");
+      const [received, results, preferences] = await Promise.all([listReceivedMaintenance(workspaceId), listMaintenanceResults(workspaceId), listMaintenanceContactPreferences(workspaceId)]);
+      if (!Array.isArray(received) || !Array.isArray(results) || !Array.isArray(preferences)) throw new Error("A megosztott karbantartások válasza nem olvasható.");
       if (ticket === request.current) setState(current => ({identity,
         received: current.identity === identity && JSON.stringify(current.received) === JSON.stringify(received) ? current.received : received,
         results: current.identity === identity && JSON.stringify(current.results) === JSON.stringify(results) ? current.results : results,
+        preferences: current.identity === identity && JSON.stringify(current.preferences) === JSON.stringify(preferences) ? current.preferences : preferences,
         error: "", loading: false}));
     } catch (error) {
       if (ticket === request.current) setState({...EMPTY_STATE, identity, error: error instanceof Error ? error.message : "A megosztott karbantartások betöltése nem sikerült."});
@@ -65,5 +75,5 @@ export function useSharedMaintenance(workspaceId?: string, enabled = false, user
       document.removeEventListener("visibilitychange", onWake); window.clearInterval(interval);
     };
   }, [refresh, enabled, identity]);
-  return { ...(identity && state.identity === identity && enabled ? state : EMPTY_STATE), refresh, applyOptOut };
+  return { ...(identity && state.identity === identity && enabled ? state : EMPTY_STATE), refresh, applyOptOut, applyPreference };
 }

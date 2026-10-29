@@ -151,7 +151,7 @@ test('accepted reference keeps one marker and combines source history with newer
 // Preserve hook slots/dependencies and run effect cleanup when identity changes.
 // Controlled focus/timer events and deferred RPCs exercise the actual hook.
 function sharedHookHarness({visibility = "visible"} = {}) {
-  const slots=[],effects=[],focusListeners=new Set(),visibilityListeners=new Set(),intervals=new Set(),receivedCalls=[],resultCalls=[];
+  const slots=[],effects=[],focusListeners=new Set(),visibilityListeners=new Set(),intervals=new Set(),receivedCalls=[],resultCalls=[],preferenceCalls=[];
   let now=0;
   class ClockDate extends Date { static now() { return now; } }
   let cursor=0,args=['workspace',true,'user'];
@@ -182,16 +182,17 @@ function sharedHookHarness({visibility = "visible"} = {}) {
     '@/lib/alinflow/shared-maintenance-client':{
       listReceivedMaintenance:workspaceId=>deferred(receivedCalls,workspaceId),
       listMaintenanceResults:workspaceId=>deferred(resultCalls,workspaceId),
+      listMaintenanceContactPreferences:workspaceId=>deferred(preferenceCalls,workspaceId),
     },
   });
   const {useSharedMaintenance}=hookHarness.load('src/components/alinflow/useSharedMaintenance.ts');
   const flush=()=>new Promise(resolve=>setImmediate(resolve));
-  return {document,receivedCalls,resultCalls,
+  return {document,receivedCalls,resultCalls,preferenceCalls,
     render(nextArgs=args){args=nextArgs;cursor=0;const value=useSharedMaintenance(...args);effects.splice(0).forEach(effect=>effect());return value;},
     focus(){[...focusListeners].forEach(fn=>fn());},tick(){now+=60000;[...intervals].forEach(fn=>fn());},
     advance(ms){now+=ms;},visibility(value){document.visibilityState=value;[...visibilityListeners].forEach(fn=>fn());},
-    async complete(index,received=[item],results=[]){receivedCalls[index].resolve(received);resultCalls[index].resolve(results);await flush();},
-    async fail(index){receivedCalls[index].reject(new Error('Network unavailable'));resultCalls[index].resolve([]);await flush();},
+    async complete(index,received=[item],results=[],preferences=[]){receivedCalls[index].resolve(received);resultCalls[index].resolve(results);preferenceCalls[index].resolve(preferences);await flush();},
+    async fail(index){receivedCalls[index].reject(new Error('Network unavailable'));resultCalls[index].resolve([]);preferenceCalls[index].resolve([]);await flush();},
   };
 }
 
@@ -307,4 +308,58 @@ test('shared-map periodic permission checking remains one minute despite focus t
   hook.advance(15000);hook.focus();await hook.complete(1);hook.render();
   hook.tick();assert.equal(hook.receivedCalls.length,3);
   await hook.complete(2,[]);assert.equal(hook.render().received.length,0);
+});
+
+const preference = {installationId:item.installationId,sourceInstallationId:item.installationId,
+  sourceWorkspaceId:item.sourceWorkspaceId,sourceWorkspaceName:item.sourceWorkspaceName,
+  choice:'original_installer',updatedAt:'2026-10-29T12:00:00Z',isSource:false};
+
+test('contact choices load with the scoped data and unchanged refresh preserves their identity',async()=>{
+  const hook=sharedHookHarness();hook.render();
+  assert.equal(hook.preferenceCalls[0].workspaceId,'workspace');
+  await hook.complete(0,[item],[],[preference]);const initial=hook.render();
+  hook.tick();const pending=hook.render();assert.equal(pending.preferences,initial.preferences);
+  await hook.complete(1,[item],[],JSON.parse(JSON.stringify([preference])));
+  assert.equal(hook.render().preferences,initial.preferences);
+  assert.equal(hook.preferenceCalls.length,hook.receivedCalls.length);
+});
+
+test('empty or malformed preference refresh cannot leave a stale cross-workspace decision visible',async()=>{
+  for(const next of [[],{invalid:true}]) {
+    const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[],[preference]);hook.render();
+    hook.tick();await hook.complete(1,[],[],next);const result=hook.render();
+    assert.equal(result.preferences.length,0);assert.equal(result.loading,false);
+    assert.equal(Boolean(result.error),!Array.isArray(next));
+  }
+});
+
+test('confirmed contact choices supersede older refreshes, preserve unrelated choices and remain reversible',async()=>{
+  const other={...preference,installationId:'other',sourceInstallationId:'other'};
+  const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[],[other]);const initial=hook.render();
+  hook.tick();initial.applyPreference(preference);
+  await hook.complete(1,[item],[],[other]);const saved=hook.render();
+  assert.equal(saved.preferences.length,2);
+  assert.equal(saved.preferences.find(row=>row.installationId===item.installationId).choice,'original_installer');
+  saved.applyPreference({...preference,choice:'open',updatedAt:'2026-10-29T12:01:00Z'});
+  const reopened=hook.render();assert.equal(reopened.preferences.length,2);
+  assert.equal(reopened.preferences.find(row=>row.installationId===item.installationId).choice,'open');
+  assert.equal(reopened.preferences.find(row=>row.installationId==='other'),other);
+});
+
+test('contact choices and late save callbacks are isolated on workspace, user and enabled changes',async()=>{
+  for(const nextArgs of [['another',true,'user'],['workspace',true,'another'],['workspace',false,'user'],['workspace',true,undefined]]) {
+    const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[],[preference]);const previous=hook.render();
+    hook.tick();const switched=hook.render(nextArgs);assert.equal(switched.preferences.length,0);
+    previous.applyPreference({...preference,choice:'declined'});
+    await hook.complete(1,[item],[],[preference]);
+    assert.equal(hook.render().preferences.length,0);
+    if(nextArgs[1]&&nextArgs[2]) { await hook.complete(2,[],[],[]);assert.equal(hook.render().preferences.length,0); }
+  }
+});
+
+test('an acceptance racing a confirmed preference save replaces the same canonical choice, not a second history entry',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[],[preference]);const initial=hook.render();
+  initial.applyPreference({...preference,installationId:'owned-mirror',choice:'declined',updatedAt:'2026-10-29T12:01:00Z'});
+  const saved=hook.render();assert.equal(saved.preferences.length,1);
+  assert.equal(saved.preferences[0].installationId,'owned-mirror');assert.equal(saved.preferences[0].choice,'declined');
 });
