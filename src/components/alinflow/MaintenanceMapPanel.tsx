@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Customer } from "@/lib/alinflow/types";
 import type { SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
+import type { MaintenanceContactChoice } from "@/lib/alinflow/maintenance-contact-choice";
+import { MaintenanceChoiceControls } from "./MaintenanceChoiceControls";
 import { paginateItems } from "@/lib/alinflow/customers";
 import {
   filterMaintenanceMapPoints,
@@ -33,6 +35,7 @@ type MaintenanceMapPanelProps = {
   onOpenShared?: (item: SharedMaintenanceInstallation) => void;
   onGeocodeMissing: (points: MaintenanceMapPoint[]) => void;
   onToggleMaintenanceOptOut: (point: MaintenanceMapPoint, checked: boolean) => void;
+  onChangeMaintenancePreference?: (point: MaintenanceMapPoint, choice: MaintenanceContactChoice) => void;
   maintenanceOptOutBusyIds?: string[];
   onEditMaintenanceOrigin?: (point: MaintenanceMapPoint) => void;
 };
@@ -43,6 +46,7 @@ const FILTERS: Array<{ value: MaintenanceMapStatus | "all"; label: string }> = [
   { value: "dueSoon", label: "Hamarosan" },
   { value: "ok", label: "Rendben" },
   { value: "optOut", label: "Nem kéri" },
+  { value: "originalInstaller", label: "Eredeti szerelőt kéri" },
   { value: "unknown", label: "Nincs adat" },
 ];
 
@@ -66,6 +70,7 @@ export function MaintenanceMapPanel({
   onOpenShared,
   onGeocodeMissing,
   onToggleMaintenanceOptOut,
+  onChangeMaintenancePreference,
   maintenanceOptOutBusyIds = [],
   onEditMaintenanceOrigin,
 }: MaintenanceMapPanelProps) {
@@ -81,7 +86,9 @@ export function MaintenanceMapPanel({
     ? savedVisibility.value : normalizeMaintenanceMapVisibility(undefined), [preferenceKey, savedVisibility]);
 
   const visiblePoints = useMemo(() => filterMaintenanceMapPoints(points, { visibility, search }), [points, search, visibility]);
-  const filteredPoints = useMemo(() => visiblePoints.filter((point) => statusFilter === "all" || point.status === statusFilter), [visiblePoints, statusFilter]);
+  const filteredPoints = useMemo(() => filterMaintenanceMapPoints(visiblePoints, {
+    visibility: { own: true, external: true }, status: statusFilter,
+  }), [visiblePoints, statusFilter]);
   const groups = useMemo(() => groupMaintenanceMapPoints(filteredPoints), [filteredPoints]);
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
   const list = selectedGroup?.points || filteredPoints;
@@ -91,8 +98,9 @@ export function MaintenanceMapPanel({
   const counts = useMemo(() => visiblePoints.reduce<Record<MaintenanceMapStatus | "all", number>>((result, point) => {
     result.all += 1;
     result[point.status] += 1;
+    if (point.status !== "originalInstaller" && point.maintenanceContactPreference?.choice === "original_installer") result.originalInstaller += 1;
     return result;
-  }, { all: 0, overdue: 0, dueSoon: 0, ok: 0, optOut: 0, unknown: 0 }), [visiblePoints]);
+  }, { all: 0, overdue: 0, dueSoon: 0, ok: 0, optOut: 0, originalInstaller: 0, unknown: 0 }), [visiblePoints]);
   const markers = useMemo<MapCanvasMarker[]>(() => groups.map((group) => ({
     id: group.id,
     latitude: group.latitude,
@@ -254,10 +262,16 @@ export function MaintenanceMapPanel({
               {point.maintenanceProviderName ? <p>Karbantartó: {point.maintenanceProviderName}</p> : null}
               {!hasMaintenanceMapCoordinates(point) ? <p className="font-black text-amber-100">Nincs használható koordináta{point.geocodeError ? `: ${point.geocodeError}` : "."}</p> : null}
             </div>
-            <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-black text-slate-100">
+            {onChangeMaintenancePreference ? <MaintenanceChoiceControls
+              choice={point.maintenanceContactPreference?.choice}
+              legacyOptOut={Boolean(point.customer.maintenanceOptOut)}
+              allowOriginalInstaller={Boolean(point.originalInstallerAvailable)}
+              busy={maintenanceOptOutBusyIds.includes(point.appointmentId)}
+              onChange={(choice) => onChangeMaintenancePreference(point, choice)}
+            /> : <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-black text-slate-100">
               <input type="checkbox" className="h-5 w-5 shrink-0 accent-zinc-400 disabled:cursor-wait disabled:opacity-50" checked={point.status === "optOut"} disabled={maintenanceOptOutBusyIds.includes(point.appointmentId)} onChange={(event) => onToggleMaintenanceOptOut(point, event.target.checked)} />
               <span>Nem kéri a karbantartást</span>
-            </label>
+            </label>}
             {point.sharedMaintenance ? <p className="mt-3 text-sm text-violet-200">Egyeztetés {point.maintenanceSourceName} nevében</p> : null}
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => point.sharedMaintenance ? onOpenShared?.(point.sharedMaintenance) : onOpenCustomer(point.customer)} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">{point.sharedMaintenance ? "Egyeztetés" : "Ügyfél"}</button>
