@@ -28,11 +28,11 @@ const installation = {id:'original-customer',activeAppointmentId:item.installati
 const sourcePoint = {...shared.sharedMaintenanceMapPoint(item),sharedMaintenance:undefined,appointmentId:item.installationId,
   customerId:installation.id,customer:installation,maintenanceOrigin:'own'};
 
-test('the original installer retains due tracking while recipients get a separate original-installer status',()=>{
+test('a retired original-installer preference keeps normal due tracking for both roles without rewriting it',()=>{
   const source=choices.applyMaintenanceContactPreferences([sourcePoint],[{...preference,isSource:true}])[0];
   const recipient=choices.applyMaintenanceContactPreferences([shared.sharedMaintenanceMapPoint(item)],[preference])[0];
   assert.equal(source.status,'overdue');assert.equal(source.originalInstallerAvailable,true);
-  assert.equal(recipient.status,'originalInstaller');assert.equal(recipient.originalInstallerAvailable,true);
+  assert.equal(recipient.status,'overdue');assert.equal(recipient.originalInstallerAvailable,true);
   assert.equal(recipient.maintenanceContactPreference.choice,'original_installer');
   assert.equal(map.filterMaintenanceMapPoints([recipient],{visibility:{own:true,external:true},status:'optOut'}).length,0);
   assert.equal(map.filterMaintenanceMapPoints([recipient],{visibility:{own:true,external:true},status:'originalInstaller'}).length,1);
@@ -46,9 +46,9 @@ test('the original-installer choice filter includes source requests without chan
   const visibility={own:true,external:true};
   const selected=map.filterMaintenanceMapPoints(points,{visibility,status:'originalInstaller'});
   assert.equal(selected.length,2);assert.equal(selected[0],source);assert.equal(selected[1],recipient);
-  assert.equal(map.filterMaintenanceMapPoints(points,{visibility,status:'overdue'}).length,2);
+  assert.equal(map.filterMaintenanceMapPoints(points,{visibility,status:'overdue'}).length,3);
   assert.equal(map.filterMaintenanceMapPoints(points,{visibility:{own:true,external:false},status:'originalInstaller'}).length,1);
-  assert.equal(source.status,'overdue');assert.equal(recipient.status,'originalInstaller');
+  assert.equal(source.status,'overdue');assert.equal(recipient.status,'overdue');
 });
 
 test('explicit decline applies to either role, explicit open restores due tracking without editing stored legacy data',()=>{
@@ -73,7 +73,7 @@ test('a saved choice applies to accepted mirrors while preserving one marker, hi
   const accepted={...item,targetInstallationId:'mirror',targetCustomerId:'recipient-customer',lastMaintenanceDate:'2025-01-01',maintenanceCount:2};
   const merged=shared.mergeSharedMaintenancePoints([own],[accepted]);
   const rendered=choices.applyMaintenanceContactPreferences(merged,[{...preference,installationId:'mirror'}]);
-  assert.equal(rendered.length,1);assert.equal(rendered[0].status,'originalInstaller');
+  assert.equal(rendered.length,1);assert.equal(rendered[0].status,map.maintenanceMapSchedule('2026-01-01').status);
   assert.equal(rendered[0].customer,own.customer);assert.equal(rendered[0].lastMaintenanceDate,'2026-01-01');
   assert.equal(rendered[0].maintenanceCount,3);assert.equal(rendered[0].originalInstallerAvailable,true);
 });
@@ -107,36 +107,33 @@ function fields(props) {
   return React.Children.toArray(tree.props.children).flatMap(label=>
     React.Children.toArray(label.props.children).filter(child=>child.type==='input'));
 }
-test('the two controls are mutually exclusive, explicitly open overrides legacy and each uncheck reopens tracking',()=>{
+test('only the decline control remains and unchecking it reopens tracking',()=>{
   for(const choice of ['open','original_installer','declined']) {
     const changes=[];const inputs=fields({choice,legacyOptOut:true,onChange:value=>changes.push(value)});
-    assert.equal(inputs.filter(input=>input.props.checked).length,choice==='open'?0:1);
-    assert.equal(inputs[0].props.checked,choice==='original_installer');
-    assert.equal(inputs[1].props.checked,choice==='declined');
+    assert.equal(inputs.length,1);
+    assert.equal(inputs[0].props.checked,choice==='declined');
     inputs[0].props.onChange({target:{checked:true}});inputs[0].props.onChange({target:{checked:false}});
-    inputs[1].props.onChange({target:{checked:true}});inputs[1].props.onChange({target:{checked:false}});
-    assert.deepEqual(changes,['original_installer','open','declined','open']);
+    assert.deepEqual(changes,['declined','open']);
   }
-  assert.equal(fields({legacyOptOut:true})[1].props.checked,true);
+  assert.equal(fields({legacyOptOut:true})[0].props.checked,true);
   assert.equal(fields({allowOriginalInstaller:false}).length,1);
   assert.ok(fields({busy:true}).every(input=>input.props.disabled));
 });
 
-test('map cards show both distinct choices without conflating original-installer requests with declines',()=>{
+test('map cards show only decline and do not treat the retired choice as a refusal',()=>{
   const { MaintenanceMapPanel }=harness({}, {react:React,'react/jsx-runtime':require('react/jsx-runtime'),
     './GoogleMapCanvas':{GoogleMapCanvas:()=>null}}).load('src/components/alinflow/MaintenanceMapPanel.tsx');
   const points=choices.applyMaintenanceContactPreferences([shared.sharedMaintenanceMapPoint(item)],[preference]);
   const html=render(MaintenanceMapPanel,{points,googleMapsApiKey:'',geocodingBusy:false,onOpenCustomer:noop,
     onGeocodeMissing:noop,onToggleMaintenanceOptOut:()=>{throw Error('Old action must not be used');},
     onChangeMaintenancePreference:noop,maintenanceOptOutBusyIds:[points[0].appointmentId]});
-  assert.match(html,/Az eredeti szerelőtől kéri/);assert.match(html,/Nem kéri a karbantartást/);
-  assert.match(html,/Eredeti szerelőt kéri/);
-  assert.equal((html.match(/<input[^>]*checked=""/g)||[]).length,3,'two visibility controls and only the original-installer choice are checked');
+  assert.doesNotMatch(html,/eredeti szerelőt/iu);assert.match(html,/Nem kéri a karbantartást/);
+  assert.equal((html.match(/<input[^>]*checked=""/g)||[]).length,2,'only the two visibility controls are checked');
   const newGroup=html.match(/<div role="group" aria-label="Karbantartási választás"[\s\S]*?<\/div>/)[0];
-  assert.equal((newGroup.match(/checked=""/g)||[]).length,1);assert.equal((newGroup.match(/disabled=""/g)||[]).length,2);
+  assert.equal((newGroup.match(/checked=""/g)||[]).length,0);assert.equal((newGroup.match(/disabled=""/g)||[]).length,1);
 });
 
-test('map filter counts include original-workspace requests once and the selected filter displays them',()=>{
+test('map filters omit the retired choice and retain all installations in their normal due counts',()=>{
   const source={...choices.applyMaintenanceContactPreferences([sourcePoint],[{...preference,isSource:true}])[0],customerName:'Source request'};
   const recipient={...choices.applyMaintenanceContactPreferences([shared.sharedMaintenanceMapPoint(item)],[preference])[0],customerName:'Recipient request'};
   const regular={...sourcePoint,appointmentId:'not-requested',customerName:'No installer preference'};
@@ -149,10 +146,9 @@ test('map filter counts include original-workspace requests once and the selecte
   const choiceButton=filterButtons.find(button=>button.includes('Eredeti szerelőt kéri'));
   const overdueButton=filterButtons.find(button=>button.includes('Esedékes'));
   const text=html=>html.replace(/<[^>]*>/g,'');
-  assert.match(text(choiceButton),/Eredeti szerelőt kéri \(2\)/);
-  assert.match(text(overdueButton),/Esedékes \(2\)/);
-  const filtered=render(load({...React,useState:initial=>React.useState(initial==='all'?'originalInstaller':initial)}),props);
-  assert.match(filtered,/Source request/);assert.match(filtered,/Recipient request/);assert.doesNotMatch(filtered,/No installer preference/);
+  assert.equal(choiceButton,undefined);
+  assert.match(text(overdueButton),/Esedékes \(3\)/);
+  assert.match(html,/Source request/);assert.match(html,/Recipient request/);assert.match(html,/No installer preference/);
 });
 
 test('customer installation card uses the same explicit choice, preserving partner history and the original record',()=>{
@@ -165,7 +161,7 @@ test('customer installation card uses the same explicit choice, preserving partn
     onOpenWorkVersion:noop,onToggleMaintenanceOptOut:noop,onChangeMaintenancePreference:noop,
     maintenanceContactPreference:{...preference,isSource:true,choice:'open'},originalInstallerAvailable:true});
   assert.equal((html.match(/checked=""/g)||[]).length,0);assert.match(html,/2026\.10\.26/);assert.match(html,/Karbantartó: .*Partner/);
-  assert.match(html,/Az eredeti szerelőtől kéri/);assert.match(html,/Nem kéri a karbantartást/);
+  assert.doesNotMatch(html,/Az eredeti szerelőtől kéri/);assert.match(html,/Nem kéri a karbantartást/);
   assert.doesNotMatch(html,/Még nincs rögzített karbantartás/);assert.equal(JSON.stringify(legacy),before);
 });
 
