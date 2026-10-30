@@ -35,7 +35,6 @@ export function applyMaintenanceContactPreferences(points: MaintenanceMapPoint[]
     if (!preference) return { ...point, originalInstallerAvailable };
     const schedule = maintenanceMapSchedule(point.lastMaintenanceDate || point.installationDate);
     return { ...point, originalInstallerAvailable, maintenanceContactPreference: preference,
-      status: preference.choice === "declined" ? "optOut"
-        : preference.choice === "original_installer" && !preference.isSource ? "originalInstaller" : schedule.status };
+      status: preference.choice === "declined" ? "optOut" : schedule.status };
   });
 }

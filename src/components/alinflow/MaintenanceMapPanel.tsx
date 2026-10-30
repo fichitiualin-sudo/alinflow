@@ -46,7 +46,6 @@ const FILTERS: Array<{ value: MaintenanceMapStatus | "all"; label: string }> = [
   { value: "dueSoon", label: "Hamarosan" },
   { value: "ok", label: "Rendben" },
   { value: "optOut", label: "Nem kéri" },
-  { value: "originalInstaller", label: "Eredeti szerelőt kéri" },
   { value: "unknown", label: "Nincs adat" },
 ];
 
@@ -98,7 +97,6 @@ export function MaintenanceMapPanel({
   const counts = useMemo(() => visiblePoints.reduce<Record<MaintenanceMapStatus | "all", number>>((result, point) => {
     result.all += 1;
     result[point.status] += 1;
-    if (point.status !== "originalInstaller" && point.maintenanceContactPreference?.choice === "original_installer") result.originalInstaller += 1;
     return result;
   }, { all: 0, overdue: 0, dueSoon: 0, ok: 0, optOut: 0, originalInstaller: 0, unknown: 0 }), [visiblePoints]);
   const markers = useMemo<MapCanvasMarker[]>(() => groups.map((group) => ({
