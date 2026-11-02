@@ -14,13 +14,20 @@ function person(extra = {}) { return { resourceName: "people/c123", metadata: { 
 class ApiError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 class GoogleContactsAuthError extends Error {}
 function fixture(options = {}) {
+  const clock = options.now == null ? null : { now: Date.parse(options.now) };
+  class ClockDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [clock.now])); }
+    static now() { return clock.now; }
+  }
+  const now = () => clock?.now ?? Date.now();
   const connection = { workspace_id: WS, google_subject: "subject", google_email: "owner@example.invalid", status: "active", refresh_token_encrypted: "encrypted",
-    lease_token: "lease", lease_expires_at: new Date(Date.now() + 120000).toISOString(), ...options.connection };
+    lease_token: "lease", lease_expires_at: new Date(now() + 120000).toISOString(), ...options.connection };
   const links = options.links || [{ customer_id: CUSTOMER, resource_name: null, state: "pending", approved_source_hash: source.sourceHash,
     synced_source_hash: null, managed_snapshot: null, last_error: null, next_sync_at: new Date(0).toISOString() }];
-  const sources = options.sources || [source], calls = [], writes = [], rpcCalls = [];
+  const sources = options.sources || [source], calls = [], writes = [], rpcCalls = [], operations = [];
   const previews = [];
   const admin = database(op => {
+    operations.push(structuredClone(op));
     assert.equal(op.filters.workspace_id || op.filters.id || op.value?.workspace_id, WS, `${op.table} must remain scoped`);
     if (op.table === "workspaces") return { data: options.inactiveWorkspace ? null : { id: WS } };
     if (op.table === "google_contacts_connections") {
@@ -33,7 +40,10 @@ function fixture(options = {}) {
       if (op.method === "update") {
         writes.push(structuredClone(op.value));
         if (options.failSave?.(op.value)) return { error: { message: "database failure" } };
-        Object.assign(links.find(item => item.customer_id === op.filters.customer_id), op.value);
+        const matching = links.filter(item => Object.entries(op.filters).every(([key, value]) => key === "workspace_id"
+          || (Array.isArray(value) ? value.includes(item[key]) : item[key] === value))
+          && op.comparisons.every(({ key, operator, value }) => operator === "gt" ? item[key] > value : item[key] <= value));
+        matching.forEach(item => Object.assign(item, op.value));
         return { data: null };
       }
       return { data: links.map(item => ({ ...item })) };
@@ -47,22 +57,34 @@ function fixture(options = {}) {
   });
   admin.rpc = async (name, args) => {
     rpcCalls.push({ name, args });
-    if (name === "claim_google_contacts_sync") return { data: [{ ...connection }] };
+    if (name === "claim_google_contacts_sync") {
+      if (connection.status !== "active" || !links.some(link => link.state !== "review" && Date.parse(link.next_sync_at) <= now())) return { data: [] };
+      connection.lease_expires_at = new Date(now() + 120000).toISOString();
+      return { data: [{ ...connection }] };
+    }
     if (name === "release_google_contacts_sync") return { data: true };
     if (name === "approve_google_contacts_links") return { data: args.p_items.length };
     throw Error("Unexpected RPC " + name);
   };
-  const auth = { contactsAdmin: () => admin, contactsAccessToken: async () => "access", GoogleContactsAuthError };
+  const auth = { contactsAdmin: () => admin, contactsAccessToken: async () => {
+    if (options.tokenError) throw options.tokenError;
+    return "access";
+  }, GoogleContactsAuthError };
   const responses = [...(options.responses || [])];
-  const worker = harness({ AbortSignal, URLSearchParams, fetch: async (url, init) => {
+  const worker = harness({ AbortSignal, URLSearchParams, ...(clock ? { Date: ClockDate } : {}), fetch: async (url, init) => {
     const call = { url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null };
     calls.push(call); options.onRequest?.(call, links, connection);
     const response = responses.length ? responses.shift() : options.respond?.(call) || { status: 200, body: { connections: [] } };
     if (response.error) throw Error(response.error);
     return new Response(JSON.stringify(response.body || {}), { status: response.status || 200 });
   } }, { "node:crypto": require("node:crypto"), "./google-contacts-auth": auth, "./server-auth": { ApiError },
-    "./google-contacts-source": { ...sourceLib, loadGoogleContactSources: async () => sources } }).load("src/lib/alinflow/google-contacts-sync.ts");
-  return { worker, connection, links, calls, writes, rpcCalls, previews };
+    "./google-contacts-source": { ...sourceLib, loadGoogleContactSources: async () => {
+      options.onLoadSources?.(links, connection);
+      if (options.sourceError) throw options.sourceError;
+      return sources;
+    } } }).load("src/lib/alinflow/google-contacts-sync.ts");
+  return { worker, connection, links, calls, writes, rpcCalls, previews, operations,
+    advance(ms) { assert.ok(clock, "A fixed clock is required"); clock.now += ms; } };
 }
 
 test("full phonebook pagination preserves request parameters and rejects incomplete results", async () => {
@@ -252,6 +274,113 @@ test("third-party local collisions stay blocked despite explicit same-person gro
   const f = fixture({ links: [], sources: [source, second, { ...source, customerId: OUTSIDE, name: "Másik személy" }] });
   const preview = await f.worker.previewGoogleContactGroups(WS, USER, [group]);
   assert.equal(preview.items[0].state, "review"); assert.equal(f.previews[0].proofs.length, 0);
+});
+
+function dailyLinks(count = 1) {
+  const sources = Array.from({ length: count }, (_, index) => ({ ...source,
+    customerId: `${String(index + 1).padStart(8, "0")}-2222-4222-8222-222222222222`,
+    name: `Napi teszt ${index + 1}`, phone: `+3630123${String(index + 1).padStart(4, "0")}`, email: `daily${index + 1}@example.invalid`,
+    sourceHash: String(index + 1).padStart(64, "0") }));
+  const contacts = new Map();
+  const links = sources.map((item, index) => {
+    const created = model.buildContactCreate(item, `${WS}:${item.customerId}`), resource = `people/daily${index + 1}`;
+    contacts.set(resource, person({ ...created.body, resourceName: resource }));
+    return { customer_id: item.customerId, resource_name: resource, state: "synced", approved_source_hash: item.sourceHash,
+      synced_source_hash: item.sourceHash, managed_snapshot: created.managed, last_error: null,
+      next_sync_at: "2026-11-02T03:00:00.000Z" };
+  });
+  return { sources, links, respond: call => ({ body: contacts.get(new URL(call.url).pathname.slice(4)) }) };
+}
+
+test("daily cycle drains more than eight contacts and performs no repeat work before tomorrow", async () => {
+  const f = fixture({ now: "2026-11-02T04:00:00.000Z", ...dailyLinks(19) });
+  for (const count of [8, 8, 3]) {
+    const result = await f.worker.runGoogleContactsSync();
+    assert.equal(result.processed, count); assert.equal(result.synced, count); assert.equal(result.failed, 0);
+  }
+  assert.equal(f.calls.length, 19);
+  assert.ok(f.calls.every(call => call.method === "GET"));
+  assert.ok(f.links.every(link => link.next_sync_at === "2026-11-03T03:00:00.000Z"));
+  assert.equal((await f.worker.runGoogleContactsSync()).processed, 0);
+  assert.equal(f.calls.length, 19);
+  f.advance(24 * 60 * 60000);
+  assert.equal((await f.worker.runGoogleContactsSync()).processed, 8);
+  assert.equal(f.calls.length, 27);
+});
+
+test("remote failure waits for next daily cycle without forgetting its mapping", async () => {
+  const f = fixture({ now: "2026-11-02T04:00:00.000Z", ...dailyLinks(), responses: [{ status: 503 }] });
+  const result = await f.worker.runGoogleContactsSync();
+  assert.equal(result.failed, 1);
+  assert.equal(f.links[0].state, "synced");
+  assert.equal(f.links[0].next_sync_at, "2026-11-03T03:00:00.000Z");
+  assert.ok(f.links[0].last_error);
+  assert.equal((await f.worker.runGoogleContactsSync()).processed, 0);
+  assert.equal(f.calls.length, 1);
+});
+
+test("uncertain creation is deferred daily and a later cycle never sends a second create", async () => {
+  const f = fixture({ now: "2026-11-02T04:00:00.000Z", responses: [{ body: { connections: [] } }, { error: "lost response" }] });
+  await f.worker.runGoogleContactsSync();
+  assert.equal(f.links[0].state, "uncertain");
+  assert.equal(f.links[0].next_sync_at, "2026-11-03T03:00:00.000Z");
+  await f.worker.runGoogleContactsSync();
+  assert.equal(f.calls.length, 2);
+  f.advance(24 * 60 * 60000);
+  await f.worker.runGoogleContactsSync();
+  assert.equal(f.links[0].next_sync_at, "2026-11-04T03:00:00.000Z");
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 1);
+});
+
+test("source-load failure postpones only work due at start, preserving new approvals and review", async () => {
+  const records = dailyLinks(2), review = { ...records.links[1], customer_id: "review", state: "review" };
+  const fresh = { ...records.links[1], customer_id: "new-approval", state: "pending", next_sync_at: "2026-11-02T04:00:00.001Z" };
+  const f = fixture({ now: "2026-11-02T04:00:00.000Z", ...records, sourceError: Error("read failed"),
+    onLoadSources(links) { links.push(fresh, review); } });
+  await assert.rejects(f.worker.runGoogleContactsSync());
+  assert.ok(f.links.slice(0, 2).every(link => link.next_sync_at === "2026-11-03T03:00:00.000Z"));
+  assert.equal(fresh.next_sync_at, "2026-11-02T04:00:00.001Z");
+  assert.equal(review.next_sync_at, "2026-11-02T03:00:00.000Z");
+  assert.equal(f.calls.length, 0);
+  const postponement = f.operations.find(op => op.table === "google_contacts_links" && op.method === "update");
+  assert.equal(postponement.filters.workspace_id, WS);
+  assert.deepEqual(postponement.comparisons, [{ key: "next_sync_at", operator: "lte", value: "2026-11-02T04:00:00.000Z" }]);
+});
+
+test("expired or replaced lease cannot postpone another worker's pending contacts", async () => {
+  const records = dailyLinks();
+  const f = fixture({ now: "2026-11-02T04:00:00.000Z", ...records, sourceError: Error("read failed"),
+    currentConnection: { lease_token: "replacement" } });
+  await assert.rejects(f.worker.runGoogleContactsSync());
+  assert.equal(f.links[0].next_sync_at, "2026-11-02T03:00:00.000Z");
+  assert.equal(f.operations.filter(op => op.table === "google_contacts_links" && op.method === "update").length, 0);
+});
+
+test("manual refresh queues future synced contacts without overriding review or uncertainty", async () => {
+  const records = dailyLinks(5), next = "2026-11-03T03:00:00.000Z";
+  records.links.forEach(link => { link.next_sync_at = next; });
+  records.links[1].state = "uncertain";
+  records.links[2].state = "review";
+  records.links[3].state = "pending";
+  records.links[4].state = "creating";
+  const f = fixture({ now: "2026-11-02T12:00:00.000Z", ...records });
+  await f.worker.requestGoogleContactsRefresh(WS);
+  assert.equal(f.links[0].next_sync_at, "2026-11-02T12:00:00.000Z");
+  assert.ok(f.links.slice(1).every(link => link.next_sync_at === next));
+  assert.equal(f.calls.length, 0);
+  assert.equal((await f.worker.runGoogleContactsSync(WS)).processed, 1);
+  assert.equal(f.links[0].next_sync_at, next);
+});
+
+test("a new pending approval runs immediately without reopening daily synced contacts", async () => {
+  const records = dailyLinks(); records.links[0].next_sync_at = "2026-11-03T03:00:00.000Z";
+  const f = fixture({ now: "2026-11-02T12:00:00.000Z", sources: [...records.sources, source], links: [...records.links,
+    { customer_id: CUSTOMER, resource_name: null, state: "pending", approved_source_hash: source.sourceHash,
+      synced_source_hash: null, managed_snapshot: null, next_sync_at: "2026-11-02T12:00:00.000Z" }],
+    responses: [{ body: { connections: [] } }, { body: person(model.buildContactCreate(source, MARKER).body) }] });
+  assert.equal((await f.worker.runGoogleContactsSync(WS)).processed, 1);
+  assert.equal(f.links[0].next_sync_at, "2026-11-03T03:00:00.000Z");
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 1);
 });
 test("group proposals reject linked members, missing own sources and overlapping selection", async () => {
   const { second, group } = grouped();

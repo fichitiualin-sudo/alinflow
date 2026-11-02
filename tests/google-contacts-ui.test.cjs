@@ -109,6 +109,8 @@ test("approval sends only explicitly selected current-page IDs, source hashes an
   assert.ok(!JSON.stringify(writes[0].body).includes("Szintetikus"));
   assert.equal(ui.nodes(node => node.type==="article").length,0);
   assert.match(ui.text(),/2 ügyfél összerendelése jóváhagyva/);
+  const sync = ui.requests.find(request => request.path === "sync");
+  assert.ok(sync); assert.notEqual(sync.body.refresh, true, "New approvals must not restart all linked contacts");
 });
 
 test("page changes clear choices and expired previews cannot be approved", async () => {
@@ -263,6 +265,7 @@ test("cancel and explicit refresh clear group drafts without approving them", as
   chooseGroupMember(ui,1); await ui.click("Ügyfelek áttöltése · előnézet");
   await ui.click("Ugyanahhoz a személyhez tartozó adatlapok"); assert.match(ui.text(),/0 \/ 10 adatlap/);
   chooseGroupMember(ui,2); await ui.click("Kapcsolt névjegyek frissítése");
+  assert.deepEqual(clone(ui.requests.find(request => request.path === "sync").body), { refresh: true });
   assert.equal(ui.nodes(node => node.props?.["aria-label"]==="Közös névjegy összeállítása").length,0);
   assert.equal(ui.requests.some(request => ["approve","groups/preview"].includes(request.path)),false);
 });

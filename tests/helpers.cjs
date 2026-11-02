@@ -63,12 +63,14 @@ function harness(extra = {}, external = {}) {
 }
 function database(handler) {
   return { from(table) {
-    const op = { table, method: "select", filters: {}, order: [] };
+    const op = { table, method: "select", filters: {}, order: [], comparisons: [] };
     const query = {
       select() { return query; },
       eq(k, v) { op.filters[k] = v; return query; },
       is(k, v) { op.filters[k] = v; return query; },
       in(k, v) { op.filters[k] = v; return query; },
+      gt(k, v) { op.comparisons.push({ key: k, operator: "gt", value: v }); return query; },
+      lte(k, v) { op.comparisons.push({ key: k, operator: "lte", value: v }); return query; },
       order(k) { op.order.push(k); return query; },
       range(from, to) { op.range = [from, to]; return query; },
       limit(n) { op.limit = n; return query; },

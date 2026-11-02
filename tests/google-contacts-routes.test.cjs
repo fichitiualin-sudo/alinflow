@@ -34,3 +34,33 @@ test("cron refuses missing secret before starting worker", async () => {
     "@/lib/alinflow/google-contacts-sync": { runGoogleContactsSync: async () => { called = true; } } }).load("src/app/api/google-contacts/cron/route.ts");
   assert.equal((await module.POST(new Request("https://example.invalid"))).status, 401); assert.equal(called, false);
 });
+
+test("explicit manual refresh queues only the authorized workspace before processing", async () => {
+  for (const refresh of [true, false, undefined, "true"]) {
+    const calls = [];
+    const module = harness({}, { "@/lib/alinflow/google-contacts-auth": {
+      assertContactsOrigin() {}, readContactsBody: async () => ({ workspaceId: "untrusted", refresh }),
+      authorizeContactsWorkspace: async () => { calls.push("authorize"); return { workspaceId: WS, userId: USER }; },
+      contactsApiError: error => { throw error; }, googleContactsConfigured: () => true,
+    }, "@/lib/alinflow/google-contacts-sync": {
+      requestGoogleContactsRefresh: async id => { assert.equal(id, WS); calls.push("queue"); },
+      runGoogleContactsSync: async id => { assert.equal(id, WS); calls.push("run"); return {}; },
+    } }).load("src/app/api/google-contacts/sync/route.ts");
+    assert.equal((await module.POST(new Request("https://example.invalid"))).status, 200);
+    assert.deepEqual(calls, refresh === true ? ["authorize", "queue", "run"] : ["authorize", "run"]);
+  }
+});
+
+test("manual refresh cannot reschedule contacts when workspace authorization fails", async () => {
+  let touched = false;
+  const module = harness({}, { "@/lib/alinflow/google-contacts-auth": {
+    assertContactsOrigin() {}, readContactsBody: async () => ({ workspaceId: WS, refresh: true }),
+    authorizeContactsWorkspace: async () => { throw Error("forbidden"); },
+    contactsApiError: () => Response.json({ error: "denied" }, { status: 403 }), googleContactsConfigured: () => true,
+  }, "@/lib/alinflow/google-contacts-sync": {
+    requestGoogleContactsRefresh: async () => { touched = true; },
+    runGoogleContactsSync: async () => { touched = true; },
+  } }).load("src/app/api/google-contacts/sync/route.ts");
+  assert.equal((await module.POST(new Request("https://example.invalid"))).status, 403);
+  assert.equal(touched, false);
+});

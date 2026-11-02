@@ -11,12 +11,24 @@ Kizárólag saját, nem lemondott, már elvégzett telepítéssel rendelkező ü
 3. Külön kérendő scope: `https://www.googleapis.com/auth/contacts` + OpenID email. Ez tág Google-kezelési engedély; a felhasználó külön engedélyező oldala kötelező. A Google-figyelmeztetéseket a felhasználó kezeli. Új feltételek elfogadása csak felhatalmazással.
 4. A meglévő szerveres `GOOGLE_CALENDAR_CLIENT_ID`, `_CLIENT_SECRET`, `_TOKEN_KEY`, `_APP_URL` és `_CRON_SECRET` marad. A Contacts-titkosítás elkülönített AAD-környezetet használ. Az új `GOOGLE_CONTACTS_ENABLED=true` kapcsoló csak a beállítások elkészülte után aktiválandó; hiányában a funkció nem kapcsolható össze.
 5. A `/adatvedelem/google-nevjegyek` oldal ismerteti a működést, adatköröket, tárolást és visszavonást. A naptár tájékoztatója hivatkozik rá.
-6. A külön `docs/sql/GOOGLE_CONTACTS_CRON.sql` a már létező Vault-beállításokat használja, a naptár feladatát nem módosítja. A net/vault kizárását a Data API-ból ellenőrizni kell. A feladat percenként ellenőrzi a várakozó sorokat; nem indít névjegyírást kapcsolat és jóváhagyott ügyfél nélkül.
+6. A külön `docs/sql/GOOGLE_CONTACTS_CRON.sql` a már létező Vault-beállításokat használja, a naptár feladatát nem módosítja. A net/vault kizárását a Data API-ból ellenőrizni kell. A feladat percenként ellenőrzi az esedékes sort; üres sor esetén nem hívja a Vercelt. A napi frissítési kör több rövid részletből áll, ezért a cron időzítése továbbra is `* * * * *`. Kapcsolat és jóváhagyott ügyfél nélkül nem indít névjegyírást.
 
 ## Használat
 Beállítások → Google Névjegyek → fiók összekapcsolása → Ügyfelek áttöltése · előnézet. Tíz ügyfél/oldal, kezdetben nincs kiválasztás. Pontos normalizált telefon/email-egyezést ajánl fel; név alapján nem kapcsol össze. Több CRM-ügyfélhez tartozó elérhetőséget ellenőrzendőnek jelöl. Jóváhagyáskor a szerver újraolvassa a forrásokat és a Google-egyezéseket; lejárt vagy megváltozott előnézetből nem indul áttöltés.
 
-Az új összerendelések külön jóváhagyást igényelnek. A jóváhagyott kapcsolatok a háttérben frissülnek, változásnál előresorolva. A Google-ban kézzel szerkesztett adatot megőrizzük vagy ütközésként jelezzük. Az iPhone-on a kapcsolt Google-fióknál a Kontaktok szinkronizálását be kell kapcsolni; a telefon frissítési ütemezését a készülék kezeli.
+Az új összerendelések külön jóváhagyást igényelnek, és a jóváhagyás után azonnal feldolgozásra várnak. A már kapcsolt névjegyek automatikus ellenőrzése naponta egyszer, 03:00 UTC-től indul; ez Magyarországon télen 04:00, nyáron 05:00. A kör nyolcas adagokban halad, így az összes esedékes névjegy sorra kerülhet anélkül, hogy egy hosszú kérés időtúllépést okozna. Az ellenőrzött névjegy következő időpontja a következő napi 03:00 UTC; változatlan adatoknál nincs folyamatos ötpercenkénti újraellenőrzés.
+
+A **Kapcsolt névjegyek frissítése** gomb külön kézi kört indít: az adott munkaterület már jóváhagyott, nem ellenőrzendő névjegyeinek jövőbeli időpontját mostanra hozza előre. A jóváhagyási művelet utáni egyszerű feldolgozás nem indít új teljes kört. A `review` állapotú rekordokat a kézi frissítés sem írja felül; azokhoz külön ellenőrzés kell. A Google-ban kézzel szerkesztett adatot megőrizzük vagy ütközésként jelezzük. Az iPhone-on a kapcsolt Google-fióknál a Kontaktok szinkronizálását be kell kapcsolni; a telefon frissítési ütemezését a készülék kezeli.
+
+## A napi ütemezés aktiválása
+1. Előbb kerüljön élesbe a napi visszaütemezést használó alkalmazásverzió. Az új worker a feldolgozott névjegyeket magától is napi időpontra állítja.
+2. Az egyszeri átállításhoz csak az `alinflow-google-contacts-sync` nevű cronfeladatot kell szüneteltetni. Meg kell várni a folyamatban lévő, legfeljebb 120 másodperces foglalás végét; közben ne induljon kézi névjegyfrissítés vagy új jóváhagyás. A naptár cronfeladata maradjon változatlan.
+3. Futtatandó: `docs/sql/20261102_GOOGLE_CONTACTS_DAILY_SYNC.sql`. A tranzakció aktív cron vagy élő névjegy-foglalás mellett leáll. Kizárólag a `synced` állapotú, még nem 03:00 UTC-re ütemezett sorok időpontját igazítja a következő napi kezdéshez. A `pending`, `creating`, `uncertain` és `review` állapotú sorokat, a Google-azonosítókat, a pillanatképeket és a tagságokat megőrzi. Új mező, tábla, jogosultság vagy környezeti változó nem kell.
+4. Az SQL végén szereplő, csak olvasási összesítésekkel ellenőrizhető az ütemezés és a foglalások száma. Az aktiválás ismételhető: a már napi időpontra állított sorok dátumát nem tolja újra későbbre. Ezután a korábban aktív névjegy-cron visszakapcsolható az eredeti percenkénti ütemezéssel.
+
+A percenkénti adatbázis-ellenőrzés nem jelent percenkénti Vercel-futást. Például 450 névjegyhez normál esetben 57 rövid részlet elég egy napi körben, a korábbi legfeljebb napi 1440 helyett. Időtúllépés, új jóváhagyás vagy külön kézi kör növelheti a részletek számát; a tényleges CPU-megtakarítást a Vercel használati kimutatásában kell ellenőrizni.
+
+Visszaállításkor előbb ugyanezt a névjegy-cront kell szüneteltetni és megvárni a foglalások végét. A korábbi alkalmazás visszaállítása után szükség esetén csak a már `synced` sorok ütemezése hozható előre; a névjegyek, biztonsági állapotok és összerendelések megmaradnak. A régi ötperces visszaütemezés visszaállítása ismét magasabb CPU-fogyasztást okoz.
 
 ## Közös névjegy kifejezett jóváhagyással
 A normál előnézetben kizárólag még nem kapcsolt, saját telepítéssel rendelkező ügyféladatlap választható csoporthoz. A tulajdonos/adminisztrátor 2–10 adatlapot jelöl ki, kiválasztja a fő nevet adó adatlapot és megerősíti, hogy ugyanahhoz a személyhez tartoznak. Ezután a teljes közös adat és a Google-egyezések új előnézetben jelennek meg; a Google-írás csak a névjegy jóváhagyása után indul. Nincs automatikus csoportosítás név vagy közös családi telefonszám alapján.
@@ -33,6 +45,7 @@ Visszaállítás előtt a Contacts-kapcsolatot szüneteltetni kell. A v2 pillana
 
 ## Ismételt futás és hibák
 - Kapcsolatonként atomikus 120 másodperces foglalás; legfeljebb 45 másodperces munkamenet, soros Google-írások.
+- Átmeneti hiba vagy bizonytalan írás után is a következő napi kör az automatikus újrapróbálás ideje. Teljes forrásbetöltési hibánál csak a részlet kezdetekor már esedékes sorok halasztódnak; a később érkező jóváhagyások nem. Hitelesítési hiba továbbra is újracsatlakozást kér. Ellenőrzést igénylő rekord nem válik automatikusan jóváhagyottá.
 - A Google-létrehozás előtt tartós szándék és egyedi marker kerül mentésre. Megszakadt kérés után kizárólag marker-visszakeresés történhet; nincs vak második létrehozás.
 - Módosítás előtt a célművelet külön pillanatképben megmarad. Elveszett válasz után csak az igazoltan egyező Google-állapot fogadható el. Az ETag-ütközés friss olvasást és összeolvasztást indít.
 - Teljes lapozás kötelező; hibás vagy csonka telefonkönyv nem tekinthető üresnek.
