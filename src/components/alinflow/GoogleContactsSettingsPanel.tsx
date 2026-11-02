@@ -98,6 +98,7 @@ export function GoogleContactsSettingsPanel({ workspaceId, userId, returnMessage
         {status.errorCount > 0 ? <p className="mt-2 text-sm font-bold text-amber-300">{status.errorCount} névjegy ellenőrzést igényel. Nyisd meg az előnézetet a részletekhez.</p> : null}
         {status.lastError ? <p className="mt-2 break-words text-sm text-amber-300">{status.lastError}</p> : null}
         {status.lastSyncedAt ? <p className="mt-2 text-xs text-slate-400">Utolsó ellenőrzés: {new Date(status.lastSyncedAt).toLocaleString("hu-HU")}</p> : null}
+        {status.connected ? <p className="mt-1 text-xs text-slate-400">Automatikus frissítés naponta egyszer, hajnalban.</p> : null}
       </div>
       {!status.connected ? <div className="space-y-3">
         {!canConnect ? <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-950">Az összekapcsolás előtt mentsd az oldal alján a módosított beállításokat.</p> : null}
@@ -113,8 +114,8 @@ export function GoogleContactsSettingsPanel({ workspaceId, userId, returnMessage
           <button type="button" className={`${button} bg-cyan-300 text-slate-950`} disabled={Boolean(busy)} onClick={() => void action("preview", loadPreview)}>{busy === "preview" ? "Egyezések keresése…" : "Ügyfelek áttöltése · előnézet"}</button>
           <button type="button" className={`${button} border border-white/20`} disabled={Boolean(busy)} onClick={() => void action("sync", async signal => {
             setPreview(null); setChoices({}); resetGrouping();
-            await requestGoogleContacts("sync", workspaceId, userId, signal); await refreshStatus(signal);
-            if (!signal.aborted) setMessage("A frissítést ellenőriztem. A kapcsolt ügyfelek változásait a rendszer a háttérben is feldolgozza.");
+            await requestGoogleContacts("sync", workspaceId, userId, signal, { refresh: true }); await refreshStatus(signal);
+            if (!signal.aborted) setMessage("A névjegyek frissítése elindult. A teljes lista feldolgozása a háttérben folytatódik.");
           })}>{busy === "sync" ? "Frissítés…" : "Kapcsolt névjegyek frissítése"}</button>
           <button type="button" className={`${button} text-slate-300 underline`} disabled={Boolean(busy)} onClick={() => void action("pause", async signal => {
             await requestGoogleContacts("disconnect", workspaceId, userId, signal); await refreshStatus(signal);

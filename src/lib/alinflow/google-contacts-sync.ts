@@ -4,6 +4,7 @@ import { ApiError } from "./server-auth";
 import { buildContactCreate, contactMatchesManagedSnapshot, findContactCandidates, googleContactMarkers, mergeContactUpdate,
   contactSourceValues, normalizeContactEmail, normalizeContactPhone, type ContactSource, type GoogleContact, type ManagedContactSnapshot } from "./google-contacts-model";
 import { groupGoogleContactSources, loadGoogleContactSources, type GoogleContactGroup } from "./google-contacts-source";
+import { nextGoogleContactsSyncAt } from "./google-contacts-schedule";
 
 type Admin = ReturnType<typeof contactsAdmin>;
 export type ContactsConnection = { workspace_id: string; google_subject: string; google_email: string; status: string;
@@ -241,8 +242,19 @@ function safeError(error: unknown) {
   if (error instanceof ContactsSyncError && error.kind === "superseded") return "A kapcsolat megváltozott. A frissítés most szünetel.";
   return "A névjegyfrissítés késik. Az AlinFlow adatai megmaradtak; később újrapróbáljuk.";
 }
+export async function requestGoogleContactsRefresh(workspaceId: string): Promise<void> {
+  const admin = contactsAdmin();
+  await connectionFor(admin, workspaceId);
+  const now = new Date().toISOString();
+  // Only an explicit manual refresh starts another reconciliation today.
+  // Pending approvals and uncertain/review mappings keep their existing guards.
+  const queued = await admin.from("google_contacts_links").update({ next_sync_at: now })
+    .eq("workspace_id", workspaceId).eq("state", "synced").gt("next_sync_at", now);
+  if (queued.error) throw new ContactsSyncError("database");
+}
 export async function runGoogleContactsSync(workspaceId?: string): Promise<{ processed: number; synced: number; failed: number }> {
-  const admin = contactsAdmin(), result = { processed: 0, synced: 0, failed: 0 }, deadline = Date.now() + 45000;
+  const startedAt = Date.now();
+  const admin = contactsAdmin(), result = { processed: 0, synced: 0, failed: 0 }, deadline = startedAt + 45000;
   const claim = await admin.rpc("claim_google_contacts_sync", { p_workspace_id: workspaceId || null });
   if (claim.error) throw new ContactsSyncError("database");
   const connection = (claim.data as ContactsConnection[] | null)?.[0];
@@ -275,7 +287,7 @@ export async function runGoogleContactsSync(workspaceId?: string): Promise<{ pro
           if (recovered.length === 1 && (link.state === "creating" || link.state === "uncertain")) {
             await saveLink(admin, connection.workspace_id, link, { resource_name: recovered[0].resourceName, state: "synced", last_error: null });
           } else if (link.state === "creating" || link.state === "uncertain") {
-            await saveLink(admin, connection.workspace_id, link, { state: "uncertain", next_sync_at: new Date(Date.now() + 30 * 60000).toISOString(),
+            await saveLink(admin, connection.workspace_id, link, { state: "uncertain", next_sync_at: nextGoogleContactsSyncAt(),
               last_error: "A létrehozás eredménye még nem igazolható. Nem hozunk létre újabb névjegyet; ellenőrzés szükséges." });
             result.failed += 1; continue;
           } else {
@@ -292,7 +304,7 @@ export async function runGoogleContactsSync(workspaceId?: string): Promise<{ pro
             // Persist a successful remote identity even if the owner paused while
             // the POST was in flight. Losing it would allow later duplication.
             await saveLink(admin, connection.workspace_id, link, { resource_name: response.data.resourceName, state: "synced",
-              last_synced_at: new Date().toISOString(), next_sync_at: new Date(Date.now() + 5 * 60000).toISOString(), last_error: null });
+              last_synced_at: new Date().toISOString(), next_sync_at: nextGoogleContactsSyncAt(), last_error: null });
             allContacts.push(response.data); result.synced += 1; continue;
           }
         }
@@ -328,7 +340,7 @@ export async function runGoogleContactsSync(workspaceId?: string): Promise<{ pro
             if (!updated.ok) throw new ContactsSyncError("remote", updated.status);
           }
           await saveLink(admin, connection.workspace_id, link, { state: "synced", managed_snapshot: merged.managed, synced_source_hash: source.sourceHash, mutation_snapshot: null, mutation_source_hash: null, mutation_payload: null,
-            last_synced_at: new Date().toISOString(), next_sync_at: new Date(Date.now() + 5 * 60000).toISOString(), last_error: null });
+            last_synced_at: new Date().toISOString(), next_sync_at: nextGoogleContactsSyncAt(), last_error: null });
           result.synced += 1; complete = true; break;
         }
         if (!complete) result.failed += 1;
@@ -337,15 +349,26 @@ export async function runGoogleContactsSync(workspaceId?: string): Promise<{ pro
         const uncertain = link.state === "creating" || link.state === "uncertain";
         await saveLink(admin, connection.workspace_id, link, { ...(uncertain ? { state: "uncertain" } : {}),
           last_error: uncertain ? "A létrehozás eredménye bizonytalan. Újabb példány helyett előbb ellenőrizzük a Google-névjegyeket." : safeError(error),
-          next_sync_at: new Date(Date.now() + (uncertain ? 30 : 5) * 60000).toISOString() });
+          next_sync_at: nextGoogleContactsSyncAt() });
         if (error instanceof GoogleContactsAuthError || error instanceof ContactsSyncError && (error.status === 401 || error.status === 403)) throw error;
       }
     }
+    if (links.length && result.processed === 0) throw new ContactsSyncError("remote");
     const updated = await admin.from("google_contacts_connections").update({ last_synced_at: new Date().toISOString(), last_error: result.failed ? "Egyes névjegyek ellenőrzést igényelnek." : null })
       .eq("workspace_id", connection.workspace_id).eq("lease_token", connection.lease_token!);
     if (updated.error) throw new ContactsSyncError("database");
     return result;
   } catch (error) {
+    // A token/source-loading failure must not leave the whole daily cohort due
+    // and wake Vercel every minute. Do not postpone approvals arriving mid-run
+    // or mutate a connection whose lease/owner has since changed.
+    try {
+      await ensureCurrentLease(admin, connection);
+      const deferred = await admin.from("google_contacts_links").update({ next_sync_at: nextGoogleContactsSyncAt() })
+        .eq("workspace_id", connection.workspace_id).in("state", ["pending", "creating", "uncertain", "synced"])
+        .lte("next_sync_at", new Date(startedAt).toISOString());
+      if (deferred.error) throw new ContactsSyncError("database");
+    } catch { /* The original failure is retained; never bypass a superseded lease. */ }
     const authError = error instanceof GoogleContactsAuthError || error instanceof ContactsSyncError && (error.status === 401 || error.status === 403);
     await admin.from("google_contacts_connections").update({ ...(authError ? { status: "reauth_required" } : {}), last_error: safeError(error) })
       .eq("workspace_id", connection.workspace_id).eq("refresh_token_encrypted", connection.refresh_token_encrypted).eq("status", "active");

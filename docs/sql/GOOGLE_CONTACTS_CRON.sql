@@ -1,6 +1,10 @@
 -- OPTIONAL deployment template: run as postgres AFTER GOOGLE_CONTACTS_SYNC.sql.
--- It activates a separate one-minute retry job; each unchanged link is checked at most every five minutes. Do not apply before the production route
--- and its GOOGLE_CALENDAR_CRON_SECRET environment variable have been deployed.
+-- It activates a separate one-minute queue gate. The daily worker schedules
+-- each attempted link for the next 03:00 UTC slot; due links drain in bounded
+-- batches and an empty queue makes no Vercel request. Do not apply before the
+-- production route and GOOGLE_CALENDAR_CRON_SECRET have been deployed.
+-- Existing five-minute schedules are aligned after deployment by
+-- 20261102_GOOGLE_CONTACTS_DAILY_SYNC.sql; keep this cron's minute schedule.
 --
 -- Prerequisites (Supabase Dashboard, not committed SQL literals):
 -- 1. Enable pg_cron and pg_net, and make Supabase Vault available.
