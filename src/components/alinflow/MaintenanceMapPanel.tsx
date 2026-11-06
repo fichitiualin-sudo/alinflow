@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Customer } from "@/lib/alinflow/types";
+import type { Customer, MaintenanceDeviceSelection } from "@/lib/alinflow/types";
 import type { SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
-import type { MaintenanceContactChoice } from "@/lib/alinflow/maintenance-contact-choice";
+import { preferenceDeclinesDevice, type MaintenanceContactChoice } from "@/lib/alinflow/maintenance-contact-choice";
+import { maintenanceDeviceKey } from "@/lib/alinflow/maintenance-devices";
 import { MaintenanceChoiceControls } from "./MaintenanceChoiceControls";
 import { paginateItems } from "@/lib/alinflow/customers";
 import {
@@ -15,6 +16,7 @@ import {
   maintenanceMapStatusClass,
   maintenanceMapStatusColor,
   maintenanceMapStatusLabel,
+  maintenanceDeviceSummary,
   normalizeMaintenanceMapVisibility,
   type MaintenanceMapPoint,
   type MaintenanceMapStatus,
@@ -36,6 +38,7 @@ type MaintenanceMapPanelProps = {
   onGeocodeMissing: (points: MaintenanceMapPoint[]) => void;
   onToggleMaintenanceOptOut: (point: MaintenanceMapPoint, checked: boolean) => void;
   onChangeMaintenancePreference?: (point: MaintenanceMapPoint, choice: MaintenanceContactChoice) => void;
+  onChangeMaintenanceDevicePreference?: (point: MaintenanceMapPoint, device: MaintenanceDeviceSelection, checked: boolean) => void;
   maintenanceOptOutBusyIds?: string[];
   onEditMaintenanceOrigin?: (point: MaintenanceMapPoint) => void;
 };
@@ -70,6 +73,7 @@ export function MaintenanceMapPanel({
   onGeocodeMissing,
   onToggleMaintenanceOptOut,
   onChangeMaintenancePreference,
+  onChangeMaintenanceDevicePreference,
   maintenanceOptOutBusyIds = [],
   onEditMaintenanceOrigin,
 }: MaintenanceMapPanelProps) {
@@ -180,6 +184,8 @@ export function MaintenanceMapPanel({
       appendLine(`Utolsó karbantartás: ${formatMapDate(point.lastMaintenanceDate)}`, "font-size:12px;color:#475569");
       appendLine(`Következő esedékes: ${formatMapDate(point.nextMaintenanceDue)}`, "font-size:12px;color:#475569");
       appendLine(`Karbantartások száma: ${point.maintenanceCount}`, "font-size:12px;color:#475569");
+      if (maintenanceDeviceSummary(point.maintenanceDevices)) appendLine(maintenanceDeviceSummary(point.maintenanceDevices), "font-size:12px;font-weight:700;color:#475569");
+      if (point.maintenanceDeviceDataInvalid) appendLine("A készülékadatok ellenőrzést igényelnek.", "font-size:12px;color:#92400e");
       item.appendChild(createMapPopupActions({
         name: point.customerName, phone: point.customer.phone, destination: routeTarget(point),
         onOpenCustomer: () => {
@@ -257,10 +263,28 @@ export function MaintenanceMapPanel({
               <p>Utolsó karbantartás: {formatMapDate(point.lastMaintenanceDate)}</p>
               <p>Következő esedékes: {formatMapDate(point.nextMaintenanceDue)}</p>
               <p>Karbantartások száma: {point.maintenanceCount}</p>
+              {maintenanceDeviceSummary(point.maintenanceDevices) ? <p>{maintenanceDeviceSummary(point.maintenanceDevices)}</p> : null}
+              {point.maintenanceDeviceDataInvalid ? <p className="text-amber-700">A készülékadatok ellenőrzést igényelnek.</p> : null}
               {point.maintenanceProviderName ? <p>Karbantartó: {point.maintenanceProviderName}</p> : null}
               {!hasMaintenanceMapCoordinates(point) ? <p className="font-black text-amber-100">Nincs használható koordináta{point.geocodeError ? `: ${point.geocodeError}` : "."}</p> : null}
             </div>
-            {onChangeMaintenancePreference ? <MaintenanceChoiceControls
+            {point.maintenanceDevices && point.maintenanceDevices.length > 1 ? <div className="mt-3 space-y-2" role="group" aria-label="Készülékek karbantartási választása">
+              {point.maintenanceDevices.map(device => <div key={maintenanceDeviceKey(device)} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <span className="min-w-0 break-words font-black">{device.productName} · {device.unitNumber}. készülék</span>
+                  <span className="font-bold">{maintenanceMapStatusLabel(device.status)}</span>
+                </div>
+                <p className="mt-1 text-slate-300">Utolsó karbantartás: {formatMapDate(device.lastMaintenanceDate)}</p>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 font-bold">
+                  <input type="checkbox" className="h-5 w-5 shrink-0 accent-zinc-400 disabled:cursor-wait disabled:opacity-50"
+                    aria-label={`Nem kéri a karbantartást: ${device.productName} · ${device.unitNumber}. készülék`}
+                    checked={preferenceDeclinesDevice(point.maintenanceContactPreference, device, Boolean(point.customer.maintenanceOptOut) || point.status === "optOut")}
+                    disabled={maintenanceOptOutBusyIds.includes(point.appointmentId) || !onChangeMaintenanceDevicePreference}
+                    onChange={event => onChangeMaintenanceDevicePreference?.(point, { productName: device.productName, unitNumber: device.unitNumber }, event.target.checked)} />
+                  <span>Nem kéri a karbantartást</span>
+                </label>
+              </div>)}
+            </div> : onChangeMaintenancePreference ? <MaintenanceChoiceControls
               choice={point.maintenanceContactPreference?.choice}
               legacyOptOut={Boolean(point.customer.maintenanceOptOut)}
               allowOriginalInstaller={Boolean(point.originalInstallerAvailable)}

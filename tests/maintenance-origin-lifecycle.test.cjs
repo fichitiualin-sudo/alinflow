@@ -67,7 +67,7 @@ test("reload restores the draft appointment's origin instead of the customer's d
   const state = {};
   const funcs = h.functions(["loadCustomersFromDb", "quoteReceiptScopeFromRows", "restoreCustomerMaintenanceOrigin"], {
     ...appointments, ...products, ...origin, ...records,
-    ...h.load("src/lib/alinflow/maintenance-selection.ts"), appointmentAliasesRef: { current: null },
+    ...h.load("src/lib/alinflow/maintenance-selection.ts"), ...h.load("src/lib/alinflow/maintenance-devices.ts"), appointmentAliasesRef: { current: null },
     loadCustomersPromiseRef: { current: null }, loadCustomersWorkspaceIdRef: { current: null },
     lastCustomerLoadRef: { current: null }, initialDataReadyRef: { current: false },
     currentWorkspaceId: () => "workspace", selected: external, products: [], documentsByCustomer: {}, EMPTY_QUOTE_ITEMS: [], LIST_PAGE_SIZE: 10,
@@ -94,7 +94,7 @@ function creationFixture(patch = {}) {
   const state = { selected: { ...external, ...patch }, saved: null, promoted: null, messages: [] };
   const context = {
     ...appointments, ...products,
-    ...h.load("src/lib/alinflow/maintenance-selection.ts"), appointmentAliasesRef: { current: null },
+    ...h.load("src/lib/alinflow/maintenance-selection.ts"), ...h.load("src/lib/alinflow/maintenance-devices.ts"), appointmentAliasesRef: { current: null },
     selected: state.selected, quoteItems: [item], allWorkCustomers: [], EMPTY_QUOTE_ITEMS: [],
     quickAppointment: { appointmentType: "installation", customerMode: "existing", date: "2027-01-01", time: "10:00", notes: "", quoteItems: [item], sendQuoteEmail: false, sendAppointmentEmail: false },
     quickAppointmentSavingRef: { current: false }, quickAppointmentDeliveryRef: { current: null },

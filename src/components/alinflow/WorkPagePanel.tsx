@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { AppointmentSmsRemindersButton } from "@/components/alinflow/AppointmentSmsReminders";
 import { isSmsReminderAppointment, smsReminderToday } from "@/lib/alinflow/sms-reminders";
-import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, MaintenanceInstallationSummary, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
+import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, MaintenanceDeviceSelection, MaintenanceInstallationSummary, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
+import { maintenanceDeviceKey, maintenanceSelectionFor } from "@/lib/alinflow/maintenance-devices";
+import { readMaintenanceDeviceHistory, formatMapDate, maintenanceMapStatusLabel, type MaintenanceDeviceEvent } from "@/lib/alinflow/maintenance-map";
 import { Back, Btn, Card, Field, Gradient, Layout } from "@/components/alinflow/LayoutPrimitives";
 import { PostalCodeCityFields } from "@/components/alinflow/PostalCodeCityFields";
 import { AppointmentItemsEditor } from "@/components/alinflow/AppointmentItemsEditor";
@@ -37,7 +39,7 @@ import { billingAmountsForAppointment, billingDueDateIso, billingPaymentMethodLa
 import { normalizeStatus } from "@/lib/alinflow/constants";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import type { SharedMaintenanceInstallation, SharedMaintenanceResult } from "@/lib/alinflow/shared-maintenance";
-import type { MaintenanceContactChoice, MaintenanceContactPreference } from "@/lib/alinflow/maintenance-contact-choice";
+import { preferenceDeclinesDevice, type MaintenanceContactChoice, type MaintenanceContactPreference } from "@/lib/alinflow/maintenance-contact-choice";
 import { MaintenanceChoiceControls } from "./MaintenanceChoiceControls";
 
 type MaterialItem = {
@@ -47,7 +49,7 @@ type MaterialItem = {
   isExtra?: boolean;
 };
 
-type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; appointmentId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string; relatedClimateSummary?: string; relatedClimateAddress?: string; providerName?: string; sourceInstallationId?: string };
+type DocumentRow = { action: string; title: string; status: string; appointmentType?: AppointmentType; reportId?: string; appointmentId?: string; reportDate?: string; reportTime?: string; reportDateLabel?: string; relatedClimateSummary?: string; relatedClimateAddress?: string; providerName?: string; sourceInstallationId?: string; selectedDevices?: MaintenanceDeviceSelection[] | null };
 type WorkActionDates = {
   appointmentEmail?: string;
   workReport?: string;
@@ -122,7 +124,10 @@ function sharedMaintenanceHistoryRows(customerId: string, installations: Custome
     if (!installation || result.status !== "Lezárva" || !result.date) return [];
     return [{ action: "SharedMaintenance", title: "Partner által végzett karbantartás", status: result.status,
       reportDate: result.date, reportDateLabel: result.date.replaceAll("-", "."), providerName: result.providerName,
-      sourceInstallationId: result.installationId, relatedClimateSummary: climateSummary(installation.quoteItems),
+      sourceInstallationId: result.installationId, selectedDevices: result.selectedDevices,
+      relatedClimateSummary: result.selectedDevices
+        ? result.selectedDevices.map(device => `${device.productName} · ${device.unitNumber}. készülék`).join(", ")
+        : climateSummary(installation.quoteItems),
       relatedClimateAddress: workAddressLabel(installation) }];
   }).sort((a, b) => String(b.reportDate).localeCompare(String(a.reportDate)));
 }
@@ -140,11 +145,13 @@ function ClimateMaintenanceHistory({
   works,
   sharedRows = [],
   addressLabel,
+  installationId,
   onOpenWorkVersion,
 }: {
   works: Customer[];
   sharedRows?: DocumentRow[];
   addressLabel?: string;
+  installationId?: string;
   onOpenWorkVersion: (customer: Customer) => void;
 }) {
   if (!works.length && !sharedRows.length) return null;
@@ -166,12 +173,16 @@ function ClimateMaintenanceHistory({
           >
             <span>{workDateTimeLabel(work)}</span>
             <span className="ml-2 text-slate-400">· {work.status || "Folyamatban"}</span>
+            {installationId && maintenanceSelectionFor(work, installationId) ? <span className="mt-1 block text-slate-300">
+              {maintenanceSelectionFor(work, installationId)!.map(device => `${device.productName} · ${device.unitNumber}. készülék`).join(", ")}
+            </span> : null}
           </button>
         ) : (
           <div key={`shared-${index}`} className="rounded-xl bg-white/10 px-3 py-2 text-sm font-bold text-slate-100">
             <span>{row!.reportDateLabel}</span>
             <span className="ml-2 text-slate-400">· {row!.status}</span>
             <p className="mt-1 text-slate-300">Karbantartó: {row!.providerName || "Karbantartó partner"}</p>
+            {row!.selectedDevices ? <p className="mt-1 text-slate-300">{row!.relatedClimateSummary}</p> : null}
           </div>
         ))}
       </div>
@@ -189,6 +200,8 @@ function InstalledClimateMaintenanceCard({
   originalInstallerAvailable = false,
   maintenancePreferenceBusy = false,
   onChangeMaintenancePreference,
+  onChangeMaintenanceDevicePreference,
+  inheritedHistory = [],
 }: {
   installation: Customer;
   works: Customer[];
@@ -199,9 +212,27 @@ function InstalledClimateMaintenanceCard({
   originalInstallerAvailable?: boolean;
   maintenancePreferenceBusy?: boolean;
   onChangeMaintenancePreference?: (customer: Customer, choice: MaintenanceContactChoice) => void;
+  onChangeMaintenanceDevicePreference?: (customer: Customer, device: MaintenanceDeviceSelection, checked: boolean) => void;
+  inheritedHistory?: MaintenanceDeviceEvent[];
 }) {
   const addressLabel = workAddressLabel(installation);
   const optedOut = maintenanceContactPreference ? maintenanceContactPreference.choice === "declined" : Boolean(installation.maintenanceOptOut);
+  const deviceHistory = readMaintenanceDeviceHistory(installation.quoteItems, installation.date, [
+    ...works.filter(work => normalizeStatus(work.status) === "Lezárva").map(work => ({ date: work.date,
+      selectedDevices: maintenanceSelectionFor(work, installation.activeAppointmentId || "") })),
+    ...sharedRows.map(row => ({ date: row.reportDate, selectedDevices: row.selectedDevices, providerName: row.providerName })),
+    ...inheritedHistory,
+  ]);
+  const devices = deviceHistory.devices.map(device => ({ ...device,
+    declined: preferenceDeclinesDevice(maintenanceContactPreference, device, Boolean(installation.maintenanceOptOut)),
+  }));
+  const inheritedRows: DocumentRow[] = inheritedHistory.filter(event => event.date).map(event => ({
+    action: "SharedMaintenance", title: "Partner által végzett karbantartás", status: "Lezárva",
+    reportDate: event.date, reportDateLabel: formatMapDate(event.date), providerName: event.providerName || undefined,
+    selectedDevices: event.selectedDevices, relatedClimateSummary: event.selectedDevices
+      ? event.selectedDevices.map(device => `${device.productName} · ${device.unitNumber}. készülék`).join(", ")
+      : climateSummary(installation.quoteItems),
+  }));
 
   return (
     <article className={`rounded-3xl border p-4 ${optedOut ? "border-zinc-300/25 bg-zinc-500/15" : "border-emerald-300/15 bg-emerald-400/10"}`}>
@@ -211,7 +242,7 @@ function InstalledClimateMaintenanceCard({
           {addressLabel ? <p className="mt-1 text-sm font-bold text-slate-300">Cím: {addressLabel}</p> : null}
           <p className="mt-1 text-sm font-bold text-slate-400">Telepítés: {workDateTimeLabel(installation)}</p>
         </div>
-        {!onChangeMaintenancePreference ? <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-zinc-300/20 bg-white/5 px-3 py-2 text-sm font-black text-slate-100">
+        {devices.length <= 1 && !onChangeMaintenancePreference ? <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-zinc-300/20 bg-white/5 px-3 py-2 text-sm font-black text-slate-100">
           <input
             type="checkbox"
             className="h-5 w-5 accent-zinc-400"
@@ -221,15 +252,36 @@ function InstalledClimateMaintenanceCard({
           <span>Nem kéri</span>
         </label> : null}
       </div>
-      {onChangeMaintenancePreference ? <MaintenanceChoiceControls
+      {devices.length <= 1 && onChangeMaintenancePreference ? <MaintenanceChoiceControls
         choice={maintenanceContactPreference?.choice}
         legacyOptOut={Boolean(installation.maintenanceOptOut)}
         allowOriginalInstaller={originalInstallerAvailable}
         busy={maintenancePreferenceBusy}
         onChange={(choice) => onChangeMaintenancePreference(installation, choice)}
       /> : null}
-      {works.length || sharedRows.length ? (
-        <ClimateMaintenanceHistory works={works} sharedRows={sharedRows} onOpenWorkVersion={onOpenWorkVersion} />
+      {deviceHistory.invalid ? <p className="mt-3 text-sm font-bold text-amber-200">A készülékek adatai ellenőrzést igényelnek; az egyedi karbantartási állapot nem állapítható meg.</p> : null}
+      {devices.length > 1 ? <div className="mt-3 space-y-2">
+        {devices.map(device => <div key={maintenanceDeviceKey(device)} className="rounded-xl bg-white/5 p-3 text-sm">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <span className="font-black">{device.productName} · {device.unitNumber}. készülék</span>
+            <span className={`font-bold ${device.declined ? "text-slate-400" : device.status === "ok" ? "text-emerald-300" : device.status === "overdue" ? "text-red-300" : "text-amber-200"}`}>
+              {device.declined ? "Nem kéri" : maintenanceMapStatusLabel(device.status)}
+            </span>
+          </div>
+          <p className="mt-1 text-slate-300">Utolsó karbantartás: {formatMapDate(device.lastMaintenanceDate)}</p>
+          <p className="text-slate-300">Következő esedékes: {formatMapDate(device.nextMaintenanceDue)}</p>
+          {device.providerName ? <p className="text-slate-300">Karbantartó: {device.providerName}</p> : null}
+          <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 p-2 font-bold">
+            <input type="checkbox" className="h-5 w-5 shrink-0 accent-zinc-400 disabled:cursor-wait disabled:opacity-50"
+              aria-label={`Nem kéri a karbantartást: ${device.productName} · ${device.unitNumber}. készülék`}
+              checked={device.declined} disabled={maintenancePreferenceBusy || !onChangeMaintenanceDevicePreference}
+              onChange={event => onChangeMaintenanceDevicePreference?.(installation, { productName: device.productName, unitNumber: device.unitNumber }, event.target.checked)} />
+            <span>Nem kéri a karbantartást</span>
+          </label>
+        </div>)}
+      </div> : null}
+      {works.length || sharedRows.length || inheritedRows.length ? (
+        <ClimateMaintenanceHistory works={works} sharedRows={[...sharedRows, ...inheritedRows]} installationId={installation.activeAppointmentId} onOpenWorkVersion={onOpenWorkVersion} />
       ) : (
         <p className="mt-3 rounded-2xl bg-white/5 p-3 text-sm font-bold text-slate-400">Még nincs rögzített karbantartás ennél a klímánál.</p>
       )}
@@ -266,6 +318,7 @@ type WorkPagePanelProps = {
   sharedMaintenanceInstallations?: SharedMaintenanceInstallation[];
   maintenancePreferenceBusyIds?: string[];
   onChangeMaintenancePreference?: (customer: Customer, choice: MaintenanceContactChoice) => void;
+  onChangeMaintenanceDevicePreference?: (customer: Customer, device: MaintenanceDeviceSelection, checked: boolean) => void;
   workHistory: Customer[];
   workspaceSettings: WorkspaceSettings;
   onBack: () => void;
@@ -340,6 +393,7 @@ export function WorkPagePanel({
   sharedMaintenanceInstallations = [],
   maintenancePreferenceBusyIds = [],
   onChangeMaintenancePreference,
+  onChangeMaintenanceDevicePreference,
   workHistory,
   workspaceSettings,
   onBack,
@@ -525,12 +579,14 @@ export function WorkPagePanel({
                     installation={installation}
                     works={maintenanceWorksForInstallation(installation, allMaintenanceWorks)}
                     sharedRows={partnerMaintenanceRows.filter(row => row.sourceInstallationId === installation.activeAppointmentId)}
+                    inheritedHistory={sharedMaintenanceInstallations.find(item => item.targetInstallationId === installation.activeAppointmentId)?.maintenanceHistory}
                     onOpenWorkVersion={onOpenWorkVersion}
                     onToggleMaintenanceOptOut={onToggleMaintenanceOptOut}
                     maintenanceContactPreference={maintenancePreferenceForInstallation(installation.activeAppointmentId, maintenanceContactPreferences, sharedMaintenanceInstallations)}
                     originalInstallerAvailable={installation.maintenanceOrigin !== "external" || sharedMaintenanceInstallations.some(item => item.targetInstallationId === installation.activeAppointmentId)}
                     maintenancePreferenceBusy={maintenancePreferenceBusyIds.includes(installation.activeAppointmentId || "")}
                     onChangeMaintenancePreference={onChangeMaintenancePreference}
+                    onChangeMaintenanceDevicePreference={onChangeMaintenanceDevicePreference}
                   />
                 ))}
               </div>
@@ -666,6 +722,9 @@ export function WorkPagePanel({
                   return (
                     <div key={installation.appointmentId} className="rounded-3xl border border-emerald-300/15 bg-emerald-400/10 p-4">
                       <p className="font-black">{climateSummary(installation.quoteItems) || "Karbantartott klíma"}</p>
+                      {installation.selectedDevices ? <p className="mt-1 text-sm font-bold text-slate-300">
+                        {installation.selectedDevices.map(device => `${device.productName} · ${device.unitNumber}. készülék`).join(", ")}
+                      </p> : null}
                       {addressLabel ? <p className="mt-1 text-sm font-bold text-slate-300">Cím: {addressLabel}</p> : null}
                       {dateLabel ? <p className="mt-1 text-xs font-bold text-slate-400">Telepítés: {dateLabel}</p> : null}
                     </div>

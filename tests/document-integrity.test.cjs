@@ -59,7 +59,7 @@ test("an unsaved editor signature never authorizes maintenance closure; a commit
   const context = { ...reports, ...appointments, ...scope, selected: customer, quoteItems: customer.quoteItems,
     workReportsByCustomer: {}, maintenanceReportsByCustomer: { [customer.id]: [persisted] }, workReport: draft,
     workspaceSettings: { documentSettings: { privacyNotice: { enabled: false } } },
-    persistCustomerToDb: async (value) => writes.push(value), logDocument: async () => {}, setSelected: noop,
+    assertMaintenanceSelectionSaved: async () => {}, persistCustomerToDb: async (value) => writes.push(value), logDocument: async () => {}, setSelected: noop,
     updateWorkHistory: noop, setAllowWorkResourceEdit: noop, setMessage: (message) => messages.push(message), replaceView: noop };
   let actions = h.functions(["savedReportFor", "markInstallationDone"], context);
   assert.equal(actions.savedReportFor(customer).signatureDataUrl, "");

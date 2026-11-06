@@ -3,8 +3,14 @@ import { appointmentWorkLabel, firstAppointmentTime, normalizeAppointmentType } 
 import { parsePrivacyNoticeSnapshot } from "./privacy-notice";
 import { fullCustomerAddress } from "./format";
 import { climateSummary, itemName, itemQuantity, cleanQuoteItems } from "./products";
+import { maintenanceSelectionFor } from "./maintenance-devices";
 
-export function workItemsSummary(customer: Pick<Customer, "appointmentType">, items: QuoteItem[]) {
+export function workItemsSummary(customer: Pick<Customer, "appointmentType" | "maintenanceDeviceSelections" | "maintenanceInstallationIds" | "maintenanceInstallations">, items: QuoteItem[]) {
+  if (normalizeAppointmentType(customer.appointmentType) === "maintenance") {
+    const ids = customer.maintenanceInstallationIds || customer.maintenanceInstallations?.map(item => item.appointmentId) || [];
+    const chosen = ids.flatMap(id => maintenanceSelectionFor(customer, id) || []);
+    if (chosen.length) return `${climateSummary(items)} (${chosen.map(device => `${device.productName} · ${device.unitNumber}. készülék`).join("; ")})`;
+  }
   return normalizeAppointmentType(customer.appointmentType) === "other"
     ? cleanQuoteItems(items).map(item => `${itemQuantity(item)} × ${itemName(item)}`).join(", ")
     : climateSummary(items);

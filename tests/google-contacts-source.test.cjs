@@ -64,6 +64,17 @@ test("quote from another customer and alternative quote choices are never treate
   assert.match(project(alternative, workspace, today)[0].notes, /nincs véglegesítve/);
 });
 
+test("a partial maintenance note identifies the actual unit without changing the installed quantity", () => {
+  const input = rows({ appointments: [installation(), installation({ id: "partial", appointment_type: "maintenance", scheduled_date: "2026-04-01" })],
+    maintenanceLinks: [{ workspace_id: workspace, customer_id: "customer-one", installation_appointment_id: "installation-one",
+      maintenance_appointment_id: "partial", selected_devices: [{ productName: "Teszt klíma", unitNumber: 2 }] }] });
+  const actual = project(input, workspace, today)[0];
+  assert.match(actual.notes, /2 db Teszt klíma/);
+  assert.match(actual.notes, /Utolsó rögzített karbantartás: 2026.04.01 \(Teszt klíma · 2\. készülék\)/);
+  const changed = project({ ...input, maintenanceLinks: [{ ...input.maintenanceLinks[0], selected_devices: [{ productName: "Teszt klíma", unitNumber: 1 }] }] }, workspace, today)[0];
+  assert.notEqual(actual.sourceHash, changed.sourceHash);
+});
+
 test("hash is deterministic and changes only when exported data changes", () => {
   const first = project(rows(), workspace, today)[0];
   const privateChange = project(rows({ customers: [customer({ notes: "más belső jegyzet" })] }), workspace, today)[0];

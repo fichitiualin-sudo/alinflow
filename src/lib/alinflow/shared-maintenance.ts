@@ -1,6 +1,6 @@
-import type { Customer } from "./types";
+import type { Customer, MaintenanceDeviceSelection } from "./types";
 import type { MaintenanceMapPoint } from "./maintenance-map";
-import { maintenanceMapSchedule } from "./maintenance-map";
+import { readMaintenanceDeviceHistory, maintenanceDeviceSchedule, maintenanceMapSchedule, mergeMaintenanceDeviceHistory, type MaintenanceDeviceEvent } from "./maintenance-map";
 
 export type MaintenanceAccessGrant = {
   id: string; sourceWorkspaceId: string; targetUserId: string; targetWorkspaceId: string;
@@ -14,13 +14,20 @@ export type SharedMaintenanceInstallation = {
   climates: Array<{ productName: string; quantity: number }>;
   latitude: number | null; longitude: number | null; lastMaintenanceDate: string | null; maintenanceCount: number;
   lastMaintenanceProviderName?: string | null;
+  maintenanceHistory?: Array<MaintenanceDeviceEvent & { status?: string }>;
   maintenanceOptOut?: boolean; maintenanceOptOutAt?: string | null;
   targetCustomerId?: string | null; targetInstallationId?: string | null;
 };
 export type SharedMaintenanceOptOut = {
   maintenanceOptOut: boolean; maintenanceOptOutAt: string | null; targetInstallationId: string | null;
 };
-export type SharedMaintenanceResult = { installationId: string; date: string; providerName: string; status: string };
+export type SharedMaintenanceResult = { installationId: string; date: string; providerName: string; status: string; selectedDevices?: MaintenanceDeviceSelection[] | null };
+
+function sourceDeviceHistory(item: SharedMaintenanceInstallation, quoteItems: Customer["quoteItems"]) {
+  const events = item.maintenanceHistory?.filter(event => !event.status || event.status === "Lezárva")
+    ?? (item.lastMaintenanceDate ? [{ date: item.lastMaintenanceDate, providerName: item.lastMaintenanceProviderName || item.sourceWorkspaceName }] : []);
+  return readMaintenanceDeviceHistory(quoteItems, item.installationDate, events);
+}
 
 /** This display-only object never enters customer persistence or ordinary customer actions. */
 export function sharedMaintenanceMapPoint(item: SharedMaintenanceInstallation): MaintenanceMapPoint {
@@ -32,12 +39,16 @@ export function sharedMaintenanceMapPoint(item: SharedMaintenanceInstallation): 
     maintenanceOrigin: "external", maintenanceSourceName: item.sourceWorkspaceName,
     maintenanceOptOut: item.maintenanceOptOut === true, maintenanceOptOutAt: item.maintenanceOptOutAt || undefined };
   const baseDate = item.lastMaintenanceDate || item.installationDate;
-  const schedule = maintenanceMapSchedule(baseDate);
+  const deviceHistory = sourceDeviceHistory(item, quoteItems);
+  const maintenanceDevices = deviceHistory.devices;
+  const schedule = deviceHistory.invalid ? maintenanceMapSchedule() : maintenanceDeviceSchedule(maintenanceDevices, baseDate);
   return { appointmentId: id, customer, customerId: id, customerName: item.customer.name,
     climateSummary: item.climates.map(c => `${c.quantity} db ${c.productName}`).join(" · "),
     address: [item.customer.postalCode, item.customer.city, item.customer.address].filter(Boolean).join(" "), city: item.customer.city,
     installationDate: item.installationDate, installationTime: item.installationTime, installationLabel: "Átvett telepítés",
     lastMaintenanceDate: item.lastMaintenanceDate || undefined, maintenanceCount: item.maintenanceCount,
+    maintenanceDevices,
+    maintenanceDeviceDataInvalid: deviceHistory.invalid,
     maintenanceProviderName: item.lastMaintenanceProviderName || undefined,
     maintenanceOrigin: "external", maintenanceSourceName: item.sourceWorkspaceName,
     ...schedule, status: item.maintenanceOptOut ? "optOut" : schedule.status,
@@ -58,8 +69,16 @@ export function mergeSharedMaintenancePoints(ownPoints: MaintenanceMapPoint[], r
     const ownLast = point.lastMaintenanceDate || "";
     const sourceLast = source.lastMaintenanceDate || "";
     const lastMaintenanceDate = [ownLast, sourceLast].sort().at(-1) || undefined;
-    const schedule = maintenanceMapSchedule(lastMaintenanceDate || point.installationDate || source.installationDate);
+    const sourceHistory = sourceDeviceHistory(source, point.customer.quoteItems || []);
+    const maintenanceDevices = point.maintenanceDevices
+      ? mergeMaintenanceDeviceHistory(point.maintenanceDevices, sourceHistory.devices) : undefined;
+    const maintenanceDeviceDataInvalid = point.maintenanceDeviceDataInvalid || sourceHistory.invalid;
+    const schedule = maintenanceDeviceDataInvalid ? maintenanceMapSchedule() : maintenanceDevices
+      ? maintenanceDeviceSchedule(maintenanceDevices, point.installationDate || source.installationDate)
+      : maintenanceMapSchedule(lastMaintenanceDate || point.installationDate || source.installationDate);
     return { ...point, originalInstallerAvailable: true, lastMaintenanceDate, maintenanceCount: point.maintenanceCount + source.maintenanceCount,
+      maintenanceDevices,
+      maintenanceDeviceDataInvalid,
       ...schedule, status: point.status === "optOut" ? point.status : schedule.status,
       maintenanceProviderName: sourceLast > ownLast ? source.lastMaintenanceProviderName || source.sourceWorkspaceName : point.maintenanceProviderName };
   });
@@ -73,8 +92,16 @@ export function applySharedMaintenanceResults(points: MaintenanceMapPoint[], res
     if (!completed.length) return point;
     const latest = completed[0];
     const date = [point.lastMaintenanceDate || "", latest.date].sort().at(-1)!;
+    const partnerHistory = point.maintenanceDevices
+      ? readMaintenanceDeviceHistory(point.customer.quoteItems || [], point.installationDate, completed) : undefined;
+    const maintenanceDevices = point.maintenanceDevices && partnerHistory
+      ? mergeMaintenanceDeviceHistory(point.maintenanceDevices, partnerHistory.devices) : undefined;
+    const maintenanceDeviceDataInvalid = point.maintenanceDeviceDataInvalid || partnerHistory?.invalid;
+    const schedule = maintenanceDeviceDataInvalid ? maintenanceMapSchedule() : maintenanceDevices ? maintenanceDeviceSchedule(maintenanceDevices, point.installationDate) : maintenanceMapSchedule(date);
     return { ...point, lastMaintenanceDate: date, maintenanceCount: point.maintenanceCount + completed.length,
-      ...maintenanceMapSchedule(date), status: point.status === "optOut" ? point.status : maintenanceMapSchedule(date).status,
+      maintenanceDevices,
+      maintenanceDeviceDataInvalid,
+      ...schedule, status: point.status === "optOut" ? point.status : schedule.status,
       maintenanceProviderName: latest.date >= (point.lastMaintenanceDate || "") ? latest.providerName : point.maintenanceProviderName };
   });
 }

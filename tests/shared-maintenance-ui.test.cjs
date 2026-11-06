@@ -84,7 +84,7 @@ function completion(report,enabled=true) {
   const context={...reports,...scopes,...privacy,selected:customer,normalizeAppointmentType:type=>type,
     workReportsByCustomer:{},maintenanceReportsByCustomer:{[customer.id]:report?[report]:[]},workReport:{},
     workspaceSettings:{documentSettings:{privacyNotice:{enabled}}},quoteItems:[],
-    persistCustomerToDb:async value=>writes.push(value),logDocument:async()=>{},setSelected:noop,updateWorkHistory:noop,
+    assertMaintenanceSelectionSaved:async()=>{},persistCustomerToDb:async value=>writes.push(value),logDocument:async()=>{},setSelected:noop,updateWorkHistory:noop,
     setAllowWorkResourceEdit:noop,setMessage:value=>messages.push(value),replaceView:noop,
   };
   return {...h.functions(['markInstallationDone','savedReportFor'],context),writes,messages};
@@ -134,7 +134,7 @@ test('older partner service never takes credit for a more recent own maintenance
 });
 test('accepted reference keeps one marker and combines source history with newer own maintenance without changing own contact',()=>{
   const local={...shared.sharedMaintenanceMapPoint(item),appointmentId:'target-installation',customerId:'target-customer',sharedMaintenance:undefined,
-    customer:{id:'target-customer',name:'Locally corrected name'},lastMaintenanceDate:'2026-09-01',maintenanceCount:1,status:'ok'};
+    customer:{id:'target-customer',name:'Locally corrected name'},maintenanceDevices:undefined,lastMaintenanceDate:'2026-09-01',maintenanceCount:1,status:'ok'};
   const received={...item,targetInstallationId:'target-installation',targetCustomerId:'target-customer',lastMaintenanceDate:'2026-08-01',maintenanceCount:3};
   const merged=shared.mergeSharedMaintenancePoints([local],[received]);
   assert.equal(merged.length,1);assert.equal(merged[0].lastMaintenanceDate,'2026-09-01');assert.equal(merged[0].maintenanceCount,4);

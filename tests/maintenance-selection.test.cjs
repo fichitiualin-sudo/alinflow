@@ -3,6 +3,7 @@ const test = require("node:test");
 const { harness, noop } = require("./helpers.cjs");
 const h = harness();
 const selection = h.load("src/lib/alinflow/maintenance-selection.ts");
+const devices = h.load("src/lib/alinflow/maintenance-devices.ts");
 const appointments = h.load("src/lib/alinflow/appointments.ts");
 const products = h.load("src/lib/alinflow/products.ts");
 const constants = h.load("src/lib/alinflow/constants.ts");
@@ -43,9 +44,9 @@ function scheduleFixture(options = {}) {
     maintenanceInstallationIds: ["installation", "job"], ...options.selected },
     persisted: [], rpc: [], messages: [], navigation: [], failures: options.failures || 0 };
   const aliasesRef = { current: { workspaceId: "workspace", ids: aliasMap } };
-  const context = { ...selection, ...appointments, ...products, ...constants,
+  const context = { ...selection, ...devices, ...appointments, ...products, ...constants,
     appointmentAliasesRef: aliasesRef, currentWorkspaceId: () => state.workspace,
-    workHistoryByCustomer: { customer: [installation] }, normalizedScheduleAppointmentType: "maintenance",
+    workHistoryByCustomer: { customer: options.installations || [installation] }, normalizedScheduleAppointmentType: "maintenance",
     scheduleDate: "2026-10-15", scheduleTime: "08:00", allWorkCustomers: [],
     EMPTY_QUOTE_ITEMS: [], pendingActionsRef: { current: new Set() }, maintenanceReturnRef: { current: null },
     appointmentTimeAvailable: ({ items }) => options.slotCapacity == null
@@ -139,17 +140,18 @@ test("link RPC errors propagate and missing saved identity never starts a reques
   assert.equal(f.state.rpc.length, 1);
 });
 
-for (const type of ["installation", "maintenance"]) test(`customer reload canonicalizes stale ${type} draft and phone-return context`, async () => {
+for (const { type, partial } of [{ type: "installation" }, { type: "maintenance" }, { type: "maintenance", partial: true }]) test(`customer reload canonicalizes stale ${type}${partial ? " partial-device" : ""} draft and phone-return context`, async () => {
   const records = h.load("src/lib/alinflow/appointment-records.ts");
   const origin = h.load("src/lib/alinflow/maintenance-origin.ts");
   const savedId = type === "maintenance" ? "maintenance" : "job";
   const draft = { customer: { ...installation, appointmentType: type, activeAppointmentId: savedId, notes: "Keep this edit",
+    ...(partial ? { maintenanceDeviceSelections: { job: [{ productName: "Synthetic AC", unitNumber: 3 }] } } : {}),
     maintenanceInstallationIds: ["installation", "job"], maintenanceInstallations: [
       { appointmentId: "job", quoteItems: [item] }, { appointmentId: "installation", quoteItems: [item] }] },
     quoteItems: [item, item], scheduleDate: "2026-10-15", scheduleTime: "08:00", scheduleAppointmentType: type };
   const state = {};
   const aliases = { current: null };
-  const context = { ...selection, ...appointments, ...products, ...constants, ...records, ...origin,
+  const context = { ...selection, ...devices, ...appointments, ...products, ...constants, ...records, ...origin,
     appointmentAliasesRef: aliases, loadCustomersPromiseRef: { current: null }, loadCustomersWorkspaceIdRef: { current: null },
     lastCustomerLoadRef: { current: null }, initialDataReadyRef: { current: false }, currentWorkspaceId: () => "workspace",
     selected: {}, products: [], documentsByCustomer: {}, EMPTY_QUOTE_ITEMS: [], LIST_PAGE_SIZE: 10,
@@ -160,7 +162,7 @@ for (const type of ["installation", "maintenance"]) test(`customer reload canoni
         { id: "maintenance", workspace_id: "workspace", customer_id: "customer", appointment_type: "maintenance", scheduled_date: "2026-10-15", status: "Időpont foglalva" }]
       : table === "jobs" ? [{ id: "job", workspace_id: "workspace", customer_id: "customer", legacy_source_key: "appointments:installation" }]
       : table === "quotes" ? [{ id: "installation-quote", customer_id: "customer", appointment_id: "installation" }]
-      : table === "quote_items" ? [{ quote_id: "installation-quote", product_name: "Synthetic AC", quantity: 1, unit_price: 100000 }] : [] }),
+      : table === "quote_items" ? [{ quote_id: "installation-quote", product_name: "Synthetic AC", quantity: partial ? 4 : 1, unit_price: 100000 }] : [] }),
     customerLocationFromData: h.load("src/lib/alinflow/customers.ts").customerLocationFromData, postalCodeFromCustomerData: () => "", numericDbValue: () => undefined, stockDeductedFromWorkStatus: () => false,
     sortCustomersByCreatedAtDesc: value => value, setCustomers: noop, setWorkHistoryByCustomer: value => { state.history = value; },
     readReturnContext: () => ({ customerId: "customer", appointmentId: savedId, view: "work" }),
@@ -182,4 +184,97 @@ for (const type of ["installation", "maintenance"]) test(`customer reload canoni
   assert.deepEqual(state.selected.quoteItems, state.items);
   assert.equal(draft.customer.activeAppointmentId, savedId, "stored snapshot was not mutated");
   assert.equal(draft.quoteItems.length, 2, "original quote snapshot was not mutated");
+  if (partial) assert.deepEqual(plain(state.selected.maintenanceDeviceSelections), { installation: [{ productName: "Synthetic AC", unitNumber: 3 }] });
+});
+
+test("schedule persists only one of four devices and leaves the other installation intact", async () => {
+  const source = { ...installation, quoteItems: [{ ...item, quantity: 4 }] };
+  const second = { ...installation, activeAppointmentId: "second-installation", quoteItems: [{ ...item, customName: "Other model", quantity: 2 }] };
+  const before = plain([source, second]);
+  const selectedDevices = [{ productName: "Synthetic AC", unitNumber: 3 }];
+  const f = scheduleFixture({ installations: [source, second], selected: { maintenanceInstallationIds: ["installation"],
+    maintenanceDeviceSelections: { installation: selectedDevices }, quoteItems: source.quoteItems } });
+  await f.save();
+  assert.equal(f.state.persisted.length, 1, f.state.messages.map(item => item.message).join("; "));
+  const saved = f.state.persisted[0];
+  assert.equal(saved.quoteItems.reduce((sum, item) => sum + item.quantity, 0), 1);
+  assert.equal(saved.maintenanceInstallations[0].quoteItems[0].quantity, 1);
+  assert.deepEqual(saved.maintenanceInstallations[0].selectedDevices, selectedDevices);
+  assert.deepEqual(f.state.rpc, [{ name: "replace_maintenance_device_links", args: { p_workspace_id: "workspace",
+    p_maintenance_appointment_id: "maintenance", p_customer_id: "customer",
+    p_installations: [{ installationId: "installation", selectedDevices }] } }]);
+  assert.deepEqual([source, second], before);
+});
+
+test("partial-device link retry retains the saved appointment and exact unit selection", async () => {
+  const source = { ...installation, quoteItems: [{ ...item, quantity: 4 }] };
+  const selectedDevices = [{ productName: "Synthetic AC", unitNumber: 2 }];
+  const f = scheduleFixture({ failures: 1, installations: [source], selected: { maintenanceInstallationIds: ["installation"],
+    maintenanceDeviceSelections: { installation: selectedDevices } } });
+  await f.save();
+  assert.equal(f.state.selected.activeAppointmentId, "maintenance");
+  assert.equal(f.state.messages.at(-1).tone, "warning");
+  assert.deepEqual(f.state.navigation, []);
+  await f.save();
+  assert.equal(f.state.persisted.filter(work => !work.activeAppointmentId).length, 1, "one creation, then update the saved work");
+  assert.equal(f.state.persisted[1].activeAppointmentId, "maintenance");
+  assert.equal(f.state.persisted[1].quoteItems[0].quantity, 1);
+  assert.deepEqual(f.state.rpc[0].args.p_installations, f.state.rpc[1].args.p_installations);
+  assert.deepEqual(f.state.rpc[1].args.p_installations, [{ installationId: "installation", selectedDevices }]);
+});
+
+for (const selectedDevices of [[], [{ productName: "Synthetic AC", unitNumber: 5 }]]) test(`schedule rejects cleared or stale individual selection ${JSON.stringify(selectedDevices)}`, async () => {
+  const f = scheduleFixture({ installations: [{ ...installation, quoteItems: [{ ...item, quantity: 4 }] }],
+    selected: { maintenanceInstallationIds: ["installation"], maintenanceDeviceSelections: { installation: selectedDevices } } });
+  await f.save();
+  assert.equal(f.state.persisted.length, 0);
+  assert.equal(f.state.rpc.length, 0);
+  assert.equal(f.state.navigation.length, 0);
+  assert.equal(f.state.messages.length, 1);
+});
+
+for (const selectionCase of ["partial", "legacy", "source-renamed"]) test(`database reload preserves ${selectionCase} maintenance quantities and the original installation`, async () => {
+  const selectedDevices = selectionCase === "legacy" ? null : [{ productName: "Synthetic AC", unitNumber: 3 }];
+  const rows = {
+    customers: [{ id: "customer", workspace_id: "workspace", name: "Synthetic Customer" }],
+    appointments: [
+      { id: "installation", workspace_id: "workspace", customer_id: "customer", appointment_type: "installation", quote_id: "install-quote",
+        scheduled_date: "2025-01-01", scheduled_time: "08:00", status: "Lezárva" },
+      { id: "second-installation", workspace_id: "workspace", customer_id: "customer", appointment_type: "installation", quote_id: "second-quote",
+        scheduled_date: "2025-01-02", scheduled_time: "08:00", status: "Lezárva" },
+      { id: "maintenance", workspace_id: "workspace", customer_id: "customer", appointment_type: "maintenance", quote_id: "service-quote",
+        scheduled_date: "2026-11-01", scheduled_time: "08:00", status: "Lezárva" },
+    ],
+    quotes: [{ id: "install-quote", customer_id: "customer", appointment_id: "installation" },
+      { id: "second-quote", customer_id: "customer", appointment_id: "second-installation" },
+      { id: "service-quote", customer_id: "customer", appointment_id: "maintenance" }],
+    quote_items: [{ quote_id: "install-quote", product_name: selectionCase === "source-renamed" ? "Renamed AC" : "Synthetic AC", quantity: 4, unit_price: 100000 },
+      { quote_id: "second-quote", product_name: "Other AC", quantity: 2, unit_price: 100000 },
+      { quote_id: "service-quote", product_name: "Stale entire installation", quantity: 4, unit_price: 100000 }],
+    maintenance_appointment_items: [{ maintenance_appointment_id: "maintenance", installation_appointment_id: "installation",
+      customer_id: "customer", workspace_id: "workspace", selected_devices: selectedDevices }],
+  };
+  const before = plain(rows), state = { messages: [] };
+  const context = { ...selection, ...devices, ...appointments, ...products, ...constants,
+    ...h.load("src/lib/alinflow/appointment-records.ts"), ...h.load("src/lib/alinflow/maintenance-origin.ts"),
+    ...h.load("src/lib/alinflow/customers.ts"), appointmentAliasesRef: { current: null },
+    loadCustomersPromiseRef: { current: null }, loadCustomersWorkspaceIdRef: { current: null },
+    lastCustomerLoadRef: { current: null }, initialDataReadyRef: { current: false }, currentWorkspaceId: () => "workspace",
+    selected: {}, products: [], documentsByCustomer: {}, EMPTY_QUOTE_ITEMS: [], LIST_PAGE_SIZE: 10,
+    setDataLoading: noop, setMessage: message => state.messages.push(message), loadProductsFromDb: async () => [],
+    loadSellerCompaniesFromDb: async () => [], loadInventoryFromDb: async () => {},
+    readWorkspaceRows: async table => ({ error: null, data: rows[table] || [] }),
+    numericDbValue: () => undefined, stockDeductedFromWorkStatus: () => false,
+    sortCustomersByCreatedAtDesc: value => value, setCustomers: noop, setWorkHistoryByCustomer: value => { state.history = value; },
+  };
+  await h.functions(["loadCustomersFromDb", "quoteReceiptScopeFromRows", "restoreCustomerMaintenanceOrigin"], context)
+    .loadCustomersFromDb({ background: true, preserveEditing: true });
+  assert.ok(state.history, state.messages.join("; "));
+  const history = state.history.customer, maintenance = history.find(work => work.activeAppointmentId === "maintenance");
+  assert.equal(history.find(work => work.activeAppointmentId === "installation").quoteItems[0].quantity, 4);
+  assert.equal(history.find(work => work.activeAppointmentId === "second-installation").quoteItems[0].quantity, 2);
+  assert.deepEqual(plain(maintenance.maintenanceInstallationIds), ["installation"]);
+  assert.equal(maintenance.quoteItems.reduce((sum, item) => sum + item.quantity, 0), selectionCase === "legacy" ? 4 : 1);
+  assert.deepEqual(plain(maintenance.maintenanceDeviceSelections || {}), selectedDevices ? { installation: selectedDevices } : {});
+  assert.deepEqual(rows, before);
 });

@@ -273,6 +273,7 @@ function scheduleFixture(options = {}) {
   const context = {
     pendingActionsRef, maintenanceReturnRef, setPendingActions() {},
     ...h.load("src/lib/alinflow/maintenance-selection.ts"),
+    ...h.load("src/lib/alinflow/maintenance-devices.ts"),
     appointmentAliasesRef: { current: null }, currentWorkspaceId: () => workspaceId,
     normalizeAppointmentType, normalizeAppointmentTimeInput, appointmentTypeLabel,
     cleanQuoteItems, climateQuoteItems, EMPTY_QUOTE_ITEMS: [], normalizedScheduleAppointmentType: type,

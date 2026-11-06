@@ -7,6 +7,7 @@ const schedule = h.load("src/lib/alinflow/schedule.ts");
 const products = h.load("src/lib/alinflow/products.ts");
 const constants = h.load("src/lib/alinflow/constants.ts");
 const selection = h.load("src/lib/alinflow/maintenance-selection.ts");
+const devices = h.load("src/lib/alinflow/maintenance-devices.ts");
 const plain = value => JSON.parse(JSON.stringify(value));
 const date = "2026-11-10";
 const device = quantity => ({ isManual: true, customName: "Synthetic climate", quantity, customPrice: 100000 });
@@ -29,7 +30,7 @@ function fixture(options = {}) {
     city: "Synthetic City", postalCode: "", phone: "", address: "Synthetic street", notes: "", quoteItems: items,
     sendQuoteEmail: true, sendAppointmentEmail: true,
     maintenanceInstallationIds: installations.map(work => work.activeAppointmentId), ...options.quick };
-  const context = { ...appointments, ...schedule, ...products, ...constants, ...selection,
+  const context = { ...appointments, ...schedule, ...products, ...constants, ...selection, ...devices,
     selected, quoteItems: items, scheduleDate: options.date ?? date, scheduleTime: options.time ?? "08:00",
     normalizedScheduleAppointmentType: desiredType, allWorkCustomers: options.works || [],
     EMPTY_QUOTE_ITEMS: [], pendingActionsRef: { current: state.pending }, maintenanceReturnRef: { current: null },

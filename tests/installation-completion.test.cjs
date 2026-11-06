@@ -87,6 +87,7 @@ function reportHarness({ type = "installation", fail, reportGate, declarationGat
   });
   const context = { ...base, selected, workReport, quoteItems: customer.quoteItems, workReportBusy: false, workReportLoadBlocked: false,
     workReportDeclaration: undefined, workReportDeclarationItems: customer.quoteItems, setWorkReportDeclaration: noop,
+    assertMaintenanceSelectionSaved: async () => {},
     pendingActionsRef: { current: new Set() }, setPendingActions: noop,
     workReportReceiptsRef: { current: new Map() }, currentWorkspaceId: () => "synthetic-workspace",
     scheduleDate: customer.date, shownTime: customer.time, scheduleTime: customer.time,

@@ -15,6 +15,28 @@ const customer = {
   status: "Időpont foglalva", date: "2026-10-15", time: "08:00", address: "Teszt cím",
   quoteItems: [{ isManual: true, customName: "Teszt klíma", quantity: 1, customPrice: 100000 }],
 };
+
+test("partial maintenance worksheet keeps the original third device identity in its saved summary", () => {
+  const deviceTools = h.load("src/lib/alinflow/maintenance-devices.ts");
+  const sourceItems = [{ isManual: true, customName: "Synthetic maintenance AC", quantity: 4, customPrice: 100000 }];
+  const selectedDevices = [{ productName: "Synthetic maintenance AC", unitNumber: 3 }];
+  const selectedItems = deviceTools.selectedMaintenanceQuoteItems(sourceItems, selectedDevices);
+  const maintenance = { ...customer, appointmentType: "maintenance", maintenanceInstallationIds: ["source-installation"],
+    maintenanceDeviceSelections: { "source-installation": selectedDevices }, quoteItems: selectedItems };
+  const before = JSON.stringify({ sourceItems, maintenance });
+  const summary = reportTools.workItemsSummary(maintenance, selectedItems);
+  assert.match(summary, /^1 db Synthetic maintenance AC/);
+  assert.match(summary, /Synthetic maintenance AC · 3\. készülék/);
+  assert.doesNotMatch(summary, /4 db|1\. készülék|2\. készülék|4\. készülék/);
+  const captured = reportTools.captureWorkReportSnapshot(maintenance, selectedItems);
+  assert.equal(captured.climateSummary, summary);
+  const saved = reportTools.workReportFromRow({ id: reportId, customer_id: maintenance.id, appointment_type: "maintenance",
+    climate_summary: captured.climateSummary, customer_name: captured.customerName, customer_address: captured.customerAddress,
+    customer_email: captured.customerEmail, customer_phone: captured.customerPhone });
+  assert.equal(saved.documentSnapshot.climateSummary, summary);
+  assert.equal(JSON.stringify({ sourceItems, maintenance }), before, "summary generation never renumbers or edits the original installation");
+});
+
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
 
 function fixture(options = {}) {
@@ -56,6 +78,7 @@ function fixture(options = {}) {
     ...reportTools, ...appointments, ...scopeTools, ...declarationTools,
     selected, quoteItems: selected.quoteItems, user: { id: "synthetic-user" },
     workReportBusy: false, workReportLoadBlocked: false, pendingActionsRef, workReportReceiptsRef,
+    assertMaintenanceSelectionSaved: async () => {},
     currentWorkspaceId: () => state.workspaceId, setPendingActions() {},
     scheduleDate: selected.date, scheduleTime: selected.time, shownTime: selected.time,
     withWorkspace: identity, workspaceQuery: identity, workspaceSettings: {}, supabase: db,

@@ -97,12 +97,18 @@ export type InventoryItem = {
   stock: number;
 };
 
+export type MaintenanceDeviceSelection = {
+  productName: string;
+  unitNumber: number;
+};
+
 export type MaintenanceInstallationSummary = {
   appointmentId: string;
   date?: string;
   time?: string;
   address?: string;
   quoteItems: QuoteItem[];
+  selectedDevices?: MaintenanceDeviceSelection[] | null;
 };
 
 export type Customer = {
@@ -148,6 +154,7 @@ export type Customer = {
     overrides: Record<string, string>;
   };
   maintenanceInstallationIds?: string[];
+  maintenanceDeviceSelections?: Record<string, MaintenanceDeviceSelection[]>;
   maintenanceInstallations?: MaintenanceInstallationSummary[];
   maintenanceOptOut?: boolean;
   maintenanceOptOutAt?: string;

@@ -1,4 +1,5 @@
-import type { Customer } from "./types";
+import type { Customer, MaintenanceDeviceSelection, QuoteItem } from "./types";
+import { maintenanceDeviceKey, maintenanceDeviceMatches, maintenanceDeviceSlots, maintenanceSelectionFor } from "./maintenance-devices";
 import { appointmentSummaryLabel, appointmentTimeRangeLabel, isInstallationAppointment, normalizeAppointmentType } from "./appointments";
 import { displayAddress } from "./format";
 import { cleanQuoteItems, climateQuoteItems, climateSummary } from "./products";
@@ -26,6 +27,8 @@ export type MaintenanceMapPoint = {
   lastMaintenanceDate?: string;
   nextMaintenanceDue?: string;
   maintenanceCount: number;
+  maintenanceDevices?: MaintenanceDeviceHistory[];
+  maintenanceDeviceDataInvalid?: boolean;
   maintenanceOrigin: "own" | "external";
   maintenanceSourceName?: string;
   status: MaintenanceMapStatus;
@@ -175,6 +178,72 @@ export function maintenanceMapSchedule(baselineDate?: string) {
   return { nextMaintenanceDue, status: dateStatus(nextMaintenanceDue) };
 }
 
+export type MaintenanceDeviceEvent = {
+  date?: string;
+  selectedDevices?: MaintenanceDeviceSelection[] | null;
+  providerName?: string | null;
+};
+export type MaintenanceDeviceHistory = MaintenanceDeviceSelection & {
+  lastMaintenanceDate?: string;
+  nextMaintenanceDue?: string;
+  maintenanceCount: number;
+  providerName?: string;
+  status: MaintenanceMapStatus;
+};
+
+/** A partial visit advances only its selected physical devices, including when
+ * two visits service different units of the same model. Missing selection is
+ * the historical whole-installation contract, never an empty selection. */
+export function buildMaintenanceDeviceHistory(items: QuoteItem[], installationDate: string | undefined, events: MaintenanceDeviceEvent[]) {
+  const today = toIsoDate(new Date());
+  return maintenanceDeviceSlots(items).map((slot): MaintenanceDeviceHistory => {
+    const completed = events.filter(event => event.date && parseIsoDate(event.date)
+      && event.date <= today && maintenanceDeviceMatches(slot, event.selectedDevices))
+      .sort((a, b) => b.date!.localeCompare(a.date!));
+    const lastMaintenanceDate = completed[0]?.date;
+    return { ...slot, lastMaintenanceDate, maintenanceCount: completed.length,
+      providerName: completed[0]?.providerName || undefined,
+      ...maintenanceMapSchedule(lastMaintenanceDate || installationDate) };
+  });
+}
+
+/** Old malformed import rows must not crash the whole map. Saving remains
+ * strict; a read failure is unknown, never inferred whole-installation service. */
+export function readMaintenanceDeviceHistory(items: QuoteItem[], installationDate: string | undefined, events: MaintenanceDeviceEvent[]) {
+  try { return { devices: buildMaintenanceDeviceHistory(items, installationDate, events), invalid: false }; }
+  catch { return { devices: [] as MaintenanceDeviceHistory[], invalid: true }; }
+}
+
+export function mergeMaintenanceDeviceHistory(current: MaintenanceDeviceHistory[], incoming: MaintenanceDeviceHistory[]) {
+  const byKey = new Map(incoming.map(device => [maintenanceDeviceKey(device), device]));
+  return current.map(device => {
+    const other = byKey.get(maintenanceDeviceKey(device));
+    if (!other) return device;
+    const newer = (other.lastMaintenanceDate || "") > (device.lastMaintenanceDate || "") ? other : device;
+    return { ...newer, productName: device.productName, unitNumber: device.unitNumber,
+      maintenanceCount: device.maintenanceCount + other.maintenanceCount };
+  });
+}
+
+export function maintenanceDeviceSchedule(devices: MaintenanceDeviceHistory[], fallbackDate?: string) {
+  if (!devices.length) return maintenanceMapSchedule(fallbackDate);
+  const priority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, unknown: 2, ok: 3, optOut: 4, originalInstaller: 5 };
+  const next = [...devices].sort((a, b) => priority[a.status] - priority[b.status]
+    || String(a.nextMaintenanceDue || "").localeCompare(String(b.nextMaintenanceDue || "")))[0];
+  return { status: next.status, nextMaintenanceDue: next.nextMaintenanceDue };
+}
+
+export function maintenanceDeviceSummary(devices?: MaintenanceDeviceHistory[]) {
+  if (!devices || devices.length < 2) return "";
+  const ready = devices.filter(device => device.status === "ok").length;
+  const due = devices.filter(device => device.status === "overdue").length;
+  const soon = devices.filter(device => device.status === "dueSoon").length;
+  const unknown = devices.filter(device => device.status === "unknown").length;
+  const declined = devices.filter(device => device.status === "optOut").length;
+  return [`Rendben: ${ready} / ${devices.length} klíma`, due ? `Esedékes: ${due}` : "",
+    soon ? `Hamarosan: ${soon}` : "", declined ? `Nem kéri: ${declined}` : "", unknown ? `Nincs adat: ${unknown}` : ""].filter(Boolean).join(" · ");
+}
+
 function uniqueByAppointment(customers: Customer[]) {
   const byAppointment = new Map<string, Customer>();
   customers.forEach((customer) => {
@@ -246,9 +315,11 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
 
       const maintenances = maintenanceByInstallation.get(appointmentId) || [];
       const lastMaintenanceDate = latestDate(maintenances.map((maintenance) => maintenance.date));
-      const baselineDate = lastMaintenanceDate || installation.date;
-      const nextMaintenanceDue = baselineDate ? addYears(baselineDate, 1) : undefined;
-      const status: MaintenanceMapStatus = installation.maintenanceOptOut ? "optOut" : dateStatus(nextMaintenanceDue);
+      const deviceHistory = readMaintenanceDeviceHistory(installation.quoteItems, installation.date,
+        maintenances.map(maintenance => ({ date: maintenance.date, selectedDevices: maintenanceSelectionFor(maintenance, appointmentId) })));
+      const maintenanceDevices = deviceHistory.devices;
+      const schedule = deviceHistory.invalid ? maintenanceMapSchedule() : maintenanceDeviceSchedule(maintenanceDevices, lastMaintenanceDate || installation.date);
+      const status: MaintenanceMapStatus = installation.maintenanceOptOut ? "optOut" : schedule.status;
       const address = pointAddress(installation);
       const customerForMap = { ...installation, address: installation.workAddress || installation.address };
 
@@ -264,8 +335,10 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
         installationTime: installation.time,
         installationLabel: appointmentSummaryLabel(installation) || appointmentTimeRangeLabel(installation),
         lastMaintenanceDate,
-        nextMaintenanceDue,
+        nextMaintenanceDue: schedule.nextMaintenanceDue,
         maintenanceCount: maintenances.length,
+        maintenanceDevices,
+        maintenanceDeviceDataInvalid: deviceHistory.invalid,
         maintenanceOrigin: installation.maintenanceOrigin === "external" ? "external" : "own",
         maintenanceSourceName: installation.maintenanceOrigin === "external" ? installation.maintenanceSourceName?.trim() : undefined,
         status,

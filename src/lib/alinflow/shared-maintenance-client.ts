@@ -2,7 +2,8 @@
 
 import { supabase } from "@/lib/supabase";
 import type { MaintenanceAccessGrant, SharedMaintenanceInstallation, SharedMaintenanceResult, SharedMaintenanceOptOut } from "./shared-maintenance";
-import { isMaintenanceContactPreference, type MaintenanceContactChoice, type MaintenanceContactPreference } from "./maintenance-contact-choice";
+import { isMaintenanceContactPreference, isMaintenanceDeviceSelectionList, preferenceDeclinesDevice, type MaintenanceContactChoice, type MaintenanceContactPreference } from "./maintenance-contact-choice";
+import type { MaintenanceDeviceSelection } from "./types";
 
 async function call<T>(name: string, parameters: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.rpc(name, parameters);
@@ -49,6 +50,20 @@ export async function setSharedMaintenanceOptOut(item: SharedMaintenanceInstalla
     || !(saved.maintenanceOptOutAt === null || typeof saved.maintenanceOptOutAt === "string")
     || !(saved.targetInstallationId === null || typeof saved.targetInstallationId === "string")) {
     throw new Error("A karbantartási jelölés mentése nem igazolható. Frissítsd a listát.");
+  }
+  return saved;
+}
+export async function setMaintenanceDevicePreference(workspaceId: string, installationId: string, device: MaintenanceDeviceSelection,
+  declined: boolean, expectedUpdatedAt: string | null, grantId?: string) {
+  if (!isMaintenanceDeviceSelectionList([device]) || typeof declined !== "boolean") throw new Error("A kiválasztott készülék nem azonosítható. Frissítsd a listát.");
+  const saved = await call<MaintenanceContactPreference>("set_maintenance_device_preference", {
+    p_workspace_id: workspaceId, p_installation_id: installationId, p_device: device,
+    p_declined: declined, p_expected_updated_at: expectedUpdatedAt, p_grant_id: grantId || null,
+  });
+  if (!isMaintenanceContactPreference(saved) || saved.declinedDevices === undefined
+    || preferenceDeclinesDevice(saved, device) !== declined
+    || (grantId ? saved.sourceInstallationId !== installationId || saved.isSource : saved.installationId !== installationId)) {
+    throw new Error("A készülék karbantartási jelölésének mentése nem igazolható. Frissítsd a listát.");
   }
   return saved;
 }

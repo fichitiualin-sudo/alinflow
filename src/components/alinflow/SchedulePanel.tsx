@@ -1,6 +1,7 @@
 "use client";
 
-import type { AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
+import { MaintenanceDevicePicker } from "./MaintenanceDevicePicker";
+import type { MaintenanceDeviceSelection, AppointmentType, CalendarMode, ClimateProduct, Customer, QuoteItem } from "@/lib/alinflow/types";
 import { climateSummary, isCustomQuoteItem, itemName, itemUnitPrice, sortProducts } from "@/lib/alinflow/products";
 import { displayAddress } from "@/lib/alinflow/format";
 import { Back, Btn, Card, Gradient, InfoRow, Layout, Main, Shell, Side } from "@/components/alinflow/LayoutPrimitives";
@@ -26,6 +27,7 @@ type SchedulePanelProps = {
   products: ClimateProduct[];
   maintenanceInstallationWorks: Customer[];
   maintenanceInstallationIds: string[];
+  maintenanceSelectionLocked?: boolean;
   totalQuantity: number;
   sendAppointmentNotice: boolean;
   appointmentEmailBusy: boolean;
@@ -41,7 +43,7 @@ type SchedulePanelProps = {
   onUpdateQuoteProduct: (index: number, productId: string) => void;
   onAddQuoteItem: () => void;
   onChangeQuoteItems: (items: QuoteItem[]) => void;
-  onToggleMaintenanceInstallation: (appointmentId: string, checked: boolean) => void;
+  onToggleMaintenanceInstallation: (appointmentId: string, devices: MaintenanceDeviceSelection[]) => void;
   onSetSendAppointmentNotice: (value: boolean) => void;
 };
 
@@ -90,6 +92,7 @@ export function SchedulePanel({
   products,
   maintenanceInstallationWorks,
   maintenanceInstallationIds,
+  maintenanceSelectionLocked = false,
   totalQuantity,
   sendAppointmentNotice,
   appointmentEmailBusy,
@@ -190,38 +193,9 @@ export function SchedulePanel({
 
             {isMaintenance ? (
               <div className="mb-4 space-y-3">
-                {maintenanceInstallationWorks.length ? (
-                  <div className="space-y-2">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-400">Karbantartás ehhez a klímához</p>
-                    {maintenanceInstallationWorks.map((work) => (
-                      <label key={work.activeAppointmentId || `${work.id}-${work.date}`} className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-                        <input
-                          type="checkbox"
-                          className="mt-1 h-5 w-5 accent-cyan-300"
-                          checked={Boolean(work.activeAppointmentId && maintenanceInstallationIds.includes(work.activeAppointmentId))}
-                          disabled={!work.activeAppointmentId}
-                          onChange={(event) => {
-                            if (!work.activeAppointmentId) return;
-                            onToggleMaintenanceInstallation(work.activeAppointmentId, event.target.checked);
-                          }}
-                        />
-                        <span className="min-w-0">
-                          <span className="block font-black">{climateSummary(work.quoteItems) || "Korábbi telepítés"}</span>
-                          {displayAddress(work) ? <span className="mt-1 block text-sm font-bold text-slate-300">{displayAddress(work)}</span> : null}
-                          <span className="mt-1 block text-sm text-slate-400">{work.date ? `${work.date.replaceAll("-", ".")} · ${work.time || ""}` : "dátum nélkül"}</span>
-                          {work.maintenanceOptOut ? (
-                            <span className="mt-2 inline-flex rounded-full border border-zinc-300/30 bg-zinc-500/25 px-3 py-1 text-xs font-black text-zinc-100">
-                              Nem kéri a karbantartást
-                            </span>
-                          ) : null}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                ) : null}
-                {maintenanceInstallationWorks.length && !maintenanceInstallationIds.length ? (
-                  <div className="rounded-2xl border border-amber-300/30 bg-amber-400/15 p-4 text-sm font-black text-amber-100">Válassz legalább egy kapcsolódó klímát.</div>
-                ) : null}
+                <MaintenanceDevicePicker works={maintenanceInstallationWorks} installationIds={maintenanceInstallationIds}
+                  selections={selected.maintenanceDeviceSelections} onChange={onToggleMaintenanceInstallation} disabled={busy || maintenanceSelectionLocked} />
+                {maintenanceSelectionLocked ? <p className="text-sm text-slate-400">Az aláírt vagy lezárt karbantartás készülékválasztása már nem módosítható. További klímához indíts új karbantartást.</p> : null}
               </div>
             ) : null}
 

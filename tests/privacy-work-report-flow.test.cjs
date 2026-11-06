@@ -25,6 +25,7 @@ function fixture(options = {}) {
   const db = database(async (op) => {
     calls.writes.push(op);
     if (op.value?.work_description) {
+      options.onSaveStarted?.();
       if (options.saveGate) await options.saveGate;
       return options.saveError ? { error: options.saveError } : { data: row(op.value), error: null };
     }
@@ -42,6 +43,7 @@ function fixture(options = {}) {
     ...reports, ...privacy, ...appointments, ...scope, selected, quoteItems: [], user: { id: ids.other },
     workReportLoadBlocked: false, pendingActionsRef, setPendingActions: noop,
     workReportDeclaration: undefined,
+    assertMaintenanceSelectionSaved: async () => {},
     workReportReceiptsRef: { current: new Map() }, currentWorkspaceId: () => state.workspaceId,
     withWorkspace: (value) => ({ ...value, workspace_id: state.workspaceId }),
     workspaceQuery: (query) => query.eq("workspace_id", state.workspaceId), supabase: db,
@@ -156,11 +158,12 @@ test("missing notice column fails once without stripping consent or retrying the
 });
 
 test("a completed old-workspace save cannot replace the new workspace's report or show success", async () => {
-  let release;
+  let release, entered;
   const saveGate = new Promise((resolve) => { release = resolve; });
-  const run = fixture({ notice: privacyNotice(), saveGate });
+  const saveStarted = new Promise((resolve) => { entered = resolve; });
+  const run = fixture({ notice: privacyNotice(), saveGate, onSaveStarted: entered });
   const pending = run.save();
-  await Promise.resolve();
+  await saveStarted;
   run.state.workspaceId = ids.other;
   const newWorkspaceReport = { id: "new-workspace-report", workDescription: "Other workspace" };
   run.state.report = newWorkspaceReport;

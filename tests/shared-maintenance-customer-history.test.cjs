@@ -14,11 +14,13 @@ const products = h.load("src/lib/alinflow/products.ts");
 const format = h.load("src/lib/alinflow/format.ts");
 const appointments = h.load("src/lib/alinflow/appointments.ts");
 const constants = h.load("src/lib/alinflow/constants.ts");
+const maintenanceDevices = h.load("src/lib/alinflow/maintenance-devices.ts");
+const maintenanceMap = h.load("src/lib/alinflow/maintenance-map.ts");
 const ui = h.functions([
   "workIdentity", "compareWorkByDateDesc", "workDateTimeLabel", "workAddressLabel", "isCancelledWork",
   "hasInstalledClimateItems", "isInstalledClimateWork", "sharedMaintenanceHistoryRows",
   "ClimateMaintenanceHistory", "InstalledClimateMaintenanceCard", "MaintenanceHistory",
-], { climateQuoteItems: products.climateQuoteItems, climateSummary: products.climateSummary,
+], { ...maintenanceDevices, ...maintenanceMap, ...h.load("src/lib/alinflow/maintenance-contact-choice.ts"), climateQuoteItems: products.climateQuoteItems, climateSummary: products.climateSummary,
   displayAddress: format.displayAddress, isInstallationAppointment: appointments.isInstallationAppointment,
   normalizeStatus: constants.normalizeStatus }, file);
 
