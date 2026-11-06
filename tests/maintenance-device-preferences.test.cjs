@@ -92,7 +92,7 @@ test("device-choice validation rejects malformed and repeated identities while p
 const { MaintenanceChoiceControls } = h.load("src/components/alinflow/MaintenanceChoiceControls.tsx");
 const { InstalledClimateMaintenanceCard } = h.functions(["workIdentity", "workDateTimeLabel", "workAddressLabel", "ClimateMaintenanceHistory", "InstalledClimateMaintenanceCard"],
   { ...devices, ...map, ...choices, ...h.load("src/lib/alinflow/products.ts"), ...h.load("src/lib/alinflow/format.ts"),
-    ...h.load("src/lib/alinflow/constants.ts"), MaintenanceChoiceControls }, "src/components/alinflow/WorkPagePanel.tsx");
+    ...h.load("src/lib/alinflow/constants.ts"), ...h.load("src/components/alinflow/MaintenanceChoiceControls.tsx") }, "src/components/alinflow/WorkPagePanel.tsx");
 function allInputs(node) {
   if (!React.isValidElement(node)) return [];
   return [...(node.type === "input" ? [node] : []), ...React.Children.toArray(node.props.children).flatMap(allInputs)];

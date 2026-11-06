@@ -4,6 +4,7 @@ import type { MaintenanceDeviceSelection, QuoteItem } from "./types";
 import { maintenanceDeviceKey, maintenanceDeviceSlots } from "./maintenance-devices";
 
 export type MaintenanceContactChoice = "open" | "original_installer" | "declined";
+export type MaintenanceDeviceDeclinedDate = MaintenanceDeviceSelection & { declinedAt: string };
 
 /** A read-only view of the choice shared by the original installation and its recipients. */
 export type MaintenanceContactPreference = {
@@ -16,7 +17,24 @@ export type MaintenanceContactPreference = {
   isSource: boolean;
   /** Whole legacy refusal remains choice=declined; open may refuse only these units. */
   declinedDevices?: MaintenanceDeviceSelection[] | null;
+  declinedAt?: string | null;
+  declinedDeviceDates?: MaintenanceDeviceDeclinedDate[] | null;
 };
+
+function isRefusalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  return Boolean(match && Number.isFinite(Date.parse(value))
+    && new Date(`${match[1]}T00:00:00Z`).toISOString().slice(0, 10) === match[1]);
+}
+
+function isMaintenanceDeviceDeclinedDates(value: unknown): value is MaintenanceDeviceDeclinedDate[] {
+  return Array.isArray(value) && value.length <= 1000
+    && value.every(device => device && typeof device === "object" && !Array.isArray(device)
+      && Object.keys(device).every(key => ["productName", "unitNumber", "declinedAt"].includes(key))
+      && isRefusalTimestamp(device.declinedAt))
+    && isMaintenanceDeviceSelectionList(value.map(({ productName, unitNumber }) => ({ productName, unitNumber })));
+}
 
 export function isMaintenanceDeviceSelectionList(value: unknown): value is MaintenanceDeviceSelection[] {
   if (!Array.isArray(value) || value.length > 1000) return false;
@@ -40,7 +58,9 @@ export function isMaintenanceContactPreference(value: unknown): value is Mainten
     .every(key => typeof row[key] === "string" && Boolean(row[key]))
     && ["open", "original_installer", "declined"].includes(String(row.choice))
     && typeof row.isSource === "boolean"
-    && (row.declinedDevices == null || isMaintenanceDeviceSelectionList(row.declinedDevices));
+    && (row.declinedDevices == null || isMaintenanceDeviceSelectionList(row.declinedDevices))
+    && (row.declinedAt == null || isRefusalTimestamp(row.declinedAt))
+    && (row.declinedDeviceDates == null || isMaintenanceDeviceDeclinedDates(row.declinedDeviceDates));
 }
 
 export function preferenceDeclinesDevice(preference: MaintenanceContactPreference | undefined, device: MaintenanceDeviceSelection, legacyOptOut = false) {
@@ -51,6 +71,31 @@ export function preferenceDeclinesDevice(preference: MaintenanceContactPreferenc
 
 export function declinedMaintenanceDevices(items: QuoteItem[], preference?: MaintenanceContactPreference, legacyOptOut = false) {
   return maintenanceDeviceSlots(items).filter(device => preferenceDeclinesDevice(preference, device, legacyOptOut));
+}
+
+/** A preference's version is never evidence of when the refusal was made. */
+export function maintenanceDeclinedAt(preference?: MaintenanceContactPreference, legacyOptOut = false, legacyOptOutAt?: string | null) {
+  const value = preference ? (preference.choice === "declined" ? preference.declinedAt : undefined)
+    : legacyOptOut ? legacyOptOutAt : undefined;
+  return isRefusalTimestamp(value) ? value : undefined;
+}
+
+export function maintenanceDeviceDeclinedAt(preference: MaintenanceContactPreference | undefined, device: MaintenanceDeviceSelection,
+  legacyOptOut = false, legacyOptOutAt?: string | null) {
+  if (!preference) return maintenanceDeclinedAt(undefined, legacyOptOut, legacyOptOutAt);
+  if (!preferenceDeclinesDevice(preference, device)) return undefined;
+  // The last device can complete a whole refusal while earlier devices still
+  // have unknown dates. The whole-installation timestamp cannot date those.
+  const value = preference.declinedDeviceDates?.find(row => maintenanceDeviceKey(row) === maintenanceDeviceKey(device))?.declinedAt;
+  return isRefusalTimestamp(value) ? value : undefined;
+}
+
+export function formatMaintenanceRefusalDate(value?: string | null) {
+  if (!isRefusalTimestamp(value)) return "";
+  const parts = new Intl.DateTimeFormat("hu-HU", { timeZone: "Europe/Budapest", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(entry => entry.type === type)?.value || "";
+  return `${part("year")}.${part("month")}.${part("day")}. ${part("hour")}:${part("minute")}`;
 }
 
 export function applyMaintenanceContactPreferences(points: MaintenanceMapPoint[], preferences: MaintenanceContactPreference[]): MaintenanceMapPoint[] {

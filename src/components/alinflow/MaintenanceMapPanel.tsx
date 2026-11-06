@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Customer, MaintenanceDeviceSelection } from "@/lib/alinflow/types";
 import type { SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
-import { preferenceDeclinesDevice, type MaintenanceContactChoice } from "@/lib/alinflow/maintenance-contact-choice";
+import { maintenanceDeclinedAt, maintenanceDeviceDeclinedAt, preferenceDeclinesDevice, type MaintenanceContactChoice } from "@/lib/alinflow/maintenance-contact-choice";
 import { maintenanceDeviceKey } from "@/lib/alinflow/maintenance-devices";
-import { MaintenanceChoiceControls } from "./MaintenanceChoiceControls";
+import { MaintenanceChoiceControls, MaintenanceRefusalDate } from "./MaintenanceChoiceControls";
 import { paginateItems } from "@/lib/alinflow/customers";
 import {
   filterMaintenanceMapPoints,
@@ -35,6 +35,7 @@ type MaintenanceMapPanelProps = {
   headerActions?: ReactNode;
   onOpenCustomer: (customer: Customer) => void;
   onOpenShared?: (item: SharedMaintenanceInstallation) => void;
+  onCallCustomer?: (point: MaintenanceMapPoint) => void;
   onGeocodeMissing: (points: MaintenanceMapPoint[]) => void;
   onToggleMaintenanceOptOut: (point: MaintenanceMapPoint, checked: boolean) => void;
   onChangeMaintenancePreference?: (point: MaintenanceMapPoint, choice: MaintenanceContactChoice) => void;
@@ -70,6 +71,7 @@ export function MaintenanceMapPanel({
   headerActions,
   onOpenCustomer,
   onOpenShared,
+  onCallCustomer,
   onGeocodeMissing,
   onToggleMaintenanceOptOut,
   onChangeMaintenancePreference,
@@ -116,8 +118,8 @@ export function MaintenanceMapPanel({
       return count ? [{ key: status, label: maintenanceMapStatusLabel(status), color: maintenanceMapStatusColor(status), count }] : [];
     }),
   })), [groups]);
-  const current = useRef({ points, groups, onOpenCustomer, onOpenShared });
-  current.current = { points, groups, onOpenCustomer, onOpenShared };
+  const current = useRef({ points, groups, onOpenCustomer, onOpenShared, onCallCustomer });
+  current.current = { points, groups, onOpenCustomer, onOpenShared, onCallCustomer };
 
   const selectGroup = useCallback((id: string) => {
     setSelectedGroupId(id);
@@ -188,6 +190,10 @@ export function MaintenanceMapPanel({
       if (point.maintenanceDeviceDataInvalid) appendLine("A készülékadatok ellenőrzést igényelnek.", "font-size:12px;color:#92400e");
       item.appendChild(createMapPopupActions({
         name: point.customerName, phone: point.customer.phone, destination: routeTarget(point),
+        onCall: () => {
+          const latestPoint = current.current.points.find((item) => item.appointmentId === point.appointmentId);
+          if (latestPoint) current.current.onCallCustomer?.(latestPoint);
+        },
         onOpenCustomer: () => {
           const latestPoint = current.current.points.find((item) => item.appointmentId === point.appointmentId);
           if (latestPoint?.sharedMaintenance) current.current.onOpenShared?.(latestPoint.sharedMaintenance);
@@ -281,7 +287,8 @@ export function MaintenanceMapPanel({
                     checked={preferenceDeclinesDevice(point.maintenanceContactPreference, device, Boolean(point.customer.maintenanceOptOut) || point.status === "optOut")}
                     disabled={maintenanceOptOutBusyIds.includes(point.appointmentId) || !onChangeMaintenanceDevicePreference}
                     onChange={event => onChangeMaintenanceDevicePreference?.(point, { productName: device.productName, unitNumber: device.unitNumber }, event.target.checked)} />
-                  <span>Nem kéri a karbantartást</span>
+                  <span>Nem kéri a karbantartást<MaintenanceRefusalDate at={maintenanceDeviceDeclinedAt(point.maintenanceContactPreference, device,
+                    Boolean(point.customer.maintenanceOptOut) || point.status === "optOut", point.customer.maintenanceOptOutAt)} /></span>
                 </label>
               </div>)}
             </div> : onChangeMaintenancePreference ? <MaintenanceChoiceControls
@@ -289,10 +296,12 @@ export function MaintenanceMapPanel({
               legacyOptOut={Boolean(point.customer.maintenanceOptOut)}
               allowOriginalInstaller={Boolean(point.originalInstallerAvailable)}
               busy={maintenanceOptOutBusyIds.includes(point.appointmentId)}
+              declinedAt={maintenanceDeclinedAt(point.maintenanceContactPreference, Boolean(point.customer.maintenanceOptOut), point.customer.maintenanceOptOutAt)}
               onChange={(choice) => onChangeMaintenancePreference(point, choice)}
             /> : <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-black text-slate-100">
               <input type="checkbox" className="h-5 w-5 shrink-0 accent-zinc-400 disabled:cursor-wait disabled:opacity-50" checked={point.status === "optOut"} disabled={maintenanceOptOutBusyIds.includes(point.appointmentId)} onChange={(event) => onToggleMaintenanceOptOut(point, event.target.checked)} />
-              <span>Nem kéri a karbantartást</span>
+              <span>Nem kéri a karbantartást{point.status === "optOut" ? <MaintenanceRefusalDate
+                at={maintenanceDeclinedAt(point.maintenanceContactPreference, Boolean(point.customer.maintenanceOptOut), point.customer.maintenanceOptOutAt)} /> : null}</span>
             </label>}
             {point.sharedMaintenance ? <p className="mt-3 text-sm text-violet-200">Egyeztetés {point.maintenanceSourceName} nevében</p> : null}
             <div className="mt-4 grid grid-cols-2 gap-2">

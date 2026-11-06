@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { Customer, CustomerTimelineItem, View } from "@/lib/alinflow/types";
 import { STATUS_OPTIONS } from "@/lib/alinflow/constants";
 import { mapsHref, telHref } from "@/lib/alinflow/format";
@@ -10,6 +11,7 @@ type LeadPanelProps = {
   selected: Customer;
   customers: Customer[];
   saving?: boolean;
+  phoneCallNotes?: ReactNode;
   onBack: () => void;
   onSaveCustomerOnly: () => void;
   onSaveCustomerAndQuote: () => void;
@@ -140,6 +142,7 @@ export function LeadPanel({
   selected,
   customers,
   saving = false,
+  phoneCallNotes,
   onBack,
   onSaveCustomerOnly,
   onSaveCustomerAndQuote,
@@ -185,6 +188,7 @@ export function LeadPanel({
               onChange={(event) => onUpdateSelectedField("notes", event.target.value)}
               placeholder="Például: mikor hívjam vissza, mit kért, fontos tudnivalók..."
             />
+            {phoneCallNotes}
           </Card>
         </Main>
         <Side>

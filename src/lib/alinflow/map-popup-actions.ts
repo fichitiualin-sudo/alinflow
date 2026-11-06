@@ -42,12 +42,13 @@ export function createMapPopupList<T>(items: T[], renderItem: (item: T) => HTMLE
   return list;
 }
 
-export function createMapPopupActions({ name, phone, destination, onOpenCustomer, onDeleteCustomer }: {
+export function createMapPopupActions({ name, phone, destination, onOpenCustomer, onDeleteCustomer, onCall }: {
   name: string;
   phone: string;
   destination: string;
   onOpenCustomer: () => void;
   onDeleteCustomer?: () => Promise<boolean>;
+  onCall?: () => void;
 }) {
   const actions = document.createElement("div");
   actions.className = `alinflow-map-popup-actions${onDeleteCustomer ? " alinflow-map-popup-actions-with-delete" : ""}`;
@@ -62,7 +63,8 @@ export function createMapPopupActions({ name, phone, destination, onOpenCustomer
     return link;
   };
   if (/\d/.test(phoneUrl)) {
-    addLink("Hívás", phoneUrl, "call");
+    const call = addLink("Hívás", phoneUrl, "call");
+    if (onCall) call.onclick = onCall;
   } else {
     const missing = document.createElement("span");
     missing.className = "alinflow-map-popup-action alinflow-map-popup-unavailable";

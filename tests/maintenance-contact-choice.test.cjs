@@ -155,7 +155,8 @@ test('map filters omit the retired choice and retain all installations in their 
 test('customer installation card uses the same explicit choice, preserving partner history and the original record',()=>{
   const ui=h.functions(['workDateTimeLabel','workAddressLabel','workIdentity','ClimateMaintenanceHistory','InstalledClimateMaintenanceCard'],
     {...map,...choices,...h.load('src/lib/alinflow/maintenance-devices.ts'),...h.load('src/lib/alinflow/constants.ts'),
-      climateSummary:products.climateSummary,displayAddress:format.displayAddress,MaintenanceChoiceControls},
+      climateSummary:products.climateSummary,displayAddress:format.displayAddress,
+      ...h.load('src/components/alinflow/MaintenanceChoiceControls.tsx')},
     'src/components/alinflow/WorkPagePanel.tsx');
   const legacy={...installation,maintenanceOptOut:true};const before=JSON.stringify(legacy);
   const html=render(ui.InstalledClimateMaintenanceCard,{installation:legacy,works:[],
