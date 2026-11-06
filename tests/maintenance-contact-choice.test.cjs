@@ -69,7 +69,8 @@ test('explicit decline applies to either role, explicit open restores due tracki
 test('a saved choice applies to accepted mirrors while preserving one marker, history and local contact details',()=>{
   const own={...sourcePoint,appointmentId:'mirror',customerId:'recipient-customer',maintenanceOrigin:'external',
     customer:{...installation,id:'recipient-customer',activeAppointmentId:'mirror',name:'Locally corrected'},
-    lastMaintenanceDate:'2026-01-01',maintenanceCount:1};
+    lastMaintenanceDate:'2026-01-01',maintenanceCount:1,
+    maintenanceDevices:map.buildMaintenanceDeviceHistory(installation.quoteItems, installation.date, [{date:'2026-01-01'}])};
   const accepted={...item,targetInstallationId:'mirror',targetCustomerId:'recipient-customer',lastMaintenanceDate:'2025-01-01',maintenanceCount:2};
   const merged=shared.mergeSharedMaintenancePoints([own],[accepted]);
   const rendered=choices.applyMaintenanceContactPreferences(merged,[{...preference,installationId:'mirror'}]);
@@ -153,7 +154,8 @@ test('map filters omit the retired choice and retain all installations in their 
 
 test('customer installation card uses the same explicit choice, preserving partner history and the original record',()=>{
   const ui=h.functions(['workDateTimeLabel','workAddressLabel','workIdentity','ClimateMaintenanceHistory','InstalledClimateMaintenanceCard'],
-    {climateSummary:products.climateSummary,displayAddress:format.displayAddress,MaintenanceChoiceControls},
+    {...map,...choices,...h.load('src/lib/alinflow/maintenance-devices.ts'),...h.load('src/lib/alinflow/constants.ts'),
+      climateSummary:products.climateSummary,displayAddress:format.displayAddress,MaintenanceChoiceControls},
     'src/components/alinflow/WorkPagePanel.tsx');
   const legacy={...installation,maintenanceOptOut:true};const before=JSON.stringify(legacy);
   const html=render(ui.InstalledClimateMaintenanceCard,{installation:legacy,works:[],

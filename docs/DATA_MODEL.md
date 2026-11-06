@@ -206,3 +206,11 @@ jogosultság nincs; megszakadt törlés ugyanazzal az azonosítóval újraprób�
 ## Korábbi tervezési irány
 
 A többcéges rendszerben minden domain-rekordhoz `company_id` szükséges, RLS védelemmel. Ezt a jelenlegi rendszer stabilizálása előtt nem szabad elkezdeni.
+
+## Készülékenkénti karbantartás (2026-11-06)
+
+A `maintenance_appointment_items.selected_devices` nullable JSON a karbantartott készülékek terméknevét és típuson belüli sorszámát tárolja. A null a korábbi teljes telepítést jelenti; az új, nem üres lista csak a kijelölt egységeket. Azonos nevű ajánlati sorok számozása összevont, így az ár nélküli partneri másolat is ugyanazokat az egységeket azonosítja. A forrás ajánlat és az aláírt dokumentum nem íródik át. A térkép, ügyféloldal és névjegyszinkron készülékenként kezeli az előzményt. Aláírt/lezárt munka kiválasztása és ajánlati tételei nem módosíthatók.
+
+A tartós visszautasítás külön adat: `maintenance_contact_preferences.declined_devices`. A `choice=declined` az egész telepítést jelenti; az `open` mellett tárolt részlista csak a felsorolt készülékeket zárja ki a karbantartási figyelésből. A forrás és a jogosult partner ugyanazt a forrástelepítéshez kötött döntést látja. Az új eszközszintű RPC a meglévő pontos felhasználóhoz kötött megosztás, munkaterületi tagság és optimista verzióellenőrzés mellett működik. Egy alkalom kijelölésének elhagyása önmagában nem jelent visszautasítást.
+
+Aktiválási sorrend: `sql/20261106_PARTIAL_MAINTENANCE.sql`, `sql/20261106_MAINTENANCE_DEVICE_PREFERENCES.sql`, a hozzájuk tartozó VERIFY fájlok, majd az alkalmazás. A régi üzleti sorokat egyik migráció sem módosítja. A quote és a kapcsolatok mentése külön tranzakció; aláírás, számlázás és lezárás előtt a kliens összeveti a mentett kapcsolatokat, mennyiségeket és a látható készülékválasztást, és eltérés esetén újramentést kér.

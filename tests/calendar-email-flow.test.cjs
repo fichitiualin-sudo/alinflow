@@ -47,13 +47,14 @@ function fixture(options = {}) {
   const context = {
     ...products, ...appointments, ...documents, ...delivery,
     ...h.load("src/lib/alinflow/maintenance-selection.ts"),
+    ...h.load("src/lib/alinflow/maintenance-devices.ts"),
     appointmentAliasesRef: { current: { workspaceId, ids: options.aliases || new Map() } },
     quickAppointment: draft, quickAppointmentSavingRef: savingRef, quickAppointmentDeliveryRef: deliveryRef,
     pendingActionsRef, appointmentReceiptsRef,
     selected: unrelated, quoteItems: unrelated.quoteItems, quoteIssuedAt: "", workspaceSettings: settings,
     allWorkCustomers: [], EMPTY_QUOTE_ITEMS: [], currentWorkspaceId: () => state.workspaceId,
     quickAppointmentSelectedCustomer: () => existing,
-    customerInstallationWorks: () => existing ? [existing] : [],
+    customerInstallationWorks: () => options.installations || (existing ? [existing] : []),
     appointmentTimeAvailable: () => true,
     persistCustomerToDb: async customer => {
       state.persist.push(plain(customer));
@@ -114,6 +115,37 @@ test("calendar maintenance aliases save a single real installation and a single 
   assert.equal(f.state.persist[0].quoteItems.reduce((sum, item) => sum + item.quantity, 0), 1);
   assert.equal(f.state.links.length, 1);
   assert.equal(f.state.requests.length, 0);
+});
+
+test("calendar maintenance saves one selected device out of four and preserves other installations", async () => {
+  const source = existingCustomer({ quoteItems: [{ customName: "Previously installed AC", quantity: 4, customPrice: 250000 }] });
+  const second = existingCustomer({ activeAppointmentId: "second-installation", quoteItems: [{ customName: "Other AC", quantity: 2 }] });
+  const before = plain([source, second]);
+  const selectedDevices = [{ productName: "Previously installed AC", unitNumber: 3 }];
+  const f = fixture({ existing: source, installations: [source, second], draft: { appointmentType: "maintenance",
+    maintenanceInstallationIds: [oldAppointmentId], maintenanceDeviceSelections: { [oldAppointmentId]: selectedDevices },
+    sendQuoteEmail: false, sendAppointmentEmail: false } });
+  await f.saveQuickAppointment();
+  assert.equal(f.state.persist.length, 1, f.state.messages.join("; "));
+  const saved = f.state.persist[0];
+  assert.equal(saved.quoteItems.reduce((sum, item) => sum + item.quantity, 0), 1);
+  assert.deepEqual(saved.maintenanceInstallationIds, [oldAppointmentId]);
+  assert.deepEqual(saved.maintenanceInstallations[0].selectedDevices, selectedDevices);
+  assert.equal(saved.maintenanceInstallations[0].quoteItems[0].quantity, 1);
+  assert.deepEqual(plain(f.state.links[0].customer.maintenanceDeviceSelections), { [oldAppointmentId]: selectedDevices });
+  assert.equal(f.state.requests.length, 0);
+  assert.deepEqual([source, second], before);
+});
+
+for (const selectedDevices of [[], [{ productName: "Previously installed AC", unitNumber: 5 }]]) test(`calendar rejects cleared or stale device selection ${JSON.stringify(selectedDevices)}`, async () => {
+  const source = existingCustomer({ quoteItems: [{ customName: "Previously installed AC", quantity: 4, customPrice: 250000 }] });
+  const f = fixture({ existing: source, draft: { appointmentType: "maintenance", maintenanceInstallationIds: [oldAppointmentId],
+    maintenanceDeviceSelections: { [oldAppointmentId]: selectedDevices }, sendQuoteEmail: false, sendAppointmentEmail: false } });
+  await f.saveQuickAppointment();
+  assert.equal(f.state.persist.length, 0);
+  assert.equal(f.state.links.length, 0);
+  assert.equal(f.state.requests.length, 0);
+  assert.equal(f.state.messages.length, 1);
 });
 
 for (const ids of [["unknown-installation"], []]) {

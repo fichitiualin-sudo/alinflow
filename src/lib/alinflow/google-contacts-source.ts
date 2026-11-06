@@ -101,11 +101,16 @@ export function projectGoogleContactSources(rows: ContactSourceRows, workspaceId
       if (devices.length) notes.push(...devices.map(deviceDetails));
       if (!items.length && !devices.length) notes.push(alternatives ? "A klímatípus nincs véglegesítve az ajánlatban." : "A klíma típusa nincs rögzítve.");
       const maintenanceDates = rows.maintenanceLinks.filter((link) => scope(link, workspaceId) && link.customer_id === customerId && link.installation_appointment_id === workId)
-        .map((link) => appointments.get(value(link.maintenance_appointment_id)))
-        .filter((maintenance): maintenance is Row => Boolean(maintenance && maintenance.customer_id === customerId && maintenance.appointment_type === "maintenance"
+        .map((link) => ({ maintenance: appointments.get(value(link.maintenance_appointment_id)), selection: link.selected_devices }))
+        .filter(({ maintenance }) => Boolean(maintenance && maintenance.customer_id === customerId && maintenance.appointment_type === "maintenance"
           && maintenance.status === "Lezárva" && !maintenance.cancelled_at && date(maintenance.scheduled_date) && date(maintenance.scheduled_date) <= today))
-        .map((maintenance) => date(maintenance.scheduled_date)).sort();
-      if (maintenanceDates.length) notes.push(`Utolsó rögzített karbantartás: ${maintenanceDates[maintenanceDates.length - 1].replace(/-/g, ".")}`);
+        .map(({ maintenance, selection }) => ({ date: date(maintenance!.scheduled_date), selection }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      if (maintenanceDates.length) {
+        const latest = maintenanceDates[maintenanceDates.length - 1];
+        const selected = Array.isArray(latest.selection) ? latest.selection.map((device: Row) => `${value(device.productName)} · ${Number(device.unitNumber)}. készülék`).join(", ") : "";
+        notes.push(`Utolsó rögzített karbantartás: ${latest.date.replace(/-/g, ".")}${selected ? ` (${selected})` : ""}`);
+      }
     }
     const result = {
       customerId, name: value(customer.name), phone: value(customer.phone), email: value(customer.email),
@@ -122,7 +127,7 @@ export async function loadGoogleContactSources(admin: SupabaseClient, workspaceI
     readRows(admin, "quotes", "id,workspace_id,customer_id,notes", workspaceId),
     readRows(admin, "quote_items", "id,workspace_id,quote_id,product_name,quantity,description", workspaceId),
     readRows(admin, "appointment_devices", "id,workspace_id,customer_id,appointment_id,product_key,product_name,unit_number,data", workspaceId),
-    readRows(admin, "maintenance_appointment_items", "id,workspace_id,customer_id,maintenance_appointment_id,installation_appointment_id", workspaceId),
+    readRows(admin, "maintenance_appointment_items", "id,workspace_id,customer_id,maintenance_appointment_id,installation_appointment_id,selected_devices", workspaceId),
     readExcludedInstallations(admin, workspaceId),
   ]);
   return projectGoogleContactSources({ customers, appointments, quotes, quoteItems, devices, maintenanceLinks,

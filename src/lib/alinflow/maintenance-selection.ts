@@ -14,6 +14,14 @@ export function canonicalCustomerAppointments(customer: Customer, aliases: Map<s
       byId.set(appointmentId, { ...installation, appointmentId });
     }
   });
+  const selections = customer.maintenanceDeviceSelections;
+  const selectionsById = new Map<string, NonNullable<Customer["maintenanceDeviceSelections"]>[string]>();
+  Object.entries(selections || {}).forEach(([id, selection]) => {
+    const appointmentId = aliases.get(id) || id;
+    if (!selectionsById.has(appointmentId) || id === appointmentId) {
+      selectionsById.set(appointmentId, selection);
+    }
+  });
   return {
     ...customer,
     activeAppointmentId: customer.activeAppointmentId
@@ -21,5 +29,6 @@ export function canonicalCustomerAppointments(customer: Customer, aliases: Map<s
     maintenanceInstallationIds: customer.maintenanceInstallationIds
       ? canonicalAppointmentIds(customer.maintenanceInstallationIds, aliases) : undefined,
     maintenanceInstallations: installations ? Array.from(byId.values()) : undefined,
+    maintenanceDeviceSelections: selections ? Object.fromEntries(selectionsById) : undefined,
   };
 }
