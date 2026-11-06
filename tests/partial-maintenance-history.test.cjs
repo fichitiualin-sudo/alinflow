@@ -101,7 +101,8 @@ test("malformed historical quantity keeps the map available with unknown status,
 test("customer history identifies the maintained unit and leaves three units without a maintenance date", () => {
   const ui = h.functions(["workIdentity", "compareWorkByDateDesc", "workDateTimeLabel", "workAddressLabel", "isCancelledWork", "hasInstalledClimateItems", "isInstalledClimateWork",
     "sharedMaintenanceHistoryRows", "ClimateMaintenanceHistory", "InstalledClimateMaintenanceCard"],
-    { ...devices, ...map, ...products, ...format, ...appointment, ...constants, ...h.load("src/lib/alinflow/maintenance-contact-choice.ts") }, "src/components/alinflow/WorkPagePanel.tsx");
+    { ...devices, ...map, ...products, ...format, ...appointment, ...constants, ...h.load("src/lib/alinflow/maintenance-contact-choice.ts"),
+      ...h.load("src/components/alinflow/MaintenanceChoiceControls.tsx") }, "src/components/alinflow/WorkPagePanel.tsx");
   const rows = ui.sharedMaintenanceHistoryRows("customer", [installation], [{ installationId: "installation", date: "2026-11-01", status: "Lezárva", providerName: "Partner", selectedDevices: selection(2) }]);
   assert.match(rows[0].relatedClimateSummary, /2\. készülék/);
   const html = renderToStaticMarkup(React.createElement(ui.InstalledClimateMaintenanceCard, { installation, works: [], sharedRows: rows,

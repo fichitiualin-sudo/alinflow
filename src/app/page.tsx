@@ -3,6 +3,10 @@
 import { assertMaintenanceDeviceConsistency } from "@/lib/alinflow/maintenance-consistency";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PhoneCallNotes } from "@/components/alinflow/PhoneCallNotes";
+import { usePhoneCallLog } from "@/components/alinflow/usePhoneCallLog";
+import { recordPhoneCall } from "@/lib/alinflow/phone-calls-client";
+import { resolveCustomerPhoneCallScope, phoneCallScopeKey, type PhoneCallScope } from "@/lib/alinflow/phone-calls";
 import { AppointmentItemsEditor } from "@/components/alinflow/AppointmentItemsEditor";
 import { MaintenanceDevicePicker } from "@/components/alinflow/MaintenanceDevicePicker";
 import { selectedMaintenanceQuoteItems, maintenanceSelectionFor } from "@/lib/alinflow/maintenance-devices";
@@ -478,6 +482,7 @@ function HomeContent() {
   const [archivePage,setArchivePage] = useState(1);
   const [documentPage,setDocumentPage] = useState(1);
   const [selected,setSelected] = useState<Customer>(EMPTY_CUSTOMER);
+  const [phoneCallRevision, setPhoneCallRevision] = useState(0);
   const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(EMPTY_CUSTOMER.quoteItems);
   const [scheduleDate,setScheduleDate] = useState(() => todayIso());
   const [scheduleTime,setScheduleTime] = useState("08:00");
@@ -594,6 +599,7 @@ function HomeContent() {
   const loadedUserIdRef = useRef<string | null>(null);
   const authUserIdRef = useRef<string | null>(null);
   const authLoadGenerationRef = useRef(0);
+  const phoneCallRequestIdsRef = useRef(new Map<string, string>());
   const authLoadPromiseRef = useRef<{ userId: string; generation: number; promise: Promise<void> } | null>(null);
   const loadCustomersPromiseRef = useRef<Promise<void> | null>(null);
   const loadCustomersWorkspaceIdRef = useRef<string | null | undefined>(undefined);
@@ -905,7 +911,21 @@ function HomeContent() {
   const sortedCustomers = useMemo(() => sortCustomersByCreatedAtDesc(customers), [customers]);
   const allWorkCustomers = useMemo(() => workCustomersForScheduling(sortedCustomers, workHistoryByCustomer), [sortedCustomers, workHistoryByCustomer]);
   const mapStatusDay = todayIso();
-  const sharedMaintenance = useSharedMaintenance(activeWorkspace?.id, (view === "maintenanceMap" && mapMode === "maintenance") || view === "work", user?.id);
+  const sharedMaintenance = useSharedMaintenance(activeWorkspace?.id, (view === "maintenanceMap" && mapMode === "maintenance") || view === "work"
+    || (view === "lead" && Boolean(selected.id)), user?.id);
+  const selectedPhoneScopes: PhoneCallScope[] = activeWorkspace?.id && selected.id && !selected.id.startsWith("shared:") && (view === "lead" || view === "work") ? [
+    { type: "own", workspaceId: activeWorkspace.id, customerId: selected.id },
+    ...sharedMaintenance.received.filter(item => item.targetCustomerId === selected.id).map(item => ({
+      type: "shared" as const, workspaceId: activeWorkspace.id, grantId: item.grantId, installationId: item.installationId,
+    })),
+  ] : [];
+  const sharedPhoneScope: PhoneCallScope | undefined = sharedMaintenanceSelection?.workspaceId === activeWorkspace?.id
+    && sharedMaintenanceSelection?.userId === user?.id && sharedMaintenanceSelection ? {
+      type: "shared", workspaceId: sharedMaintenanceSelection.workspaceId,
+      grantId: sharedMaintenanceSelection.item.grantId, installationId: sharedMaintenanceSelection.item.installationId,
+    } : undefined;
+  const selectedPhoneLog = usePhoneCallLog(selectedPhoneScopes, user?.id, phoneCallRevision);
+  const sharedPhoneLog = usePhoneCallLog(sharedPhoneScope ? [sharedPhoneScope] : [], user?.id, phoneCallRevision);
   useEffect(() => {
     if (sharedMaintenance.loading) return;
     setSharedMaintenanceSelection(current => {
@@ -1087,24 +1107,67 @@ function HomeContent() {
   function updateCustomerActivityInState(customerId: string, patch: Partial<Customer>) {
     setSelected((prev) => prev.id === customerId ? { ...prev, ...patch } : prev);
     setCustomers((prev) => prev.map((customer) => customer.id === customerId ? { ...customer, ...patch } : customer));
+    setWorkHistoryByCustomer(prev => prev[customerId] ? { ...prev, [customerId]: prev[customerId].map(customer => ({ ...customer, ...patch })) } : prev);
+  }
+
+  function phoneScopeForCustomer(customer: Customer): PhoneCallScope | undefined {
+    const workspaceId = currentWorkspaceId();
+    if (!workspaceId || !customer.id || customer.id.startsWith("shared:")) return;
+    if (customer.maintenanceOrigin === "external" && (sharedMaintenance.error
+      || (sharedMaintenance.loading && !sharedMaintenance.received.some(item => item.targetCustomerId === customer.id)))) return;
+    return resolveCustomerPhoneCallScope(workspaceId, customer, sharedMaintenance.received);
+  }
+
+  async function savePhoneCall(scope: PhoneCallScope, occurredAt?: string, customer?: Customer) {
+    const userId = authUserIdRef.current;
+    const generation = authLoadGenerationRef.current;
+    const isCurrent = () => userId === authUserIdRef.current && generation === authLoadGenerationRef.current
+      && scope.workspaceId === currentWorkspaceId();
+    if (!userId || !isCurrent()) throw new Error("A munkaterület megváltozott. Nyisd meg újra az ügyfelet.");
+    const key = `phone:${scope.workspaceId}:${scope.type === "own" ? scope.customerId : scope.installationId}`;
+    if (!beginAction(key)) throw new Error("Egy hívás rögzítése még folyamatban van. Próbáld újra egy pillanat múlva.");
+    const requestKey = JSON.stringify([userId, generation, scope, occurredAt || "initiated"]);
+    const requestId = phoneCallRequestIdsRef.current.get(requestKey) || crypto.randomUUID();
+    phoneCallRequestIdsRef.current.set(requestKey, requestId);
+    try {
+      const saved = await recordPhoneCall(scope, occurredAt ? "recorded" : "initiated", occurredAt, requestId);
+      phoneCallRequestIdsRef.current.delete(requestKey);
+      if (!isCurrent()) return;
+      if (customer && (!customer.lastCalledAt || Date.parse(saved.occurredAt) > Date.parse(customer.lastCalledAt))) {
+        updateCustomerActivityInState(customer.id, { lastCalledAt: saved.occurredAt });
+      }
+      setPhoneCallRevision(value => value + 1);
+      setMessage(occurredAt ? "A hívás dátuma bekerült a telefonos jegyzetbe ✅" : "A hívásindítás dátuma rögzítve ✅");
+    } finally {
+      if (isCurrent()) endAction(key);
+    }
   }
 
   async function recordCustomerPhoneCall(customer: Customer, returnView: View = view) {
     rememberExternalCustomer(customer, returnView);
-    if (!customer.id) return;
-    if (!beginAction(`phone:${customer.id}`)) return;
-    const calledAt = new Date().toISOString();
-    try {
-      const { error } = await workspaceQuery(supabase.from("customers").update({ updated_at: calledAt }).eq("id", customer.id));
-      if (error) throw error;
-      await logDocument(customer, "phone_call", "Telefonhívás", "Felhívva", calledAt);
-      updateCustomerActivityInState(customer.id, { lastCalledAt: calledAt, updatedAt: calledAt });
-      setMessage("Telefonhívás rögzítve ✅");
-    } catch (error: any) {
-      setMessage(`A hívás naplózása nem sikerült: ${error.message}`, "error");
-    } finally {
-      endAction(`phone:${customer.id}`);
-    }
+    const userId = authUserIdRef.current;
+    const generation = authLoadGenerationRef.current;
+    const scope = phoneScopeForCustomer(customer);
+    if (!scope) { setMessage(customer.id ? "A megosztás adatai még nem állnak rendelkezésre. Frissítsd az adatokat, majd rögzítsd a hívást." : "A hívás dátumának rögzítéséhez előbb mentsd az ügyfelet.", "warning"); return; }
+    try { await savePhoneCall(scope, undefined, customer); }
+    catch (error: any) { if (scope.workspaceId === currentWorkspaceId() && userId === authUserIdRef.current && generation === authLoadGenerationRef.current) setMessage(`A hívás naplózása nem sikerült: ${error.message}`, "error"); }
+  }
+
+  async function recordSharedPhoneCall(item: SharedMaintenanceInstallation) {
+    const workspaceId = currentWorkspaceId();
+    const userId = authUserIdRef.current;
+    const generation = authLoadGenerationRef.current;
+    if (!workspaceId) return;
+    try { await savePhoneCall({ type: "shared", workspaceId, grantId: item.grantId, installationId: item.installationId }); }
+    catch (error: any) { if (workspaceId === currentWorkspaceId() && userId === authUserIdRef.current && generation === authLoadGenerationRef.current) setMessage(`A hívás naplózása nem sikerült: ${error.message}`, "error"); }
+  }
+
+  function renderPhoneCallNotes() {
+    const scope = phoneScopeForCustomer(selected);
+    return <PhoneCallNotes key={`${user?.id}:${scope ? phoneCallScopeKey(scope) : selected.id}`}
+      {...selectedPhoneLog} legacyLastCalledAt={selected.lastCalledAt}
+      busy={pendingActions.some(key => key.startsWith("phone:"))}
+      onRecord={scope ? occurredAt => savePhoneCall(scope, occurredAt, selected) : undefined} />;
   }
 
   useEffect(() => {
@@ -2027,7 +2090,9 @@ function HomeContent() {
     const quoteSentAt = sentDocumentTimestamp(quoteDocumentFor(customer, docs)) || customer.quoteSentAt;
     const appointmentEmailAt = documentTimestamp(scopedDocs, appointmentEmailDocumentType(type));
     const appointmentBookedAt = documentTimestamp(scopedDocs, appointmentBookedDocumentType(type));
-    const lastCalledAt = documentTimestamp(scopedDocs, "phone_call") || customer.lastCalledAt;
+    const lastCalledAt = [documentTimestamp(scopedDocs, "phone_call"), customer.lastCalledAt]
+      .filter((value): value is string => Boolean(value) && Number.isFinite(Date.parse(value!)))
+      .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
 
     return {
       ...customer,
@@ -3130,7 +3195,7 @@ function HomeContent() {
         time: appointment?.scheduled_time || undefined,
         createdAt: row.created_at || undefined,
         updatedAt: row.updated_at || undefined,
-        lastCalledAt: undefined,
+        lastCalledAt: row.last_phone_call_at || undefined,
         quoteSentAt,
         appointmentBookedAt: appointment?.created_at || quoteSentAt,
         appointmentUpdatedAt: appointment?.updated_at || quoteSentAt,
@@ -5163,7 +5228,8 @@ function HomeContent() {
         <Back onClick={() => goBack()} />
         {mapMode === "maintenance" && sharedMaintenance.error ? <p role="alert" className="mb-3 text-sm text-amber-200">{sharedMaintenance.error}</p> : null}
         {mapMode === "callbacks" ? (
-          <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} onDeleteCustomer={(customer) => deleteCustomer(customer, { stayOnMap: true })} />
+          <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} onDeleteCustomer={(customer) => deleteCustomer(customer, { stayOnMap: true })}
+            onCallCustomer={customer => { void recordCustomerPhoneCall(customer, "maintenanceMap"); }} />
         ) : <MaintenanceMapPanel
           key={`${activeWorkspace?.id || "no-workspace"}:${user?.id || "no-user"}`}
           preferenceKey={activeWorkspace?.id && user?.id ? `alinflow:maintenance-visibility:${user.id}:${activeWorkspace.id}` : undefined}
@@ -5178,6 +5244,8 @@ function HomeContent() {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`h-5 w-5 ${sharedMaintenance.loading ? "animate-spin" : ""}`}><path strokeLinecap="round" strokeLinejoin="round" d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" /></svg>
           </button>}
           onOpenCustomer={(customer) => openCustomer(customer, "work")}
+          onCallCustomer={point => { if (point.sharedMaintenance) void recordSharedPhoneCall(point.sharedMaintenance);
+            else void recordCustomerPhoneCall(point.customer, "maintenanceMap"); }}
           onOpenShared={(item) => {if(activeWorkspace?.id && user?.id) setSharedMaintenanceSelection({workspaceId: activeWorkspace.id, userId: user.id, item});}}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
           onToggleMaintenanceOptOut={toggleMaintenanceOptOut}
@@ -5199,6 +5267,9 @@ function HomeContent() {
         {sharedMaintenanceSelection?.workspaceId === activeWorkspace?.id && sharedMaintenanceSelection?.userId === user?.id && sharedMaintenanceSelection ? <SharedMaintenanceDialog
           key={`${sharedMaintenanceSelection.workspaceId}:${sharedMaintenanceSelection.item.grantId}:${sharedMaintenanceSelection.item.installationId}`}
           item={sharedMaintenanceSelection.item} busy={pendingActions.includes("shared-maintenance-order")}
+          onCall={() => { void recordSharedPhoneCall(sharedMaintenanceSelection.item); }}
+          phoneCallNotes={<PhoneCallNotes {...sharedPhoneLog} busy={pendingActions.some(key => key.startsWith("phone:"))}
+            onRecord={sharedPhoneScope ? occurredAt => savePhoneCall(sharedPhoneScope, occurredAt) : undefined} />}
           onClose={()=>setSharedMaintenanceSelection(null)}
           onAccept={()=>startSharedMaintenance(sharedMaintenanceSelection.item,sharedMaintenanceSelection.workspaceId)} /> : null}
       </Shell>
@@ -7249,6 +7320,7 @@ function HomeContent() {
       onDeleteCustomer={deleteCustomer}
       onRememberExternalCustomer={rememberExternalCustomer}
       onRecordCustomerPhoneCall={recordCustomerPhoneCall}
+      phoneCallNotes={renderPhoneCallNotes()}
       onUpdateSelectedField={updateSelectedField}
       onUpdateCustomerStatus={updateCustomerStatus}
     />
@@ -7426,6 +7498,7 @@ function HomeContent() {
         onCloseWork={(sendThankYouEmail) => runGuardedAction("work-close", () => closeWork(sendThankYouEmail))}
         onRememberExternalCustomer={rememberExternalCustomer}
         onRecordCustomerPhoneCall={recordCustomerPhoneCall}
+        phoneCallNotes={renderPhoneCallNotes()}
         onSaveCustomerData={saveCustomerData}
         onSetEditCustomer={setCustomerEditMode}
         onUpdateSelectedField={updateSelectedField}

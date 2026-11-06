@@ -20,7 +20,8 @@ const ui = h.functions([
   "workIdentity", "compareWorkByDateDesc", "workDateTimeLabel", "workAddressLabel", "isCancelledWork",
   "hasInstalledClimateItems", "isInstalledClimateWork", "sharedMaintenanceHistoryRows",
   "ClimateMaintenanceHistory", "InstalledClimateMaintenanceCard", "MaintenanceHistory",
-], { ...maintenanceDevices, ...maintenanceMap, ...h.load("src/lib/alinflow/maintenance-contact-choice.ts"), climateQuoteItems: products.climateQuoteItems, climateSummary: products.climateSummary,
+], { ...maintenanceDevices, ...maintenanceMap, ...h.load("src/lib/alinflow/maintenance-contact-choice.ts"),
+  ...h.load("src/components/alinflow/MaintenanceChoiceControls.tsx"), climateQuoteItems: products.climateQuoteItems, climateSummary: products.climateSummary,
   displayAddress: format.displayAddress, isInstallationAppointment: appointments.isInstallationAppointment,
   normalizeStatus: constants.normalizeStatus }, file);
 

@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { SharedMaintenanceInstallation } from "@/lib/alinflow/shared-maintenance";
 
-export function SharedMaintenanceDialog({item, busy, onClose, onAccept}: {
+export function SharedMaintenanceDialog({item, busy, onClose, onAccept, onCall, phoneCallNotes}: {
   item: SharedMaintenanceInstallation; busy: boolean; onClose: () => void; onAccept: () => void;
+  onCall?: () => void; phoneCallNotes?: ReactNode;
 }) {
   const [ordered, setOrdered] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -16,10 +17,11 @@ export function SharedMaintenanceDialog({item, busy, onClose, onAccept}: {
     <p className="mt-3 break-words">{destination}</p><p className="mt-2 break-words">{item.climates.map(c=>`${c.quantity} db ${c.productName}`).join(" · ")}</p>
     <p className="mt-2 text-sm text-slate-300">Telepítés: {item.installationDate} · Utolsó karbantartás: {item.lastMaintenanceDate || "Nincs rögzítve"}</p>
     <div className="my-5 grid grid-cols-2 gap-3">
-      {item.customer.phone ? <a href={`tel:${item.customer.phone.replace(/[^+\d]/g,"")}`} className="rounded-2xl bg-cyan-300 p-3 text-center font-black text-slate-950">Hívás</a> : <span>Nincs telefonszám</span>}
+      {item.customer.phone ? <a href={`tel:${item.customer.phone.replace(/[^+\d]/g,"")}`} onClick={onCall} className="rounded-2xl bg-cyan-300 p-3 text-center font-black text-slate-950">Hívás</a> : <span>Nincs telefonszám</span>}
       {destination ? <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`} target="_blank" rel="noopener noreferrer" className="rounded-2xl bg-emerald-300 p-3 text-center font-black text-slate-950">Útvonal</a> : null}
     </div>
     {item.customer.email ? <p className="break-words text-sm">{item.customer.email}</p> : null}
+    {phoneCallNotes ? <section className="mt-4"><h3 className="text-sm font-bold">Telefonos jegyzet</h3>{phoneCallNotes}</section> : null}
     <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-600 p-4 text-sm"><input type="checkbox" className="mt-1 h-5 w-5 shrink-0" checked={ordered} onChange={event=>setOrdered(event.target.checked)} disabled={busy}/>
       <span>Az ügyfél a saját vállalkozásomtól megrendelte a karbantartást, és tájékoztattam a szolgáltatóról és az adatkezeléséről.</span></label>
     <button type="button" disabled={!ordered || busy} onClick={onAccept} className="mt-4 w-full rounded-2xl bg-emerald-400 p-4 font-black text-slate-950 disabled:opacity-40">{busy ? "Előkészítés..." : "Saját karbantartási időpont"}</button>

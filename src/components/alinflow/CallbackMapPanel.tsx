@@ -14,12 +14,13 @@ type CallbackMapPanelProps = {
   googleMapsApiKey: string;
   onOpenCustomer: (customer: Customer) => void;
   onDeleteCustomer: (customer: Customer) => Promise<boolean>;
+  onCallCustomer?: (customer: Customer) => void;
 };
 
 const UNLOCATED = "__unlocated__";
 const secondaryButton = "rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40";
 
-export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer, onDeleteCustomer }: CallbackMapPanelProps) {
+export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer, onDeleteCustomer, onCallCustomer }: CallbackMapPanelProps) {
   const searchId = useId();
   const cityId = useId();
   const listId = useId();
@@ -40,8 +41,8 @@ export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer, 
     label: String(group.customers.length), title: `${group.city}: ${group.customers.length} visszahívandó ügyfél`,
     segments: [{ key: "callback", label: "Visszahívandó", color: "#0f766e", count: group.customers.length }],
   })), [data.groups]);
-  const current = useRef({ data, onOpenCustomer, onDeleteCustomer });
-  current.current = { data, onOpenCustomer, onDeleteCustomer };
+  const current = useRef({ data, onOpenCustomer, onDeleteCustomer, onCallCustomer });
+  current.current = { data, onOpenCustomer, onDeleteCustomer, onCallCustomer };
 
   const createPopupContent = useCallback((id: string) => {
     const content = document.createElement("div");
@@ -68,6 +69,10 @@ export function CallbackMapPanel({ customers, googleMapsApiKey, onOpenCustomer, 
       appendLine(callbackClimateLabel(customer), "alinflow-map-popup-climate");
       item.appendChild(createMapPopupActions({
         name: customer.name || "Név nélkül", phone: customer.phone, destination,
+        onCall: () => {
+          const latest = current.current.data.groups.find((entry) => entry.id === id)?.customers.find((entry) => entry.id === customer.id);
+          if (latest) current.current.onCallCustomer?.(latest);
+        },
         onOpenCustomer: () => {
           const latest = current.current.data.groups.find((entry) => entry.id === id)?.customers.find((entry) => entry.id === customer.id);
           if (latest) current.current.onOpenCustomer(latest);

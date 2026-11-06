@@ -32,6 +32,14 @@ Fontos mezők:
 - `quotePricingMode`
 - `stockDeducted`
 
+### Karbantartási jelölések és telefonhívások dátuma (2026-11-06)
+
+A `maintenance_contact_preferences.declined_at` és `declined_device_dates` az aktuális teljes, illetve készülékenkénti visszautasítás kezdetét tárolja. A dátumokat szerveroldali trigger állítja; másik készülék módosítása és változatlan mentés megőrzi őket. A pipa kivétele az érintett aktív dátumot eltávolítja, visszapipálása új dátumot kap. A régi `updated_at` továbbra is verzióazonosító, nem jelölési dátum; ismeretlen korábbi időpontot nem töltünk vissza. A forrás és az engedélyezett partner ugyanazt a központi dátumot olvassa. Migráció: `20261106_MAINTENANCE_DECLINE_DATES.sql`.
+
+A `customer_phone_calls` hozzáfűzhető hívásnapló, saját és megosztott telepítéshez külön, jogosultságot ellenőrző RPC-kkel. Az `initiated` esemény szerveridővel jelzi a Hívás gomb megnyomását; a `recorded` a kézzel megadott korábbi időpont. Nem igazol sikeres beszélgetést vagy megrendelést. A kérésazonosító az ismétlést duplikáció nélkül kezeli. A saját ügyfél naplója a forráson rögzített partneri hívásokat is tartalmazza; a partner csak a saját munkaterületén, az adott engedélyezett telepítéshez rögzített sorokat olvassa. Az API legfeljebb a legutóbbi 100 sort adja, az UI kezdetben ötöt mutat.
+
+A `customers.last_phone_call_at` monoton frissülő összesítő, amely a `Customer.lastCalledAt` mezőre képeződik. Régi `phone_call` dokumentumok megmaradnak; a betöltés a legutóbbi ismert időpontot használja. A hívásnapló a Telefonos jegyzet részen belül külön jelenik meg, nem kerül a szabadon szerkeszthető `customers.notes` szövegbe. A hívásrögzítés nem változtat ügyféljegyzetet, státuszt, időpontot, dokumentumot vagy megrendelést. Migráció: `20261106_CUSTOMER_PHONE_CALLS.sql`.
+
 ### AppointmentType
 
 ```ts

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AppointmentSmsRemindersButton } from "@/components/alinflow/AppointmentSmsReminders";
 import { isSmsReminderAppointment, smsReminderToday } from "@/lib/alinflow/sms-reminders";
 import type { AppointmentType, Customer, DocumentPreviewType, QuoteItem, ClimateProduct, MaintenanceDeviceSelection, MaintenanceInstallationSummary, WorkChecklistCompletedAt, WorkChecklistItemKey, WorkChecklistState } from "@/lib/alinflow/types";
@@ -39,8 +39,8 @@ import { billingAmountsForAppointment, billingDueDateIso, billingPaymentMethodLa
 import { normalizeStatus } from "@/lib/alinflow/constants";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
 import type { SharedMaintenanceInstallation, SharedMaintenanceResult } from "@/lib/alinflow/shared-maintenance";
-import { preferenceDeclinesDevice, type MaintenanceContactChoice, type MaintenanceContactPreference } from "@/lib/alinflow/maintenance-contact-choice";
-import { MaintenanceChoiceControls } from "./MaintenanceChoiceControls";
+import { maintenanceDeclinedAt, maintenanceDeviceDeclinedAt, preferenceDeclinesDevice, type MaintenanceContactChoice, type MaintenanceContactPreference } from "@/lib/alinflow/maintenance-contact-choice";
+import { MaintenanceChoiceControls, MaintenanceRefusalDate } from "./MaintenanceChoiceControls";
 
 type MaterialItem = {
   name: string;
@@ -217,6 +217,7 @@ function InstalledClimateMaintenanceCard({
 }) {
   const addressLabel = workAddressLabel(installation);
   const optedOut = maintenanceContactPreference ? maintenanceContactPreference.choice === "declined" : Boolean(installation.maintenanceOptOut);
+  const declinedAt = maintenanceDeclinedAt(maintenanceContactPreference, Boolean(installation.maintenanceOptOut), installation.maintenanceOptOutAt);
   const deviceHistory = readMaintenanceDeviceHistory(installation.quoteItems, installation.date, [
     ...works.filter(work => normalizeStatus(work.status) === "Lezárva").map(work => ({ date: work.date,
       selectedDevices: maintenanceSelectionFor(work, installation.activeAppointmentId || "") })),
@@ -225,6 +226,7 @@ function InstalledClimateMaintenanceCard({
   ]);
   const devices = deviceHistory.devices.map(device => ({ ...device,
     declined: preferenceDeclinesDevice(maintenanceContactPreference, device, Boolean(installation.maintenanceOptOut)),
+    declinedAt: maintenanceDeviceDeclinedAt(maintenanceContactPreference, device, Boolean(installation.maintenanceOptOut), installation.maintenanceOptOutAt),
   }));
   const inheritedRows: DocumentRow[] = inheritedHistory.filter(event => event.date).map(event => ({
     action: "SharedMaintenance", title: "Partner által végzett karbantartás", status: "Lezárva",
@@ -249,7 +251,7 @@ function InstalledClimateMaintenanceCard({
             checked={optedOut}
             onChange={(event) => onToggleMaintenanceOptOut(installation, event.target.checked)}
           />
-          <span>Nem kéri</span>
+          <span>Nem kéri{optedOut ? <MaintenanceRefusalDate at={declinedAt} /> : null}</span>
         </label> : null}
       </div>
       {devices.length <= 1 && onChangeMaintenancePreference ? <MaintenanceChoiceControls
@@ -257,6 +259,7 @@ function InstalledClimateMaintenanceCard({
         legacyOptOut={Boolean(installation.maintenanceOptOut)}
         allowOriginalInstaller={originalInstallerAvailable}
         busy={maintenancePreferenceBusy}
+        declinedAt={declinedAt}
         onChange={(choice) => onChangeMaintenancePreference(installation, choice)}
       /> : null}
       {deviceHistory.invalid ? <p className="mt-3 text-sm font-bold text-amber-200">A készülékek adatai ellenőrzést igényelnek; az egyedi karbantartási állapot nem állapítható meg.</p> : null}
@@ -276,7 +279,7 @@ function InstalledClimateMaintenanceCard({
               aria-label={`Nem kéri a karbantartást: ${device.productName} · ${device.unitNumber}. készülék`}
               checked={device.declined} disabled={maintenancePreferenceBusy || !onChangeMaintenanceDevicePreference}
               onChange={event => onChangeMaintenanceDevicePreference?.(installation, { productName: device.productName, unitNumber: device.unitNumber }, event.target.checked)} />
-            <span>Nem kéri a karbantartást</span>
+            <span>Nem kéri a karbantartást{device.declined ? <MaintenanceRefusalDate at={device.declinedAt} /> : null}</span>
           </label>
         </div>)}
       </div> : null}
@@ -325,6 +328,7 @@ type WorkPagePanelProps = {
   onCloseWork: (sendThankYouEmail: boolean) => void;
   onRememberExternalCustomer: (customer: Customer, returnView?: View) => void;
   onRecordCustomerPhoneCall: (customer: Customer, returnView?: View) => void;
+  phoneCallNotes?: ReactNode;
   onSaveCustomerData: () => void;
   onSetEditCustomer: (value: boolean) => void;
   onUpdateSelectedField: (field: keyof Customer, value: string) => void;
@@ -400,6 +404,7 @@ export function WorkPagePanel({
   onCloseWork,
   onRememberExternalCustomer,
   onRecordCustomerPhoneCall,
+  phoneCallNotes,
   onSaveCustomerData,
   onSetEditCustomer,
   onUpdateSelectedField,
@@ -626,6 +631,7 @@ export function WorkPagePanel({
               editable={editCustomer}
               onChange={onUpdateSelectedField}
               onExternalOpen={() => onRememberExternalCustomer(selected, "work")}
+              phoneCallNotes={phoneCallNotes}
             />
             <div className="mt-4 flex flex-wrap gap-3">
               {selected.phone ? <a href={telHref(selected.phone)} onClick={() => onRecordCustomerPhoneCall(selected, "work")} className="rounded-2xl bg-emerald-400 px-5 py-4 font-black text-slate-950">Hívás</a> : null}
@@ -1693,11 +1699,13 @@ function CustomerGrid({
   editable = false,
   onChange,
   onExternalOpen,
+  phoneCallNotes,
 }: {
   c: Customer;
   editable?: boolean;
   onChange?: (field: keyof Customer, value: string) => void;
   onExternalOpen?: () => void;
+  phoneCallNotes?: ReactNode;
 }) {
   if (editable) {
     return (
@@ -1711,10 +1719,13 @@ function CustomerGrid({
           onChange={(field, value) => onChange?.(field, value)}
         />
         <EditField label="Cím" value={c.address} onChange={(value) => onChange?.("address", value)} />
-        <label className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">
+        <div className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">
+          <label>
           <span className="text-sm text-slate-400">Telefonos jegyzet</span>
           <textarea className="mt-2 min-h-28 w-full bg-transparent text-base font-bold leading-relaxed outline-none" value={c.notes || ""} onChange={(event) => onChange?.("notes", event.target.value)} placeholder="Hívás közbeni megjegyzés..." />
-        </label>
+          </label>
+          {phoneCallNotes}
+        </div>
       </div>
     );
   }
@@ -1736,6 +1747,7 @@ function CustomerGrid({
       <div className="rounded-2xl bg-slate-900/80 p-4 md:col-span-2">
         <p className="text-sm text-slate-400">Telefonos jegyzet</p>
         <p className="mt-2 whitespace-pre-wrap text-base font-bold leading-relaxed text-slate-100">{c.notes || "nincs megjegyzés"}</p>
+        {phoneCallNotes}
       </div>
     </div>
   );
