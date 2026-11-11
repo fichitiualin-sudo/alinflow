@@ -336,26 +336,34 @@ function StockAdjustment({ itemName, onAdjust }: { itemName: string; onAdjust: (
 function WarehouseValueSummary({ value, reservedSales, loading, error }: { value: ReturnType<typeof summarizeWarehouseValue>; reservedSales: ReturnType<typeof summarizeReservedClimateSales>; loading: boolean; error: boolean }) {
   const incomplete = value.missingStockPriceCount > 0;
   const unavailable = loading || error || (incomplete && value.pricedStockItemCount === 0);
-  return <section data-internal-stock-value className="rounded-[2rem] border border-cyan-200/20 bg-cyan-200/5 p-5 print:hidden sm:p-6">
-    <h2 className="text-2xl font-black">Raktárkészlet értéke</h2>
-    <p className="mt-1 text-sm text-slate-300">Teljes raktár · klímák és anyagok · bruttó beszerzési érték</p>
-    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+  return <section data-internal-stock-value className="rounded-[2rem] border border-white/10 bg-white/5 p-5 print:hidden sm:p-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 className="text-xl font-black sm:text-2xl">Raktárkészlet értéke</h2>
+      <span className="rounded-full border border-cyan-200/20 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">Bruttó összegek · Ft</span>
+    </div>
+    <p className="mt-2 text-sm text-slate-400">Készletérték és a lefoglalt klímák eladási összege.</p>
+    <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {[
         ["Raktáron összesen", value.grossStockValue],
         ["Ebből lefoglalva", value.reservedValue],
         ["Szabad készlet", value.freeValue],
-      ].map(([label, amount]) => <div key={label} className="min-w-0 rounded-2xl bg-slate-900/80 p-4">
-        <p className="text-sm text-slate-300">{label}</p>
-        <p className="mt-2 break-words text-2xl font-black tabular-nums text-cyan-100">{unavailable ? "—" : ft(Number(amount))}</p>
-        {label === "Ebből lefoglalva" ? <div className="mt-4 border-t border-white/10 pt-3">
-          <p className="text-sm font-bold text-emerald-200">Lefoglalt klímák eladási értéke</p>
-          <p className="mt-1 break-words text-2xl font-black tabular-nums text-emerald-100">{ft(reservedSales.total)}</p>
-          <p className="mt-1 text-xs text-slate-300">Bruttó, szereléssel együtt · mentett ajánlati árakon · minden foglalás</p>
-          {reservedSales.incompleteWorkCount > 0 ? <p className="mt-2 text-xs text-amber-200">Részösszeg: {reservedSales.incompleteWorkCount} munkánál az ajánlati ár vagy a választott klíma pontosítása szükséges.</p> : null}
-        </div> : null}
+      ].map(([label, amount]) => <div key={label} className="relative min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 p-4 sm:p-5">
+        <span aria-hidden="true" className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-cyan-300/60" />
+        <p className="min-h-10 text-sm font-bold leading-5 text-slate-300">{label}</p>
+        <p className="mt-2 break-words text-2xl font-black tracking-tight tabular-nums text-cyan-100">{unavailable ? "—" : ft(Number(amount))}</p>
+        <p className="mt-3 text-xs leading-5 text-slate-400">Beszerzési érték<br />Klímák és anyagok</p>
       </div>)}
+      <div className="relative min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-emerald-400/10 p-4 sm:p-5">
+        <span aria-hidden="true" className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-emerald-400" />
+        <p className="min-h-10 text-sm font-bold leading-5 text-emerald-200">Lefoglalt klímák eladási értéke</p>
+        <p className="mt-2 break-words text-2xl font-black tracking-tight tabular-nums text-emerald-100">{ft(reservedSales.total)}</p>
+        <p className="mt-3 text-xs leading-5 text-slate-400">Bruttó, szereléssel együtt<br />Mentett ajánlati árakon · minden foglalás</p>
+      </div>
     </div>
-    {loading ? <p className="mt-3 text-sm text-slate-300">Beszerzési értékek betöltése...</p> : error ? <p className="mt-3 text-sm text-amber-100">A beszerzési értékek az árak sikeres betöltése után jelennek meg.</p> : incomplete ? <p className="mt-3 text-sm text-amber-100">{value.missingStockPriceCount} raktáron lévő tételnél hiányzik a beszerzési ár. {value.pricedStockItemCount ? "A kijelzett beszerzési értékek az ismert árú tételek részösszegei." : "Az összesítéshez add meg a beszerzési árakat."}</p> : null}
+    {loading || error || incomplete || reservedSales.incompleteWorkCount > 0 ? <div className="mt-4 space-y-2 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-xs leading-5 text-amber-100">
+      {loading ? <p>Beszerzési értékek betöltése...</p> : error ? <p>A beszerzési értékek az árak sikeres betöltése után jelennek meg.</p> : incomplete ? <p>{value.missingStockPriceCount} raktáron lévő tételnél hiányzik a beszerzési ár. {value.pricedStockItemCount ? "A kijelzett beszerzési értékek az ismert árú tételek részösszegei." : "Az összesítéshez add meg a beszerzési árakat."}</p> : null}
+      {reservedSales.incompleteWorkCount > 0 ? <p>Eladási részösszeg: {reservedSales.incompleteWorkCount} munkánál az ajánlati ár vagy a választott klíma pontosítása szükséges.</p> : null}
+    </div> : null}
   </section>;
 }
 
