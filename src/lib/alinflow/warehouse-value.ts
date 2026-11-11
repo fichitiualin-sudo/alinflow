@@ -1,4 +1,7 @@
 import { inventoryPriceKey, type InventoryPurchasePrice } from "./inventory-purchase-prices";
+import { isInstallationAppointment } from "./appointments";
+import { itemTotal } from "./products";
+import type { ClimateProduct, Customer } from "./types";
 
 type PurchaseAmount = Pick<InventoryPurchasePrice, "purchasePrice" | "taxBasis">;
 type WarehouseValueItem = {
@@ -94,4 +97,36 @@ export function groupWarehouseItems<T extends { name: string }>(
     { key: "in-stock", title: "Raktáron", items: inStock },
     { key: "other", title: "További tételek", items: other },
   ];
+}
+
+export function summarizeReservedClimateSales(
+  workCustomers: readonly Customer[],
+  products: readonly ClimateProduct[],
+) {
+  const productIds = new Set(products.map((product) => product.id));
+  let totalCents = 0;
+  let incompleteWorkCount = 0;
+  for (const customer of workCustomers) {
+    if (!customer.date || !isInstallationAppointment(customer.appointmentType)
+      || customer.status === "Lezárva" || customer.status === "Lemondva" || customer.stockDeducted) continue;
+    const items = customer.quoteItems ?? [];
+    const reservedItems = items.filter((item) => productIds.has(item.productId)
+      && !("itemType" in item && item.itemType === "extra"));
+    if (!reservedItems.length) continue;
+    if (customer.quotePricingMode === "alternatives" && items.length > 1) {
+      incompleteWorkCount++;
+      continue;
+    }
+    let incomplete = false;
+    for (const item of reservedItems) {
+      const amount = itemTotal(item);
+      if (!Number.isFinite(amount) || amount < 0) {
+        incomplete = true;
+        continue;
+      }
+      totalCents += Math.round(amount * 100);
+    }
+    if (incomplete) incompleteWorkCount++;
+  }
+  return { total: totalCents / 100, incompleteWorkCount };
 }

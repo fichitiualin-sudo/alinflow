@@ -1,8 +1,8 @@
 import { useRef, useState, type ReactNode } from "react";
-import type { ClimateProduct } from "@/lib/alinflow/types";
+import type { ClimateProduct, Customer } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
 import { inventoryPriceKey } from "@/lib/alinflow/inventory-purchase-prices";
-import { groupWarehouseItems, summarizeWarehouseValue } from "@/lib/alinflow/warehouse-value";
+import { groupWarehouseItems, summarizeReservedClimateSales, summarizeWarehouseValue } from "@/lib/alinflow/warehouse-value";
 import { InventoryPurchasePriceEditor, useInventoryPurchasePrices } from "./InventoryPurchasePrice";
 
 type MaterialInventoryItem = {
@@ -16,6 +16,7 @@ type WarehousePanelProps = {
   workspaceId?: string;
   onBack: () => void;
   products: ClimateProduct[];
+  workCustomers: Customer[];
   materialInventory: MaterialInventoryItem[];
   showClimateProductManager: boolean;
   onToggleClimateProductManager: () => void;
@@ -50,6 +51,7 @@ export function WarehousePanel({
   workspaceId,
   onBack,
   products,
+  workCustomers = [],
   materialInventory,
   showClimateProductManager,
   onToggleClimateProductManager,
@@ -94,6 +96,7 @@ export function WarehousePanel({
     ...products.map((product) => ({ itemType: "climate" as const, itemKey: product.id, stock: stockOf(product.id), reserved: reservedForProduct(product.id) })),
     ...materialInventory.map((item) => ({ itemType: "material" as const, itemKey: item.name, stock: item.stock, reserved: materialReserved(item.name) })),
   ], purchasePrices.prices);
+  const reservedSales = summarizeReservedClimateSales(workCustomers, products);
 
   async function addMaterialItem() {
     if (materialInFlight.current) return;
@@ -137,7 +140,7 @@ export function WarehousePanel({
   return (
     <Shell>
       <Back onClick={onBack} />
-      <WarehouseValueSummary value={stockValue} loading={purchasePrices.loading} error={Boolean(purchasePrices.error)} />
+      <WarehouseValueSummary value={stockValue} reservedSales={reservedSales} loading={purchasePrices.loading} error={Boolean(purchasePrices.error)} />
       <ClimateProductManager
         products={products}
         showClimateProductManager={showClimateProductManager}
@@ -330,7 +333,7 @@ function StockAdjustment({ itemName, onAdjust }: { itemName: string; onAdjust: (
   </div>;
 }
 
-function WarehouseValueSummary({ value, loading, error }: { value: ReturnType<typeof summarizeWarehouseValue>; loading: boolean; error: boolean }) {
+function WarehouseValueSummary({ value, reservedSales, loading, error }: { value: ReturnType<typeof summarizeWarehouseValue>; reservedSales: ReturnType<typeof summarizeReservedClimateSales>; loading: boolean; error: boolean }) {
   const incomplete = value.missingStockPriceCount > 0;
   const unavailable = loading || error || (incomplete && value.pricedStockItemCount === 0);
   return <section data-internal-stock-value className="rounded-[2rem] border border-cyan-200/20 bg-cyan-200/5 p-5 print:hidden sm:p-6">
@@ -344,9 +347,15 @@ function WarehouseValueSummary({ value, loading, error }: { value: ReturnType<ty
       ].map(([label, amount]) => <div key={label} className="min-w-0 rounded-2xl bg-slate-900/80 p-4">
         <p className="text-sm text-slate-300">{label}</p>
         <p className="mt-2 break-words text-2xl font-black tabular-nums text-cyan-100">{unavailable ? "—" : ft(Number(amount))}</p>
+        {label === "Ebből lefoglalva" ? <div className="mt-4 border-t border-white/10 pt-3">
+          <p className="text-sm font-bold text-emerald-200">Lefoglalt klímák eladási értéke</p>
+          <p className="mt-1 break-words text-2xl font-black tabular-nums text-emerald-100">{ft(reservedSales.total)}</p>
+          <p className="mt-1 text-xs text-slate-300">Bruttó, szereléssel együtt · mentett ajánlati árakon · minden foglalás</p>
+          {reservedSales.incompleteWorkCount > 0 ? <p className="mt-2 text-xs text-amber-200">Részösszeg: {reservedSales.incompleteWorkCount} munkánál az ajánlati ár vagy a választott klíma pontosítása szükséges.</p> : null}
+        </div> : null}
       </div>)}
     </div>
-    {loading ? <p className="mt-3 text-sm text-slate-300">Értékek betöltése...</p> : error ? <p className="mt-3 text-sm text-amber-100">Az értékek az árak sikeres betöltése után jelennek meg.</p> : incomplete ? <p className="mt-3 text-sm text-amber-100">{value.missingStockPriceCount} raktáron lévő tételnél hiányzik a beszerzési ár. {value.pricedStockItemCount ? "A kijelzett értékek az ismert árú tételek részösszegei." : "Az összesítéshez add meg a beszerzési árakat."}</p> : null}
+    {loading ? <p className="mt-3 text-sm text-slate-300">Beszerzési értékek betöltése...</p> : error ? <p className="mt-3 text-sm text-amber-100">A beszerzési értékek az árak sikeres betöltése után jelennek meg.</p> : incomplete ? <p className="mt-3 text-sm text-amber-100">{value.missingStockPriceCount} raktáron lévő tételnél hiányzik a beszerzési ár. {value.pricedStockItemCount ? "A kijelzett beszerzési értékek az ismert árú tételek részösszegei." : "Az összesítéshez add meg a beszerzési árakat."}</p> : null}
   </section>;
 }
 
