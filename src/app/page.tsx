@@ -5322,6 +5322,7 @@ function HomeContent() {
         workspaceId={activeWorkspace?.id}
         onBack={() => goBack()}
         products={products}
+        workCustomers={allWorkCustomers}
         materialInventory={materialInventory}
         showClimateProductManager={showClimateProductManager}
         onToggleClimateProductManager={() => setShowClimateProductManager((open) => !open)}

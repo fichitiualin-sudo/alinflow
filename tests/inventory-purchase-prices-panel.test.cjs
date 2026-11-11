@@ -404,17 +404,35 @@ test("warehouse: unknown stocked prices mark a partial value while missing zero-
 test("warehouse: empty inventory shows a known zero but loading/error never present a completed zero valuation", () => {
   const empty = createWarehouse({}, { products: [], materialInventory: [] });
   const summary = texts(summaryNode(empty));
-  assert.equal((summary.match(/0 Ft/g) || []).length, 3);
+  assert.equal((summary.match(/0 Ft/g) || []).length, 4);
   assert.doesNotMatch(summary, /részösszeg|hiányzó ár/i);
   for (const priceState of [{ loading: true }, { error: "synthetic failure" }]) {
     const unavailable = createWarehouse(priceState, { products: [], materialInventory: [] });
-    assert.doesNotMatch(texts(summaryNode(unavailable)), /\d+(?:[.,]\d+)? Ft/);
+    const unavailableSummary = texts(summaryNode(unavailable));
+    assert.equal((unavailableSummary.match(/—/g) || []).length, 3);
+    assert.equal((unavailableSummary.match(/0 Ft/g) || []).length, 1, "sales stay available independently of purchase prices");
   }
   const allPricesUnknown = createWarehouse();
   const unknownSummary = texts(summaryNode(allPricesUnknown));
-  assert.doesNotMatch(unknownSummary, /\d+(?:[.,]\d+)? Ft/);
+  assert.equal((unknownSummary.match(/0 Ft/g) || []).length, 1);
   assert.equal((unknownSummary.match(/—/g) || []).length, 3);
   assert.match(unknownSummary, /47\s+raktáron lévő tételnél hiányzik/);
+});
+
+test("warehouse: reserved sale totals include installation and stay visible during purchase-price failure and filtering", () => {
+  const fixture = valueFixture({ missing: false });
+  const run = createWarehouse({ error: "synthetic purchase price failure" }, {
+    ...fixture.changes,
+    workCustomers: [{ id: "reserved-work", date: "2026-11-20", status: "Időpont egyeztetve", appointmentType: "installation",
+      quoteItems: [{ productId: "priced-net", quantity: 2, customPrice: 250000, customInstallPrice: 60000 }] }],
+  });
+  const summary = texts(summaryNode(run));
+  assert.match(summary, /Lefoglalt klímák eladási értéke\s+500000 Ft/);
+  assert.match(summary, /szereléssel együtt/);
+  assert.equal((summary.match(/—/g) || []).length, 3);
+  run.search("No matching item");
+  assert.equal(texts(summaryNode(run)), summary);
+  assert.equal(texts(summaryNode(run), true), "");
 });
 
 test("warehouse: complete and partial gross valuation blocks are hidden from printing", () => {
