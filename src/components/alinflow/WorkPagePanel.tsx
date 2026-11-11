@@ -1317,6 +1317,7 @@ function InvoicePrepCard({
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-[#ff5a1f]"
+                checked={done}
                 disabled={invoiceBusy}
                 onChange={(event) => {
                   if (event.target.checked) onManualComplete();

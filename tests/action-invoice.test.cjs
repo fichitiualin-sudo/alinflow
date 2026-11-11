@@ -14,11 +14,12 @@ function fixture(options = {}) {
   const pendingActionsRef = { current: new Set() };
   const invoiceReceiptsRef = { current: new Map() };
   const state = { workspaceId: "synthetic-workspace", requests: [], confirmations: [], checklist: [], messages: [], busy: [], pending: [] };
-  const f = h.functions(["createInvoice", "beginAction", "endAction"], {
+  const f = h.functions(["createInvoice", "markManualInvoice", "beginAction", "endAction"], {
     ...products, ...billing, selected: customer, quoteItems: customer.quoteItems,
     workspaceSettings, EMPTY_QUOTE_ITEMS: [], pendingActionsRef, invoiceReceiptsRef,
     currentWorkspaceId: () => state.workspaceId,
     ft: amount => `${amount} Ft`,
+    navigator: { onLine: options.online !== false },
     window: { confirm(message) { state.confirmations.push(message); return options.confirm !== false; } },
     authenticatedFetch: async (url, init, expectedWorkspaceId) => {
       const request = { url, body: JSON.parse(init.body), expectedWorkspaceId };
@@ -140,4 +141,190 @@ test("late invoice failure is not published in another workspace", async () => {
   assert.equal(f.state.checklist.length, 0);
   assert.ok(f.state.messages.every(({ message }) => !message.includes("PREVIOUS-WORKSPACE-ERROR")));
   assert.equal(f.pendingActionsRef.current.size, 0);
+});
+
+for (const kind of ["device", "labor", "maintenance", "combined"]) {
+  for (const action of ["automatic", "manual"]) {
+    test(`offline ${action} ${kind} invoicing stops before confirmation, writes, or receipt changes`, async () => {
+      const f = fixture({ online: false });
+      const receiptKey = `synthetic-workspace:${f.customer.id}:${f.customer.activeAppointmentId}:${kind}`;
+      const receipt = { invoiceNumber: "SYNTHETIC-SAVED", emailSent: false };
+      f.invoiceReceiptsRef.current.set(receiptKey, receipt);
+      if (action === "automatic") await f.createInvoice(kind, "10000", "cash");
+      else await f.markManualInvoice(kind);
+      assert.equal(f.state.confirmations.length, 0);
+      assert.equal(f.state.requests.length, 0);
+      assert.equal(f.state.checklist.length, 0);
+      assert.equal(f.invoiceReceiptsRef.current.size, 1);
+      assert.equal(f.invoiceReceiptsRef.current.get(receiptKey), receipt);
+      assert.equal(f.pendingActionsRef.current.size, 0);
+      assert.deepEqual(f.state.busy, []);
+      assert.equal(f.state.messages.at(-1).tone, "error");
+    });
+  }
+}
+
+test("automatic completion requires explicit success and a nonempty string invoice number", async () => {
+  for (const result of [
+    { ok: true },
+    { ok: true, invoiceNumber: null },
+    { ok: true, invoiceNumber: "" },
+    { ok: true, invoiceNumber: " \t\n" },
+    { ok: true, invoiceNumber: 42 },
+    { ok: true, invoiceNumber: { value: "SYNTHETIC-42" } },
+    { ok: "true", invoiceNumber: "SYNTHETIC-42" },
+    { ok: 1, invoiceNumber: "SYNTHETIC-42" },
+  ]) {
+    const f = fixture({ send: () => Response.json(result) });
+    await f.createInvoice("device", "10000", "cash");
+    assert.equal(f.state.requests.length, 1);
+    assert.equal(f.state.checklist.length, 0, JSON.stringify(result));
+    assert.equal(f.invoiceReceiptsRef.current.size, 0);
+    assert.equal(f.state.messages.at(-1).tone, "error");
+    assert.equal(f.pendingActionsRef.current.size, 0);
+    assert.deepEqual(f.state.busy, ["device", null]);
+  }
+});
+
+test("a valid invoice number is trimmed before receipt retention and success display", async () => {
+  let rejectChecklist = true;
+  const f = fixture({
+    send: () => Response.json({ ok: true, invoiceNumber: "  SYNTHETIC-TRIMMED \n", emailSent: false }),
+    checklist: async () => { if (rejectChecklist) throw Error("Synthetic write failure"); },
+  });
+  await f.createInvoice("labor", "10000", "cash");
+  assert.equal([...f.invoiceReceiptsRef.current.values()][0].invoiceNumber, "SYNTHETIC-TRIMMED");
+  rejectChecklist = false;
+  await f.createInvoice("labor", "10000", "cash");
+  assert.equal(f.state.requests.length, 1);
+  assert.match(f.state.messages.at(-1).message, /Számlaszám: SYNTHETIC-TRIMMED/);
+  assert.doesNotMatch(f.state.messages.at(-1).message, /TRIMMED\s+$/);
+});
+
+test("a network exception cannot mark an invoice complete or retain a receipt", async () => {
+  const f = fixture({ send: async () => { throw new TypeError("Synthetic network failure"); } });
+  await f.createInvoice("maintenance", "10000", "cash");
+  assert.equal(f.state.requests.length, 1);
+  assert.equal(f.state.checklist.length, 0);
+  assert.equal(f.invoiceReceiptsRef.current.size, 0);
+  assert.equal(f.state.messages.at(-1).tone, "error");
+  assert.match(f.state.messages.at(-1).message, /Synthetic network failure/);
+  assert.equal(f.pendingActionsRef.current.size, 0);
+  assert.deepEqual(f.state.busy, ["maintenance", null]);
+});
+
+test("declining external invoice confirmation leaves the manual checklist unchanged", async () => {
+  const f = fixture({ confirm: false });
+  await f.markManualInvoice("device");
+  assert.equal(f.state.confirmations.length, 1);
+  assert.equal(f.state.requests.length, 0);
+  assert.equal(f.state.checklist.length, 0);
+  assert.equal(f.invoiceReceiptsRef.current.size, 0);
+  assert.equal(f.pendingActionsRef.current.size, 0);
+  assert.deepEqual(f.state.busy, []);
+  assert.equal(f.state.messages.length, 0);
+});
+
+test("manual checklist persistence failure reports an error and releases the invoice lock", async () => {
+  const f = fixture({ checklist: async () => { throw Error("Synthetic manual persistence failure"); } });
+  await f.markManualInvoice("combined");
+  assert.equal(f.state.confirmations.length, 1);
+  assert.equal(f.state.requests.length, 0);
+  assert.equal(f.state.checklist.length, 1);
+  assert.equal(f.state.messages.at(-1).tone, "error");
+  assert.match(f.state.messages.at(-1).message, /Synthetic manual persistence failure/);
+  assert.ok(f.state.messages.every(({ tone }) => tone !== "success"));
+  assert.equal(f.invoiceReceiptsRef.current.size, 0);
+  assert.equal(f.pendingActionsRef.current.size, 0);
+  assert.deepEqual(f.state.busy, ["combined", null]);
+});
+
+for (const kind of ["device", "labor", "maintenance", "combined"]) {
+  test(`confirmed external ${kind} invoice marks only the matching checklist without an issuance request`, async () => {
+    const f = fixture();
+    await f.markManualInvoice(kind);
+    assert.equal(f.state.confirmations.length, 1);
+    assert.equal(f.state.requests.length, 0);
+    assert.equal(f.state.checklist.length, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(f.state.checklist[0].changes)),
+      kind === "combined" ? { amovaInvoice: true, alinInvoice: true }
+        : kind === "device" ? { amovaInvoice: true } : { alinInvoice: true });
+    assert.match(f.state.messages.at(-1).message, /Kézi számlázás készre jelölve/);
+    assert.equal(f.invoiceReceiptsRef.current.size, 0);
+    assert.equal(f.pendingActionsRef.current.size, 0);
+    assert.deepEqual(f.state.busy, [kind, null]);
+  });
+}
+
+test("pending automatic invoice prevents manual confirmation and checklist writes", async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const f = fixture({ send: async () => {
+    await gate;
+    return Response.json({ ok: true, invoiceNumber: "SYNTHETIC-CONCURRENT" });
+  } });
+  const automatic = f.createInvoice("device", "10000", "cash");
+  await f.markManualInvoice("labor");
+  assert.equal(f.state.confirmations.length, 1);
+  assert.equal(f.state.requests.length, 1);
+  assert.equal(f.state.checklist.length, 0);
+  release();
+  await automatic;
+  assert.equal(f.state.checklist.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.state.checklist[0].changes)), { amovaInvoice: true });
+  assert.equal(f.pendingActionsRef.current.size, 0);
+  assert.deepEqual(f.state.busy, ["device", null]);
+});
+
+test("pending manual completion prevents automatic and duplicate manual actions", async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const f = fixture({ checklist: () => gate });
+  const manual = f.markManualInvoice("labor");
+  await f.createInvoice("device", "10000", "cash");
+  await f.markManualInvoice("labor");
+  assert.equal(f.state.confirmations.length, 1);
+  assert.equal(f.state.requests.length, 0);
+  assert.equal(f.state.checklist.length, 1);
+  release();
+  await manual;
+  assert.deepEqual(JSON.parse(JSON.stringify(f.state.checklist[0].changes)), { alinInvoice: true });
+  assert.equal(f.pendingActionsRef.current.size, 0);
+  assert.deepEqual(f.state.busy, ["labor", null]);
+});
+
+test("the manual invoice checkbox reflects saved completion after a failed write", async () => {
+  const jsx = (type, props) => ({ type, props });
+  const viewHarness = harness({}, { "react/jsx-runtime": { jsx, jsxs: jsx } });
+  const { InvoicePrepCard } = viewHarness.functions(["InvoicePrepCard"], {
+    billingPaymentMethodLabel: method => method, formatDoneAt: value => value,
+    ft: amount => `${amount} Ft`, WorkSectionIcon: () => null,
+  }, "src/components/alinflow/WorkPagePanel.tsx");
+  const f = fixture({ checklist: async () => { throw Error("Synthetic offline write failure"); } });
+  let completion;
+  const render = done => InvoicePrepCard({
+    title: "Synthetic invoice", invoiceLineNames: [], amount: "10000", parsedAmount: 10000,
+    done, paymentMethod: "cash", sendEmail: false, dueDate: "2026-11-11", invoiceBusy: false,
+    customerEmail: "synthetic@example.invalid", onAmountChange() {}, onPaymentMethodChange() {},
+    onSendEmailChange() {}, onCreateInvoice() {},
+    onManualComplete: () => { completion = f.markManualInvoice("labor"); },
+  });
+  function nodes(value) {
+    if (Array.isArray(value)) return value.flatMap(nodes);
+    if (!value || typeof value !== "object") return [];
+    return [value, ...nodes(value.props?.children)];
+  }
+  const manualCheckbox = tree => {
+    const label = nodes(tree).find(node => node.type === "label" &&
+      JSON.stringify(node.props?.children).includes("Kézi számlázás"));
+    return label && nodes(label).find(node => node.type === "input" && node.props.type === "checkbox");
+  };
+  const checkbox = manualCheckbox(render(false));
+  assert.ok(checkbox);
+  assert.equal(checkbox.props.checked, false, "manual completion must be controlled by saved state");
+  checkbox.props.onChange({ target: { checked: true } });
+  await completion;
+  assert.equal(f.state.messages.at(-1).tone, "error");
+  assert.equal(manualCheckbox(render(false)).props.checked, false);
+  assert.equal(manualCheckbox(render(true)), undefined, "completed invoices must not offer another manual completion");
 });

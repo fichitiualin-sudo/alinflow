@@ -509,7 +509,7 @@ function HomeContent() {
   const workActionBusy = pendingActions.some((key) => ["customer-save", "work-save", "work-close", "work-cancel", "invoice"].includes(key));
   const quoteReceiptsRef = useRef(new Map<string, { customer: Customer; sentAt: string }>());
   const appointmentReceiptsRef = useRef(new Map<string, { customer: Customer; sentAt: string }>());
-  const invoiceReceiptsRef = useRef(new Map<string, { invoiceNumber?: string; emailSent?: boolean }>());
+  const invoiceReceiptsRef = useRef(new Map<string, { invoiceNumber: string; emailSent?: boolean }>());
   const customerEditSnapshotRef = useRef<Customer | null>(null);
   const workReportReceiptsRef = useRef(new Map<string, {
     customer: Customer; sentAt: string; documents: "work_report" | "purchase_declaration" | "both";
@@ -4100,6 +4100,17 @@ function HomeContent() {
 
   async function markManualInvoice(kind: BillingInvoiceKind) {
     if (!selected.id) return;
+    if (pendingActionsRef.current.has("invoice")) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setMessage("Nincs internetkapcsolat. A kézi számlázás készre jelölése nem menthető. Csatlakozz az internethez, majd próbáld újra.", "error");
+      return;
+    }
+    const label = billingKindLabel(kind, billingUiConfig(workspaceSettings));
+    if (!window.confirm(`${label}: a számlát már kiállítottad az AlinFlow-n kívül? Csak meglévő számlát jelölj készre; ez a művelet nem készít számlát.`)) return;
+    if (!beginAction("invoice")) return;
+    const workspaceId = currentWorkspaceId();
+    setInvoiceBusy(kind);
+    setMessage("A kézi számlázás állapotának mentése...", "pending");
     try {
       if (kind === "combined") {
         await updateChecklistForCustomer(selected, { amovaInvoice: true, alinInvoice: true });
@@ -4107,15 +4118,22 @@ function HomeContent() {
         await setChecklistItem(kind === "device" ? "amovaInvoice" : "alinInvoice", true);
       }
 
-      setMessage("Kézi számlázás készre jelölve.");
+      if (currentWorkspaceId() === workspaceId) setMessage("Kézi számlázás készre jelölve.");
     } catch (error: any) {
-      setMessage(error.message);
+      if (currentWorkspaceId() === workspaceId) setMessage(`A kézi számlázás készre jelölése nem mentődött: ${error.message}`, "error");
+    } finally {
+      setInvoiceBusy(null);
+      endAction("invoice");
     }
   }
 
   async function createInvoice(kind: BillingInvoiceKind, amountValue: string, paymentMethod: BillingPaymentMethod, sendEmail = false) {
     if (!selected.id) return;
     if (pendingActionsRef.current.has("invoice")) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setMessage("Nincs internetkapcsolat. A számlázás és az állapot mentése csak online végezhető. Csatlakozz az internethez, majd próbáld újra.", "error");
+      return;
+    }
     const amount = Number(String(amountValue || "").replace(/\s/g, ""));
     if (!Number.isFinite(amount) || amount <= 0) {
       setMessage("Számla készítéséhez adj meg érvényes összeget.");
@@ -4161,9 +4179,11 @@ function HomeContent() {
         }),
       }, workspaceId || undefined);
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result?.ok) throw new Error(result?.error || "A Számlázz.hu számlakészítés sikertelen.");
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || "A Számlázz.hu számlakészítés sikertelen.");
+      const invoiceNumber = typeof result.invoiceNumber === "string" ? result.invoiceNumber.trim() : "";
+      if (!invoiceNumber) throw new Error("Nem érkezett visszaigazolt számlaszám. A számlát nem jelöltük készre; ellenőrizd a Számlázz.hu-fiókban.");
         if (currentWorkspaceId() !== workspaceId) return;
-        receipt = { invoiceNumber: result.invoiceNumber, emailSent: result.emailSent };
+        receipt = { invoiceNumber, emailSent: result.emailSent };
         invoiceReceiptsRef.current.set(receiptKey, receipt);
       }
       if (currentWorkspaceId() !== workspaceId) return;
