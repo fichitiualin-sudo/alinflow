@@ -42,13 +42,14 @@ export function createMapPopupList<T>(items: T[], renderItem: (item: T) => HTMLE
   return list;
 }
 
-export function createMapPopupActions({ name, phone, destination, onOpenCustomer, onDeleteCustomer, onCall }: {
+export function createMapPopupActions({ name, phone, destination, onOpenCustomer, onDeleteCustomer, onCall, onContactSms }: {
   name: string;
   phone: string;
   destination: string;
   onOpenCustomer: () => void;
   onDeleteCustomer?: () => Promise<boolean>;
   onCall?: () => void;
+  onContactSms?: () => void;
 }) {
   const actions = document.createElement("div");
   actions.className = `alinflow-map-popup-actions${onDeleteCustomer ? " alinflow-map-popup-actions-with-delete" : ""}`;
@@ -83,6 +84,15 @@ export function createMapPopupActions({ name, phone, destination, onOpenCustomer
   open.setAttribute("aria-label", `Ügyfél megnyitása: ${name}`);
   open.onclick = onOpenCustomer;
   actions.appendChild(open);
+  if (onContactSms) {
+    const sms = document.createElement("button");
+    sms.type = "button";
+    sms.className = "alinflow-map-popup-action";
+    sms.textContent = "Nem vette fel – SMS";
+    sms.setAttribute("aria-label", `Nem vette fel – SMS: ${name}`);
+    sms.onclick = onContactSms;
+    actions.appendChild(sms);
+  }
   if (onDeleteCustomer) {
     const remove = document.createElement("button");
     remove.type = "button";

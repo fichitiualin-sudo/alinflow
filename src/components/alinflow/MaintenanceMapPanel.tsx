@@ -36,6 +36,8 @@ type MaintenanceMapPanelProps = {
   onOpenCustomer: (customer: Customer) => void;
   onOpenShared?: (item: SharedMaintenanceInstallation) => void;
   onCallCustomer?: (point: MaintenanceMapPoint) => void;
+  onContactSms?: (point: MaintenanceMapPoint) => void;
+  canContactSms?: (point: MaintenanceMapPoint) => boolean;
   onGeocodeMissing: (points: MaintenanceMapPoint[]) => void;
   onToggleMaintenanceOptOut: (point: MaintenanceMapPoint, checked: boolean) => void;
   onChangeMaintenancePreference?: (point: MaintenanceMapPoint, choice: MaintenanceContactChoice) => void;
@@ -72,6 +74,8 @@ export function MaintenanceMapPanel({
   onOpenCustomer,
   onOpenShared,
   onCallCustomer,
+  onContactSms,
+  canContactSms,
   onGeocodeMissing,
   onToggleMaintenanceOptOut,
   onChangeMaintenancePreference,
@@ -118,8 +122,8 @@ export function MaintenanceMapPanel({
       return count ? [{ key: status, label: maintenanceMapStatusLabel(status), color: maintenanceMapStatusColor(status), count }] : [];
     }),
   })), [groups]);
-  const current = useRef({ points, groups, onOpenCustomer, onOpenShared, onCallCustomer });
-  current.current = { points, groups, onOpenCustomer, onOpenShared, onCallCustomer };
+  const current = useRef({ points, groups, onOpenCustomer, onOpenShared, onCallCustomer, onContactSms, canContactSms });
+  current.current = { points, groups, onOpenCustomer, onOpenShared, onCallCustomer, onContactSms, canContactSms };
 
   const selectGroup = useCallback((id: string) => {
     setSelectedGroupId(id);
@@ -190,6 +194,10 @@ export function MaintenanceMapPanel({
       if (point.maintenanceDeviceDataInvalid) appendLine("A készülékadatok ellenőrzést igényelnek.", "font-size:12px;color:#92400e");
       item.appendChild(createMapPopupActions({
         name: point.customerName, phone: point.customer.phone, destination: routeTarget(point),
+        onContactSms: current.current.onContactSms && current.current.canContactSms?.(point) ? () => {
+          const latestPoint = current.current.points.find((item) => item.appointmentId === point.appointmentId);
+          if (latestPoint && current.current.canContactSms?.(latestPoint)) current.current.onContactSms?.(latestPoint);
+        } : undefined,
         onCall: () => {
           const latestPoint = current.current.points.find((item) => item.appointmentId === point.appointmentId);
           if (latestPoint) current.current.onCallCustomer?.(latestPoint);
@@ -308,6 +316,8 @@ export function MaintenanceMapPanel({
               <button type="button" onClick={() => point.sharedMaintenance ? onOpenShared?.(point.sharedMaintenance) : onOpenCustomer(point.customer)} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">{point.sharedMaintenance ? "Egyeztetés" : "Ügyfél"}</button>
               {routeTarget(point) ? <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(routeTarget(point))}`} target="_blank" rel="noreferrer" className="rounded-2xl bg-emerald-400 px-4 py-3 text-center text-sm font-black text-slate-950">Térkép</a> : <span className="rounded-2xl bg-slate-500/20 px-4 py-3 text-center text-sm font-black text-slate-400">Nincs cím</span>}
             </div>
+            {onContactSms && canContactSms?.(point) ? <button type="button" onClick={() => onContactSms(point)}
+              className="mt-2 w-full rounded-2xl border border-emerald-300/30 bg-emerald-400/15 px-4 py-3 text-sm font-black text-emerald-200">Nem vette fel – SMS</button> : null}
           </article>)}
           {list.length > 0 ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-sm text-slate-400">
             <span>{pagination.currentPage}. oldal / {pagination.pageCount}</span>

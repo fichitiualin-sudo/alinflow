@@ -118,6 +118,14 @@ Felmérés és karbantartás esetén az esemény címe, időtartama és leírás
 
 ## Kézi SMS-időpontemlékeztető
 
+### SMS sikertelen karbantartási telefonhívás után
+
+A telepített klímák térképének listáján és gombostűjén, az ügyfél telefonos jegyzeteinél, valamint a megosztott karbantartás egyeztetésénél a „Nem vette fel – SMS” gomb előnézetet nyit. A szöveg jelzi, hogy klímakarbantartás egyeztetése miatt kerestük az ügyfelet, és visszahívást kér. A saját munkaterület mentett neve és telefonszáma szerepel benne; megosztott ügyfélnél az átadó nevében történő egyeztetést és a tényleges karbantartó aláírását is tartalmazza. Már átvett saját ügyfélnél a saját vállalkozás nevében történik a megkeresés.
+
+Az előnézet ugyanazt az egycímzettes iOS/Android SMS-linket, szövegmásolást és SMS-részszámlálást használja, mint az emlékeztető. A küldést a felhasználó végzi a telefonon. A megnyitás/másolás nem jelent elküldést, nem hoz létre időpontot vagy hívásnapló-bejegyzést; ehhez a megkereséshez nincs tartós „Elküldtem” jelölés. A csak olvasó végpont frissen ellenőrzi a mentett címzettet, az aktív munkaterületi/megosztási hozzáférést és a karbantartási választást. Elutasított, még el nem készült vagy lemondott telepítéshez nem készít megkeresést. Az „eredeti telepítőt kéri” választás a partner megkeresését letiltja, az eredeti telepítőét engedi. Nincs új migráció vagy környezeti változó.
+
+### Időpont-emlékeztető
+
 A naptár SMS-emlékeztetők gombja a holnapi, a 2 és a 3 nap múlva esedékes időpontokat külön listázza; a napok a budapesti időzónához igazodnak. Az egyes jövőbeli munkák oldalán közvetlen SMS-emlékeztető is nyitható. A heti és havi naptár időpontkártyáin a kis SMS gomb közvetlenül az adott időpont előnézetét nyitja; heti nézetben a + Naptár mellett, illetve az automatikus szinkronjelzésnél jelenik meg. A gomb és az előnézet használata nem indít új időpont-rögzítést. Telepítés, karbantartás és felmérés támogatott; lezárt, lemondott, múltbeli és egyéb munkák nem kapnak emlékeztetőt.
 
 Az ékezetes magyar szöveg a mentett ügyfélnevet, a munkaterület saját márkanevét és a kezdésből számított egyórás érkezési sávot használja. Ez nem módosítja a naptár foglalt időtartamát. A klímák darabszáma az adott időpontból származik, karbantartásnál a kiválasztott telepítésekből; egyéb tételek nem számítanak klímának. Holnapi munkánál Holnap, későbbinél konkrét dátum szerepel. A teljes név megmarad, keresztnév nem találgatható. A részletes, ékezetes szöveg több SMS-részre oszolhat; a felület a GSM-7/UCS-2 szerinti becslést mutatja.
