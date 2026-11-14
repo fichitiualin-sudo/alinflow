@@ -4,6 +4,8 @@ import { assertMaintenanceDeviceConsistency } from "@/lib/alinflow/maintenance-c
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PhoneCallNotes } from "@/components/alinflow/PhoneCallNotes";
+import { MaintenanceContactSmsDialog } from "@/components/alinflow/MaintenanceContactSms";
+import type { MaintenanceContactSmsTarget } from "@/lib/alinflow/maintenance-contact-sms";
 import { usePhoneCallLog } from "@/components/alinflow/usePhoneCallLog";
 import { recordPhoneCall } from "@/lib/alinflow/phone-calls-client";
 import { resolveCustomerPhoneCallScope, phoneCallScopeKey, type PhoneCallScope } from "@/lib/alinflow/phone-calls";
@@ -483,6 +485,7 @@ function HomeContent() {
   const [documentPage,setDocumentPage] = useState(1);
   const [selected,setSelected] = useState<Customer>(EMPTY_CUSTOMER);
   const [phoneCallRevision, setPhoneCallRevision] = useState(0);
+  const [contactSmsSelection, setContactSmsSelection] = useState<{ workspaceId: string; userId: string; contextKey: string; target: MaintenanceContactSmsTarget } | null>(null);
   const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(EMPTY_CUSTOMER.quoteItems);
   const [scheduleDate,setScheduleDate] = useState(() => todayIso());
   const [scheduleTime,setScheduleTime] = useState("08:00");
@@ -926,6 +929,9 @@ function HomeContent() {
     } : undefined;
   const selectedPhoneLog = usePhoneCallLog(selectedPhoneScopes, user?.id, phoneCallRevision);
   const sharedPhoneLog = usePhoneCallLog(sharedPhoneScope ? [sharedPhoneScope] : [], user?.id, phoneCallRevision);
+  const contactSmsContextKey = JSON.stringify([view, mapMode, selected.id, selected.activeAppointmentId,
+    sharedMaintenanceSelection?.item.grantId, sharedMaintenanceSelection?.item.installationId]);
+  useEffect(() => { setContactSmsSelection(null); }, [activeWorkspace?.id, user?.id, contactSmsContextKey]);
   useEffect(() => {
     if (sharedMaintenance.loading) return;
     setSharedMaintenanceSelection(current => {
@@ -938,6 +944,10 @@ function HomeContent() {
     const own = applySharedMaintenanceResults(buildMaintenanceMapPoints(allWorkCustomers), sharedMaintenance.results);
     return applyMaintenanceContactPreferences(mergeSharedMaintenancePoints(own, sharedMaintenance.received), sharedMaintenance.preferences);
   }, [allWorkCustomers, sharedMaintenance.received, sharedMaintenance.results, sharedMaintenance.preferences, mapStatusDay]);
+  useEffect(() => {
+    setContactSmsSelection(current => current && !maintenanceMapPoints.some(point =>
+      JSON.stringify(contactSmsTarget(point)) === JSON.stringify(current.target)) ? null : current);
+  }, [maintenanceMapPoints]);
   const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
   const activeCustomers = sortedCustomers.filter((customer) => !isArchivedCustomer(customer));
   const archivedCustomers = sortedCustomers.filter(isArchivedCustomer);
@@ -1162,12 +1172,42 @@ function HomeContent() {
     catch (error: any) { if (workspaceId === currentWorkspaceId() && userId === authUserIdRef.current && generation === authLoadGenerationRef.current) setMessage(`A hívás naplózása nem sikerült: ${error.message}`, "error"); }
   }
 
+  function contactSmsTarget(point: MaintenanceMapPoint): MaintenanceContactSmsTarget | null {
+    if (point.status === "optOut" || (!point.maintenanceContactPreference && point.customer.maintenanceOptOut)
+      || point.maintenanceContactPreference?.choice === "declined"
+      || (point.maintenanceContactPreference?.choice === "original_installer" && !point.maintenanceContactPreference.isSource)) return null;
+    if (point.sharedMaintenance) return { type: "shared", grantId: point.sharedMaintenance.grantId, installationId: point.sharedMaintenance.installationId };
+    if (!point.installationDate || point.installationDate > todayIso()
+      || !["Lezárva", "Szerelés kész – admin folyamatban"].includes(point.customer.status)) return null;
+    return { type: "own", customerId: point.customerId, installationId: point.appointmentId };
+  }
+
+  function openContactSms(target: MaintenanceContactSmsTarget) {
+    if (activeWorkspace?.id && user?.id) setContactSmsSelection({ workspaceId: activeWorkspace.id, userId: user.id, contextKey: contactSmsContextKey, target });
+  }
+
+  function renderContactSmsButton(target: MaintenanceContactSmsTarget | null) {
+    return target ? <button type="button" onClick={() => openContactSms(target)}
+      className="rounded-xl border border-emerald-300/30 bg-emerald-400/15 px-4 py-3 text-sm font-black text-emerald-200">Nem vette fel – SMS</button> : null;
+  }
+
+  function renderContactSmsDialog() {
+    return contactSmsSelection && contactSmsSelection.workspaceId === activeWorkspace?.id && contactSmsSelection.userId === user?.id
+      && contactSmsSelection.contextKey === contactSmsContextKey
+      && maintenanceMapPoints.some(point => JSON.stringify(contactSmsTarget(point)) === JSON.stringify(contactSmsSelection.target))
+      ? <MaintenanceContactSmsDialog key={JSON.stringify(contactSmsSelection)} {...contactSmsSelection} onClose={() => setContactSmsSelection(null)} /> : null;
+  }
+
   function renderPhoneCallNotes() {
     const scope = phoneScopeForCustomer(selected);
-    return <PhoneCallNotes key={`${user?.id}:${scope ? phoneCallScopeKey(scope) : selected.id}`}
+    const point = maintenanceMapPoints.find(item => item.customerId === selected.id && contactSmsTarget(item)
+      && (!selected.activeAppointmentId || !isInstallationAppointment(selected.appointmentType) || item.appointmentId === selected.activeAppointmentId));
+    return <><PhoneCallNotes key={`${user?.id}:${scope ? phoneCallScopeKey(scope) : selected.id}`}
       {...selectedPhoneLog} legacyLastCalledAt={selected.lastCalledAt}
       busy={pendingActions.some(key => key.startsWith("phone:"))}
-      onRecord={scope ? occurredAt => savePhoneCall(scope, occurredAt, selected) : undefined} />;
+      onRecord={scope ? occurredAt => savePhoneCall(scope, occurredAt, selected) : undefined}>
+      {renderContactSmsButton(point ? contactSmsTarget(point) : null)}
+    </PhoneCallNotes>{renderContactSmsDialog()}</>;
   }
 
   useEffect(() => {
@@ -5266,6 +5306,8 @@ function HomeContent() {
           onOpenCustomer={(customer) => openCustomer(customer, "work")}
           onCallCustomer={point => { if (point.sharedMaintenance) void recordSharedPhoneCall(point.sharedMaintenance);
             else void recordCustomerPhoneCall(point.customer, "maintenanceMap"); }}
+          canContactSms={point => Boolean(contactSmsTarget(point))}
+          onContactSms={point => { const target = contactSmsTarget(point); if (target) openContactSms(target); }}
           onOpenShared={(item) => {if(activeWorkspace?.id && user?.id) setSharedMaintenanceSelection({workspaceId: activeWorkspace.id, userId: user.id, item});}}
           onGeocodeMissing={geocodeMissingMaintenanceMapPoints}
           onToggleMaintenanceOptOut={toggleMaintenanceOptOut}
@@ -5289,9 +5331,14 @@ function HomeContent() {
           item={sharedMaintenanceSelection.item} busy={pendingActions.includes("shared-maintenance-order")}
           onCall={() => { void recordSharedPhoneCall(sharedMaintenanceSelection.item); }}
           phoneCallNotes={<PhoneCallNotes {...sharedPhoneLog} busy={pendingActions.some(key => key.startsWith("phone:"))}
-            onRecord={sharedPhoneScope ? occurredAt => savePhoneCall(sharedPhoneScope, occurredAt) : undefined} />}
+            onRecord={sharedPhoneScope ? occurredAt => savePhoneCall(sharedPhoneScope, occurredAt) : undefined}>
+            {renderContactSmsButton(maintenanceMapPoints.map(point => ({ point, target: contactSmsTarget(point) }))
+              .find(({ point }) => point.sharedMaintenance?.grantId === sharedMaintenanceSelection.item.grantId
+                && point.sharedMaintenance?.installationId === sharedMaintenanceSelection.item.installationId)?.target || null)}
+          </PhoneCallNotes>}
           onClose={()=>setSharedMaintenanceSelection(null)}
           onAccept={()=>startSharedMaintenance(sharedMaintenanceSelection.item,sharedMaintenanceSelection.workspaceId)} /> : null}
+        {renderContactSmsDialog()}
       </Shell>
     );
   }
