@@ -299,6 +299,8 @@ function scheduleFixture(options = {}) {
     },
     saveMaintenanceAppointmentLinks: async (...args) => {
       calls.link.push(args);
+      options.linkStarted?.();
+      if (options.linkGate) await options.linkGate.promise;
       if (linkFailures > 0) { linkFailures -= 1; throw Error("synthetic installation links failure"); }
     },
     sendAppointmentEmailFor: async (target, prefix) => {
@@ -357,7 +359,8 @@ for (const failure of ["log", "link"]) {
     assert.equal(run.state.view, "schedule");
     assert.equal(run.state.selected.activeAppointmentId, appointmentId);
     assert.equal(run.state.selected.activeQuoteId, quoteId);
-    assert.equal(run.state.customers[0].activeAppointmentId, appointmentId);
+    assert.equal(run.state.customers[0].activeAppointmentId, failure === "link" ? undefined : appointmentId,
+      "unconfirmed maintenance links must not enter the map or saved work history");
     assert.equal(run.state.selected.date, "2026-10-15");
     assert.equal(run.calls.email.length, 0);
     assert.equal(run.calls.messages.at(-1).tone, "warning");
@@ -370,6 +373,7 @@ for (const failure of ["log", "link"]) {
     assert.equal(run.calls.email.length, 1);
     assert.equal(run.state.view, "work");
     assert.equal(run.state.selected.activeAppointmentId, appointmentId);
+    assert.equal(run.state.customers[0].activeAppointmentId, appointmentId);
     assert.equal(run.pendingActionsRef.current.size, 0);
   });
 }
@@ -384,6 +388,24 @@ test("schedule email failure retains the detailed reason and opens the saved wor
   assert.equal(run.state.selected.status, "Időpont foglalva");
   assert.equal(run.state.view, "work");
   assert.deepEqual(run.calls.navigate, ["work"]);
+});
+
+test("maintenance scheduling publishes to saved history only after link persistence confirms success", async () => {
+  const gate = deferred(), started = deferred();
+  const run = scheduleFixture({ type: "maintenance", linkGate: gate, linkStarted: started.resolve,
+    customer: customer({ appointmentType: "maintenance", appointmentCancelledAt: "2026-10-01T08:00:00Z" }) });
+  const saving = run.saveSchedule();
+  await started.promise;
+  assert.equal(run.calls.link.length, 1);
+  assert.equal(run.state.selected.activeAppointmentId, appointmentId, "saved identity is available for retry immediately");
+  assert.equal(run.state.selected.appointmentCancelledAt, undefined);
+  assert.equal(run.state.customers[0].activeAppointmentId, undefined);
+  assert.equal(run.calls.email.length, 0);
+  gate.resolve();
+  await saving;
+  assert.equal(run.state.customers[0].activeAppointmentId, appointmentId);
+  assert.equal(run.state.customers[0].appointmentCancelledAt, undefined);
+  assert.equal(run.calls.email.length, 1);
 });
 
 test("fully successful new scheduling returns to dashboard after confirmation", async () => {

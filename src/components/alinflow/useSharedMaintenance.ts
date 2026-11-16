@@ -1,11 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listMaintenanceResults, listReceivedMaintenance, listMaintenanceContactPreferences } from "@/lib/alinflow/shared-maintenance-client";
+import { listMaintenanceResults, listReceivedMaintenance, listMaintenanceContactPreferences, listMaintenanceSchedules } from "@/lib/alinflow/shared-maintenance-client";
 import type { MaintenanceContactPreference } from "@/lib/alinflow/maintenance-contact-choice";
 import type { SharedMaintenanceInstallation, SharedMaintenanceResult, SharedMaintenanceOptOut } from "@/lib/alinflow/shared-maintenance";
+import type { SharedMaintenanceSchedule } from "@/lib/alinflow/maintenance-scheduled-map";
 
-type SharedMaintenanceState = {identity?: string; received: SharedMaintenanceInstallation[]; results: SharedMaintenanceResult[]; preferences: MaintenanceContactPreference[]; error: string; loading: boolean};
-const EMPTY_STATE: SharedMaintenanceState = {received: [], results: [], preferences: [], error: "", loading: false};
+type SharedMaintenanceState = {identity?: string; received: SharedMaintenanceInstallation[]; results: SharedMaintenanceResult[]; preferences: MaintenanceContactPreference[]; schedules: SharedMaintenanceSchedule[]; schedulesError: string; error: string; loading: boolean};
+const EMPTY_STATE: SharedMaintenanceState = {received: [], results: [], preferences: [], schedules: [], schedulesError: "", error: "", loading: false};
 
 export function useSharedMaintenance(workspaceId?: string, enabled = false, userId?: string) {
   const identity = workspaceId && userId ? `${workspaceId}:${userId}` : undefined;
@@ -43,12 +44,20 @@ export function useSharedMaintenance(workspaceId?: string, enabled = false, user
       ? {...current, error: "", loading: true}
       : {...EMPTY_STATE, identity, loading: true});
     try {
-      const [received, results, preferences] = await Promise.all([listReceivedMaintenance(workspaceId), listMaintenanceResults(workspaceId), listMaintenanceContactPreferences(workspaceId)]);
+      // A missing/new schedule RPC must not remove existing maintenance history.
+      // Failed schedule checks still discard the old schedule data immediately.
+      const [received, results, preferences, scheduleResponse] = await Promise.all([
+        listReceivedMaintenance(workspaceId), listMaintenanceResults(workspaceId), listMaintenanceContactPreferences(workspaceId),
+        listMaintenanceSchedules(workspaceId).then(schedules => ({schedules, schedulesError: ""}),
+          error => ({schedules: [] as SharedMaintenanceSchedule[], schedulesError: error instanceof Error ? error.message : "A megosztott egyeztetett időpontok betöltése nem sikerült."})),
+      ]);
       if (!Array.isArray(received) || !Array.isArray(results) || !Array.isArray(preferences)) throw new Error("A megosztott karbantartások válasza nem olvasható.");
       if (ticket === request.current) setState(current => ({identity,
         received: current.identity === identity && JSON.stringify(current.received) === JSON.stringify(received) ? current.received : received,
         results: current.identity === identity && JSON.stringify(current.results) === JSON.stringify(results) ? current.results : results,
         preferences: current.identity === identity && JSON.stringify(current.preferences) === JSON.stringify(preferences) ? current.preferences : preferences,
+        schedules: current.identity === identity && JSON.stringify(current.schedules) === JSON.stringify(scheduleResponse.schedules) ? current.schedules : scheduleResponse.schedules,
+        schedulesError: scheduleResponse.schedulesError,
         error: "", loading: false}));
     } catch (error) {
       if (ticket === request.current) setState({...EMPTY_STATE, identity, error: error instanceof Error ? error.message : "A megosztott karbantartások betöltése nem sikerült."});

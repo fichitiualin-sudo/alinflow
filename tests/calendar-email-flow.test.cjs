@@ -71,6 +71,7 @@ function fixture(options = {}) {
     },
     saveMaintenanceAppointmentLinks: async (customer, ids) => {
       state.links.push({ customer, ids });
+      if (options.link) await options.link(customer, ids);
       if (options.linkError) throw Error(options.linkError);
     },
     setQuickAppointment: value => state.dialogs.push(value),
@@ -165,10 +166,33 @@ test("calendar link failure closes creation but retains the saved work for corre
   await f.saveQuickAppointment();
   assert.equal(f.state.persist.length, 1);
   assert.equal(f.state.selected.at(-1).activeAppointmentId, appointmentId);
+  assert.equal(f.state.promoted.length, 0, "failed links cannot mark a telepítés scheduled on the map");
   assert.deepEqual(f.state.dialogs, [null]);
   assert.match(f.state.messages.at(-1), /időpont mentve.*kapcsolódó telepítések mentése.*nem sikerült/i);
   assert.equal(f.state.requests.length, 0);
   assert.equal(f.savingRef.current, false);
+});
+
+test("new quick maintenance clears an inherited cancellation and reaches the map only after saved links", async () => {
+  const gate = deferred(), started = deferred();
+  const existing = existingCustomer({ appointmentCancelledAt: "2026-11-01T08:00:00Z" });
+  const before = plain(existing);
+  const f = fixture({ existing, link: () => { started.resolve(); return gate.promise; },
+    draft: { appointmentType: "maintenance", sendQuoteEmail: false, sendAppointmentEmail: false } });
+  const saving = f.saveQuickAppointment();
+  await started.promise;
+  assert.equal(f.state.links.length, 1);
+  assert.equal(f.state.selected.at(-1).activeAppointmentId, appointmentId);
+  assert.equal(f.state.selected.at(-1).appointmentCancelledAt, undefined);
+  assert.equal(f.state.persist[0].appointmentCancelledAt, undefined);
+  assert.equal(f.state.promoted.length, 0);
+  assert.deepEqual(f.state.dialogs, [null]);
+  gate.resolve();
+  await saving;
+  assert.equal(f.state.promoted.length, 1);
+  assert.equal(f.state.promoted[0].activeAppointmentId, appointmentId);
+  assert.equal(f.state.promoted[0].appointmentCancelledAt, undefined);
+  assert.deepEqual(existing, before);
 });
 
 test("calendar installation saves once and automatically sends two emails for the saved work", async () => {

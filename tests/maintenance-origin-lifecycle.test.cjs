@@ -156,3 +156,44 @@ test("new installation and maintenance drafts reset classification without chang
   assert.deepEqual(Array.from(maintenance.state.selected.maintenanceInstallationIds), ["old-installation"]);
   assert.equal(external.maintenanceOrigin, "external");
 });
+
+test("new installation and maintenance drafts cannot inherit the previous appointment cancellation", () => {
+  const cancelled = { ...external, appointmentType: "maintenance", appointmentCancelledAt: "2026-11-01T08:00:00Z" };
+  const before = JSON.stringify(cancelled);
+  const installation = creationFixture(cancelled);
+  installation.startInstallationScheduleFromQuote();
+  assert.equal(installation.state.selected.appointmentCancelledAt, undefined);
+  const maintenance = creationFixture(cancelled);
+  maintenance.startMaintenanceForCustomer(cancelled, [external]);
+  assert.equal(maintenance.state.selected.appointmentCancelledAt, undefined);
+  assert.equal(JSON.stringify(cancelled), before);
+});
+
+test("restoring a cancelled appointment clears its guard in selected work and history only after save", async () => {
+  const cancelled = { ...external, appointmentType: "maintenance", status: "Lemondva", appointmentCancelledAt: "2026-11-01T08:00:00Z" };
+  for (const fail of [true, false]) {
+    const state = { saved: [], selected: [], history: [], customers: [cancelled], messages: [] };
+    const { restoreArchivedCustomer } = h.functions(["restoreArchivedCustomer"], {
+      ...appointments, EMPTY_QUOTE_ITEMS: [], persistCustomerToDb: async value => {
+        state.saved.push(value); if (fail) throw Error("Synthetic restore failure");
+      },
+      setCustomers: update => { state.customers = update(state.customers); },
+      updateWorkHistory: value => state.history.push(value), setSelected: value => state.selected.push(value),
+      setReturnTarget: noop, currentReturnTarget: () => null, setQuoteItems: noop, setScheduleDate: noop,
+      setScheduleTime: noop, setScheduleAppointmentType: noop, setWorkReport: noop, emptyWorkReport: () => ({}),
+      setWorkChecklist: noop, effectiveChecklistFor: () => ({}), setAllowWorkResourceEdit: noop,
+      setMessage: value => state.messages.push(value), navigateToView: noop,
+    });
+    await restoreArchivedCustomer(cancelled);
+    assert.equal(state.saved[0].appointmentCancelledAt, undefined);
+    assert.equal(state.selected.length, fail ? 0 : 1);
+    assert.equal(state.history.length, fail ? 0 : 1);
+    if (!fail) {
+      assert.equal(state.history[0].status, "Időpont foglalva");
+      assert.equal(state.history[0].appointmentCancelledAt, undefined);
+      assert.equal(state.history[0].activeAppointmentId, cancelled.activeAppointmentId);
+    } else assert.match(state.messages.at(-1), /Synthetic restore failure/);
+  }
+  assert.equal(cancelled.status, "Lemondva");
+  assert.ok(cancelled.appointmentCancelledAt);
+});

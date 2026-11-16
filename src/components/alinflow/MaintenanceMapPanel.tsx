@@ -50,6 +50,7 @@ const FILTERS: Array<{ value: MaintenanceMapStatus | "all"; label: string }> = [
   { value: "all", label: "Összes" },
   { value: "overdue", label: "Esedékes" },
   { value: "dueSoon", label: "Hamarosan" },
+  { value: "scheduled", label: "Egyeztetve" },
   { value: "ok", label: "Rendben" },
   { value: "optOut", label: "Nem kéri" },
   { value: "unknown", label: "Nincs adat" },
@@ -63,6 +64,10 @@ function routeTarget(point: MaintenanceMapPoint) {
 
 function installationDateLabel(point: MaintenanceMapPoint) {
   return `${formatMapDate(point.installationDate)}${point.installationTime ? ` · ${point.installationTime}` : ""}`;
+}
+
+function scheduledMaintenanceLabel(value: { scheduledMaintenanceDate?: string; scheduledMaintenanceTime?: string }) {
+  return `${formatMapDate(value.scheduledMaintenanceDate)}${value.scheduledMaintenanceTime ? ` · ${value.scheduledMaintenanceTime}` : ""}`;
 }
 
 export function MaintenanceMapPanel({
@@ -104,11 +109,17 @@ export function MaintenanceMapPanel({
   const pagination = paginateItems(list, page);
   const locatedCount = groups.reduce((sum, group) => sum + group.points.length, 0);
   const missingCoordinateCount = filteredPoints.filter((point) => !hasMaintenanceMapCoordinates(point) && maintenanceGeocodeTarget(point)).length;
-  const counts = useMemo(() => visiblePoints.reduce<Record<MaintenanceMapStatus | "all", number>>((result, point) => {
-    result.all += 1;
-    result[point.status] += 1;
+  const counts = useMemo(() => {
+    const result = visiblePoints.reduce<Record<MaintenanceMapStatus | "all", number>>((summary, point) => {
+      summary.all += 1;
+      summary[point.status] += 1;
+      return summary;
+    }, { all: 0, overdue: 0, dueSoon: 0, scheduled: 0, ok: 0, optOut: 0, originalInstaller: 0, unknown: 0 });
+    result.scheduled = filterMaintenanceMapPoints(visiblePoints, {
+      visibility: { own: true, external: true }, status: "scheduled",
+    }).length;
     return result;
-  }, { all: 0, overdue: 0, dueSoon: 0, ok: 0, optOut: 0, originalInstaller: 0, unknown: 0 }), [visiblePoints]);
+  }, [visiblePoints]);
   const markers = useMemo<MapCanvasMarker[]>(() => groups.map((group) => ({
     id: group.id,
     latitude: group.latitude,
@@ -186,11 +197,17 @@ export function MaintenanceMapPanel({
       appendLine(maintenanceMapOriginLabel(point), "font-size:12px;font-weight:800;color:#475569");
       appendLine(point.address || point.city || "Nincs cím megadva", "font-size:12px");
       appendLine(maintenanceMapStatusLabel(point.status), "font-size:12px;font-weight:800");
+      if (point.scheduledMaintenanceDate) appendLine(`Egyeztetett karbantartás: ${scheduledMaintenanceLabel(point)}`, "font-size:12px;font-weight:800;color:#7c3aed");
       appendLine(`Szerelés: ${installationDateLabel(point)}`, "font-size:12px;color:#475569");
       appendLine(`Utolsó karbantartás: ${formatMapDate(point.lastMaintenanceDate)}`, "font-size:12px;color:#475569");
       appendLine(`Következő esedékes: ${formatMapDate(point.nextMaintenanceDue)}`, "font-size:12px;color:#475569");
       appendLine(`Karbantartások száma: ${point.maintenanceCount}`, "font-size:12px;color:#475569");
       if (maintenanceDeviceSummary(point.maintenanceDevices)) appendLine(maintenanceDeviceSummary(point.maintenanceDevices), "font-size:12px;font-weight:700;color:#475569");
+      if (point.maintenanceDevices && point.maintenanceDevices.length > 1) {
+        point.maintenanceDevices.filter(device => device.status === "scheduled" && device.scheduledMaintenanceDate).forEach(device => {
+          appendLine(`Egyeztetve: ${device.productName} · ${device.unitNumber}. készülék · ${scheduledMaintenanceLabel(device)}`, "font-size:12px;font-weight:700;color:#7c3aed");
+        });
+      }
       if (point.maintenanceDeviceDataInvalid) appendLine("A készülékadatok ellenőrzést igényelnek.", "font-size:12px;color:#92400e");
       item.appendChild(createMapPopupActions({
         name: point.customerName, phone: point.customer.phone, destination: routeTarget(point),
@@ -274,6 +291,7 @@ export function MaintenanceMapPanel({
             <div className="mt-3 space-y-1 break-words text-sm font-bold text-slate-300">
               <p>{point.address || point.city || "Nincs cím megadva"}</p>
               <p>Szerelés: {installationDateLabel(point)}</p>
+              {point.scheduledMaintenanceDate ? <p className="font-black text-violet-200">Egyeztetett karbantartás: {scheduledMaintenanceLabel(point)}</p> : null}
               <p>Utolsó karbantartás: {formatMapDate(point.lastMaintenanceDate)}</p>
               <p>Következő esedékes: {formatMapDate(point.nextMaintenanceDue)}</p>
               <p>Karbantartások száma: {point.maintenanceCount}</p>
@@ -286,8 +304,9 @@ export function MaintenanceMapPanel({
               {point.maintenanceDevices.map(device => <div key={maintenanceDeviceKey(device)} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <span className="min-w-0 break-words font-black">{device.productName} · {device.unitNumber}. készülék</span>
-                  <span className="font-bold">{maintenanceMapStatusLabel(device.status)}</span>
+                  <span className={`font-bold ${device.status === "scheduled" ? "text-violet-200" : ""}`}>{maintenanceMapStatusLabel(device.status)}</span>
                 </div>
+                {device.scheduledMaintenanceDate ? <p className="mt-1 font-bold text-violet-200">Egyeztetett karbantartás: {scheduledMaintenanceLabel(device)}</p> : null}
                 <p className="mt-1 text-slate-300">Utolsó karbantartás: {formatMapDate(device.lastMaintenanceDate)}</p>
                 <label className="mt-2 flex cursor-pointer items-center gap-2 font-bold">
                   <input type="checkbox" className="h-5 w-5 shrink-0 accent-zinc-400 disabled:cursor-wait disabled:opacity-50"

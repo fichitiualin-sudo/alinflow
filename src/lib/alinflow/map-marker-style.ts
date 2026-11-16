@@ -17,7 +17,7 @@ export type MapCanvasMarker = {
 
 export type MapMarkerSummary = { count: number; segments: MapMarkerSegment[] };
 
-const SEGMENT_ORDER = ["overdue", "dueSoon", "ok", "optOut", "unknown", "callback"];
+const SEGMENT_ORDER = ["overdue", "dueSoon", "scheduled", "ok", "optOut", "unknown", "callback"];
 const DEFAULT_COLOR = "#0f766e";
 const ICON_CACHE_LIMIT = 128;
 const PIN_DISPLAY_SCALE = 0.75;

@@ -142,6 +142,8 @@ export type Customer = {
   };
   appointmentBookedAt?: string;
   appointmentUpdatedAt?: string;
+  /** Read from appointments.cancelled_at; scheduling clears this display guard. */
+  appointmentCancelledAt?: string;
   timeline?: CustomerTimelineState;
   quoteItems: QuoteItem[];
   productId?: string;
