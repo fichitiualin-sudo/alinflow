@@ -151,7 +151,7 @@ test('accepted reference keeps one marker and combines source history with newer
 // Preserve hook slots/dependencies and run effect cleanup when identity changes.
 // Controlled focus/timer events and deferred RPCs exercise the actual hook.
 function sharedHookHarness({visibility = "visible"} = {}) {
-  const slots=[],effects=[],focusListeners=new Set(),visibilityListeners=new Set(),intervals=new Set(),receivedCalls=[],resultCalls=[],preferenceCalls=[];
+  const slots=[],effects=[],focusListeners=new Set(),visibilityListeners=new Set(),intervals=new Set(),receivedCalls=[],resultCalls=[],preferenceCalls=[],scheduleCalls=[];
   let now=0;
   class ClockDate extends Date { static now() { return now; } }
   let cursor=0,args=['workspace',true,'user'];
@@ -183,16 +183,17 @@ function sharedHookHarness({visibility = "visible"} = {}) {
       listReceivedMaintenance:workspaceId=>deferred(receivedCalls,workspaceId),
       listMaintenanceResults:workspaceId=>deferred(resultCalls,workspaceId),
       listMaintenanceContactPreferences:workspaceId=>deferred(preferenceCalls,workspaceId),
+      listMaintenanceSchedules:workspaceId=>deferred(scheduleCalls,workspaceId),
     },
   });
   const {useSharedMaintenance}=hookHarness.load('src/components/alinflow/useSharedMaintenance.ts');
   const flush=()=>new Promise(resolve=>setImmediate(resolve));
-  return {document,receivedCalls,resultCalls,preferenceCalls,
+  return {document,receivedCalls,resultCalls,preferenceCalls,scheduleCalls,
     render(nextArgs=args){args=nextArgs;cursor=0;const value=useSharedMaintenance(...args);effects.splice(0).forEach(effect=>effect());return value;},
     focus(){[...focusListeners].forEach(fn=>fn());},tick(){now+=60000;[...intervals].forEach(fn=>fn());},
     advance(ms){now+=ms;},visibility(value){document.visibilityState=value;[...visibilityListeners].forEach(fn=>fn());},
-    async complete(index,received=[item],results=[],preferences=[]){receivedCalls[index].resolve(received);resultCalls[index].resolve(results);preferenceCalls[index].resolve(preferences);await flush();},
-    async fail(index){receivedCalls[index].reject(new Error('Network unavailable'));resultCalls[index].resolve([]);preferenceCalls[index].resolve([]);await flush();},
+    async complete(index,received=[item],results=[],preferences=[],schedules=[]){receivedCalls[index].resolve(received);resultCalls[index].resolve(results);preferenceCalls[index].resolve(preferences);scheduleCalls[index].resolve(schedules);await flush();},
+    async fail(index){receivedCalls[index].reject(new Error('Network unavailable'));resultCalls[index].resolve([]);preferenceCalls[index].resolve([]);scheduleCalls[index].resolve([]);await flush();},
   };
 }
 
@@ -362,4 +363,30 @@ test('an acceptance racing a confirmed preference save replaces the same canonic
   initial.applyPreference({...preference,installationId:'owned-mirror',choice:'declined',updatedAt:'2026-10-29T12:01:00Z'});
   const saved=hook.render();assert.equal(saved.preferences.length,1);
   assert.equal(saved.preferences[0].installationId,'owned-mirror');assert.equal(saved.preferences[0].choice,'declined');
+});
+
+const sharedSchedule={installationId:'own-installation',sourceWorkspaceId:'source',sourceInstallationId:'installation',maintenanceAppointmentId:'maintenance',date:'2026-11-20',time:'09:00',selectedDevices:[{productName:'Test AC',unitNumber:1}]};
+test('shared schedules retain their identity during unchanged refresh and disappear after revocation',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[],[],[sharedSchedule]);const initial=hook.render();
+  hook.tick();assert.equal(hook.render().schedules,initial.schedules);
+  await hook.complete(1,[item],[],[],JSON.parse(JSON.stringify([sharedSchedule])));
+  assert.equal(hook.render().schedules,initial.schedules);
+  hook.tick();await hook.complete(2,[item],[],[],[]);
+  assert.equal(hook.render().schedules.length,0);assert.equal(hook.render().schedulesError,'');
+});
+test('schedule failures clear old schedules while preserving successful shared history',async()=>{
+  const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[],[],[sharedSchedule]);hook.render();
+  hook.tick();hook.scheduleCalls[1].reject(new Error('Schedule permission revoked'));
+  await hook.complete(1,[item],[{installationId:'installation',date:'2026-11-01'}]);
+  const result=hook.render();assert.equal(result.schedules.length,0);assert.match(result.schedulesError,/betöltése|revoked/);
+  assert.equal(result.received.length,1);assert.equal(result.results.length,1);assert.equal(result.error,'');
+  hook.tick();await hook.complete(2,[item],[],[],[sharedSchedule]);assert.equal(hook.render().schedulesError,'');
+});
+test('schedule results are hidden immediately across workspace/user/disabled transitions',async()=>{
+  for(const args of [['different',true,'user'],['workspace',true,'different'],['workspace',false,'user']]) {
+    const hook=sharedHookHarness();hook.render();await hook.complete(0,[item],[],[],[sharedSchedule]);hook.render();hook.tick();
+    assert.equal(hook.render(args).schedules.length,0);
+    await hook.complete(1,[item],[],[],[sharedSchedule]);assert.equal(hook.render().schedules.length,0);
+    if(args[1]) {await hook.complete(2,[],[],[],[]);assert.equal(hook.render().schedules.length,0);}
+  }
 });

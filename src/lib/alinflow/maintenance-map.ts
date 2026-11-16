@@ -6,7 +6,7 @@ import { cleanQuoteItems, climateQuoteItems, climateSummary } from "./products";
 import type { SharedMaintenanceInstallation } from "./shared-maintenance";
 import type { MaintenanceContactPreference } from "./maintenance-contact-choice";
 
-export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "optOut" | "originalInstaller" | "unknown";
+export type MaintenanceMapStatus = "ok" | "dueSoon" | "overdue" | "scheduled" | "optOut" | "originalInstaller" | "unknown";
 export type MaintenanceMapVisibility = { own: boolean; external: boolean };
 
 export type MaintenanceMapPoint = {
@@ -25,6 +25,8 @@ export type MaintenanceMapPoint = {
   installationTime?: string;
   installationLabel: string;
   lastMaintenanceDate?: string;
+  scheduledMaintenanceDate?: string;
+  scheduledMaintenanceTime?: string;
   nextMaintenanceDue?: string;
   maintenanceCount: number;
   maintenanceDevices?: MaintenanceDeviceHistory[];
@@ -73,7 +75,9 @@ export function filterMaintenanceMapPoints(points: readonly MaintenanceMapPoint[
     const origin = point.maintenanceOrigin === "external" ? "external" : "own";
     const matchesStatus = status === "all" || (status === "originalInstaller"
       ? point.status === "originalInstaller" || point.maintenanceContactPreference?.choice === "original_installer"
-      : point.status === status);
+      : status === "scheduled"
+        ? point.status === "scheduled" || Boolean(point.maintenanceDevices?.some(device => device.status === "scheduled"))
+        : point.status === status);
     if (!visibility[origin] || !matchesStatus) return false;
     return !query || normalizeSearch([
       point.customerName, point.climateSummary, point.address, point.city,
@@ -104,7 +108,7 @@ export function hasMaintenanceMapCoordinates(
 export function groupMaintenanceMapPoints(points: readonly MaintenanceMapPoint[]): MaintenanceMapPointGroup[] {
   const groups = new Map<string, MaintenanceMapPointGroup>();
   const statusPriority: Record<MaintenanceMapStatus, number> = {
-    overdue: 0, dueSoon: 1, unknown: 2, ok: 3, originalInstaller: 4, optOut: 5,
+    overdue: 0, dueSoon: 1, unknown: 2, scheduled: 3, ok: 4, originalInstaller: 5, optOut: 6,
   };
 
   for (const point of points) {
@@ -185,6 +189,8 @@ export type MaintenanceDeviceEvent = {
 };
 export type MaintenanceDeviceHistory = MaintenanceDeviceSelection & {
   lastMaintenanceDate?: string;
+  scheduledMaintenanceDate?: string;
+  scheduledMaintenanceTime?: string;
   nextMaintenanceDue?: string;
   maintenanceCount: number;
   providerName?: string;
@@ -227,7 +233,7 @@ export function mergeMaintenanceDeviceHistory(current: MaintenanceDeviceHistory[
 
 export function maintenanceDeviceSchedule(devices: MaintenanceDeviceHistory[], fallbackDate?: string) {
   if (!devices.length) return maintenanceMapSchedule(fallbackDate);
-  const priority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, unknown: 2, ok: 3, optOut: 4, originalInstaller: 5 };
+  const priority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, unknown: 2, scheduled: 3, ok: 4, optOut: 5, originalInstaller: 6 };
   const next = [...devices].sort((a, b) => priority[a.status] - priority[b.status]
     || String(a.nextMaintenanceDue || "").localeCompare(String(b.nextMaintenanceDue || "")))[0];
   return { status: next.status, nextMaintenanceDue: next.nextMaintenanceDue };
@@ -238,10 +244,11 @@ export function maintenanceDeviceSummary(devices?: MaintenanceDeviceHistory[]) {
   const ready = devices.filter(device => device.status === "ok").length;
   const due = devices.filter(device => device.status === "overdue").length;
   const soon = devices.filter(device => device.status === "dueSoon").length;
+  const scheduled = devices.filter(device => device.status === "scheduled").length;
   const unknown = devices.filter(device => device.status === "unknown").length;
   const declined = devices.filter(device => device.status === "optOut").length;
   return [`Rendben: ${ready} / ${devices.length} klíma`, due ? `Esedékes: ${due}` : "",
-    soon ? `Hamarosan: ${soon}` : "", declined ? `Nem kéri: ${declined}` : "", unknown ? `Nincs adat: ${unknown}` : ""].filter(Boolean).join(" · ");
+    soon ? `Hamarosan: ${soon}` : "", scheduled ? `Egyeztetve: ${scheduled}` : "", declined ? `Nem kéri: ${declined}` : "", unknown ? `Nincs adat: ${unknown}` : ""].filter(Boolean).join(" · ");
 }
 
 function uniqueByAppointment(customers: Customer[]) {
@@ -262,6 +269,7 @@ export function formatMapDate(value?: string) {
 }
 
 export function maintenanceMapStatusLabel(status: MaintenanceMapStatus) {
+  if (status === "scheduled") return "Egyeztetve";
   if (status === "originalInstaller") return "Az eredeti szerelőtől kéri";
   if (status === "optOut") return "Nem kéri";
   if (status === "overdue") return "Esedékes / elmaradt";
@@ -271,6 +279,7 @@ export function maintenanceMapStatusLabel(status: MaintenanceMapStatus) {
 }
 
 export function maintenanceMapStatusColor(status: MaintenanceMapStatus) {
+  if (status === "scheduled") return "#8b5cf6";
   if (status === "originalInstaller") return "#8b5cf6";
   if (status === "optOut") return "#6b7280";
   if (status === "overdue") return "#ef4444";
@@ -280,6 +289,7 @@ export function maintenanceMapStatusColor(status: MaintenanceMapStatus) {
 }
 
 export function maintenanceMapStatusClass(status: MaintenanceMapStatus) {
+  if (status === "scheduled") return "border-violet-300/30 bg-violet-400/15 text-violet-200";
   if (status === "originalInstaller") return "border-violet-300/30 bg-violet-400/15 text-violet-200";
   if (status === "optOut") return "border-zinc-300/30 bg-zinc-500/25 text-zinc-100";
   if (status === "overdue") return "border-red-300/30 bg-red-500/20 text-red-100";
@@ -350,7 +360,7 @@ export function buildMaintenanceMapPoints(workCustomers: Customer[]) {
     })
     .filter((point): point is MaintenanceMapPoint => Boolean(point))
     .sort((a, b) => {
-      const statusPriority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, ok: 2, originalInstaller: 3, optOut: 4, unknown: 5 };
+      const statusPriority: Record<MaintenanceMapStatus, number> = { overdue: 0, dueSoon: 1, scheduled: 2, ok: 3, originalInstaller: 4, optOut: 5, unknown: 6 };
       const priorityDiff = statusPriority[a.status] - statusPriority[b.status];
       if (priorityDiff !== 0) return priorityDiff;
       return String(a.nextMaintenanceDue || "9999-99-99").localeCompare(String(b.nextMaintenanceDue || "9999-99-99"));

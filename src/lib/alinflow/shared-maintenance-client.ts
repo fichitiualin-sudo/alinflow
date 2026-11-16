@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import type { MaintenanceAccessGrant, SharedMaintenanceInstallation, SharedMaintenanceResult, SharedMaintenanceOptOut } from "./shared-maintenance";
 import { isMaintenanceContactPreference, isMaintenanceDeviceSelectionList, preferenceDeclinesDevice, type MaintenanceContactChoice, type MaintenanceContactPreference } from "./maintenance-contact-choice";
 import type { MaintenanceDeviceSelection } from "./types";
+import type { SharedMaintenanceSchedule } from "./maintenance-scheduled-map";
 
 async function call<T>(name: string, parameters: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.rpc(name, parameters);
@@ -25,6 +26,29 @@ export const grantMaintenanceAccess = (workspaceId: string, partnerUserId: strin
 export const revokeMaintenanceAccess = (grantId: string) => call<MaintenanceAccessGrant>("revoke_shared_maintenance_access", { p_grant_id: grantId });
 export const listReceivedMaintenance = (workspaceId: string) => call<SharedMaintenanceInstallation[]>("list_received_maintenance_installations", { p_target_workspace_id: workspaceId });
 export const listMaintenanceResults = (workspaceId: string) => call<SharedMaintenanceResult[]>("list_shared_maintenance_results", { p_source_workspace_id: workspaceId });
+export function isSharedMaintenanceSchedule(value: unknown): value is SharedMaintenanceSchedule {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (![row.installationId, row.sourceWorkspaceId, row.sourceInstallationId, row.maintenanceAppointmentId]
+    .every(id => typeof id === "string" && uuid.test(id))) return false;
+  if (typeof row.date !== "string" || !/^[1-9][0-9]{3}-[0-9]{2}-[0-9]{2}$/.test(row.date)) return false;
+  const date = new Date(`${row.date}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== row.date) return false;
+  return typeof row.time === "string" && /^(?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9])?$/.test(row.time)
+    && isMaintenanceDeviceSelectionList(row.selectedDevices) && row.selectedDevices.length > 0
+    && (row.providerName === undefined || (typeof row.providerName === "string" && row.providerName.trim().length > 0));
+}
+export async function listMaintenanceSchedules(workspaceId: string) {
+  const { data, error } = await supabase.rpc("list_shared_maintenance_schedules", { p_workspace_id: workspaceId });
+  if (error) {
+    if (error.code === "PGRST202" || error.code === "42883") throw new Error("A megosztott egyeztetett időpontok megjelenítése még nincs bekapcsolva ezen a szerveren.");
+    throw new Error(error.code === "42501" ? "A megosztott egyeztetett időpontokhoz nincs aktív jogosultságod."
+      : "A megosztott egyeztetett időpontok betöltése nem sikerült. Frissítsd a listát.");
+  }
+  if (!Array.isArray(data) || !data.every(isSharedMaintenanceSchedule)) throw new Error("A megosztott egyeztetett időpontok válasza nem olvasható.");
+  return data as SharedMaintenanceSchedule[];
+}
 export async function listMaintenanceContactPreferences(workspaceId: string) {
   const rows = await call<MaintenanceContactPreference[]>("list_maintenance_contact_preferences", { p_workspace_id: workspaceId });
   if (!Array.isArray(rows) || !rows.every(isMaintenanceContactPreference)) throw new Error("A karbantartási jelölések válasza nem olvasható.");

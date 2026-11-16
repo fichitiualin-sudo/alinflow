@@ -187,6 +187,7 @@ import { appointmentIdAliases, appointmentsByCustomer, compatibleAppointmentRows
 import { canonicalAppointmentIds, canonicalCustomerAppointments } from "@/lib/alinflow/maintenance-selection";
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { buildMaintenanceMapPoints, hasMaintenanceMapCoordinates, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
+import { applyScheduledMaintenance } from "@/lib/alinflow/maintenance-scheduled-map";
 import { isMissingMaintenanceOriginSchemaError, maintenanceOriginFromRow, maintenanceOriginPayload } from "@/lib/alinflow/maintenance-origin";
 import { createCalendarEmailDelivery, runCalendarEmailDelivery, type CalendarEmailDelivery } from "@/lib/alinflow/calendar-email-delivery";
 import { normalizePostalCodeInput, uniqueSettlementByCity, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
@@ -942,8 +943,9 @@ function HomeContent() {
   }, [activeWorkspace?.id, user?.id, sharedMaintenance.loading, sharedMaintenance.received]);
   const maintenanceMapPoints = useMemo(() => {
     const own = applySharedMaintenanceResults(buildMaintenanceMapPoints(allWorkCustomers), sharedMaintenance.results);
-    return applyMaintenanceContactPreferences(mergeSharedMaintenancePoints(own, sharedMaintenance.received), sharedMaintenance.preferences);
-  }, [allWorkCustomers, sharedMaintenance.received, sharedMaintenance.results, sharedMaintenance.preferences, mapStatusDay]);
+    const points = applyMaintenanceContactPreferences(mergeSharedMaintenancePoints(own, sharedMaintenance.received), sharedMaintenance.preferences);
+    return applyScheduledMaintenance(points, allWorkCustomers, sharedMaintenance.schedules);
+  }, [allWorkCustomers, sharedMaintenance.received, sharedMaintenance.results, sharedMaintenance.preferences, sharedMaintenance.schedules, mapStatusDay]);
   useEffect(() => {
     setContactSmsSelection(current => current && !maintenanceMapPoints.some(point =>
       JSON.stringify(contactSmsTarget(point)) === JSON.stringify(current.target)) ? null : current);
@@ -3239,6 +3241,7 @@ function HomeContent() {
         quoteSentAt,
         appointmentBookedAt: appointment?.created_at || quoteSentAt,
         appointmentUpdatedAt: appointment?.updated_at || quoteSentAt,
+        appointmentCancelledAt: appointment?.cancelled_at || undefined,
         appointmentType: loadedAppointmentType,
         activeAppointmentId: appointment?.id || undefined,
         activeQuoteId: quote?.id || undefined,
@@ -3933,6 +3936,7 @@ function HomeContent() {
       isFresh: true,
       appointmentBookedAt: baseCustomer.appointmentBookedAt || now,
       appointmentUpdatedAt: now,
+      appointmentCancelledAt: undefined,
       updatedAt: now,
     };
 
@@ -3956,7 +3960,7 @@ function HomeContent() {
       appointmentSaved = true;
       // Once the appointment exists, later failures must never reopen creation.
       setQuickAppointment(null);
-      promoteCustomerWork(savedCustomer);
+      if (appointmentType !== "maintenance") promoteCustomerWork(savedCustomer);
       setSelected(savedCustomer);
       setQuoteItems(savedCustomer.quoteItems);
       setScheduleDate(savedCustomer.date || quickAppointment.date);
@@ -3968,6 +3972,7 @@ function HomeContent() {
           await logDocument(savedCustomer, appointmentBookedDocumentType(appointmentType), `${appointmentTypeLabel(appointmentType)} időpont rögzítése`, "Rögzítve", now);
         } else {
           await saveMaintenanceAppointmentLinks(savedCustomer, quickAppointment.maintenanceInstallationIds);
+          promoteCustomerWork(savedCustomer);
         }
       } catch (error: any) {
         saveWarning = `Az időpont mentve, de a ${appointmentType === "maintenance" ? "kapcsolódó telepítések mentése" : "rögzítés naplózása"} nem sikerült: ${error.message}`;
@@ -4059,6 +4064,7 @@ function HomeContent() {
     if (!isInstallationAppointment(selected.appointmentType)) {
       setSelected((prev) => ({ ...prev, appointmentType: "installation", date: undefined, time: undefined,
         activeAppointmentId: undefined, activeQuoteId: undefined, activeWorkReportId: undefined,
+        appointmentCancelledAt: undefined,
         maintenanceOrigin: "own", maintenanceSourceName: undefined,
         stockDeducted: false, stockDeductedAt: undefined, materialUsage: undefined }));
     }
@@ -4514,6 +4520,7 @@ function HomeContent() {
       isFresh:true,
       appointmentBookedAt: selected.appointmentBookedAt || appointmentBookedAt,
       appointmentUpdatedAt: appointmentBookedAt,
+      appointmentCancelledAt: undefined,
       updatedAt: appointmentBookedAt,
     };
     if (!beginAction("schedule-save")) return;
@@ -4532,7 +4539,7 @@ function HomeContent() {
         savedUpdated.quoteReceiptScope = { ...selected.quoteReceiptScope, appointmentId: savedUpdated.activeAppointmentId };
       }
       appointmentSaved = true;
-      promoteCustomerWork(savedUpdated);
+      if (normalizeAppointmentType(savedUpdated.appointmentType) !== "maintenance") promoteCustomerWork(savedUpdated);
       setSelected(savedUpdated);
       if (carryQuoteReceipt) {
         // Retain the lead receipt and its original send time in the new work scope.
@@ -4542,6 +4549,7 @@ function HomeContent() {
         await logDocument(savedUpdated, appointmentBookedDocumentType(savedUpdated.appointmentType), `${appointmentTypeLabel(savedUpdated.appointmentType)} időpont rögzítése`, "Rögzítve", appointmentBookedAt);
       } else {
         await saveMaintenanceAppointmentLinks(savedUpdated, savedUpdated.maintenanceInstallationIds || []);
+        promoteCustomerWork(savedUpdated);
       }
       maintenanceReturnRef.current = null;
       let emailFailed = false;
@@ -4964,6 +4972,7 @@ function HomeContent() {
     const restored: Customer = {
       ...customer,
       status: customer.date ? "Időpont foglalva" : "Visszahívandó",
+      appointmentCancelledAt: undefined,
       isFresh: true,
       updatedAt: changedAt,
     };
@@ -4971,6 +4980,7 @@ function HomeContent() {
     try {
       await persistCustomerToDb(restored);
       setCustomers((prev) => prev.map((item) => item.id === restored.id ? restored : item));
+      updateWorkHistory(restored);
       setReturnTarget(currentReturnTarget());
       setSelected(restored);
       setQuoteItems(restored.quoteItems || EMPTY_QUOTE_ITEMS);
@@ -5011,6 +5021,7 @@ function HomeContent() {
       time: undefined,
       appointmentType: "maintenance",
       activeAppointmentId: undefined,
+      appointmentCancelledAt: undefined,
       maintenanceOrigin: "own",
       maintenanceSourceName: undefined,
       activeQuoteId: undefined,
@@ -5287,6 +5298,7 @@ function HomeContent() {
         </div>
         <Back onClick={() => goBack()} />
         {mapMode === "maintenance" && sharedMaintenance.error ? <p role="alert" className="mb-3 text-sm text-amber-200">{sharedMaintenance.error}</p> : null}
+        {mapMode === "maintenance" && sharedMaintenance.schedulesError ? <p role="alert" className="mb-3 text-sm text-amber-200">{sharedMaintenance.schedulesError}</p> : null}
         {mapMode === "callbacks" ? (
           <CallbackMapPanel customers={customers} googleMapsApiKey={googleMapsApiKey} onOpenCustomer={(customer) => openCustomer(customer, "lead", true)} onDeleteCustomer={(customer) => deleteCustomer(customer, { stayOnMap: true })}
             onCallCustomer={customer => { void recordCustomerPhoneCall(customer, "maintenanceMap"); }} />

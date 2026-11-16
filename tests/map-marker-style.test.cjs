@@ -146,6 +146,22 @@ test("rare status remains visibly present in the pin head without altering exact
   assert.deepEqual(plain(summary.segments.map(item => item.count)), [1, 999]);
 });
 
+test("scheduled purple gets a visible ordered slice on desktop and mobile mixed-status pins", () => {
+  const f = canvasFixture();
+  const summary = f.summarizeMapMarkers([source("a", [segment("ok", 999, "#22c55e"),
+    segment("scheduled", 1, "#8b5cf6"), segment("overdue", 1, "#ef4444")])]);
+  assert.deepEqual(plain(summary.segments.map(item => item.key)), ["overdue", "scheduled", "ok"]);
+  assert.equal(summary.count, 1001);
+  for (const compact of [false, true]) {
+    f.markerPinIcon(f.maps, summary, false, compact);
+    const drawing = f.drawings.at(-1);
+    assert.ok(drawing.fills.includes("#8b5cf6"));
+    const purpleArc = drawing.arcs[1];
+    assert.ok(purpleArc[4] - purpleArc[3] >= Math.PI / 18 - 1e-10);
+    assert.equal(drawing.text[0].args[0], "1001");
+  }
+});
+
 test("cached pin rendering is reused while selection and status composition invalidate it", () => {
   const f = canvasFixture();
   const a = f.summarizeMapMarkers([source("a", [segment("overdue", 2), segment("ok", 3, "#22c55e")])]);

@@ -259,6 +259,7 @@ for (const compact of [false, true]) {
         listReceivedMaintenance: () => new Promise(resolve => replies.push(resolve)),
         listMaintenanceResults: async () => [],
         listMaintenanceContactPreferences: async () => [],
+        listMaintenanceSchedules: async () => [],
       },
     }).load("src/components/alinflow/useSharedMaintenance.ts");
     const render = () => { stateIndex = 0; refIndex = 0; return useSharedMaintenance("target", true, "user"); };
