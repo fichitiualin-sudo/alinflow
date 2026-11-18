@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { ClimateProduct, Customer, QuoteItem, QuotePricingMode } from "@/lib/alinflow/types";
 import { ft } from "@/lib/alinflow/format";
 import { hasCustomProductPrice, isCustomQuoteItem, isQuoteAlternatives, itemPriceLine, itemTotal, itemUnitPrice, prod, sortProducts } from "@/lib/alinflow/products";
@@ -7,6 +8,7 @@ import { Back, Btn, Card, Gradient, Layout, Main, Shell, Side } from "@/componen
 import { QuoteEmailStatus } from "@/components/alinflow/QuoteEmailStatus";
 
 type QuoteBuilderPanelProps = {
+  quoteActions?: ReactNode;
   selected: Customer;
   quoteItems: QuoteItem[];
   products: ClimateProduct[];
@@ -20,7 +22,7 @@ type QuoteBuilderPanelProps = {
   onBack: () => void;
   onPreview: () => void;
   onSendQuoteEmail: () => void;
-  onSchedule: () => void;
+  onSchedule?: () => void;
   onQuotePricingModeChange: (value: QuotePricingMode) => void;
   onUpdateQuoteItem: (index: number, key: keyof QuoteItem, value: string | number | boolean) => void;
   onUpdateQuoteProduct: (index: number, productId: string) => void;
@@ -58,6 +60,7 @@ function priceInputValue(value: string) {
 }
 
 export function QuoteBuilderPanel({
+  quoteActions,
   quoteItems,
   products,
   totalAmount,
@@ -120,6 +123,7 @@ export function QuoteBuilderPanel({
               <b className="text-2xl">{quoteIsAlternatives ? `${quoteItems.length} lehetőség` : ft(totalAmount)}</b>
             </div>
           </Card>
+          {quoteActions}
         </Main>
         <Side>
           <Gradient title="Ajánlat státusz" value={quoteEmailBusy ? "Küldés folyamatban" : quoteSentAt ? "Korábban elküldve" : "Még nincs elküldve"} />
@@ -135,7 +139,7 @@ export function QuoteBuilderPanel({
             </label>
             {quoteIsAlternatives ? (
               <div className="mt-3 rounded-2xl bg-cyan-300 p-4 text-sm font-black text-slate-950">
-                Külön ajánlatokként megy ki
+                Az ügyfél egy emailben kapja meg a lehetőségeket, mindegyiket a saját árával.
               </div>
             ) : null}
           </Card>
@@ -146,7 +150,7 @@ export function QuoteBuilderPanel({
               <button onClick={onSendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-gradient-to-br from-emerald-400 to-green-500 px-5 py-4 text-center font-black text-slate-950 shadow-xl disabled:cursor-wait disabled:opacity-60">
                 {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
               </button>
-              <Btn color="blue" onClick={onSchedule}>Időpont keresése</Btn>
+              {onSchedule ? <Btn color="blue" onClick={onSchedule}>Időpont keresése</Btn> : null}
             </div>
           </Card>
         </Side>

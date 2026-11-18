@@ -179,7 +179,8 @@ function handlerFixture(resolvedStatus) {
     currentWorkspaceId: () => workspaceId, authLoadGenerationRef: { current: 1 },
     customerEditSnapshotRef: { current: draft }, selectedCustomerIdRef: { current: customerId },
     beginAction: () => true, endAction: noop, pendingActionsRef: { current: new Set() },
-    quoteReceiptsRef: { current: new Map() }, view: "quote", quoteIssuedAt: "",
+    quoteReceiptsRef: { current: new Map() }, authUserIdRef: { current: "sender" }, view: "quote", quoteIssuedAt: "",
+    ...h.load("src/lib/alinflow/manual-quote-attempt.ts"),
     persistCustomerToDb: async value => {
       state.persisted.push(plain(value));
       return { status: resolvedStatus, appointmentId, quoteId };

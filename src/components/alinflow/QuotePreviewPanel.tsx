@@ -17,7 +17,7 @@ type QuotePreviewPanelProps = {
   onBack: () => void;
   onPrint: () => void;
   onSendQuote: () => void;
-  onSchedule: () => void;
+  onSchedule?: () => void;
   onQuotePricingModeChange: (value: QuotePricingMode) => void;
 };
 
@@ -176,7 +176,7 @@ export function QuotePreviewPanel({
                 <button onClick={onSendQuote} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
                   {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
                 </button>
-                <Btn color="cyan" onClick={onSchedule}>Időpont keresése</Btn>
+                {onSchedule ? <Btn color="cyan" onClick={onSchedule}>Időpont keresése</Btn> : null}
               </div>
             </Card>
             </fieldset>

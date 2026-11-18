@@ -12,6 +12,7 @@ type LeadPanelProps = {
   customers: Customer[];
   saving?: boolean;
   phoneCallNotes?: ReactNode;
+  quoteActions?: ReactNode;
   onBack: () => void;
   onSaveCustomerOnly: () => void;
   onSaveCustomerAndQuote: () => void;
@@ -143,6 +144,7 @@ export function LeadPanel({
   customers,
   saving = false,
   phoneCallNotes,
+  quoteActions,
   onBack,
   onSaveCustomerOnly,
   onSaveCustomerAndQuote,
@@ -181,6 +183,7 @@ export function LeadPanel({
             ) : null}
           </Card>
           {selected.need ? <Card title="Érdeklődés"><p className="break-words font-bold text-cyan-200">{selected.need}</p></Card> : null}
+          {quoteActions}
           <Card title="Telefonos jegyzet">
             <textarea
               className="input min-h-32"

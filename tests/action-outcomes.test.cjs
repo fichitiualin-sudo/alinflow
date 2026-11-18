@@ -37,7 +37,8 @@ function fixture(options = {}) {
     normalizeStatus, cleanQuoteItems, sortCustomersByCreatedAtDesc: identity,
     view: "quote", quoteIssuedAt: "", currentWorkspaceId: () => state.workspaceId,
     currentViewRef: { current: "lead" }, selectedCustomerIdRef,
-    pendingActionsRef, quoteReceiptsRef,
+    pendingActionsRef, quoteReceiptsRef, authUserIdRef: { current: "sender" },
+    ...h.load("src/lib/alinflow/manual-quote-attempt.ts"),
     setPendingActions: (value) => calls.pending.push(Array.from(value)),
     setQuoteEmailBusy: (value) => calls.busy.push(value), setQuoteIssuedAt() {},
     setMessage: (message, tone) => calls.messages.push({ message, tone }),
@@ -55,12 +56,12 @@ function fixture(options = {}) {
       calls.persist.push({ customer: plain(value), config });
       if (options.persistGate) await options.persistGate.promise;
       if (options.persistError) throw Error(options.persistError);
-      return { quoteId, appointmentId: options.savedAppointmentId };
+      return { quoteId: value.activeQuoteId || quoteId, appointmentId: options.savedAppointmentId || value.activeAppointmentId };
     },
     promoteCustomerWork: (value) => {
       state.customers = state.customers.map((current) => current.id === value.id ? value : current);
     },
-    quotePayload: (target, items, issuedAt) => ({ customer: target, items, issuedAt }),
+    quotePayload: (target, items, issuedAt) => ({ customer: target, items, quoteIssuedAt: issuedAt }),
     authenticatedFetch: async (url, request) => {
       calls.send.push({ url, payload: JSON.parse(request.body) });
       return options.sendResponse ? options.sendResponse() : Response.json({ ok: true, id: "synthetic-delivery" });
@@ -80,7 +81,9 @@ function fixture(options = {}) {
     }),
   };
   const functions = h.functions(["beginAction", "endAction", "saveCustomer", "saveCustomerOnly", "sendQuoteEmail"], context);
-  return { ...functions, state, calls, pendingActionsRef, quoteReceiptsRef };
+  return { ...functions, state, calls, pendingActionsRef, quoteReceiptsRef,
+    sendQuoteEmail: () => h.functions(["beginAction", "endAction", "sendQuoteEmail"],
+      { ...context, selected: state.selected, quoteItems: options.items || state.selected.quoteItems }).sendQuoteEmail() };
 }
 
 for (const action of ["saveCustomerOnly", "saveCustomer"]) {
@@ -133,7 +136,7 @@ test("quote rejection stays in place and exposes the server error", async () => 
   assert.match(run.calls.messages.at(-1).message, /synthetic provider rejection/);
   assert.equal(run.state.selected.status, "Visszahívandó");
   assert.deepEqual(run.calls.busy, [true, false]);
-  assert.equal(run.quoteReceiptsRef.current.size, 0);
+  assert.equal(run.quoteReceiptsRef.current.size, 1, "a transport error retains the logical delivery for retry");
 });
 
 test("quote response must explicitly confirm success before logging delivery", async () => {
@@ -142,6 +145,61 @@ test("quote response must explicitly confirm success before logging delivery", a
   assert.equal(run.calls.log.length, 0);
   assert.equal(run.calls.messages.at(-1).tone, "error");
   assert.match(run.calls.messages.at(-1).message, /Nem érkezett sikeres visszaigazolás/);
+});
+
+test("transport retry sends the same immutable request; a new intentional send gets another delivery identity", async () => {
+  let replies = 0;
+  const run = fixture({ sendResponse: () => ++replies === 1
+    ? Response.json({error: "Uncertain delivery"}, {status: 503})
+    : Response.json({ok: true, sentAt: "2026-11-18T19:26:00.000Z"}) });
+  await run.sendQuoteEmail();
+  await run.sendQuoteEmail();
+  assert.equal(run.calls.send.length, 2);
+  const payload = run.calls.send[0].payload;
+  assert.match(payload.quoteDeliveryId, /^[a-f\d-]{36}$/i);
+  assert.deepEqual(run.calls.send[1].payload, payload);
+  assert.equal(run.calls.persist.length, 1);
+  assert.equal(run.calls.log[0][4], "2026-11-18T19:26:00.000Z");
+  await run.sendQuoteEmail();
+  assert.notEqual(run.calls.send[2].payload.quoteDeliveryId, payload.quoteDeliveryId);
+});
+
+test("editing an uncertain delivery cannot dispatch an earlier payload", async () => {
+  const run = fixture({sendResponse: () => Response.json({error: "Uncertain"}, {status: 503})});
+  await run.sendQuoteEmail();
+  run.state.selected = {...run.state.selected, quoteItems: [{...item, customPrice: 42000}]};
+  await run.sendQuoteEmail();
+  assert.equal(run.calls.send.length, 1);
+  assert.match(run.calls.messages.at(-1).message, /megváltozott az ajánlat/);
+});
+
+test("a failed receipt for one customer's first quote cannot consume the next quote's send", async () => {
+  const run = fixture({logFailures: 1});
+  await run.sendQuoteEmail();
+  const first = run.state.selected;
+  const secondId = "30000000-1111-4000-8000-000000000099";
+  run.state.selected = {...first, activeQuoteId: secondId};
+  await run.sendQuoteEmail();
+  assert.equal(run.calls.send.length, 2);
+  assert.equal(run.calls.send[1].payload.customer.activeQuoteId, secondId);
+  assert.equal(run.calls.log[1][0].activeQuoteId, secondId);
+  run.state.selected = { ...first, email: "", quoteItems: [] };
+  await run.sendQuoteEmail();
+  assert.equal(run.calls.send.length, 2);
+  assert.equal(run.calls.log[2][0].activeQuoteId, quoteId);
+});
+
+test("reload recovers only the delivery token and issue time in its original tab scope", () => {
+  const records = new Map();
+  const sessionStorage = {getItem: key => records.get(key), setItem: (key, value) => records.set(key, value),
+    removeItem: key => records.delete(key)};
+  const reload = () => harness({sessionStorage}).load("src/lib/alinflow/manual-quote-attempt.ts");
+  const attempt = reload().manualQuoteAttemptIdentity("scope-one", "2026-11-18T10:00:00Z");
+  assert.deepEqual(plain(reload().manualQuoteAttemptIdentity("scope-one", "2026-11-18T12:00:00Z")), plain(attempt));
+  assert.deepEqual(Object.keys(JSON.parse([...records.values()][0])).sort(), ["id", "issuedAt"]);
+  assert.notEqual(reload().manualQuoteAttemptIdentity("scope-two", "2026-11-18T13:00:00Z").id, attempt.id);
+  reload().finishManualQuoteAttempt("scope-one");
+  assert.notEqual(reload().manualQuoteAttemptIdentity("scope-one", "2026-11-18T14:00:00Z").id, attempt.id);
 });
 
 test("late quote acceptance cannot recreate a receipt after a workspace change", async () => {

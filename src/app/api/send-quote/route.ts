@@ -1,5 +1,5 @@
-import { authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
-import { sendEmailThroughProvider } from "@/lib/alinflow/email-provider";
+import { ApiError, authorizeCustomerRequest, apiErrorResponse } from "@/lib/alinflow/server-auth";
+import { quoteDeliveryId, sendArchivedQuote, type SentQuoteLine } from "@/lib/alinflow/quote-delivery-server";
 import { loadWorkspaceEmailSettings, workspaceEmailIdentity } from "@/lib/alinflow/email-identity";
 import { calendarEmailDeliveryForRequest, CALENDAR_EMAIL_CONFLICT_MESSAGE } from "@/lib/alinflow/calendar-email-idempotency";
 import type { WorkspaceSettings } from "@/lib/alinflow/workspace-settings";
@@ -78,8 +78,20 @@ function safeKlimalinUrl(value: unknown) {
 }
 
 
-function uniqueEmailRef(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+function quoteSnapshotLines(items: QuoteItem[], totalAmount: number): SentQuoteLine[] {
+  const lines = items.length ? items : [{ name: "Klímaberendezés", quantity: 1, totalPrice: totalAmount }];
+  return lines.map(item => {
+    const quantity = Math.max(1, Number(item?.quantity ?? 1));
+    const totalPrice = Number(item?.totalPrice ?? Number(item?.unitPrice ?? 0) * quantity);
+    const unitPrice = Number(item?.unitPrice ?? Math.round(totalPrice / quantity));
+    if (![quantity, unitPrice, totalPrice].every(value => Number.isFinite(value) && value >= 0)) {
+      throw new ApiError("Az ajánlat egyik tétele hibás mennyiséget vagy árat tartalmaz.", 400);
+    }
+    const productUrl = safeKlimalinUrl(item?.productUrl);
+    const imageUrl = safeKlimalinUrl(item?.imageUrl);
+    return { name: safeText(item?.name) || "Klímaberendezés", quantity, unitPrice, totalPrice,
+      ...(productUrl ? { productUrl } : {}), ...(imageUrl ? { imageUrl } : {}) };
+  });
 }
 
 function customerLine(value?: string) {
@@ -112,21 +124,18 @@ function formatQuoteIssuedAt(value?: string) {
 }
 
 function itemRows(items: QuoteItem[], totalAmount: number, pricingMode: QuotePricingMode = "bundle") {
-  const fallback = items.length
-    ? items
-    : [{ name: "Klímaberendezés", quantity: 1, totalPrice: totalAmount }];
+  const lines = quoteSnapshotLines(items, totalAmount);
   const quoteIsAlternatives = isAlternativesPricing(pricingMode);
 
-  return fallback
+  return lines
     .map((item, index) => {
-      const qty = Math.max(1, Number(item.quantity || 1));
-      const name = escapeHtml(item.name || "Klímaberendezés");
-      const unitPrice = Number(item.unitPrice || 0);
-      const totalPrice = Number(item.totalPrice || (unitPrice * qty) || totalAmount || 0);
+      const qty = item.quantity;
+      const name = escapeHtml(item.name);
+      const { unitPrice, totalPrice } = item;
       const productUrl = safeKlimalinUrl(item.productUrl);
       const imageUrl = safeKlimalinUrl(item.imageUrl);
       const priceLine = qty > 1
-        ? `${ft(unitPrice || Math.round(totalPrice / qty))} / db <span style="white-space:nowrap">(szereléssel együtt)</span>`
+        ? `${ft(unitPrice)} / db <span style="white-space:nowrap">(szereléssel együtt)</span>`
         : `${ft(totalPrice)} <span style="white-space:nowrap">(szereléssel együtt)</span>`;
       const optionBadge = quoteIsAlternatives
         ? `<div style="display:inline-block;background:#e0f2fe;border:1px solid #bae6fd;color:#0369a1;border-radius:999px;padding:5px 11px;margin-bottom:11px;font-size:12px;line-height:1;font-weight:900;letter-spacing:.02em">${index + 1}. lehetőség</div>`
@@ -252,6 +261,9 @@ export async function POST(request: Request) {
     const totalAmount = Number(body.totalAmount || 0);
     const pricingMode: QuotePricingMode = body.pricingMode === "alternatives" ? "alternatives" : "bundle";
     const quoteIssuedAt = safeText(body.quoteIssuedAt) || calendarDelivery?.createdAt || new Date().toISOString();
+    if (!Number.isFinite(Date.parse(quoteIssuedAt)) || !Number.isFinite(totalAmount) || totalAmount < 0) {
+      throw new ApiError("Az ajánlat dátuma vagy végösszege hibás.", 400);
+    }
     const workspaceSettings = await loadWorkspaceEmailSettings(authorization.client, authorization.workspaceId);
     const brandName = settingsBrandName(workspaceSettings);
     const { from, replyTo } = workspaceEmailIdentity(workspaceSettings);
@@ -259,23 +271,28 @@ export async function POST(request: Request) {
 
     if (!to) return Response.json({ error: "Hiányzik az ügyfél email címe." }, { status: 400 });
 
-    const result = await sendEmailThroughProvider({
-      apiKey,
-      idempotencyKey: calendarDelivery?.idempotencyKey,
-      conflictMessage: calendarDelivery ? CALENDAR_EMAIL_CONFLICT_MESSAGE : undefined,
-      payload: {
+    const id = quoteDeliveryId(calendarDelivery ? body.calendarEmailDelivery.id : body.quoteDeliveryId);
+    const providerKey = calendarDelivery?.idempotencyKey || `alinflow-quote-${authorization.workspaceId}-${id}`;
+    const result = await sendArchivedQuote({
+      id, providerKey, workspaceId: authorization.workspaceId, customerId: body.customer.id,
+      userId: authorization.userId, appointmentId: authorization.appointment?.id || null,
+      quoteId: body.customer.activeQuoteId || null, issuedAt: quoteIssuedAt,
+      recipient: to, pricingMode, items: quoteSnapshotLines(items, totalAmount), totalAmount,
+      conflictMessage: calendarDelivery ? CALENDAR_EMAIL_CONFLICT_MESSAGE
+        : "A korábbi küldés tartalma eltér. A módosított ajánlatot új ajánlatként küldheted el.",
+      emailPayload: {
         from,
         to: [to],
         reply_to: replyTo,
         subject: pricingMode === "alternatives" ? `Klíma ajánlat – választható lehetőségek – ${brandName}` : `Klíma ajánlat – ${brandName}`,
         headers: {
-          "X-Entity-Ref-ID": calendarDelivery?.idempotencyKey || uniqueEmailRef("alinflow-quote"),
+          "X-Entity-Ref-ID": providerKey,
         },
         html: quoteEmailHtml(customer, items, totalAmount, pricingMode, quoteIssuedAt, workspaceSettings),
       },
-    });
+    }, apiKey);
 
-    return Response.json({ ok: true, id: result.id });
+    return Response.json({ ok: true, ...result });
   } catch (error: any) {
     return apiErrorResponse(error);
   }

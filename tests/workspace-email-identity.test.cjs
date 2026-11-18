@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { harness, database } = require("./helpers.cjs");
+const { quoteArchiveFixture } = require("./quote-delivery-fixture.cjs");
 
 const workspaceId = "10000000-0000-4000-8000-000000000001";
 const customerId = "20000000-0000-4000-8000-000000000001";
@@ -33,10 +34,13 @@ function fixture({ legacy = false, missingSettings = false, missingWorkspace = f
     throw Error(`Unexpected query: ${op.table}`);
   });
   db.auth = { getUser: async () => ({ data: { user: { id: "test-user" } } }) };
+  const archive = quoteArchiveFixture();
   db.rpc = async (name, args) => {
     assert.equal(args.p_workspace_id, workspaceId);
     assert.equal(args.p_customer_id, customerId);
+    if (name === "confirm_quote_delivery") return archive.rpc(name, args);
     assert.equal(args.p_appointment_id, appointmentId);
+    if (name === "prepare_quote_delivery") return archive.rpc(name, args);
     if (name === "claim_installation_thank_you") {
       const resuming = !!state.delivery;
       state.delivery ||= { payload_text: args.p_payload_text, payload_signature: args.p_payload_signature,
@@ -47,6 +51,7 @@ function fixture({ legacy = false, missingSettings = false, missingWorkspace = f
     return { data: { sent_at: args.p_outcome === "sent" ? "2026-10-11T08:00:00Z" : null } };
   };
   const env = { NEXT_PUBLIC_SUPABASE_URL: "https://test.invalid", NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-public",
+    SUPABASE_SERVICE_ROLE_KEY: "synthetic-archive-key",
     RESEND_API_KEY: "synthetic-provider", EMAIL_FROM: "KLIMAlin <verified@example.invalid>", EMAIL_REPLY_TO: "legacy@example.invalid" };
   const h = harness({ process: { env }, fetch: async (url, options) => {
     assert.equal(url, "https://api.resend.com/emails");

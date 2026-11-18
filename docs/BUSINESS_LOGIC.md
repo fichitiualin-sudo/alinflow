@@ -88,6 +88,12 @@ A tételek egy közös megrendelés részei. A rendszer összesített végössze
 
 A felsorolt klímák közül az ügyfél választ. A tételeket nem szabad összeadni. Az előnézetnek, emailnek és nyomtatható ajánlatnak ugyanazt a logikát kell mutatnia.
 
+### Több ajánlat ugyanannak az ügyfélnek
+
+Az „Új árajánlat” önálló ajánlatot nyit a mentett ügyfélhez, a felmérés vagy szerelés munkalapjáról is. Több modell egy levélben a „+ Klíma hozzáadása” és a „Ne adja össze a tételeket” beállítással ajánlható ki.
+
+A „Korábbi árajánlatok” alatt az „Elküldött változatok” a szolgáltató által visszaigazolt küldések címzettjét, dátumát, tételeit és akkori árait mutatja. A „Mentett ajánlatok” fülön az ügyfél korábbi ajánlati rekordjainak utolsó mentett tartalma látható. Az archiválás bevezetése előtti felülírt tartalom visszakereséséhez az eredeti levélre van szükség.
+
 ### Kötelező megjelenés
 
 - ajánlat időpontja;

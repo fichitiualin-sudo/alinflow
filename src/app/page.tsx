@@ -134,6 +134,9 @@ import { DocumentActionButtons, DocumentLibraryActionButtons, documentStatusClas
 import { WorkReportPanel } from "@/components/alinflow/WorkReportPanel";
 import { LeadPanel } from "@/components/alinflow/LeadPanel";
 import { QuoteBuilderPanel } from "@/components/alinflow/QuoteBuilderPanel";
+import { AdditionalQuotePanel } from "@/components/alinflow/AdditionalQuotePanel";
+import { QuoteHistoryPanel } from "@/components/alinflow/QuoteHistoryPanel";
+import { quoteEditorActions } from "@/lib/alinflow/quote-editor";
 import { WorkPagePanel } from "@/components/alinflow/WorkPagePanel";
 import { LoginScreen } from "@/components/alinflow/LoginScreen";
 import { Back, Btn, Card, Field, Gradient, InfoRow, Layout, Main, Shell, Side, StepButton, ThemeToggle } from "@/components/alinflow/LayoutPrimitives";
@@ -188,6 +191,7 @@ import { canonicalAppointmentIds, canonicalCustomerAppointments } from "@/lib/al
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { buildMaintenanceMapPoints, hasMaintenanceMapCoordinates, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
 import { applyScheduledMaintenance } from "@/lib/alinflow/maintenance-scheduled-map";
+import { finishManualQuoteAttempt, manualQuoteAttemptIdentity } from "@/lib/alinflow/manual-quote-attempt";
 import { isMissingMaintenanceOriginSchemaError, maintenanceOriginFromRow, maintenanceOriginPayload } from "@/lib/alinflow/maintenance-origin";
 import { createCalendarEmailDelivery, runCalendarEmailDelivery, type CalendarEmailDelivery } from "@/lib/alinflow/calendar-email-delivery";
 import { normalizePostalCodeInput, uniqueSettlementByCity, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
@@ -485,9 +489,11 @@ function HomeContent() {
   const [archivePage,setArchivePage] = useState(1);
   const [documentPage,setDocumentPage] = useState(1);
   const [selected,setSelected] = useState<Customer>(EMPTY_CUSTOMER);
+  const [additionalRecipient, setAdditionalRecipient] = useState<{ workspaceId: string; userId: string; customer: Customer } | null>(null);
   const [phoneCallRevision, setPhoneCallRevision] = useState(0);
   const [contactSmsSelection, setContactSmsSelection] = useState<{ workspaceId: string; userId: string; contextKey: string; target: MaintenanceContactSmsTarget } | null>(null);
   const [quoteItems,setQuoteItems] = useState<QuoteItem[]>(EMPTY_CUSTOMER.quoteItems);
+  const { addQuoteItem, addManualQuoteItem, updateQuoteItem, updateQuoteProduct, syncQuoteItemPrice, removeQuoteItem } = quoteEditorActions(setQuoteItems);
   const [scheduleDate,setScheduleDate] = useState(() => todayIso());
   const [scheduleTime,setScheduleTime] = useState("08:00");
   const [scheduleAppointmentType,setScheduleAppointmentType] = useState<AppointmentType>("installation");
@@ -511,7 +517,7 @@ function HomeContent() {
   const customerSaveBusy = pendingActions.includes("customer-save");
   const scheduleSaveBusy = pendingActions.includes("schedule-save");
   const workActionBusy = pendingActions.some((key) => ["customer-save", "work-save", "work-close", "work-cancel", "invoice"].includes(key));
-  const quoteReceiptsRef = useRef(new Map<string, { customer: Customer; sentAt: string }>());
+  const quoteReceiptsRef = useRef(new Map<string, { customer: Customer; requestBody: string; sentAt?: string }>());
   const appointmentReceiptsRef = useRef(new Map<string, { customer: Customer; sentAt: string }>());
   const invoiceReceiptsRef = useRef(new Map<string, { invoiceNumber: string; emailSent?: boolean }>());
   const customerEditSnapshotRef = useRef<Customer | null>(null);
@@ -648,6 +654,7 @@ function HomeContent() {
 
   function setWorkspaceContext(workspace: Workspace | null, schemaAvailable: boolean) {
     if (activeWorkspaceIdRef.current !== (workspace?.id || null)) {
+      setAdditionalRecipient(null);
       setMessage("");
       setMaintenanceOriginEdit(null);
       setMaintenanceMapGeocodingBusy(false);
@@ -4422,27 +4429,7 @@ function HomeContent() {
     if (mode==="week") n.setDate(n.getDate()+d*7); else n.setMonth(n.getMonth()+d);
     setCalDate(n);
   }
-  function addQuoteItem() { setQuoteItems(prev=>[...prev, { productId: "", quantity: 1 }]); }
   function addExtraQuoteItem() { setQuoteItems(prev=>[...prev, { productId: "", customName: "", customPrice: 0, customInstallPrice: 0, quantity: 1, isManual: true, itemType: "extra" }]); }
-  function addManualQuoteItem() { setQuoteItems(prev=>[...prev, { productId: "", customName: "", customPrice: 0, quantity: 1, isManual: true }]); }
-  function updateQuoteItem(i:number, key:keyof QuoteItem, value:string|number|boolean) {
-    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {...it, [key]: value} : it));
-  }
-  function updateQuoteProduct(i:number, productId:string) {
-    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? {
-      ...it,
-      productId,
-      productName: isKnownProductId(productId) ? prod(productId).name : undefined,
-      isManual: !isKnownProductId(productId),
-      customName: isKnownProductId(productId) ? undefined : it.customName,
-      customPrice: isKnownProductId(productId) ? prod(productId).price : (it.customPrice ?? 0),
-      customInstallPrice: isKnownProductId(productId) ? prod(productId).installPrice : (it.customInstallPrice ?? DEFAULT_INSTALL_PRICE),
-    } : it));
-  }
-  function syncQuoteItemPrice(i:number) {
-    setQuoteItems(prev=>prev.map((it,idx)=>idx===i ? { ...it, customPrice: prod(it.productId).price, customInstallPrice: prod(it.productId).installPrice } : it));
-  }
-  function removeQuoteItem(i:number) { setQuoteItems(prev=>prev.length===1 ? prev : prev.filter((_,idx)=>idx!==i)); }
   async function saveSchedule() {
     if (pendingActionsRef.current.has("schedule-save")) return;
     const typeChanged = normalizeAppointmentType(selected.appointmentType) !== normalizedScheduleAppointmentType;
@@ -5455,6 +5442,7 @@ function HomeContent() {
     return {
       customer: {
         id: customer.id,
+        activeQuoteId: customer.activeQuoteId,
         activeAppointmentId: customer.activeAppointmentId,
         name: customer.name,
         city: customer.city,
@@ -5495,71 +5483,94 @@ function HomeContent() {
 
   async function sendQuoteEmail() {
     if (pendingActionsRef.current.has("quote-email")) return;
-    if (!selected.email?.trim()) {
+    const workspaceId = currentWorkspaceId();
+    const ownerId = authUserIdRef.current;
+    const stillCurrent = () => currentWorkspaceId() === workspaceId && authUserIdRef.current === ownerId;
+    const scopeFor = (customer: Customer) => JSON.stringify([
+      workspaceId, ownerId, customer.id, customer.activeQuoteId, customer.activeAppointmentId,
+    ]);
+    let receiptKey = scopeFor(selected);
+    let attempt = quoteReceiptsRef.current.get(receiptKey);
+    const retryingDelivery = Boolean(attempt && !attempt.sentAt);
+    const recordingOnly = Boolean(attempt?.sentAt);
+    if (!recordingOnly && !selected.email?.trim()) {
       setMessage("Az ajánlat elküldéséhez előbb add meg az ügyfél email címét.");
       return;
     }
     const items = cleanQuoteItems(quoteItems);
-    if (!items.length) {
+    if (!recordingOnly && !items.length) {
       setMessage("Az ajánlat elküldéséhez adj hozzá legalább egy klímát vagy tételt.", "warning");
       return;
     }
     if (!beginAction("quote-email")) return;
-    const workspaceId = currentWorkspaceId();
-    const receiptKey = `${workspaceId}:${selected.id}`;
-    let receipt = quoteReceiptsRef.current.get(receiptKey);
-    const recordingOnly = Boolean(receipt);
     setQuoteEmailBusy(true);
     setMessage(recordingOnly ? "A korábban elküldött ajánlat állapotának mentése..." : "Ajánlat mentése és email küldése folyamatban...", "pending");
 
     try {
-      if (!receipt) {
-        const issuedAt = view === "quotePreview" && quoteIssuedAt ? quoteIssuedAt : new Date().toISOString();
-        setQuoteIssuedAt(issuedAt);
+      if (!attempt) {
         const draft = { ...selected, quoteItems: items };
         const persisted = await persistCustomerToDb(draft);
         const savedCustomer = { ...draft, status: persisted?.status || draft.status, activeQuoteId: persisted?.quoteId || draft.activeQuoteId,
           activeAppointmentId: persisted?.appointmentId || draft.activeAppointmentId };
-        if (currentWorkspaceId() !== workspaceId) throw new Error("A munkaterület megváltozott. A küldés leállt.");
-        if (selectedCustomerIdRef.current === savedCustomer.id) setSelected(savedCustomer);
+        if (!stillCurrent()) return;
+        if (!savedCustomer.activeQuoteId) throw new Error("Az ajánlat mentett azonosítója hiányzik. Frissítsd az ügyfelet.");
+        if (selectedCustomerIdRef.current === savedCustomer.id) setSelected(current =>
+          scopeFor(current) === scopeFor(selected) ? savedCustomer : current);
         promoteCustomerWork(savedCustomer);
+        receiptKey = scopeFor(savedCustomer);
+        const identity = manualQuoteAttemptIdentity(receiptKey,
+          view === "quotePreview" && quoteIssuedAt ? quoteIssuedAt : new Date().toISOString());
+        setQuoteIssuedAt(identity.issuedAt);
+        attempt = { customer: savedCustomer, requestBody: JSON.stringify({
+          ...quotePayload(savedCustomer, items, identity.issuedAt), quoteDeliveryId: identity.id,
+        }) };
+        quoteReceiptsRef.current.set(receiptKey, attempt);
+      }
+      if (!attempt.sentAt) {
+        const pendingBody = JSON.parse(attempt.requestBody);
+        if (retryingDelivery && JSON.stringify({
+          ...quotePayload(selected, items, pendingBody.quoteIssuedAt), quoteDeliveryId: pendingBody.quoteDeliveryId,
+        }) !== attempt.requestBody) {
+          throw new Error("A megkezdett küldés óta megváltozott az ajánlat. Ellenőrizd az előzményeket, majd a módosított ajánlathoz válaszd az Új ajánlat lehetőséget.");
+        }
         const response = await authenticatedFetch("/api/send-quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(quotePayload(savedCustomer, items, issuedAt)),
+          body: attempt.requestBody,
         }, workspaceId || undefined);
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result?.ok) throw new Error(result?.error || "Nem érkezett sikeres visszaigazolás az ajánlat küldéséről. Újraküldés előtt ellenőrizd a küldési naplót.");
-        if (currentWorkspaceId() !== workspaceId) return;
-        receipt = { customer: savedCustomer, sentAt: new Date().toISOString() };
-        // Keep confirmed delivery independently of the following database writes.
-        quoteReceiptsRef.current.set(receiptKey, receipt);
+        if (!stillCurrent()) return;
+        attempt.sentAt = typeof result.sentAt === "string" && Number.isFinite(Date.parse(result.sentAt))
+          ? result.sentAt : new Date().toISOString();
       }
-      if (currentWorkspaceId() !== workspaceId) return;
-      const savedCustomer = receipt.customer;
+      if (!stillCurrent()) return;
+      const savedCustomer = attempt.customer;
+      const sentAt = attempt.sentAt!;
       const updated: Customer = {
         ...savedCustomer,
         status: savedCustomer.date || !["Visszahívandó", "Ajánlat elküldve"].includes(normalizeStatus(savedCustomer.status))
           ? savedCustomer.status : "Ajánlat elküldve",
-        quoteSentAt: receipt.sentAt,
-        updatedAt: receipt.sentAt,
+        quoteSentAt: sentAt,
+        updatedAt: sentAt,
       };
-      await logDocument(updated, "quote_email", "Ajánlat email", "Elküldve", receipt.sentAt);
-      if (currentWorkspaceId() !== workspaceId) return;
+      await logDocument(updated, "quote_email", "Ajánlat email", "Elküldve", sentAt);
+      if (!stillCurrent()) return;
       // Only advance the lead status. A receipt retry must not overwrite newer
       // customer edits, a booked appointment, or an already closed job.
       if (!savedCustomer.date && updated.status === "Ajánlat elküldve") {
         const statusResult = await workspaceQuery(supabase.from("customers")
-          .update({ status: "Ajánlat elküldve", updated_at: receipt.sentAt })
+          .update({ status: "Ajánlat elküldve", updated_at: sentAt })
           .eq("id", updated.id).in("status", ["Visszahívandó", "Ajánlat elküldve"]));
         if (statusResult.error) throw statusResult.error;
       }
+      if (!stillCurrent()) return;
       quoteReceiptsRef.current.delete(receiptKey);
-      if (currentWorkspaceId() !== workspaceId) return;
-      const applyReceipt = (customer: Customer): Customer => customer.id !== updated.id ? customer : {
-        ...customer, quoteSentAt: receipt!.sentAt,
-        quoteReceiptScope: customer.activeQuoteId === savedCustomer.activeQuoteId && customer.activeAppointmentId === savedCustomer.activeAppointmentId && savedCustomer.activeQuoteId
-          ? { quoteId: savedCustomer.activeQuoteId, appointmentId: savedCustomer.activeAppointmentId, notBefore: receipt!.sentAt, notAfter: receipt!.sentAt }
+      finishManualQuoteAttempt(receiptKey);
+      const applyReceipt = (customer: Customer): Customer => scopeFor(customer) !== receiptKey ? customer : {
+        ...customer, quoteSentAt: sentAt,
+        quoteReceiptScope: savedCustomer.activeQuoteId
+          ? { quoteId: savedCustomer.activeQuoteId, appointmentId: savedCustomer.activeAppointmentId, notBefore: sentAt, notAfter: sentAt }
           : customer.quoteReceiptScope,
         status: !customer.date && ["Visszahívandó", "Ajánlat elküldve"].includes(normalizeStatus(customer.status)) ? "Ajánlat elküldve" : customer.status,
       };
@@ -5571,9 +5582,9 @@ function HomeContent() {
         ? "A korábban elküldött ajánlat állapota mentve ✅ Új email nem ment ki."
         : `Ajánlat elküldve: ${updated.email} ✅ Az időpontot az Időpont gombbal rögzítheted.`, "success");
     } catch (error: any) {
-      if (currentWorkspaceId() === workspaceId) setMessage(receipt
+      if (stillCurrent()) setMessage(attempt?.sentAt
         ? `Az ajánlat emailt elküldtük, de az állapot mentése nem sikerült: ${error.message} A Küldés gomb most csak a mentést próbálja újra.`
-        : `Ajánlatküldési hiba: ${error.message}`, receipt ? "warning" : "error");
+        : `Ajánlatküldési hiba: ${error.message}`, attempt?.sentAt ? "warning" : "error");
     } finally {
       setQuoteEmailBusy(false);
       endAction("quote-email");
@@ -7387,8 +7398,83 @@ function HomeContent() {
     );
   }
 
+  async function openAdditionalQuote() {
+    const workspaceId = currentWorkspaceId();
+    const userId = authUserIdRef.current;
+    const generation = authLoadGenerationRef.current;
+    const sourceView = currentViewRef.current;
+    const current = () => currentWorkspaceId() === workspaceId && authLoadGenerationRef.current === generation
+      && selectedCustomerIdRef.current === selected.id && currentViewRef.current === sourceView;
+    if (!workspaceId || !userId || !beginAction("quote-open")) return;
+    try {
+      // Work cards can display the installation address. The standalone email API
+      // uses the saved customer contact, so the preview must use that same contact.
+      const { data, error } = await supabase.from("customers").select("name,email,phone,city,postal_code,address,need")
+        .eq("workspace_id", workspaceId).eq("id", selected.id).single();
+      if (error || !data) throw new Error("Az ügyfél mentett adatait nem sikerült betölteni.");
+      if (!current()) return;
+      setAdditionalRecipient({ workspaceId, userId, customer: {
+        ...EMPTY_CUSTOMER, id: selected.id, name: data.name || "", email: data.email || "", phone: data.phone || "",
+        ...customerLocationFromData(data.city, data.postal_code, data.address), address: data.address || "", need: data.need || "",
+      } });
+      navigateToView("additionalQuote");
+    } catch (error) {
+      if (current()) setMessage(error instanceof Error ? error.message : "Az ügyfél betöltése nem sikerült.", "error");
+    } finally { endAction("quote-open"); }
+  }
+
+  function renderQuoteActions() {
+    if (!activeWorkspace || !customers.some(customer => customer.id === selected.id)) return null;
+    return <div className="space-y-3">
+      <button type="button" disabled={quoteEmailBusy || customerSaveBusy || workActionBusy || pendingActions.includes("quote-open")} onClick={openAdditionalQuote}
+        className="w-full rounded-2xl bg-cyan-300 px-5 py-3 font-black text-slate-950">Új árajánlat</button>
+      <QuoteHistoryPanel workspaceId={activeWorkspace.id} customerId={selected.id} revision={timeValue(selected.quoteSentAt)} />
+    </div>;
+  }
+
+  if (view === "additionalQuote" && activeWorkspace) {
+    const workspaceId = activeWorkspace.id;
+    const customer = additionalRecipient?.workspaceId === workspaceId && additionalRecipient.userId === user.id
+      && additionalRecipient.customer.id === selected.id ? additionalRecipient.customer : null;
+    if (!customer) return <Shell><Back onClick={() => goBack()} /><p>Az ügyfél már nem elérhető ezen a munkaterületen.</p></Shell>;
+    const generation = authLoadGenerationRef.current;
+    const current = () => currentWorkspaceId() === workspaceId && authLoadGenerationRef.current === generation
+      && selectedCustomerIdRef.current === customer.id && currentViewRef.current === "additionalQuote";
+    return <AdditionalQuotePanel key={`${workspaceId}:${customer.id}`} sessionScope={JSON.stringify([workspaceId, user.id])}
+      customer={customer} products={products} settings={workspaceSettings}
+      onBack={() => goBack()} onSend={async (items, pricingMode, issuedAt, deliveryId) => {
+        if (!current()) throw new Error("Az aktív ügyfél vagy munkaterület megváltozott.");
+        if (!customer.email?.trim()) throw new Error("A küldéshez mentsd az ügyfél email-címét az adatlapján.");
+        // This is a separate commercial offer. Its immutable delivery is its history
+        // record, even when the customer already has a survey or a completed job.
+        const target = { ...customer, activeAppointmentId: undefined, activeQuoteId: undefined, date: undefined,
+          time: undefined, appointmentType: "installation" as const, quotePricingMode: pricingMode };
+        const response = await authenticatedFetch("/api/send-quote", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...quotePayload(target, items, issuedAt), quoteDeliveryId: deliveryId }) }, workspaceId);
+        const result = await response.json().catch(() => null);
+        if (!response.ok || result?.ok !== true || result.deliveryId !== deliveryId) {
+          throw new Error(result?.error || "A küldés eredményét nem sikerült igazolni. Ellenőrizd az ajánlatelőzményeket.");
+        }
+      }} onSent={() => {
+        if (!current()) return;
+        setAdditionalRecipient(null);
+        setMessage("Az új ajánlatot elküldtük. A Korábbi árajánlatok között megnyithatod.", "success");
+        goBack("lead");
+        // Only the server knows whether a callback-only lead qualified for a status change.
+        void supabase.from("customers").select("status").eq("workspace_id", workspaceId).eq("id", customer.id)
+          .maybeSingle().then(({ data }) => {
+            if (currentWorkspaceId() !== workspaceId || authLoadGenerationRef.current !== generation || data?.status !== "Ajánlat elküldve") return;
+            const apply = (row: Customer) => row.id === customer.id && !row.activeAppointmentId && row.status === "Visszahívandó"
+              ? { ...row, status: data.status } : row;
+            setCustomers(rows => rows.map(apply));
+            setSelected(apply);
+          });
+      }} />;
+  }
+
   if (view==="lead") return (
     <LeadPanel
+      quoteActions={renderQuoteActions()}
       saving={customerSaveBusy}
       selected={selected}
       customers={customers}
@@ -7408,6 +7494,7 @@ function HomeContent() {
 
   if (view==="quote") return (
     <QuoteBuilderPanel
+      quoteActions={renderQuoteActions()}
       selected={selected}
       quoteItems={quoteItems}
       products={products}
@@ -7540,6 +7627,7 @@ function HomeContent() {
   if (view==="work") return (
     <Shell>
       <WorkPagePanel
+        quoteActions={renderQuoteActions()}
         userId={user.id}
         saving={workActionBusy}
         selected={selected}

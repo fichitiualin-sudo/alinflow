@@ -4,6 +4,7 @@ export type View =
   | "dashboard"
   | "lead"
   | "quote"
+  | "additionalQuote"
   | "quotePreview"
   | "schedule"
   | "work"

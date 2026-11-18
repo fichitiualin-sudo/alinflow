@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { harness, database } = require("./helpers.cjs");
+const { quoteArchiveFixture } = require("./quote-delivery-fixture.cjs");
 
 const workspaceId = "10000000-0000-4000-8000-000000000001";
 const customerId = "20000000-0000-4000-8000-000000000001";
@@ -29,6 +30,8 @@ function fixture({ type = "installation", workspace = workspaceId, appointment =
     return { data: null };
   });
   db.auth = { getUser: async () => ({ data: { user: { id: "synthetic-user" } } }) };
+  const archive = quoteArchiveFixture(() => new Date(state.now).toISOString());
+  db.rpc = archive.rpc;
   class ControlledDate extends Date {
     constructor(...args) { super(...(args.length ? args : [state.now])); }
     static now() { return state.now; }
@@ -36,6 +39,7 @@ function fixture({ type = "installation", workspace = workspaceId, appointment =
   const h = harness({ Date: ControlledDate, process: { env: {
     NEXT_PUBLIC_SUPABASE_URL: "https://test.invalid", NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-public",
     RESEND_API_KEY: "synthetic-mail-key", EMAIL_FROM: "Test <test@example.invalid>",
+    SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-key",
   } }, fetch: async (url, options) => {
     assert.equal(url, "https://api.resend.com/emails");
     outgoing.push({ url, options });
@@ -57,7 +61,7 @@ function fixture({ type = "installation", workspace = workspaceId, appointment =
     method: "POST", headers: { Authorization: "Bearer synthetic-token", "Content-Type": "application/json" },
     body: JSON.stringify({ ...body, ...patch }),
   }));
-  return { h, state, outgoing, body, post };
+  return { h, state, outgoing, accepted, body, post, archive };
 }
 
 for (const kind of ["quote", "appointment"]) test(`calendar ${kind} retries use the same provider key and exact frozen body`, async () => {
@@ -70,8 +74,11 @@ for (const kind of ["quote", "appointment"]) test(`calendar ${kind} retries use 
   assert.equal((await second.json()).id, (await first.json()).id);
   const [a, b] = f.outgoing.map(item => item.options);
   assert.equal(a.headers["Idempotency-Key"], `alinflow-calendar/${workspaceId}/${appointmentId}/${kind}/${deliveryId}`);
-  assert.equal(a.headers["Idempotency-Key"], b.headers["Idempotency-Key"]);
-  assert.equal(a.body, b.body);
+  if (kind === "quote") assert.equal(f.outgoing.length, 1, "successful delivery recovered from archive");
+  else {
+    assert.equal(a.headers["Idempotency-Key"], b.headers["Idempotency-Key"]);
+    assert.equal(a.body, b.body);
+  }
   const payload = JSON.parse(a.body);
   assert.equal(payload.headers["X-Entity-Ref-ID"], a.headers["Idempotency-Key"]);
   assert.deepEqual(payload.to, ["stored@example.invalid"]);
@@ -153,8 +160,8 @@ for (const kind of ["quote", "appointment"]) test(`calendar ${kind} surfaces cha
   const error = (await retry.json()).error;
   assert.match(error, /korábbi naptáras emailküldés/);
   assert.doesNotMatch(error, /PRIVATE|synthetic-mail-key/);
-  assert.equal(f.outgoing.length, 2);
-  assert.equal(f.outgoing[0].options.headers["Idempotency-Key"], f.outgoing[1].options.headers["Idempotency-Key"]);
+  assert.equal(f.outgoing.length, kind === "quote" ? 1 : 2);
+  if (kind === "appointment") assert.equal(f.outgoing[0].options.headers["Idempotency-Key"], f.outgoing[1].options.headers["Idempotency-Key"]);
 });
 
 for (const kind of ["quote", "appointment"]) test(`ordinary ${kind} emails retain their prior behavior without calendar constraints`, async () => {
@@ -164,7 +171,7 @@ for (const kind of ["quote", "appointment"]) test(`ordinary ${kind} emails retai
   f.state.now += 1000;
   assert.equal((await f.post(kind, patch)).status, 200);
   const payloads = f.outgoing.map(item => JSON.parse(item.options.body));
-  assert.ok(f.outgoing.every(item => !Object.hasOwn(item.options.headers, "Idempotency-Key")));
+  assert.ok(f.outgoing.every(item => Object.hasOwn(item.options.headers, "Idempotency-Key") === (kind === "quote")));
   assert.match(payloads[0].headers["X-Entity-Ref-ID"], new RegExp(`^alinflow-${kind}-`));
   assert.notEqual(payloads[0].headers["X-Entity-Ref-ID"], payloads[1].headers["X-Entity-Ref-ID"]);
 });
@@ -176,6 +183,51 @@ for (const kind of ["quote", "appointment"]) test(`calendar ${kind} never resend
   const retry = await f.post(kind);
   assert.equal(retry.status, 409);
   assert.match((await retry.json()).error, /korábbi naptáras emailküldés/);
+  assert.equal(f.outgoing.length, kind === "quote" ? 1 : 2);
+  if (kind === "appointment") assert.equal(f.outgoing[0].options.headers["Idempotency-Key"], f.outgoing[1].options.headers["Idempotency-Key"]);
+});
+
+test("two separate customer offers retain their individual archived prices, including zero-price lines", async () => {
+  const f = fixture();
+  const first = { calendarEmailDelivery: undefined, quoteDeliveryId: deliveryId, quoteIssuedAt: createdAt };
+  const second = { ...first, pricingMode: "alternatives", quoteDeliveryId: "40000000-0000-4000-8000-000000000099",
+    items: [{name: "Other model", quantity: 2, unitPrice: 100, totalPrice: 200},
+      {name: "Free item", quantity: 1, unitPrice: 0, totalPrice: 0, acquisitionPrice: 999}], totalAmount: 200 };
+  assert.equal((await f.post("quote", first)).status, 200);
+  assert.equal((await f.post("quote", second)).status, 200);
+  assert.equal((await f.post("quote", first)).status, 200);
+  assert.equal(f.accepted.size, 2);
   assert.equal(f.outgoing.length, 2);
-  assert.equal(f.outgoing[0].options.headers["Idempotency-Key"], f.outgoing[1].options.headers["Idempotency-Key"]);
+  const snapshots = [...f.archive.snapshots.values()].map(row => row.snapshot);
+  assert.equal(snapshots[0].p_items[0].totalPrice, 250000);
+  assert.equal(snapshots[1].p_items[0].name, "Other model");
+  assert.equal(snapshots[1].p_items[1].totalPrice, 0);
+  assert.equal(snapshots[1].p_items[1].acquisitionPrice, undefined);
+  assert.equal(snapshots[1].p_recipient, "stored@example.invalid");
+  const html = JSON.parse(f.outgoing[1].options.body).html;
+  const freeRow = html.split("Free item")[1].split("<h2")[0];
+  assert.match(freeRow, /Ajánlati ár: 0 Ft/);
+});
+
+test("snapshot error prevents dispatch and post-send recording retries reuse one provider message", async () => {
+  const f = fixture();
+  const standalone = { calendarEmailDelivery: undefined, quoteDeliveryId: deliveryId, quoteIssuedAt: createdAt,
+    customer: { ...f.body.customer, activeAppointmentId: undefined } };
+  f.archive.state.failPrepare = true;
+  assert.equal((await f.post("quote", standalone)).status, 503);
+  assert.equal(f.outgoing.length, 0);
+  f.archive.state.failPrepare = false;
+  f.archive.state.failConfirm = true;
+  assert.equal((await f.post("quote", standalone)).status, 503);
+  assert.equal(f.accepted.size, 1);
+  f.archive.state.failConfirm = false;
+  const confirmed = await f.post("quote", standalone);
+  assert.equal(confirmed.status, 200);
+  assert.equal((await confirmed.json()).deliveryId, deliveryId);
+  assert.equal(f.accepted.size, 1);
+  assert.equal(f.outgoing[0].options.body, f.outgoing[1].options.body);
+  assert.equal(f.archive.snapshots.get(deliveryId).snapshot.p_appointment_id, null);
+  assert.equal(f.archive.snapshots.get(deliveryId).snapshot.p_quote_id, null);
+  assert.equal((await f.post("quote", { ...standalone, quoteDeliveryId: "" })).status, 400);
+  assert.equal(f.outgoing.length, 2);
 });
