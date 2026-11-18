@@ -22,6 +22,8 @@ A dokumentumtár egy ügyfél teljes történetét őrzi. Új dokumentum mindig 
 
 ### Árajánlat
 
+A **Dokumentumok → Árajánlatok** alatt az ügyfél mentett ajánlatai és a küldéskor archivált változatok egy listában jelennek meg. Az ügyfél dokumentumtára az összes ajánlatát mutatja. A munka Dokumentumok részén az adott munkához tartozó és a közvetlenül az ügyfélnek küldött önálló ajánlatok látszanak. Az elküldött dokumentum a küldéskor rögzített címzettel, tételekkel és árakkal nyitható meg és nyomtatható. Régi küldési nyugtából az eredeti árak nem állíthatók helyre.
+
 - az emailben kiküldött tartalommal szinkron előnézet;
 - ajánlat dátuma/időpontja;
 - bundle vagy alternatives árlogika;

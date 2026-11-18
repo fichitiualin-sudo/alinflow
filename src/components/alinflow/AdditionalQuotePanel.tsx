@@ -68,7 +68,7 @@ export function AdditionalQuotePanel({ customer, sessionScope, products, setting
     {preview ? <QuotePreviewPanel {...common} workspaceSettings={settings} quoteIssuedAt={issuedAt}
       onBack={() => setPreview(false)} onPrint={() => window.print()} onSendQuote={send} />
       : <QuoteBuilderPanel {...common} products={products} canEditWorkResources quotePricingMode={mode}
-        quoteActions={<p className="font-black">Új árajánlat · {customer.name}</p>}
+        title={`Új árajánlat · ${customer.name}`}
         installerAmount={quoteInstallTotal(items)} materialAmount={Math.max(0, total(items) - quoteInstallTotal(items))}
         onBack={onBack} onPreview={() => { if (validItems()) { setError(""); setPreview(true); } }}
         onSendQuoteEmail={send} onUpdateQuoteItem={editor.updateQuoteItem} onUpdateQuoteProduct={editor.updateQuoteProduct}

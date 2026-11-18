@@ -8,6 +8,7 @@ import { Back, Btn, Card, Gradient, Layout, Main, Shell, Side } from "@/componen
 import { QuoteEmailStatus } from "@/components/alinflow/QuoteEmailStatus";
 
 type QuoteBuilderPanelProps = {
+  title?: string;
   quoteActions?: ReactNode;
   selected: Customer;
   quoteItems: QuoteItem[];
@@ -60,6 +61,7 @@ function priceInputValue(value: string) {
 }
 
 export function QuoteBuilderPanel({
+  title = "Ajánlatban szereplő tételek",
   quoteActions,
   quoteItems,
   products,
@@ -88,7 +90,7 @@ export function QuoteBuilderPanel({
       <fieldset disabled={quoteEmailBusy} aria-busy={quoteEmailBusy} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
       <Layout>
         <Main>
-          <Card title="Ajánlatban szereplő tételek">
+          <Card title={title}>
             <div className="space-y-3">
               {quoteItems.map((item, index) => (
                 <div key={index} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
@@ -123,7 +125,6 @@ export function QuoteBuilderPanel({
               <b className="text-2xl">{quoteIsAlternatives ? `${quoteItems.length} lehetőség` : ft(totalAmount)}</b>
             </div>
           </Card>
-          {quoteActions}
         </Main>
         <Side>
           <Gradient title="Ajánlat státusz" value={quoteEmailBusy ? "Küldés folyamatban" : quoteSentAt ? "Korábban elküldve" : "Még nincs elküldve"} />
@@ -150,6 +151,7 @@ export function QuoteBuilderPanel({
               <button onClick={onSendQuoteEmail} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-gradient-to-br from-emerald-400 to-green-500 px-5 py-4 text-center font-black text-slate-950 shadow-xl disabled:cursor-wait disabled:opacity-60">
                 {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
               </button>
+              {quoteActions}
               {onSchedule ? <Btn color="blue" onClick={onSchedule}>Időpont keresése</Btn> : null}
             </div>
           </Card>
