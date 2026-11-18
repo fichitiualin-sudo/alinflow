@@ -183,7 +183,6 @@ export function LeadPanel({
             ) : null}
           </Card>
           {selected.need ? <Card title="Érdeklődés"><p className="break-words font-bold text-cyan-200">{selected.need}</p></Card> : null}
-          {quoteActions}
           <Card title="Telefonos jegyzet">
             <textarea
               className="input min-h-32"
@@ -200,6 +199,7 @@ export function LeadPanel({
               <StepButton color="amber" disabled={saving} onClick={onSaveCustomerOnly}>{saving ? "Mentés..." : "Mentés"}</StepButton>
               <StepButton color="cyan" disabled={saving} onClick={onScheduleSurvey}>Felmérési időpont</StepButton>
               <StepButton color="blue" disabled={saving} onClick={onSaveCustomerAndQuote}>Ajánlat / Időpont</StepButton>
+              {quoteActions}
               {isExistingCustomer ? (
                 <StepButton color="red" disabled={saving} onClick={() => onDeleteCustomer(selected)}>Ügyfél törlése</StepButton>
               ) : null}

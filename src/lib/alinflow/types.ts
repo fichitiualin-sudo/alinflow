@@ -18,7 +18,7 @@ export type View =
   | "documentPreview";
 
 export type CalendarMode = "week" | "month";
-export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document" | "all_work_reports";
+export type DocumentPreviewType = "work_report" | "purchase_declaration" | "appointment_confirmation" | "quote_document" | "quote_version" | "all_work_reports";
 export type QuotePricingMode = "bundle" | "alternatives";
 export type AppointmentType = "installation" | "survey" | "maintenance" | "other";
 export type MaintenanceOrigin = "own" | "external";

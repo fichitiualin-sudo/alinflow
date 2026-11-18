@@ -135,7 +135,9 @@ import { WorkReportPanel } from "@/components/alinflow/WorkReportPanel";
 import { LeadPanel } from "@/components/alinflow/LeadPanel";
 import { QuoteBuilderPanel } from "@/components/alinflow/QuoteBuilderPanel";
 import { AdditionalQuotePanel } from "@/components/alinflow/AdditionalQuotePanel";
-import { QuoteHistoryPanel } from "@/components/alinflow/QuoteHistoryPanel";
+import { QuoteDocuments } from "@/components/alinflow/QuoteDocuments";
+import { QuoteDocumentVersionPreview } from "@/components/alinflow/QuoteDocumentVersionPreview";
+import type { QuoteDocumentReceipt, QuoteDocumentVersion } from "@/lib/alinflow/quote-documents";
 import { quoteEditorActions } from "@/lib/alinflow/quote-editor";
 import { WorkPagePanel } from "@/components/alinflow/WorkPagePanel";
 import { LoginScreen } from "@/components/alinflow/LoginScreen";
@@ -576,6 +578,10 @@ function HomeContent() {
   const [detailDataLoadedByCustomer,setDetailDataLoadedByCustomer] = useState<Record<string, boolean>>({});
   const [detailDataLoadingByCustomer,setDetailDataLoadingByCustomer] = useState<Record<string, boolean>>({});
   const [documentPreviewType,setDocumentPreviewType] = useState<DocumentPreviewType>("work_report");
+  const [quoteVersionPreview, setQuoteVersionPreview] = useState<{
+    workspaceId: string; userId: string; customer: Customer; document: QuoteDocumentVersion;
+  } | null>(null);
+  const [documentRefresh, setDocumentRefresh] = useState(0);
   const [documentBackView,setDocumentBackView] = useState<"documents" | "work">("work");
   const [documentPreviewReportId,setDocumentPreviewReportId] = useState<string | undefined>(undefined);
   const [documentPreviewDeclarationId,setDocumentPreviewDeclarationId] = useState<string | undefined>(undefined);
@@ -655,6 +661,7 @@ function HomeContent() {
   function setWorkspaceContext(workspace: Workspace | null, schemaAvailable: boolean) {
     if (activeWorkspaceIdRef.current !== (workspace?.id || null)) {
       setAdditionalRecipient(null);
+      setQuoteVersionPreview(null);
       setMessage("");
       setMaintenanceOriginEdit(null);
       setMaintenanceMapGeocodingBusy(false);
@@ -2394,6 +2401,7 @@ function HomeContent() {
   }
 
   async function refreshVisibleDocumentData() {
+    setDocumentRefresh(value => value + 1);
     await loadCustomersFromDb({ background: true });
     await loadCustomerDetailData(visibleDocumentCustomersForLoad.map((customer) => customer.id), { force: true });
   }
@@ -5531,7 +5539,7 @@ function HomeContent() {
         if (retryingDelivery && JSON.stringify({
           ...quotePayload(selected, items, pendingBody.quoteIssuedAt), quoteDeliveryId: pendingBody.quoteDeliveryId,
         }) !== attempt.requestBody) {
-          throw new Error("A megkezdett küldés óta megváltozott az ajánlat. Ellenőrizd az előzményeket, majd a módosított ajánlathoz válaszd az Új ajánlat lehetőséget.");
+          throw new Error("A megkezdett küldés óta megváltozott az ajánlat. A Dokumentumok között ellenőrizd az elküldött ajánlatot, majd válaszd az Új árajánlat gombot.");
         }
         const response = await authenticatedFetch("/api/send-quote", {
           method: "POST",
@@ -5660,6 +5668,7 @@ function HomeContent() {
         }, delivery.workspaceId);
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result?.ok) throw new Error(result?.error || "Az emailküldés nem sikerült.");
+        if (kind === "quote" && typeof result.sentAt === "string" && Number.isFinite(Date.parse(result.sentAt))) return result.sentAt;
       },
       record: async (kind, sentAt) => {
         ensureWorkspace();
@@ -6410,6 +6419,7 @@ function HomeContent() {
   }
 
   function openDocumentPreview(customer: Customer, type: DocumentPreviewType, purchaseDeclarationId?: string, reportId?: string) {
+    setQuoteVersionPreview(null);
     const activeReportId = reportId || customer.activeWorkReportId;
     const customerForPreview = customerForReport(customer, activeReportId);
     setSelected(customerForPreview);
@@ -7260,6 +7270,18 @@ function HomeContent() {
 
 
   if (view==="documentPreview") {
+    if (documentPreviewType === "quote_version") {
+      const preview = quoteVersionPreview;
+      const visible = preview && preview.workspaceId === activeWorkspace?.id && preview.userId === user.id;
+      return <Shell>
+        <div className="print:hidden">
+          <Back onClick={() => goBack(documentBackView)} />
+          {visible ? <button type="button" onClick={() => window.print()} className="document-action-button mb-5 rounded-2xl bg-white/10 px-5 py-4 font-black text-white">Nyomtatás / mentés PDF-be</button> : null}
+        </div>
+        {visible ? <div className="print-document-area"><QuoteDocumentVersionPreview document={preview.document} customer={preview.customer} workspaceSettings={workspaceSettings} /></div>
+          : <p>Nyisd meg újra az árajánlatot a Dokumentumok között.</p>}
+      </Shell>;
+    }
     const report = documentReportFor(selected);
     const isAppointmentPreview = documentPreviewType === "appointment_confirmation";
     const isQuotePreview = documentPreviewType === "quote_document";
@@ -7299,7 +7321,7 @@ function HomeContent() {
 
   function documentLibrarySectionsFor(customer: Customer) {
     const rows = documentRowsFor(customer);
-    const coreRows = rows.filter((row) => row.action !== "Számla" && row.action !== "Nyilatkozat");
+    const coreRows = rows.filter((row) => row.action !== "Számla" && row.action !== "Nyilatkozat" && row.action !== "Ajánlat");
     const declarationRows = rows.filter((row) => row.action === "Nyilatkozat");
     const invoiceRows = rows.filter((row) => row.action === "Számla");
     const maintenanceRows = maintenanceDocumentRowsFor(customer, true);
@@ -7357,6 +7379,10 @@ function HomeContent() {
           <button onClick={()=>openCustomer(customer,"work")} className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">Ügyfél megnyitása</button>
         </div>
         <div className="space-y-3">
+          <section className="rounded-3xl border border-white/10 bg-slate-950/40 p-3">
+            <h3 className="mb-2 px-1 text-sm font-black uppercase tracking-wide text-slate-400">Árajánlatok</h3>
+            {renderQuoteDocuments(customer, "documents")}
+          </section>
           {sections.map((section) => renderDocumentLibrarySection(customer, section.title, section.rows))}
         </div>
       </div>
@@ -7425,11 +7451,34 @@ function HomeContent() {
 
   function renderQuoteActions() {
     if (!activeWorkspace || !customers.some(customer => customer.id === selected.id)) return null;
-    return <div className="space-y-3">
-      <button type="button" disabled={quoteEmailBusy || customerSaveBusy || workActionBusy || pendingActions.includes("quote-open")} onClick={openAdditionalQuote}
-        className="w-full rounded-2xl bg-cyan-300 px-5 py-3 font-black text-slate-950">Új árajánlat</button>
-      <QuoteHistoryPanel workspaceId={activeWorkspace.id} customerId={selected.id} revision={timeValue(selected.quoteSentAt)} />
-    </div>;
+    return <button type="button" disabled={quoteEmailBusy || customerSaveBusy || workActionBusy || pendingActions.includes("quote-open")} onClick={openAdditionalQuote}
+      className="w-full rounded-2xl bg-cyan-300 px-5 py-3 font-black text-slate-950">Új árajánlat</button>;
+  }
+
+  function renderQuoteDocuments(customer: Customer, source: "documents" | "work") {
+    if (!activeWorkspace || !user || !customer.id) return null;
+    const workspaceId = activeWorkspace.id;
+    const userId = user.id;
+    const appointmentId = source === "work" ? customer.activeAppointmentId : undefined;
+    const allDocuments = documentsByCustomer[customer.id] || [];
+    const receipts: QuoteDocumentReceipt[] = allDocuments.flatMap(doc => {
+      if (doc.type !== "quote_email") return [];
+      const linkedQuoteId = !doc.appointmentId && customer.quoteReceiptScope && quoteDocumentFor(customer, [doc])
+        ? customer.activeQuoteId : undefined;
+      if (appointmentId && doc.appointmentId !== appointmentId && !linkedQuoteId) return [];
+      const sentAt = sentDocumentTimestamp(doc);
+      return sentAt ? [{ id: doc.id || `${doc.appointmentId || customer.id}:${sentAt}`, sentAt, appointmentId: doc.appointmentId, quoteId: linkedQuoteId }] : [];
+    });
+    return <QuoteDocuments workspaceId={workspaceId} customerId={customer.id} appointmentId={appointmentId}
+      activeQuoteId={source === "work" ? customer.activeQuoteId : undefined} receipts={receipts}
+      revision={documentRefresh + timeValue(customer.quoteSentAt)}
+      onPreview={document => {
+        if (currentWorkspaceId() !== workspaceId || authUserIdRef.current !== userId) return;
+        setQuoteVersionPreview({ workspaceId, userId, customer, document });
+        setDocumentPreviewType("quote_version");
+        setDocumentBackView(source);
+        navigateToView("documentPreview");
+      }} />;
   }
 
   if (view === "additionalQuote" && activeWorkspace) {
@@ -7453,12 +7502,12 @@ function HomeContent() {
           body: JSON.stringify({ ...quotePayload(target, items, issuedAt), quoteDeliveryId: deliveryId }) }, workspaceId);
         const result = await response.json().catch(() => null);
         if (!response.ok || result?.ok !== true || result.deliveryId !== deliveryId) {
-          throw new Error(result?.error || "A küldés eredményét nem sikerült igazolni. Ellenőrizd az ajánlatelőzményeket.");
+          throw new Error(result?.error || "A küldés eredményét nem sikerült igazolni. Ellenőrizd az árajánlatot a Dokumentumok között.");
         }
       }} onSent={() => {
         if (!current()) return;
         setAdditionalRecipient(null);
-        setMessage("Az új ajánlatot elküldtük. A Korábbi árajánlatok között megnyithatod.", "success");
+        setMessage("Árajánlat elküldve. A Dokumentumok között megnyithatod.", "success");
         goBack("lead");
         // Only the server knows whether a callback-only lead qualified for a status change.
         void supabase.from("customers").select("status").eq("workspace_id", workspaceId).eq("id", customer.id)
@@ -7628,6 +7677,9 @@ function HomeContent() {
     <Shell>
       <WorkPagePanel
         quoteActions={renderQuoteActions()}
+        quoteDocuments={renderQuoteDocuments(selected, "work")}
+        initialDocumentsOpen={documentBackView === "work" && quoteVersionPreview?.customer.id === selected.id
+          && quoteVersionPreview.customer.activeAppointmentId === selected.activeAppointmentId}
         userId={user.id}
         saving={workActionBusy}
         selected={selected}

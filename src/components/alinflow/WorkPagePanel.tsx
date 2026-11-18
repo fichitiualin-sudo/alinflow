@@ -294,6 +294,8 @@ function InstalledClimateMaintenanceCard({
 
 type WorkPagePanelProps = {
   quoteActions?: ReactNode;
+  quoteDocuments?: ReactNode;
+  initialDocumentsOpen?: boolean;
   selected: Customer;
   userId?: string;
   workspaceId?: string | null;
@@ -372,6 +374,8 @@ type WorkPagePanelProps = {
 
 export function WorkPagePanel({
   quoteActions,
+  quoteDocuments,
+  initialDocumentsOpen = false,
   selected,
   userId,
   workspaceId,
@@ -457,7 +461,8 @@ export function WorkPagePanel({
   const canStartMaintenance = installationFinished || maintenanceFinished;
   const [showMaterials, setShowMaterials] = useState(false);
   const [showPhotos, setShowPhotos] = useState(false);
-  const [showDocuments, setShowDocuments] = useState(false);
+  const [showDocuments, setShowDocuments] = useState(initialDocumentsOpen);
+  const currentQuoteRow = documentRows.find((row) => row.action === "Ajánlat");
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
   const [showWorkItems, setShowWorkItems] = useState(isSurvey);
@@ -564,6 +569,26 @@ export function WorkPagePanel({
     });
   }
 
+  function renderDocumentRow(row: DocumentRow) {
+    return (
+      <DocumentRowCard
+        key={`${row.title}-${row.reportId || row.reportDateLabel || row.reportDate || row.action || "main"}`}
+        selected={selected}
+        row={row}
+        quoteEmailBusy={quoteEmailBusy}
+        appointmentEmailBusy={appointmentEmailBusy}
+        thankYouEmailBusy={thankYouEmailBusy}
+        onOpenDocumentPreview={onOpenDocumentPreview}
+        onOpenWorkReportFor={onOpenWorkReportFor}
+        onSendQuoteEmail={onSendQuoteEmail}
+        onSendAppointmentEmailFor={onSendAppointmentEmailFor}
+        onSendThankYouEmailFor={onSendThankYouEmailFor}
+        onSendPdf={onSendPdf}
+        pdfEmailBusy={pdfEmailBusy}
+      />
+    );
+  }
+
   function renderMaintenanceSection() {
     if (!hasMaintenanceSection) return null;
 
@@ -661,7 +686,6 @@ export function WorkPagePanel({
             </div>
           ) : null}
 
-          {quoteActions}
           {showWorkHistory ? (
             <Card title="Más klímaszerelések ennél az ügyfélnél">
               <div className="space-y-3">
@@ -904,23 +928,15 @@ export function WorkPagePanel({
 
           {showDocuments ? <Card title="Dokumentumok">
             <div className="space-y-3">
-              {documentRows.map((row) => (
-                <DocumentRowCard
-                  key={`${row.title}-${row.reportId || row.reportDateLabel || row.reportDate || row.action || "main"}`}
-                  selected={selected}
-                  row={row}
-                  quoteEmailBusy={quoteEmailBusy}
-                  appointmentEmailBusy={appointmentEmailBusy}
-                  thankYouEmailBusy={thankYouEmailBusy}
-                  onOpenDocumentPreview={onOpenDocumentPreview}
-                  onOpenWorkReportFor={onOpenWorkReportFor}
-                  onSendQuoteEmail={onSendQuoteEmail}
-                  onSendAppointmentEmailFor={onSendAppointmentEmailFor}
-                  onSendThankYouEmailFor={onSendThankYouEmailFor}
-                  onSendPdf={onSendPdf}
-                  pdfEmailBusy={pdfEmailBusy}
-                />
-              ))}
+              {quoteDocuments || quoteActions ? (
+                <section aria-label="Árajánlatok" className="min-w-0 space-y-3">
+                  <h3 className="text-lg font-black">Árajánlatok</h3>
+                  {quoteDocuments && currentQuoteRow ? renderDocumentRow({ ...currentQuoteRow, title: "Aktuális ajánlat", status: "" }) : null}
+                  {quoteActions}
+                  {quoteDocuments}
+                </section>
+              ) : null}
+              {documentRows.filter((row) => !quoteDocuments || row.action !== "Ajánlat").map(renderDocumentRow)}
             </div>
           </Card> : null}
 
@@ -1561,7 +1577,7 @@ function DocumentRowCard({
           <p className="font-black">{row.title}</p>
           {row.reportDateLabel ? <p className="mt-1 text-xs font-bold text-slate-400">{row.reportDateLabel}</p> : null}
         </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span>
+        {row.status ? <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${documentStatusClass(row.status)}`}>{row.status}</span> : null}
       </div>
       <DocumentActionButtons
         customer={selected}

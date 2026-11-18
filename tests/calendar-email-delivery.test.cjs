@@ -31,6 +31,22 @@ function fixture(person = customer(), payload = { items: [{ name: "Teszt klíma"
 const kinds = job => Array.from(job.steps, step => step.kind);
 const states = job => Array.from(job.steps, step => ({ kind: step.kind, sentAt: step.sentAt, logged: step.logged, error: step.error }));
 
+test("a calendar quote receipt uses the timestamp of its archived version even on a logging retry", async () => {
+  const f = fixture(customer(), {}, { quote: true, appointment: false });
+  const confirmedAt = "2026-10-07T10:00:00.123456+00:00";
+  await f.runCalendarEmailDelivery(f.job, {
+    async send() { return confirmedAt; },
+    async record() { throw Error("Offline"); },
+  });
+  f.advance(60_000);
+  let recorded;
+  await f.runCalendarEmailDelivery(f.job, {
+    async send() { assert.fail("A confirmed quote cannot be sent twice"); },
+    async record(kind, at) { recorded = at; },
+  });
+  assert.equal(recorded, confirmedAt);
+});
+
 test("creation detaches and freezes customer and request snapshots with a stable delivery identity", () => {
   const person = customer();
   const payload = { customer: { email: person.email }, settings: { senderName: "Teszt" },

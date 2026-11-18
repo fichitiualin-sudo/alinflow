@@ -25,7 +25,7 @@ export type CalendarEmailDelivery = {
 };
 
 type DeliveryActions = {
-  send: (kind: CalendarEmailKind, delivery: CalendarEmailDelivery) => Promise<void>;
+  send: (kind: CalendarEmailKind, delivery: CalendarEmailDelivery) => Promise<string | void>;
   record: (kind: CalendarEmailKind, sentAt: string, delivery: CalendarEmailDelivery) => Promise<void>;
   onChange?: () => void;
 };
@@ -123,10 +123,10 @@ export async function runCalendarEmailDelivery(
           if (!Number.isFinite(age) || age >= RETRY_WINDOW_MS) {
             throw new Error("Az emailküldés 23 órás újrapróbálási ideje lejárt. Új küldés előtt ellenőrizd a korábbi küldés eredményét.");
           }
-          await send(step.kind, delivery);
+          const confirmedAt = await send(step.kind, delivery);
           // Remember provider acceptance before any document write. A failed
           // record operation must never send this email a second time.
-          step.sentAt = new Date().toISOString();
+          step.sentAt = confirmedAt || new Date().toISOString();
           notify();
         }
         await record(step.kind, step.sentAt, delivery);
