@@ -94,7 +94,7 @@ export function DocumentActionButtons({
   row,
   onPreview,
   onEditWorkReport,
-  onSendQuote,
+  onReviewQuote,
   onSendAppointment,
   onSendThankYou,
   quoteEmailBusy,
@@ -107,7 +107,7 @@ export function DocumentActionButtons({
   row: DocumentRow;
   onPreview: (customer: Customer, type: DocumentPreviewType, purchaseDeclarationId?: string) => void;
   onEditWorkReport: (customer: Customer) => void;
-  onSendQuote: () => void;
+  onReviewQuote: () => void;
   onSendAppointment: (customer: Customer) => void;
   onSendThankYou?: (customer: Customer) => void;
   quoteEmailBusy: boolean;
@@ -151,7 +151,7 @@ export function DocumentActionButtons({
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "purchase_declaration", row.purchaseDeclarationId)} className={viewButton}>Megtekintés</button><button onClick={() => onEditWorkReport(actionCustomer)} className={helperButton}>Aláíráshoz</button><PdfEmailButton customer={actionCustomer} row={row} onSendPdf={onSendPdf} pdfEmailBusy={pdfEmailBusy} /></div>;
   }
   if (row.action === "Ajánlat") {
-    return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "quote_document")} className={viewButton}>Megtekintés</button><button onClick={onSendQuote} disabled={quoteEmailBusy} className={thankButton}>{quoteEmailBusy ? "Küldés..." : "Email"}</button></div>;
+    return <button type="button" onClick={onReviewQuote} disabled={quoteEmailBusy} className={`mt-3 w-full ${helperButton}`}>Előnézet és küldés</button>;
   }
   if (row.action === "Időpont") {
     return <div className={gridClass}><button onClick={() => onPreview(actionCustomer, "appointment_confirmation")} className={viewButton}>Megtekintés</button><button onClick={() => onSendAppointment(actionCustomer)} disabled={appointmentEmailBusy} className={thankButton}>{appointmentEmailBusy ? "Küldés..." : "Email"}</button></div>;

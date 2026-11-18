@@ -12,6 +12,7 @@ type QuotePreviewPanelProps = {
   totalAmount: number;
   quoteEmailBusy: boolean;
   quoteSentAt?: string;
+  deliveryStep?: "retry" | "record";
   quoteIssuedAt: string;
   workspaceSettings: WorkspaceSettings;
   onBack: () => void;
@@ -40,6 +41,7 @@ export function QuotePreviewPanel({
   totalAmount,
   quoteEmailBusy,
   quoteSentAt,
+  deliveryStep,
   quoteIssuedAt,
   workspaceSettings,
   onBack,
@@ -49,6 +51,13 @@ export function QuotePreviewPanel({
   onQuotePricingModeChange,
 }: QuotePreviewPanelProps) {
   const quoteIsAlternatives = isQuoteAlternatives(selected.quotePricingMode);
+  const recipient = selected.email?.trim();
+  const hasSentDate = Boolean(quoteSentAt && Number.isFinite(Date.parse(quoteSentAt)));
+  const recording = deliveryStep === "record";
+  let sendLabel = hasSentDate ? "Aktuális ajánlat elküldése" : "Ajánlat elküldése";
+  if (deliveryStep === "retry") sendLabel = "Küldés újrapróbálása";
+  if (recording) sendLabel = "Küldés naplózásának befejezése";
+  if (quoteEmailBusy) sendLabel = recording ? "Naplózás folyamatban…" : "Küldés folyamatban…";
   const shownQuoteIssuedAt = formatQuoteIssuedAt(quoteIssuedAt);
   const quote = workspaceSettings.quoteSettings;
   const company = workspaceSettings.companyProfile;
@@ -89,7 +98,7 @@ export function QuotePreviewPanel({
                   <p className="text-sm text-slate-500">Ügyfél</p>
                   <p className="mt-1 text-xl font-black">{selected.name || "Nincs név"}</p>
                   <p className="mt-1">{displayAddress(selected)}</p>
-                  <p>{selected.email}</p>
+                  <p className="break-all">{selected.email}</p>
                   <p>{selected.phone}</p>
                 </div>
                 <div className="rounded-2xl bg-slate-100 p-4">
@@ -158,13 +167,13 @@ export function QuotePreviewPanel({
         <Side>
           <div className="no-print">
             <fieldset disabled={quoteEmailBusy} aria-busy={quoteEmailBusy} className="min-w-0 border-0 p-0 disabled:pointer-events-none">
-            <Card title="Ajánlat műveletek">
-              <div className="space-y-3">
-                <Btn color="blue" onClick={onPrint}>Nyomtatás / mentés PDF-be</Btn>
+            <Card title="Ajánlat küldése">
+              <div className="grid gap-3">
                 <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm font-bold text-slate-200">
                   <input
                     type="checkbox"
                     checked={quoteIsAlternatives}
+                    disabled={Boolean(deliveryStep)}
                     onChange={(event) => onQuotePricingModeChange(event.target.checked ? "alternatives" : "bundle")}
                     className="mt-1 h-5 w-5 accent-cyan-300"
                   />
@@ -172,11 +181,21 @@ export function QuotePreviewPanel({
                     <span className="block text-base font-black text-slate-100">Ne adja össze a tételeket</span>
                   </span>
                 </label>
-                <QuoteEmailStatus sentAt={quoteSentAt} />
-                <button onClick={onSendQuote} disabled={quoteEmailBusy} className="block w-full rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950 disabled:cursor-wait disabled:opacity-60">
-                  {quoteEmailBusy ? "Küldés folyamatban..." : "Ajánlat küldése emailben"}
+                {hasSentDate && <QuoteEmailStatus sentAt={quoteSentAt} />}
+                {recipient && <div>
+                  <p className="text-sm text-slate-400">Címzett</p>
+                  <p className="break-all font-bold">{recipient}</p>
+                </div>}
+                {recording ? <p className="text-sm text-slate-300">Az emailt a levélküldő már átvette. A naplózás az ajánlathoz rögzíti a küldést.</p>
+                  : !recipient && <p className="text-sm font-bold text-amber-200">A küldéshez add meg az ügyfél email-címét az adatlapján.</p>}
+                <button type="button" onClick={onSendQuote} disabled={quoteEmailBusy || (!recipient && !recording)}
+                  className="w-full rounded-2xl bg-emerald-400 px-5 py-4 text-center font-black text-slate-950 disabled:opacity-60">
+                  {sendLabel}
                 </button>
-                {onSchedule ? <Btn color="cyan" onClick={onSchedule}>Időpont keresése</Btn> : null}
+                <div className="grid gap-3 border-t border-white/10 pt-3">
+                  <button type="button" onClick={onPrint} className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-bold text-white">Nyomtatás / mentés PDF-be</button>
+                  {onSchedule && <Btn color="blue" onClick={onSchedule}>Időpont keresése</Btn>}
+                </div>
               </div>
             </Card>
             </fieldset>

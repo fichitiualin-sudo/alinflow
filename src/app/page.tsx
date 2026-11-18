@@ -193,7 +193,7 @@ import { canonicalAppointmentIds, canonicalCustomerAppointments } from "@/lib/al
 import { billingKindLabel, billingPaymentMethodLabel, billingUiConfig, type BillingInvoiceKind, type BillingPaymentMethod } from "@/lib/alinflow/billing";
 import { buildMaintenanceMapPoints, hasMaintenanceMapCoordinates, type MaintenanceMapPoint } from "@/lib/alinflow/maintenance-map";
 import { applyScheduledMaintenance } from "@/lib/alinflow/maintenance-scheduled-map";
-import { finishManualQuoteAttempt, manualQuoteAttemptIdentity } from "@/lib/alinflow/manual-quote-attempt";
+import { finishManualQuoteAttempt, manualQuoteAttemptIdentity, manualQuoteScope, storedManualQuoteAttempt } from "@/lib/alinflow/manual-quote-attempt";
 import { isMissingMaintenanceOriginSchemaError, maintenanceOriginFromRow, maintenanceOriginPayload } from "@/lib/alinflow/maintenance-origin";
 import { createCalendarEmailDelivery, runCalendarEmailDelivery, type CalendarEmailDelivery } from "@/lib/alinflow/calendar-email-delivery";
 import { normalizePostalCodeInput, uniqueSettlementByCity, uniqueSettlementByPostalCode } from "@/lib/alinflow/postal-codes";
@@ -5494,9 +5494,7 @@ function HomeContent() {
     const workspaceId = currentWorkspaceId();
     const ownerId = authUserIdRef.current;
     const stillCurrent = () => currentWorkspaceId() === workspaceId && authUserIdRef.current === ownerId;
-    const scopeFor = (customer: Customer) => JSON.stringify([
-      workspaceId, ownerId, customer.id, customer.activeQuoteId, customer.activeAppointmentId,
-    ]);
+    const scopeFor = (customer: Customer) => manualQuoteScope(workspaceId, ownerId, customer);
     let receiptKey = scopeFor(selected);
     let attempt = quoteReceiptsRef.current.get(receiptKey);
     const retryingDelivery = Boolean(attempt && !attempt.sentAt);
@@ -5588,10 +5586,11 @@ function HomeContent() {
       setDraftNotice(readCustomerDraft());
       setMessage(recordingOnly
         ? "A korábban elküldött ajánlat állapota mentve ✅ Új email nem ment ki."
-        : `Ajánlat elküldve: ${updated.email} ✅ Az időpontot az Időpont gombbal rögzítheted.`, "success");
+        : `Ajánlat elküldve: ${updated.email} ✅ A Dokumentumok között megnyithatod.`, "success");
+      return true;
     } catch (error: any) {
       if (stillCurrent()) setMessage(attempt?.sentAt
-        ? `Az ajánlat emailt elküldtük, de az állapot mentése nem sikerült: ${error.message} A Küldés gomb most csak a mentést próbálja újra.`
+        ? `Az ajánlat emailt elküldtük, de az állapot mentése nem sikerült: ${error.message} A naplózás az előnézetből folytatható.`
         : `Ajánlatküldési hiba: ${error.message}`, attempt?.sentAt ? "warning" : "error");
     } finally {
       setQuoteEmailBusy(false);
@@ -7455,6 +7454,18 @@ function HomeContent() {
       className="w-full rounded-2xl bg-cyan-300 px-5 py-3 font-black text-slate-950">Új árajánlat</button>;
   }
 
+  function openQuoteForReview() {
+    const scope = manualQuoteScope(currentWorkspaceId(), authUserIdRef.current, selected);
+    const attempt = quoteReceiptsRef.current.get(scope);
+    if (!attempt?.sentAt && !cleanQuoteItems(quoteItems).length) {
+      setMessage("Az előnézethez adj hozzá legalább egy klímát vagy tételt.", "warning");
+      return;
+    }
+    const issuedAt = attempt ? JSON.parse(attempt.requestBody).quoteIssuedAt : storedManualQuoteAttempt(scope)?.issuedAt;
+    setQuoteIssuedAt(issuedAt || new Date().toISOString());
+    navigateToView("quotePreview");
+  }
+
   function renderQuoteDocuments(customer: Customer, source: "documents" | "work") {
     if (!activeWorkspace || !user || !customer.id) return null;
     const workspaceId = activeWorkspace.id;
@@ -7541,47 +7552,59 @@ function HomeContent() {
     />
   );
 
-  if (view==="quote") return (
-    <QuoteBuilderPanel
-      quoteActions={renderQuoteActions()}
-      selected={selected}
-      quoteItems={quoteItems}
-      products={products}
-      totalAmount={t}
-      installerAmount={installer}
-      materialAmount={materialPrice}
-      quoteEmailBusy={quoteEmailBusy}
-      quoteSentAt={quoteSentAtFor(selected)}
-      canEditWorkResources={canEditWorkResources}
-      quotePricingMode={selected.quotePricingMode || "bundle"}
-      onBack={()=>goBack()}
-      onPreview={()=>{ setQuoteIssuedAt(new Date().toISOString()); navigateToView("quotePreview"); }}
-      onSendQuoteEmail={sendQuoteEmail}
-      onSchedule={startInstallationScheduleFromQuote}
-      onQuotePricingModeChange={updateQuotePricingMode}
-      onUpdateQuoteItem={updateQuoteItem}
-      onUpdateQuoteProduct={updateQuoteProduct}
-      onRemoveQuoteItem={removeQuoteItem}
-      onSyncQuoteItemPrice={syncQuoteItemPrice}
-      onAddQuoteItem={addQuoteItem}
-      onAddManualQuoteItem={addManualQuoteItem}
-    />
-  );
-
-
-  if (view==="quotePreview") {
-    return (
-      <QuotePreviewPanel
+  if (view === "quote" || view === "quotePreview") {
+    const scope = manualQuoteScope(currentWorkspaceId(), authUserIdRef.current, selected);
+    const attempt = quoteReceiptsRef.current.get(scope);
+    const deliveryStep = attempt?.sentAt ? "record" : attempt || storedManualQuoteAttempt(scope) ? "retry" : undefined;
+    const sentAt = quoteSentAtFor(selected);
+    if (view === "quote") return (
+      <QuoteBuilderPanel
+        quoteActions={sentAt || deliveryStep ? renderQuoteActions() : undefined}
         selected={selected}
         quoteItems={quoteItems}
+        products={products}
         totalAmount={t}
+        installerAmount={installer}
+        materialAmount={materialPrice}
+        quoteEmailBusy={quoteEmailBusy}
+        quoteSentAt={sentAt}
+        deliveryStep={deliveryStep}
+        canEditWorkResources={canEditWorkResources}
+        quotePricingMode={selected.quotePricingMode || "bundle"}
+        onBack={()=>goBack()}
+        onPreview={openQuoteForReview}
+        onSchedule={startInstallationScheduleFromQuote}
+        onQuotePricingModeChange={updateQuotePricingMode}
+        onUpdateQuoteItem={updateQuoteItem}
+        onUpdateQuoteProduct={updateQuoteProduct}
+        onRemoveQuoteItem={removeQuoteItem}
+        onSyncQuoteItemPrice={syncQuoteItemPrice}
+        onAddQuoteItem={addQuoteItem}
+        onAddManualQuoteItem={addManualQuoteItem}
+      />
+    );
+
+    const previewCustomer = deliveryStep === "record" && attempt ? attempt.customer : selected;
+    const previewItems = cleanQuoteItems(deliveryStep === "record" ? previewCustomer.quoteItems : quoteItems);
+    const workspaceId = currentWorkspaceId();
+    const userId = authUserIdRef.current;
+    return (
+      <QuotePreviewPanel
+        selected={previewCustomer}
+        quoteItems={previewItems}
+        totalAmount={total(previewItems)}
         quoteEmailBusy={quoteEmailBusy}
         quoteIssuedAt={quoteIssuedAt}
-        quoteSentAt={quoteSentAtFor(selected)}
+        quoteSentAt={attempt?.sentAt || sentAt}
+        deliveryStep={deliveryStep}
         workspaceSettings={workspaceSettings}
         onBack={() => goBack("quote")}
         onPrint={() => window.print()}
-        onSendQuote={sendQuoteEmail}
+        onSendQuote={async () => {
+          const complete = await sendQuoteEmail();
+          if (complete && currentViewRef.current === "quotePreview" && selectedCustomerIdRef.current === selected.id
+            && authUserIdRef.current === userId && currentWorkspaceId() === workspaceId) goBack("quote");
+        }}
         onSchedule={startInstallationScheduleFromQuote}
         onQuotePricingModeChange={updateQuotePricingMode}
       />
@@ -7742,7 +7765,7 @@ function HomeContent() {
         onClimateCountForMaterials={climateCountForMaterials}
         onOpenDocumentPreview={openDocumentPreview}
         onOpenWorkReportFor={openWorkReportFor}
-        onSendQuoteEmail={sendQuoteEmail}
+        onReviewQuote={openQuoteForReview}
         onSendAppointmentEmailFor={sendAppointmentEmailFor}
         onSendThankYouEmailFor={sendThankYouEmailFor}
         onOpenWorkReport={openWorkReport}

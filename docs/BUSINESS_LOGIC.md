@@ -92,7 +92,7 @@ A felsorolt klímák közül az ügyfél választ. A tételeket nem szabad össz
 
 Az „Új árajánlat” önálló ajánlatot nyit a mentett ügyfélhez, a felmérés vagy szerelés munkalapjáról is. Több modell egy levélben a „+ Klíma hozzáadása” és a „Ne adja össze a tételeket” beállítással ajánlható ki.
 
-A „Korábbi árajánlatok” alatt az „Elküldött változatok” a szolgáltató által visszaigazolt küldések címzettjét, dátumát, tételeit és akkori árait mutatja. A „Mentett ajánlatok” fülön az ügyfél korábbi ajánlati rekordjainak utolsó mentett tartalma látható. Az archiválás bevezetése előtti felülírt tartalom visszakereséséhez az eredeti levélre van szükség.
+A kézi küldés a szerkesztőből az előnézetre vezet. A címzett és az aktuális tételek ellenőrzése után az előnézet küldőgombja indítja el az emailt. Korábbi küldés után az „Új árajánlat” üres ajánlatot nyit. Az aktuális munkapéldány külön az előnézetből küldhető el. A Dokumentumok között az elküldött változat a küldéskori címzettet, dátumot, tételeket és árakat őrzi. Az archiválás előtti felülírt tartalom visszakereséséhez az eredeti levélre van szükség.
 
 ### Kötelező megjelenés
 
