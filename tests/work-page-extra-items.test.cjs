@@ -1,20 +1,26 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { harness, noop } = require("./helpers.cjs");
+const { harness } = require("./helpers.cjs");
 const jsx = require("react/jsx-runtime");
 
 function hooks() {
   const slots = [];
+  const effects = [];
   let cursor = 0;
   return {
     reset: () => { cursor = 0; },
+    flushEffects: () => effects.splice(0).forEach(effect => effect()),
     react: {
       useState(initial) {
         const index = cursor++;
         if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
         return [slots[index], (value) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
       },
-      useEffect: noop,
+      useEffect(effect, deps) {
+        const index = cursor++;
+        if (!slots[index] || deps.some((value, i) => !Object.is(value, slots[index][i]))) effects.push(effect);
+        slots[index] = deps;
+      },
       useMemo: (fn) => fn(),
       useCallback: (fn) => fn,
       useRef: (value) => ({ current: value }),
@@ -64,7 +70,7 @@ function workPage(overrides = {}) {
   };
   const run = {
     props, changes,
-    render() { runtime.reset(); run.tree = WorkPagePanel(props); return run.tree; },
+    render() { runtime.reset(); run.tree = WorkPagePanel(props); runtime.flushEffects(); return run.tree; },
     open() { nodes(run.tree, node => node.type === "test-section-toggle" && node.props.label === "Időponthoz tartozó klímák")[0].props.onClick(); return run.render(); },
     button(text) { const matches = nodes(run.tree, node => node.type === "button" && node.props.children === text); assert.equal(matches.length, 1); return matches[0]; },
     counts: () => ({ climate: addClimateCount, extra: addExtraCount, unlock: unlockCount }),
@@ -122,8 +128,16 @@ test("extra line amount editing preserves the explicit quantity and device/labor
 test("maintenance and survey pages do not offer installation extra-item mutations", () => {
   for (const appointmentType of ["maintenance", "survey"]) {
     const run = workPage({ selected: { id: "customer-synthetic", activeAppointmentId: "appointment-synthetic", appointmentType, name: "Tesztügyfél", status: "Időpont egyeztetve" } });
-    const toggles = nodes(run.tree, node => node.type === "test-section-toggle" && /klímák/.test(node.props.label || ""));
-    for (const toggle of toggles) toggle.props.onClick(); run.render();
+    const label = appointmentType === "survey" ? "Felmérési időpont" : "Karbantartott klímák";
+    const section = () => nodes(run.tree, node => node.type === "test-section-toggle" && node.props.label === label)[0];
+    assert.equal(section().props.open, false);
+    section().props.onClick();
+    run.render();
+    assert.equal(section().props.open, true);
     assert.equal(nodes(run.tree, node => node.type === "button" && node.props.children === "+ Egyéb tétel").length, 0);
+    run.props.selected = { ...run.props.selected, activeAppointmentId: "next-appointment" };
+    run.render(); // Switch jobs, then render the state set by the reset effect.
+    run.render();
+    assert.equal(section().props.open, false);
   }
 });

@@ -58,12 +58,18 @@ test("two new offers on a closed survey start empty and send independent prices,
     assert.deepEqual(JSON.parse(JSON.stringify(first.quoteItems)), [{ productId: "", quantity: 1 }]);
     assert.equal(first.quotePricingMode, "bundle");
     assert.equal(first.onSchedule, undefined);
-    await first.onSendQuoteEmail(); // An empty offer is never submitted.
+    assert.equal(first.onSendQuoteEmail, undefined);
+    first.onPreview();
+    assert.ok(panel.builder());
+    assert.ok(panel.render().some(element => element.props.role === "alert"));
     assert.equal(panel.successes(), 0);
     panel.configure(model, price);
+    const sentBeforePreview = deliveries.length;
     panel.builder().onPreview();
     const preview = panel.preview();
+    assert.equal(deliveries.length, sentBeforePreview);
     assert.equal(preview.totalAmount, price);
+    assert.equal(preview.deliveryStep, undefined);
     assert.equal(preview.onSchedule, undefined);
     await preview.onSendQuote();
     assert.equal(panel.successes(), 1);
@@ -92,17 +98,22 @@ test("a double click sends one request while pending and an uncertain send retri
   });
   panel.configure("Teszt klíma C", 318000);
   panel.builder().onQuotePricingModeChange("alternatives");
-  const send = panel.builder().onSendQuoteEmail;
+  panel.builder().onPreview();
+  const send = panel.preview().onSendQuote;
   const pending = send();
   await send();
   await firstRequestStarted;
   assert.equal(attempts.length, 1);
-  assert.equal(panel.builder().quoteEmailBusy, true);
+  assert.equal(panel.preview().quoteEmailBusy, true);
   rejectFirst(new Error("connection interrupted")); await pending;
   assert.equal(panel.successes(), 0);
-  assert.equal(panel.builder().quoteEmailBusy, false);
+  assert.equal(panel.preview().quoteEmailBusy, false);
+  assert.equal(panel.preview().deliveryStep, "retry");
   assert.ok(panel.render().some(element => element.props.role === "alert"));
+  panel.preview().onBack();
+  assert.equal(panel.builder().deliveryStep, "retry");
   panel.builder().onPreview();
+  assert.equal(panel.preview().deliveryStep, "retry");
   await panel.preview().onSendQuote();
   assert.equal(attempts.length, 2);
   assert.deepEqual(attempts[1], attempts[0]);
@@ -118,7 +129,8 @@ test("a reloaded composer reuses an uncertain token only for the same office, re
       if (fail) throw new Error("network interrupted");
     }, stored, scope, customer);
     panel.configure("Minta klíma D", price);
-    await panel.builder().onSendQuoteEmail();
+    panel.builder().onPreview();
+    await panel.preview().onSendQuote();
     assert.equal(panel.successes(), fail ? 0 : 1);
   }
   await send(198000, "office-a:user", true);
@@ -135,4 +147,27 @@ test("a reloaded composer reuses an uncertain token only for the same office, re
   assert.equal(stored.size, 0);
   await send(198000, "office-a:user", false);
   assert.notEqual(calls[5][3], first[3]);
+});
+
+test("editing an uncertain offer requires reviewing the new price before explicitly sending it", async () => {
+  const requests = [];
+  const panel = composer(async (items, mode, issuedAt, id) => {
+    requests.push({ price: items[0].customPrice, id });
+    if (requests.length === 1) throw new Error("No confirmation");
+  });
+  panel.configure("Minta készülék", 145000);
+  panel.builder().onPreview();
+  await panel.preview().onSendQuote();
+  assert.equal(panel.preview().deliveryStep, "retry");
+  panel.preview().onBack();
+  panel.builder().onUpdateQuoteItem(0, "customPrice", 173000);
+  assert.equal(panel.builder().deliveryStep, undefined);
+  assert.equal(panel.render().some(element => element.props.role === "alert"), false);
+  panel.builder().onPreview();
+  assert.equal(panel.preview().totalAmount, 173000);
+  assert.equal(panel.preview().deliveryStep, undefined);
+  assert.equal(requests.length, 1);
+  await panel.preview().onSendQuote();
+  assert.deepEqual(requests.map(request => request.price), [145000, 173000]);
+  assert.notEqual(requests[0].id, requests[1].id);
 });

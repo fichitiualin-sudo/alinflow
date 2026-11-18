@@ -355,7 +355,7 @@ type WorkPagePanelProps = {
   onClimateCountForMaterials: () => number;
   onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
   onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
-  onSendQuoteEmail: () => void;
+  onReviewQuote: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
   onSendThankYouEmailFor: (customer: Customer) => void;
   onSendPdf?: SendPdfDocuments;
@@ -434,7 +434,7 @@ export function WorkPagePanel({
   onClimateCountForMaterials,
   onOpenDocumentPreview,
   onOpenWorkReportFor,
-  onSendQuoteEmail,
+  onReviewQuote,
   onSendAppointmentEmailFor,
   onSendThankYouEmailFor,
   onSendPdf,
@@ -465,7 +465,7 @@ export function WorkPagePanel({
   const currentQuoteRow = documentRows.find((row) => row.action === "Ajánlat");
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [showWorkHistory, setShowWorkHistory] = useState(false);
-  const [showWorkItems, setShowWorkItems] = useState(isSurvey);
+  const [showWorkItems, setShowWorkItems] = useState(false);
   const [sendThankYouEmailOnClose, setSendThankYouEmailOnClose] = useState(true);
   const thankYouEmailSent = documentRows.some((row) => row.action === "KoszonoEmail" && row.status.startsWith("Elküldve"));
   const canSendThankYouEmailOnClose = Boolean(selected.email?.trim()) && selected.status !== "Lezárva" && !thankYouEmailSent;
@@ -517,7 +517,7 @@ export function WorkPagePanel({
   useEffect(() => {
     setShowMaintenance(false);
     setShowServiceBilling(false);
-    setShowWorkItems(isSurvey);
+    setShowWorkItems(false);
     setSendThankYouEmailOnClose(true);
   }, [workspaceId, selected.id, selected.activeAppointmentId, isSurvey]);
 
@@ -580,7 +580,7 @@ export function WorkPagePanel({
         thankYouEmailBusy={thankYouEmailBusy}
         onOpenDocumentPreview={onOpenDocumentPreview}
         onOpenWorkReportFor={onOpenWorkReportFor}
-        onSendQuoteEmail={onSendQuoteEmail}
+        onReviewQuote={onReviewQuote}
         onSendAppointmentEmailFor={onSendAppointmentEmailFor}
         onSendThankYouEmailFor={onSendThankYouEmailFor}
         onSendPdf={onSendPdf}
@@ -633,7 +633,7 @@ export function WorkPagePanel({
               thankYouEmailBusy={thankYouEmailBusy}
               onOpenDocumentPreview={onOpenDocumentPreview}
               onOpenWorkReportFor={onOpenWorkReportFor}
-              onSendQuoteEmail={onSendQuoteEmail}
+              onReviewQuote={onReviewQuote}
               onSendAppointmentEmailFor={onSendAppointmentEmailFor}
               onSendThankYouEmailFor={onSendThankYouEmailFor}
               onStartMaintenanceForCustomer={onStartMaintenanceForCustomer}
@@ -1551,7 +1551,7 @@ function DocumentRowCard({
   thankYouEmailBusy,
   onOpenDocumentPreview,
   onOpenWorkReportFor,
-  onSendQuoteEmail,
+  onReviewQuote,
   onSendAppointmentEmailFor,
   onSendThankYouEmailFor,
   onSendPdf,
@@ -1564,7 +1564,7 @@ function DocumentRowCard({
   thankYouEmailBusy: boolean;
   onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
   onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
-  onSendQuoteEmail: () => void;
+  onReviewQuote: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
   onSendThankYouEmailFor: (customer: Customer) => void;
   onSendPdf?: SendPdfDocuments;
@@ -1584,7 +1584,7 @@ function DocumentRowCard({
         row={row}
         onPreview={onOpenDocumentPreview}
         onEditWorkReport={onOpenWorkReportFor}
-        onSendQuote={onSendQuoteEmail}
+        onReviewQuote={onReviewQuote}
         onSendAppointment={onSendAppointmentEmailFor}
         quoteEmailBusy={quoteEmailBusy}
         appointmentEmailBusy={appointmentEmailBusy}
@@ -1615,7 +1615,7 @@ function MaintenanceHistory({
   thankYouEmailBusy: boolean;
   onOpenDocumentPreview: (customer: Customer, type: DocumentPreviewType, reportId?: string) => void;
   onOpenWorkReportFor: (customer: Customer, reportId?: string) => void;
-  onSendQuoteEmail: () => void;
+  onReviewQuote: () => void;
   onSendAppointmentEmailFor: (customer: Customer) => void;
   onSendThankYouEmailFor: (customer: Customer) => void;
   onStartMaintenanceForCustomer: (customer: Customer) => void;
