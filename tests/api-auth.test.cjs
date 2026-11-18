@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { harness, database } = require("./helpers.cjs");
+const { quoteArchiveFixture } = require("./quote-delivery-fixture.cjs");
 const routes = ["send-quote", "send-appointment", "send-work-report", "send-thank-you", "create-invoice"];
 const workspaceId = "10000000-0000-0000-0000-000000000001";
 const customerId = "20000000-0000-0000-0000-000000000001";
@@ -24,7 +25,9 @@ function apiHarness(failure) {
     throw Error("Unexpected query " + op.table);
   });
   db.auth = { getUser: async () => failure === "auth" ? { data: {}, error: Error("invalid") } : { data: { user: { id: "user" } } } };
-  db.rpc = async name => {
+  const archive = quoteArchiveFixture();
+  db.rpc = async (name, params) => {
+    if (name === "prepare_quote_delivery" || name === "confirm_quote_delivery") return archive.rpc(name, params);
     invoiceRpcCalls.push(name);
     return name === "claim_invoice_delivery"
     ? { data: { status: "send", claim_token: "synthetic-invoice-claim" } }

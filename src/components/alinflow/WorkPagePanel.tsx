@@ -293,6 +293,7 @@ function InstalledClimateMaintenanceCard({
 }
 
 type WorkPagePanelProps = {
+  quoteActions?: ReactNode;
   selected: Customer;
   userId?: string;
   workspaceId?: string | null;
@@ -370,6 +371,7 @@ type WorkPagePanelProps = {
 };
 
 export function WorkPagePanel({
+  quoteActions,
   selected,
   userId,
   workspaceId,
@@ -659,6 +661,7 @@ export function WorkPagePanel({
             </div>
           ) : null}
 
+          {quoteActions}
           {showWorkHistory ? (
             <Card title="Más klímaszerelések ennél az ügyfélnél">
               <div className="space-y-3">

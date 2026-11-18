@@ -1,14 +1,19 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { harness, database } = require("./helpers.cjs");
+const { quoteArchiveFixture } = require("./quote-delivery-fixture.cjs");
 
 const routes = ["quote", "appointment", "work-report"];
 
 function fixture(reply) {
   const requests = [];
   const timeouts = [];
+  const archive = quoteArchiveFixture();
   const externals = {
-    "@supabase/supabase-js": { createClient() { throw Error("Unexpected database access"); } },
+    "@supabase/supabase-js": { createClient(_url, key) {
+      assert.equal(key, "synthetic-archive-key");
+      return { rpc: archive.rpc };
+    } },
     "@/lib/alinflow/document-pdf-data": { async loadSavedPdfBundle() {
       return { includeWorkReport: true, report: { id: "saved-report", appointment_type: "installation" }, declarations: [] };
     } },
@@ -17,7 +22,8 @@ function fixture(reply) {
     } },
   };
   const h = harness({
-    process: { env: { RESEND_API_KEY: "synthetic-provider-key" } },
+    process: { env: { RESEND_API_KEY: "synthetic-provider-key", NEXT_PUBLIC_SUPABASE_URL: "https://test.invalid",
+      SUPABASE_SERVICE_ROLE_KEY: "synthetic-archive-key" } },
     AbortSignal: { timeout(ms) { timeouts.push(ms); return "synthetic-timeout-signal"; } },
     fetch: async (url, options) => { requests.push({ url, options }); return reply(); },
   }, externals);
